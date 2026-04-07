@@ -223,179 +223,238 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
   Widget _buildScrollable(MasterDataBundle master) {
     final m = _model;
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget sectionTitle(String title, IconData icon) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 24, bottom: 12, left: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: scheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: scheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Form(
       key: _formKey,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          if (m != null) ...[
-            Text('접수 정보', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Text(
-              '통화일: ${formatSeoulDate(m.callDate)} ${m.callTime ?? ''}'.trim(),
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (m.createdAt != null)
-              Text(
-                '등록: ${formatSeoulDateTime(DateTime.tryParse(m.createdAt!))}',
-                style: Theme.of(context).textTheme.bodySmall,
+          if (m != null)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
               ),
-            if (m.updatedAt != null)
-              Text(
-                '수정: ${formatSeoulDateTime(DateTime.tryParse(m.updatedAt!))}',
-                style: Theme.of(context).textTheme.bodySmall,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      Text('기본 접수 정보', style: TextStyle(fontWeight: FontWeight.bold, color: scheme.onSurfaceVariant)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text('통화일: ${formatSeoulDate(m.callDate)} ${m.callTime ?? ''}'.trim(), style: const TextStyle(fontSize: 14)),
+                  const SizedBox(height: 4),
+                  if (m.createdAt != null)
+                    Text('최초 등록: ${formatSeoulDateTime(DateTime.tryParse(m.createdAt!))}', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                  if (m.updatedAt != null)
+                    Text('마지막 수정: ${formatSeoulDateTime(DateTime.tryParse(m.updatedAt!))}', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                ],
               ),
-            const Divider(height: 32),
-          ],
-          TextFormField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: '고객명',
-              border: OutlineInputBorder(),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _phoneCtrl,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: '전화번호 *',
-              border: OutlineInputBorder(),
+
+          sectionTitle('고객 정보', Icons.person),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
             ),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return '전화번호는 필수입니다.';
-              if (!isValidKoreanPhone(v)) return '전화번호 형식을 확인하세요.';
-              return null;
-            },
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _inquiryCtrl,
-            minLines: 3,
-            maxLines: 8,
-            decoration: const InputDecoration(
-              labelText: '문의 내용',
-              alignLabelWithHint: true,
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _assignedCtrl,
-            decoration: const InputDecoration(
-              labelText: '담당',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _stageCtrl,
-            decoration: const InputDecoration(
-              labelText: '콜 단계 (call_stage)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _nextDateCtrl,
-            decoration: const InputDecoration(
-              labelText: '다음 예정일 (YYYY-MM-DD)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String?>(
-            value: _productId,
-            decoration: const InputDecoration(
-              labelText: '제품군',
-              border: OutlineInputBorder(),
-            ),
-            items: [
-              const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
-              ...master.productCategories.map(
-                (e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _nameCtrl,
+                    decoration: const InputDecoration(labelText: '고객명', border: OutlineInputBorder(), prefixIcon: Icon(Icons.badge_outlined)),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(labelText: '전화번호 *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.phone_android)),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return '전화번호는 필수입니다.';
+                      if (!isValidKoreanPhone(v)) return '전화번호 형식을 확인하세요.';
+                      return null;
+                    },
+                  ),
+                ],
               ),
-            ],
-            onChanged: (v) => setState(() => _productId = v),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String?>(
-            value: _regionId,
-            decoration: const InputDecoration(
-              labelText: '지역',
-              border: OutlineInputBorder(),
             ),
-            items: [
-              const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
-              ...master.regions.map(
-                (e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name)),
+          ),
+
+          sectionTitle('상담 및 현황', Icons.support_agent),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _inquiryCtrl,
+                    minLines: 4,
+                    maxLines: 10,
+                    decoration: const InputDecoration(
+                      labelText: '문의 및 상담 내용',
+                      alignLabelWithHint: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int>(
+                    value: _statusId ?? 1,
+                    decoration: const InputDecoration(labelText: '진행 상태', border: OutlineInputBorder(), prefixIcon: Icon(Icons.check_circle_outline)),
+                    items: const [
+                      DropdownMenuItem(value: 1, child: Text('미결정/미통화 (1)')),
+                      DropdownMenuItem(value: 2, child: Text('미수주 (2)')),
+                      DropdownMenuItem(value: 3, child: Text('수주 (3)')),
+                      DropdownMenuItem(value: 4, child: Text('단순문의 (4)')),
+                      DropdownMenuItem(value: 5, child: Text('설계문의 (5)')),
+                    ],
+                    onChanged: (v) => setState(() => _statusId = v),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _assignedCtrl,
+                          decoration: const InputDecoration(labelText: '담당자', border: OutlineInputBorder(), prefixIcon: Icon(Icons.assignment_ind_outlined)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _stageCtrl,
+                          decoration: const InputDecoration(labelText: '콜 차수 (예: 1차)', border: OutlineInputBorder()),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _nextDateCtrl,
+                    decoration: const InputDecoration(labelText: '다음 예정일 (YYYY-MM-DD)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.calendar_today)),
+                  ),
+                ],
               ),
-            ],
-            onChanged: (v) => setState(() => _regionId = v),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String?>(
-            value: _methodId,
-            decoration: const InputDecoration(
-              labelText: '문의 방법',
-              border: OutlineInputBorder(),
             ),
-            items: [
-              const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
-              ...master.inquiryMethods.map(
-                (e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name)),
+          ),
+
+          sectionTitle('부가 정보', Icons.tune),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  DropdownButtonFormField<String?>(
+                    value: _productId,
+                    decoration: const InputDecoration(labelText: '분류 (제품군)', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
+                      ...master.productCategories.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name))),
+                    ],
+                    onChanged: (v) => setState(() => _productId = v),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String?>(
+                    value: _regionId,
+                    decoration: const InputDecoration(labelText: '지역', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
+                      ...master.regions.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name))),
+                    ],
+                    onChanged: (v) => setState(() => _regionId = v),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String?>(
+                    value: _methodId,
+                    decoration: const InputDecoration(labelText: '문의 유입 경로', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
+                      ...master.inquiryMethods.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name))),
+                    ],
+                    onChanged: (v) => setState(() => _methodId = v),
+                  ),
+                ],
               ),
-            ],
-            onChanged: (v) => setState(() => _methodId = v),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<int>(
-            value: _statusId ?? 1,
-            decoration: const InputDecoration(
-              labelText: '상태',
-              border: OutlineInputBorder(),
             ),
-            items: const [
-              DropdownMenuItem(value: 1, child: Text('미결정 (1)')),
-              DropdownMenuItem(value: 2, child: Text('미수주 (2)')),
-              DropdownMenuItem(value: 3, child: Text('수주 (3)')),
-              DropdownMenuItem(value: 4, child: Text('단순문의 (4)')),
-              DropdownMenuItem(value: 5, child: Text('설계문의 (5)')),
-            ],
-            onChanged: (v) => setState(() => _statusId = v),
           ),
+
           if (m != null && m.callHistory.isNotEmpty) ...[
-            const Divider(height: 32),
-            Text('상담 이력', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
+            sectionTitle('이전 상담 이력', Icons.history),
             ...m.callHistory.map(
               (h) => Card(
                 margin: const EdgeInsets.only(bottom: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(color: scheme.primary.withOpacity(0.2)),
+                ),
                 child: ListTile(
+                  leading: const Icon(Icons.record_voice_over, color: Colors.grey),
                   title: Text(
                     [
                       h['call_date'] ?? h['created_at'] ?? '',
                       h['stage'] ?? h['call_stage'] ?? '',
                     ].where((e) => e.toString().isNotEmpty).join(' '),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
                     (h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
+                    style: const TextStyle(fontSize: 14),
                   ),
                 ),
               ),
             ),
           ],
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _saving ? null : () => _save(master),
-            child: _saving
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('변경 저장'),
+          const SizedBox(height: 32),
+          SizedBox(
+            height: 54,
+            child: FilledButton.icon(
+              onPressed: _saving ? null : () => _save(master),
+              icon: _saving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.save),
+              label: Text(_saving ? '저장 중...' : '변경 내용 저장', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
           ),
+          const SizedBox(height: 32),
         ],
       ),
     );

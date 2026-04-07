@@ -20,6 +20,7 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
 
 class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   late Future<List<SalesCall>> _future;
+  String _selectedAssignee = '전체';
 
   @override
   void initState() {
@@ -61,6 +62,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         return repo.fetchCalls(
           date: widget.date ?? todayYmdSeoul(),
           incompleteOnly: true,
+          excludeSimpleInquiries: true,
           limit: 100,
           includeCallHistory: true,
         );
@@ -83,6 +85,19 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         }
         return '${widget.date?.substring(5) ?? ''} 미통화';
     }
+  }
+
+  Color _colorForAssignee(String assignee, ColorScheme scheme) {
+    if (assignee == '미지정') return scheme.surfaceContainerHighest;
+    final colors = [
+      Colors.blue.shade100,
+      Colors.red.shade100,
+      Colors.green.shade100,
+      Colors.orange.shade100,
+      Colors.purple.shade100,
+      Colors.teal.shade100,
+    ];
+    return colors[assignee.hashCode.abs() % colors.length];
   }
 
   @override
@@ -120,146 +135,245 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             return const Center(child: Text('목록이 비어 있습니다.'));
           }
 
-          // Group by assignedTo
-          final Map<String, List<SalesCall>> grouped = {};
+          // 1. Calculate counts per assignee
+          final Map<String, int> counts = {'전체': items.length};
           for (var c in items) {
-            final assignee = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
-            grouped.putIfAbsent(assignee, () => []).add(c);
+            final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+            counts[a] = (counts[a] ?? 0) + 1;
           }
-          final keys = grouped.keys.toList()..sort((a, b) {
-            if (a == '미지정') return 1;
-            if (b == '미지정') return -1;
+
+          // 2. Sort assignees by count descending (keep '전체' at the front)
+          final sortedAssignees = counts.keys.toList()..sort((a, b) {
+            if (a == '전체') return -1;
+            if (b == '전체') return 1;
+            
+            // Sort by count descending
+            final countA = counts[a] ?? 0;
+            final countB = counts[b] ?? 0;
+            if (countA != countB) return countB.compareTo(countA);
+            
+            // If count is same, sort alphabetically
             return a.compareTo(b);
           });
 
-          final List<dynamic> flattened = [];
-          for (final assignee in keys) {
-            flattened.add(assignee);
-            flattened.addAll(grouped[assignee]!);
-          }
+          // Filter items based on selected assignee
+          final filteredItems = _selectedAssignee == '전체'
+              ? items
+              : items.where((c) {
+                  final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+                  return a == _selectedAssignee;
+                }).toList();
 
-          Color getColorForAssignee(String assignee, ColorScheme scheme) {
-            if (assignee == '미지정') return scheme.surfaceContainerHighest;
-            final colors = [
-              Colors.blue.shade100,
-              Colors.red.shade100,
-              Colors.green.shade100,
-              Colors.orange.shade100,
-              Colors.purple.shade100,
-              Colors.teal.shade100,
-            ];
-            return colors[assignee.hashCode % colors.length];
-          }
+          return Column(
+            children: [
+              // ─── 상단 담당자 필터 바 (건수 포함 및 정렬 적용) ───
+              Container(
+                height: 80,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3))),
+                ),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                  itemCount: sortedAssignees.length,
+                  itemBuilder: (context, idx) {
+                    final assignee = sortedAssignees[idx];
+                    final count = counts[assignee] ?? 0;
+                    final isSelected = _selectedAssignee == assignee;
+                    final color = _colorForAssignee(assignee, Theme.of(context).colorScheme);
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              setState(() => _future = _load());
-              await _future;
-            },
-            child: ListView.builder(
-              itemCount: flattened.length,
-              itemBuilder: (context, i) {
-                final item = flattened[i];
-                if (item is String) { // Header
-                   final color = getColorForAssignee(item, Theme.of(context).colorScheme);
-                   return Container(
-                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                     color: color,
-                     child: Text(
-                       '$item (${grouped[item]!.length})',
-                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                     ),
-                   );
-                } else if (item is SalesCall) { // Item
-                  final c = item;
-                  String timeStr = '${c.callDate ?? ''} ${c.callTime ?? ''}'.trim();
-                if (c.createdAt != null && c.createdAt!.isNotEmpty) {
-                  final parsedDt = DateTime.tryParse(c.createdAt!);
-                  if (parsedDt != null) {
-                    final kstDt = parsedDt.toUtc().add(const Duration(hours: 9));
-                    final mo = kstDt.month.toString().padLeft(2, '0');
-                    final d = kstDt.day.toString().padLeft(2, '0');
-                    final h = kstDt.hour.toString().padLeft(2, '0');
-                    final min = kstDt.minute.toString().padLeft(2, '0');
-                    timeStr = '${kstDt.year}-$mo-$d $h:$min';
-                  }
-                }
-
-                  final scheme = Theme.of(context).colorScheme;
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      InkWell(
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => SalesCallDetailScreen(
-                                id: c.id,
-                                initial: c,
-                              ),
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedAssignee = assignee),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: isSelected ? color : color.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected ? color : color.withOpacity(0.2),
+                              width: 1.5,
                             ),
-                          );
-                          if (mounted) setState(() => _future = _load());
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          ),
+                          child: Row(
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    c.customerName ?? '(이름 없음)',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    timeStr,
-                                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(Icons.phone_android, size: 14, color: scheme.primary),
-                                  const SizedBox(width: 4),
-                                  Text(c.customerPhone ?? '번호 없음', style: const TextStyle(fontSize: 14)),
-                                  const Spacer(),
-                                  if (c.statusLabel != null)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: scheme.primaryContainer,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        c.statusLabel!,
-                                        style: TextStyle(fontSize: 11, color: scheme.onPrimaryContainer),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  c.inquiryContent!,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                              Text(
+                                assignee,
+                                style: TextStyle(
+                                  color: isSelected ? Colors.black87 : Colors.black54,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  fontSize: 14,
                                 ),
-                              ]
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? Colors.white.withOpacity(0.5) : color.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '$count',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.black87 : Colors.black45,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ),
-                      const Divider(height: 1),
-                    ],
-                  );
-                }
-                return const SizedBox();
-              },
-            ),
+                    );
+                  },
+                ),
+              ),
+              // ─── 하단 목록 (디자인 개선) ───
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    setState(() => _future = _load());
+                    await _future;
+                  },
+                  child: filteredItems.isEmpty
+                      ? const Center(child: Text('해당 담당자의 목록이 없습니다.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                          itemCount: filteredItems.length,
+                          itemBuilder: (context, i) {
+                            final c = filteredItems[i];
+                            // ... 시간 계산 로직 ...
+                            String timeStr = '${c.callDate ?? ''} ${c.callTime ?? ''}'.trim();
+                            if (c.createdAt != null && c.createdAt!.isNotEmpty) {
+                              final parsedDt = DateTime.tryParse(c.createdAt!);
+                              if (parsedDt != null) {
+                                final kstDt = parsedDt.toUtc().add(const Duration(hours: 9));
+                                timeStr = '${kstDt.month}/${kstDt.day} ${kstDt.hour}:${kstDt.minute.toString().padLeft(2, '0')}';
+                              }
+                            }
+
+                            final scheme = Theme.of(context).colorScheme;
+                            final assignColor = _colorForAssignee(c.assignedTo ?? '미지정', scheme);
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () async {
+                                  await Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => SalesCallDetailScreen(id: c.id, initial: c),
+                                    ),
+                                  );
+                                  if (mounted) setState(() => _future = _load());
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              c.customerName ?? '(이름 없음)',
+                                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                          Text(
+                                            timeStr,
+                                            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Icon(Icons.phone_android, size: 14, color: scheme.primary),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            c.customerPhone ?? '번호 없음',
+                                            style: const TextStyle(fontSize: 14, color: Colors.black87),
+                                          ),
+                                          const Spacer(),
+                                          if (c.callStage != null)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: scheme.secondaryContainer.withOpacity(0.5),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text('${c.callStage}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                            ),
+                                        ],
+                                      ),
+                                      if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty) ...[
+                                        const SizedBox(height: 10),
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: scheme.surfaceContainerHighest.withOpacity(0.3),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            c.inquiryContent!,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(fontSize: 13, color: scheme.onSurface, height: 1.4),
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: assignColor.withOpacity(0.2),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.person, size: 12, color: assignColor.withOpacity(0.8)),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!,
+                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          if (c.statusLabel != null)
+                                            Text(
+                                              c.statusLabel!,
+                                              style: TextStyle(fontSize: 12, color: scheme.primary, fontWeight: FontWeight.bold),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ),
+            ],
           );
         },
       ),

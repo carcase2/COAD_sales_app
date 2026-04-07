@@ -80,7 +80,7 @@ class SalesCallsRepository {
       if (excludeSimpleInquiries) {
         parsed = parsed.where((c) {
           final n = c.inquiryMethodName;
-          return n != '설계문의' && n != '단순문의';
+          return n != '설계문의' && n != '단순문의' && n != '미결정';
         }).toList();
       }
       return parsed;
@@ -145,7 +145,7 @@ class SalesCallsRepository {
         final im = row['inquiry_methods'];
         if (im is Map) {
           final name = im['name'];
-          if (name == '설계문의' || name == '단순문의') return false;
+          if (name == '설계문의' || name == '단순문의' || name == '미결정') return false;
         }
         return true;
       }).length;
@@ -156,6 +156,7 @@ class SalesCallsRepository {
         'completed_today': completed,
       });
     } catch (e) {
+      print('fetchTodayStats Error: $e');
       throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
     }
   }
