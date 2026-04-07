@@ -1,0 +1,403 @@
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/phone_validation.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/models/master_data.dart';
+import 'package:coad_customer_calls/models/sales_call.dart';
+import 'package:coad_customer_calls/providers.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+class SalesCallDetailScreen extends ConsumerStatefulWidget {
+  const SalesCallDetailScreen({super.key, required this.id, this.initial});
+
+  final String id;
+  final SalesCall? initial;
+
+  @override
+  ConsumerState<SalesCallDetailScreen> createState() => _SalesCallDetailScreenState();
+}
+
+class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
+  SalesCall? _model;
+  bool _loading = true;
+  String? _loadError;
+
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameCtrl;
+  late TextEditingController _phoneCtrl;
+  late TextEditingController _inquiryCtrl;
+  late TextEditingController _assignedCtrl;
+  late TextEditingController _stageCtrl;
+  late TextEditingController _nextDateCtrl;
+
+  String? _productId;
+  String? _regionId;
+  String? _methodId;
+  int? _statusId;
+
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.initial;
+    _model = i;
+    _nameCtrl = TextEditingController(text: i?.customerName ?? '');
+    _phoneCtrl = TextEditingController(text: i?.customerPhone ?? '');
+    _inquiryCtrl = TextEditingController(text: i?.inquiryContent ?? '');
+    _assignedCtrl = TextEditingController(text: i?.assignedTo ?? '');
+    _stageCtrl = TextEditingController(text: i?.callStage ?? '');
+    _nextDateCtrl = TextEditingController(text: i?.nextScheduledDate ?? '');
+    _productId = i?.productCategoryId;
+    _regionId = i?.regionId;
+    _methodId = i?.inquiryMethodId;
+    _statusId = i?.statusId;
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    try {
+      final fresh = await ref.read(salesCallsRepositoryProvider).fetchCallById(widget.id);
+      _applyModel(fresh);
+    } catch (e) {
+      if (_model == null) {
+        setState(() => _loadError = koreanErrorMessage(e));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _applyModel(SalesCall m) {
+    setState(() {
+      _model = m;
+      _nameCtrl.text = m.customerName ?? '';
+      _phoneCtrl.text = m.customerPhone ?? '';
+      _inquiryCtrl.text = m.inquiryContent ?? '';
+      _assignedCtrl.text = m.assignedTo ?? '';
+      _stageCtrl.text = m.callStage ?? '';
+      _nextDateCtrl.text = m.nextScheduledDate ?? '';
+      _productId = m.productCategoryId;
+      _regionId = m.regionId;
+      _methodId = m.inquiryMethodId;
+      _statusId = m.statusId;
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _inquiryCtrl.dispose();
+    _assignedCtrl.dispose();
+    _stageCtrl.dispose();
+    _nextDateCtrl.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic> _bodyFromForm(MasterDataBundle master) {
+    final body = <String, dynamic>{
+      'customer_phone': _phoneCtrl.text.trim(),
+      'customer_name': _nameCtrl.text.trim(),
+      'inquiry_content': _inquiryCtrl.text.trim(),
+      if (_productId != null) 'product_category_id': _productId,
+      if (_regionId != null) 'region_id': _regionId,
+      if (_methodId != null) 'inquiry_method_id': _methodId,
+      if (_statusId != null) 'status_id': _statusId,
+      if (_assignedCtrl.text.trim().isNotEmpty) 'assigned_to': _assignedCtrl.text.trim(),
+      if (_stageCtrl.text.trim().isNotEmpty) 'call_stage': _stageCtrl.text.trim(),
+      if (_nextDateCtrl.text.trim().isNotEmpty)
+        'next_scheduled_date': _nextDateCtrl.text.trim(),
+    };
+
+    NamedMasterRow? regionRow;
+    if (_regionId != null) {
+      for (final r in master.regions) {
+        if (r.id == _regionId) {
+          regionRow = r;
+          break;
+        }
+      }
+    }
+    if (regionRow != null) {
+      final e = regionRow.extra;
+      if (e['sido'] != null) body['region_sido'] = e['sido'];
+      if (e['region'] != null) body['region_name'] = e['region'];
+      if (e['manager'] != null) body['region_manager'] = e['manager'];
+      if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
+    } else {
+      final m = _model;
+      if (m != null) {
+        if (m.regionSido != null) body['region_sido'] = m.regionSido;
+        if (m.regionName != null) body['region_name'] = m.regionName;
+        if (m.regionManager != null) body['region_manager'] = m.regionManager;
+        if (m.regionBranchType != null) {
+          body['region_branch_type'] = m.regionBranchType;
+        }
+      }
+    }
+    return body;
+  }
+
+  Future<void> _save(MasterDataBundle master) async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      final updated = await ref.read(salesCallsRepositoryProvider).updateCall(
+            widget.id,
+            _bodyFromForm(master),
+          );
+      _applyModel(updated);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('저장했습니다.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(koreanErrorMessage(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final masterAsync = ref.watch(masterDataProvider);
+
+    if (_loadError != null && _model == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('통화 상세')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_loadError!),
+                const SizedBox(height: 12),
+                FilledButton(onPressed: _bootstrap, child: const Text('다시 시도')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_loading && _model == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('통화 상세'),
+        actions: [
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+        ],
+      ),
+      body: masterAsync.when(
+        data: (master) => _buildScrollable(master),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+      ),
+    );
+  }
+
+  Widget _buildScrollable(MasterDataBundle master) {
+    final m = _model;
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          if (m != null) ...[
+            Text('접수 정보', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Text(
+              '통화일: ${formatSeoulDate(m.callDate)} ${m.callTime ?? ''}'.trim(),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            if (m.createdAt != null)
+              Text(
+                '등록: ${formatSeoulDateTime(DateTime.tryParse(m.createdAt!))}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            if (m.updatedAt != null)
+              Text(
+                '수정: ${formatSeoulDateTime(DateTime.tryParse(m.updatedAt!))}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            const Divider(height: 32),
+          ],
+          TextFormField(
+            controller: _nameCtrl,
+            decoration: const InputDecoration(
+              labelText: '고객명',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: '전화번호 *',
+              border: OutlineInputBorder(),
+            ),
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return '전화번호는 필수입니다.';
+              if (!isValidKoreanPhone(v)) return '전화번호 형식을 확인하세요.';
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _inquiryCtrl,
+            minLines: 3,
+            maxLines: 8,
+            decoration: const InputDecoration(
+              labelText: '문의 내용',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _assignedCtrl,
+            decoration: const InputDecoration(
+              labelText: '담당',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _stageCtrl,
+            decoration: const InputDecoration(
+              labelText: '콜 단계 (call_stage)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _nextDateCtrl,
+            decoration: const InputDecoration(
+              labelText: '다음 예정일 (YYYY-MM-DD)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String?>(
+            value: _productId,
+            decoration: const InputDecoration(
+              labelText: '제품군',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
+              ...master.productCategories.map(
+                (e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name)),
+              ),
+            ],
+            onChanged: (v) => setState(() => _productId = v),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String?>(
+            value: _regionId,
+            decoration: const InputDecoration(
+              labelText: '지역',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
+              ...master.regions.map(
+                (e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name)),
+              ),
+            ],
+            onChanged: (v) => setState(() => _regionId = v),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String?>(
+            value: _methodId,
+            decoration: const InputDecoration(
+              labelText: '문의 방법',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
+              ...master.inquiryMethods.map(
+                (e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name)),
+              ),
+            ],
+            onChanged: (v) => setState(() => _methodId = v),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            value: _statusId ?? 1,
+            decoration: const InputDecoration(
+              labelText: '상태',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(value: 1, child: Text('미결정 (1)')),
+              DropdownMenuItem(value: 2, child: Text('미수주 (2)')),
+              DropdownMenuItem(value: 3, child: Text('수주 (3)')),
+              DropdownMenuItem(value: 4, child: Text('단순문의 (4)')),
+              DropdownMenuItem(value: 5, child: Text('설계문의 (5)')),
+            ],
+            onChanged: (v) => setState(() => _statusId = v),
+          ),
+          if (m != null && m.callHistory.isNotEmpty) ...[
+            const Divider(height: 32),
+            Text('상담 이력', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            ...m.callHistory.map(
+              (h) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text(
+                    [
+                      h['call_date'] ?? h['created_at'] ?? '',
+                      h['stage'] ?? h['call_stage'] ?? '',
+                    ].where((e) => e.toString().isNotEmpty).join(' '),
+                  ),
+                  subtitle: Text(
+                    (h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _saving ? null : () => _save(master),
+            child: _saving
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('변경 저장'),
+          ),
+        ],
+      ),
+    );
+  }
+}
