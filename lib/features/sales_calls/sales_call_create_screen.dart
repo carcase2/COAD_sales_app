@@ -116,51 +116,45 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Widget _buildForm(MasterDataBundle master, String authorName) {
+    // 기본값 자동 설정 로직 (처음 로드 시 1회)
+    if (_productId == null && master.productCategories.isNotEmpty) {
+      final speedDoor = master.productCategories.firstWhere((e) => e.name.contains('스피드도어'), orElse: () => master.productCategories.first);
+      _productId = speedDoor.id;
+    }
+    if (_methodId == null && master.inquiryMethods.isNotEmpty) {
+      final yuseon = master.inquiryMethods.firstWhere((e) => e.name.contains('유선'), orElse: () => master.inquiryMethods.first);
+      _methodId = yuseon.id;
+    }
+
     return Form(
       key: _formKey,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // ─── 제품군 & 문의방법 그리드 매칭 ───
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 1,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('제품군', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    const SizedBox(height: 12),
-                    _buildGrid(
-                      items: master.productCategories,
-                      selectedValue: _productId,
-                      onSelected: (id) => setState(() => _productId = id),
-                      selectedColor: const Color(0xFFE94235), // Red
-                      crossAxisCount: 2,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                flex: 1,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('문의방법 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    const SizedBox(height: 12),
-                    _buildGrid(
-                      items: master.inquiryMethods,
-                      selectedValue: _methodId,
-                      onSelected: (id) => setState(() => _methodId = id),
-                      selectedColor: const Color(0xFFF8991D), // Orange
-                      crossAxisCount: 2,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          // ─── 제품군 (세로 배치로 공간 확보) ───
+          const Text('제품군', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          const SizedBox(height: 12),
+          _buildGrid(
+            items: master.productCategories,
+            selectedValue: _productId,
+            onSelected: (id) => setState(() => _productId = id),
+            selectedColor: const Color(0xFFE94235), // Red
+            crossAxisCount: 3, // 3열로 시원하게 배치
+            childAspectRatio: 2.8,
+          ),
+
+          const SizedBox(height: 24),
+
+          // ─── 문의방법 (제품군 아래로 이동) ───
+          const Text('문의방법 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          const SizedBox(height: 12),
+          _buildGrid(
+            items: master.inquiryMethods,
+            selectedValue: _methodId,
+            onSelected: (id) => setState(() => _methodId = id),
+            selectedColor: const Color(0xFFF8991D), // Orange
+            crossAxisCount: 3, // 3열로 시원하게 배치
+            childAspectRatio: 2.8,
           ),
 
           const SizedBox(height: 32),
@@ -301,13 +295,14 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     required Function(String) onSelected,
     required Color selectedColor,
     required int crossAxisCount,
+    double childAspectRatio = 2.5,
   }) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: 2.5,
+        childAspectRatio: childAspectRatio,
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
       ),
