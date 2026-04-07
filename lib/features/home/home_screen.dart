@@ -36,167 +36,171 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('고객전화'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: '오늘 요약', icon: Icon(Icons.dashboard_outlined, size: 20)),
-              Tab(text: '미종료 달력', icon: Icon(Icons.calendar_month_outlined, size: 20)),
-            ],
-            indicatorWeight: 3,
-            labelStyle: TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ),
-        drawer: Drawer(
-          child: Column(
-            children: [
-              UserAccountsDrawerHeader(
-                currentAccountPicture: CircleAvatar(
-                  backgroundColor: scheme.primaryContainer,
-                  child: Icon(Icons.person, size: 40, color: scheme.onPrimaryContainer),
+      child: Builder(
+        builder: (context) {
+          final tabController = DefaultTabController.of(context);
+          return ListenableBuilder(
+            listenable: tabController,
+            builder: (context, _) {
+              // Tab-specific colors (Teal for Summary, Deep Purple for Calendar)
+              final isSummary = tabController.index == 0;
+              final primaryColor = isSummary ? const Color(0xFF00796B) : const Color(0xFF512DA8);
+              final bgColor = isSummary ? const Color(0xFFF0F4F8) : const Color(0xFFF3E5F5);
+
+              return Scaffold(
+                backgroundColor: bgColor,
+                appBar: AppBar(
+                  title: const Text('고객전화', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -1)),
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  bottom: TabBar(
+                    controller: tabController, // 명시적 연결
+                    tabs: const [
+                      Tab(text: '오늘 요약', icon: Icon(Icons.dashboard_rounded, size: 18)),
+                      Tab(text: '미종료 달력', icon: Icon(Icons.calendar_month_rounded, size: 18)),
+                    ],
+                    indicatorColor: Colors.white,
+                    indicatorWeight: 4,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white70,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
                 ),
-                accountName: Text(user?.name ?? '사용자', style: const TextStyle(fontWeight: FontWeight.bold)),
-                accountEmail: Text(user?.id ?? ''),
-                decoration: BoxDecoration(color: scheme.primary),
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: const Text('설정'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-                  );
-                },
-              ),
-              const Divider(),
-              const Spacer(),
-              ListTile(
-                leading: Icon(Icons.logout, color: scheme.error),
-                title: Text('로그아웃', style: TextStyle(color: scheme.error)),
-                onTap: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('로그아웃'),
-                      content: const Text('정말 로그아웃 하시겠습니까?'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-                        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
-                      ],
-                    ),
-                  );
-                  if (confirm == true) {
-                    await ref.read(authControllerProvider.notifier).logout();
-                  }
-                },
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            // 탭 1: 오늘 요약 뷰
-            RefreshIndicator(
-              onRefresh: () async {
-                ref.invalidate(todayStatsProvider);
-                await ref.read(todayStatsProvider.future);
-              },
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  statsAsync.when(
-                    data: (s) => _StatsCard(stats: s),
-                    loading: () => const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator(),
+                drawer: Drawer(
+                  child: Column(
+                    children: [
+                      UserAccountsDrawerHeader(
+                        currentAccountPicture: CircleAvatar(
+                          backgroundColor: scheme.primaryContainer,
+                          child: Icon(Icons.person, size: 40, color: scheme.onPrimaryContainer),
+                        ),
+                        accountName: Text(user?.name ?? '사용자', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        accountEmail: Text(user?.id ?? ''),
+                        decoration: BoxDecoration(color: scheme.primary),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.settings_outlined),
+                        title: const Text('설정'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+                          );
+                        },
+                      ),
+                      const Divider(),
+                      const Spacer(),
+                      ListTile(
+                        leading: Icon(Icons.logout, color: scheme.error),
+                        title: Text('로그아웃', style: TextStyle(color: scheme.error)),
+                        onTap: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('로그아웃'),
+                              content: const Text('정말 로그아웃 하시겠습니까?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            await ref.read(authControllerProvider.notifier).logout();
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+                body: TabBarView(
+                  controller: tabController, // 명시적 연결
+                  children: [
+                    // 탭 1: 오늘 요약 뷰
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        ref.invalidate(todayStatsProvider);
+                        await ref.read(todayStatsProvider.future);
+                      },
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+                        children: [
+                          statsAsync.when(
+                            data: (s) => _StatsCard(stats: s),
+                            loading: () => const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: CircularProgressIndicator(),
+                              ),
+                            ),
+                            error: (e, _) => _ErrorCard(
+                              message: koreanErrorMessage(e),
+                              onRetry: () => ref.invalidate(todayStatsProvider),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const _IncompleteBreakdown(),
+                        ],
                       ),
                     ),
-                    error: (e, _) => _ErrorCard(
-                      message: koreanErrorMessage(e),
-                      onRetry: () => ref.invalidate(todayStatsProvider),
+                    // 탭 2: 미종료 캘린더 뷰
+                    const _IncompleteCalendar(),
+                  ],
+                ),
+                floatingActionButton: Container(
+                  height: 60,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    gradient: LinearGradient(
+                      colors: [scheme.primary, scheme.tertiary],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withOpacity(0.4),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(30),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.add_call, color: Colors.white, size: 24),
+                          const SizedBox(width: 10),
+                          const Text(
+                            '새 통화 등록',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
-            // 탭 2: 미종료 캘린더 뷰
-            const _IncompleteCalendar(),
-          ],
-        ),
-        floatingActionButton: Container(
-          height: 60,
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
-            gradient: LinearGradient(
-              colors: [scheme.primary, scheme.tertiary],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withOpacity(0.4),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(30),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+                ),
+                floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
               );
             },
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(30),
-          gradient: LinearGradient(
-            colors: [scheme.primary, scheme.tertiary],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: scheme.primary.withOpacity(0.4),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(30),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.add_call, color: Colors.white, size: 24),
-                const SizedBox(width: 10),
-                const Text(
-                  '새 통화 등록',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+          );
+        },
       ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
@@ -254,29 +258,352 @@ class _StatsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            if ((stats.incompleteCount ?? 0) > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: scheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, size: 18, color: scheme.onErrorContainer),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '오늘 접수된 미통화 건이 ${stats.incompleteCount ?? 0}건 있습니다.\n(단순/설계문의 제외됨)',
-                        style: TextStyle(color: scheme.onErrorContainer, fontSize: 13, height: 1.3),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),
+    );
+  }
+}
+
+enum _SummaryFilter { today, week, month, total }
+
+class _IncompleteBreakdown extends ConsumerStatefulWidget {
+  const _IncompleteBreakdown();
+
+  @override
+  ConsumerState<_IncompleteBreakdown> createState() => _IncompleteBreakdownState();
+}
+
+class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
+  _SummaryFilter _currentFilter = _SummaryFilter.today; // 금일이 기본값
+
+  @override
+  Widget build(BuildContext context) {
+    final asyncCalls = ref.watch(incompleteCallsProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    return asyncCalls.when(
+      data: (calls) {
+        if (calls.isEmpty) return const SizedBox.shrink();
+
+        // 1. Get filtered list based on date
+        final now = DateTime.now(); // Current time (local)
+        final todayStr = todayYmdSeoul();
+        
+        // Mondary start for the week
+        final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+        final startOfMonth = DateTime(now.year, now.month, 1);
+
+        final filteredCalls = calls.where((c) {
+          if (c.callDate == null || c.callDate!.length < 10) return _currentFilter == _SummaryFilter.total;
+          final callDt = DateTime.tryParse(c.callDate!.substring(0, 10));
+          if (callDt == null) return _currentFilter == _SummaryFilter.total;
+
+          switch (_currentFilter) {
+            case _SummaryFilter.today:
+              return c.callDate!.startsWith(todayStr);
+            case _SummaryFilter.week:
+              return callDt.isAfter(startOfWeek.subtract(const Duration(seconds: 1))) && 
+                     callDt.isBefore(now.add(const Duration(days: 1)));
+            case _SummaryFilter.month:
+              return callDt.isAfter(startOfMonth.subtract(const Duration(seconds: 1)));
+            case _SummaryFilter.total:
+              return true;
+          }
+        }).toList();
+
+        if (filteredCalls.isEmpty && _currentFilter != _SummaryFilter.total) {
+          return _buildEmptyContent(scheme);
+        }
+
+        // 2. Count per assignee
+        final Map<String, int> counts = {};
+        for (var c in filteredCalls) {
+          final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+          counts[a] = (counts[a] ?? 0) + 1;
+        }
+
+        final sorted = counts.keys.toList()
+          ..sort((a, b) => (counts[b] ?? 0).compareTo(counts[a] ?? 0));
+
+        final total = filteredCalls.length;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.people_outline, size: 18, color: scheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        '담당자별 미통화 현황',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // ─── 필터 버튼 (개별 컬러 커스텀 필터) ───
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Container(
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(4.0),
+                  child: Row(
+                    children: _SummaryFilter.values.map((filter) {
+                      final isSelected = _currentFilter == filter;
+                      Color filterColor;
+                      String label;
+                      
+                      switch (filter) {
+                        case _SummaryFilter.today:
+                          filterColor = const Color(0xFF2196F3); // Blue
+                          label = '금일';
+                          break;
+                        case _SummaryFilter.week:
+                          filterColor = const Color(0xFF4CAF50); // Green
+                          label = '금주';
+                          break;
+                        case _SummaryFilter.month:
+                          filterColor = const Color(0xFFFF9800); // Orange
+                          label = '금월';
+                          break;
+                        case _SummaryFilter.total:
+                          filterColor = const Color(0xFF673AB7); // Purple
+                          label = '전체';
+                          break;
+                      }
+
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _currentFilter = filter),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            decoration: BoxDecoration(
+                              color: isSelected ? filterColor : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isSelected ? Colors.white : Colors.black54,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+            ...sorted.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final name = entry.value;
+              final count = counts[name] ?? 0;
+              final percent = total > 0 ? count / total : 0.0;
+              
+              // 랭킹 스타일 설정
+              final rank = idx + 1;
+              String rankEmoji = '';
+              Color rankColor = scheme.primary;
+              if (rank == 1) {
+                rankEmoji = '🥇 ';
+                rankColor = const Color(0xFFFFD700); // Gold
+              } else if (rank == 2) {
+                rankEmoji = '🥈 ';
+                rankColor = const Color(0xFFC0C0C0); // Silver
+              } else if (rank == 3) {
+                rankEmoji = '🥉 ';
+                rankColor = const Color(0xFFCD7F32); // Bronze
+              }
+
+              return Card(
+                elevation: 2,
+                shadowColor: rankColor.withOpacity(0.2),
+                margin: const EdgeInsets.only(bottom: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: rank <= 3 
+                    ? BorderSide(color: rankColor, width: 2) 
+                    : BorderSide(color: scheme.outlineVariant.withOpacity(0.4)),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => SalesCallListScreen(
+                          mode: ListQueryMode.incomplete,
+                          initialAssignee: name,
+                        ),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '$rankEmoji$name', 
+                              style: TextStyle(
+                                fontWeight: rank <= 3 ? FontWeight.bold : FontWeight.normal,
+                                fontSize: rank == 1 ? 16 : 14,
+                                color: rank == 1 ? Colors.black : Colors.black87,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '$count건',
+                              style: TextStyle(
+                                color: rank <= 3 ? rankColor : scheme.primary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text(
+                              ' / 총 $total건',
+                              style: const TextStyle(
+                                color: Colors.black45,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: percent,
+                            backgroundColor: scheme.surfaceContainerHighest,
+                            color: rank <= 3 ? rankColor : scheme.primary.withOpacity(0.6),
+                            minHeight: 8,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (e, _) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildEmptyContent(ColorScheme scheme) {
+    return Column(
+      children: [
+        // ─── 필터 버튼 (데이터 없을 때도 동일하게 유지) ───
+        Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(4.0),
+            child: Row(
+              children: _SummaryFilter.values.map((filter) {
+                final isSelected = _currentFilter == filter;
+                Color filterColor;
+                String label;
+                
+                switch (filter) {
+                  case _SummaryFilter.today:
+                    filterColor = const Color(0xFF2196F3);
+                    label = '금일';
+                    break;
+                  case _SummaryFilter.week:
+                    filterColor = const Color(0xFF4CAF50);
+                    label = '금주';
+                    break;
+                  case _SummaryFilter.month:
+                    filterColor = const Color(0xFFFF9800);
+                    label = '금월';
+                    break;
+                  case _SummaryFilter.total:
+                    filterColor = const Color(0xFF673AB7);
+                    label = '전체';
+                    break;
+                }
+
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _currentFilter = filter),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: BoxDecoration(
+                        color: isSelected ? filterColor : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.white : Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 60),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(Icons.inventory_2_outlined, size: 48, color: Colors.black12),
+                SizedBox(height: 16),
+                Text(
+                  '선택한 기간에 미통화 건이 없습니다.',
+                  style: TextStyle(color: Colors.black45, fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -390,9 +717,19 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
     return asyncCalls.when(
       data: (calls) {
-        // 1. Calculate counts for filter bar
-        final Map<String, int> counts = {'전체': calls.length};
-        for (var c in calls) {
+        // 1. Filter calls by the currently focused month
+        final focusedYear = _focusedDay.year;
+        final focusedMonth = _focusedDay.month;
+        final focusedMonthStr = "$focusedYear-${focusedMonth.toString().padLeft(2, '0')}";
+
+        final visibleCallsInMonth = calls.where((c) {
+          if (c.callDate == null || c.callDate!.length < 7) return false;
+          return c.callDate!.startsWith(focusedMonthStr);
+        }).toList();
+
+        // 2. Calculate counts for filter bar (Only for the visible month)
+        final Map<String, int> counts = {'전체': visibleCallsInMonth.length};
+        for (var c in visibleCallsInMonth) {
           final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
           counts[a] = (counts[a] ?? 0) + 1;
         }
@@ -402,14 +739,31 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
             if (a == '전체') return -1;
             if (b == '전체') return 1;
             final countA = counts[a] ?? 0;
-            final countB = counts[b] ?? 0;
+              final countB = counts[b] ?? 0;
             if (countA != countB) return countB.compareTo(countA);
             return a.compareTo(b);
           });
 
-        // 2. Prepare calendar markers (group by date) filtered by selected assignee
+        // 2-1. Smart default: filter by logged-in user if not already filtered
+        final user = ref.watch(authControllerProvider);
+        if (_selectedAssignee == '전체' && user?.name != null) {
+          if (counts.containsKey(user!.name)) {
+            // Use a post-frame callback or simple logic to avoid build-time state changes
+            // But since this is a UI-only filter state, we can just use it in the filtering loop below.
+            // However, to highlight the chip, we need to update state once.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _selectedAssignee == '전체') {
+                setState(() => _selectedAssignee = user.name!);
+              }
+            });
+          }
+        }
+
+        // 3. Prepare calendar markers (group by date) filtered by selected assignee
         final Map<String, int> dateMarkers = {};
-        for (final c in calls) {
+        for (final c in calls) { // Markers should still be pre-calculated for all calls to show them as user swipes? 
+          // Usually markers are calculated for all, but user asked "그달 숫자만 카운트 되게".
+          // This refers to the top "Filter Chips".
           final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
           if (_selectedAssignee != '전체' && a != _selectedAssignee) continue;
 
@@ -419,15 +773,18 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           }
         }
 
-        return Column(
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 200), // 압도적인 하단 여백 추가
           children: [
             // ─── 상단 담당자 필터 바 (캘린더용) ───
             Container(
               height: 70,
               width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
               decoration: BoxDecoration(
                 color: scheme.surface,
-                border: Border(bottom: BorderSide(color: scheme.outlineVariant.withOpacity(0.3))),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant.withOpacity(0.3)),
               ),
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
@@ -482,73 +839,75 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
               ),
             ),
             // ─── 캘린더 영역 ───
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(12),
-                child: Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TableCalendar(
+                  firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                  lastDay: DateTime.now().add(const Duration(days: 365)),
+                  focusedDay: _focusedDay,
+                  locale: 'ko_KR',
+                  daysOfWeekHeight: 40,
+                  rowHeight: 52,
+                  availableGestures: AvailableGestures.none, // ListView 스크롤에 맡김
+                  headerStyle: const HeaderStyle(
+                    formatButtonVisible: false,
+                    titleCentered: true,
+                    titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: TableCalendar(
-                      firstDay: DateTime.now().subtract(const Duration(days: 365)),
-                      lastDay: DateTime.now().add(const Duration(days: 365)),
-                      focusedDay: _focusedDay,
-                      locale: 'ko_KR',
-                      daysOfWeekHeight: 40,
-                      rowHeight: 52,
-                      headerStyle: const HeaderStyle(
-                        formatButtonVisible: false,
-                        titleCentered: true,
-                        titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      calendarBuilders: CalendarBuilders(
-                        markerBuilder: (context, date, events) {
-                          final dateKey = date.toIso8601String().substring(0, 10);
-                          final count = dateMarkers[dateKey] ?? 0;
-                          if (count > 0) {
-                            return Positioned(
-                              right: 4,
-                              bottom: 4,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: scheme.error,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Text(
-                                  '$count',
-                                  style: TextStyle(
-                                    color: scheme.onError,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                  calendarBuilders: CalendarBuilders(
+                    markerBuilder: (context, date, events) {
+                      final dateKey = date.toIso8601String().substring(0, 10);
+                      final count = dateMarkers[dateKey] ?? 0;
+                      if (count > 0) {
+                        return Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: scheme.error,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                color: scheme.onError,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
                               ),
-                            );
-                          }
-                          return null;
-                        },
-                      ),
-                      onDaySelected: (selectedDay, focusedDay) {
-                        setState(() {
-                          _focusedDay = focusedDay;
-                        });
-                        final dateStr = selectedDay.toIso8601String().substring(0, 10);
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => SalesCallListScreen(
-                              mode: ListQueryMode.incompleteByDate,
-                              date: dateStr,
                             ),
                           ),
                         );
-                      },
-                    ),
+                      }
+                      return null;
+                    },
                   ),
+                  onDaySelected: (selectedDay, focusedDay) {
+                    setState(() {
+                      _focusedDay = focusedDay;
+                    });
+                    final dateStr = selectedDay.toIso8601String().substring(0, 10);
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SalesCallListScreen(
+                          mode: ListQueryMode.incompleteByDate,
+                          date: dateStr,
+                          initialAssignee: _selectedAssignee,
+                        ),
+                      ),
+                    );
+                  },
+                  onPageChanged: (focusedDay) {
+                    setState(() {
+                      _focusedDay = focusedDay;
+                    });
+                  },
                 ),
               ),
             ),

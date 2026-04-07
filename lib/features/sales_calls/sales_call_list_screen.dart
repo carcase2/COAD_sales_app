@@ -9,10 +9,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum ListQueryMode { today, incomplete, recent, completedToday, incompleteByDate }
 
 class SalesCallListScreen extends ConsumerStatefulWidget {
-  const SalesCallListScreen({super.key, required this.mode, this.date});
+  const SalesCallListScreen({super.key, required this.mode, this.date, this.initialAssignee});
 
   final ListQueryMode mode;
   final String? date;
+  final String? initialAssignee;
 
   @override
   ConsumerState<SalesCallListScreen> createState() => _SalesCallListScreenState();
@@ -21,11 +22,22 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
 class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   late Future<List<SalesCall>> _future;
   String _selectedAssignee = '전체';
+  final ScrollController _scrollController = ScrollController();
+  bool _hasScrolledToInitial = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialAssignee != null) {
+      _selectedAssignee = widget.initialAssignee!;
+    }
     _future = _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<List<SalesCall>> _load() {
@@ -156,6 +168,38 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             return a.compareTo(b);
           });
 
+          // 2-1. Smart default: filter by logged-in user if no initialAssignee was provided
+          final user = ref.watch(authControllerProvider);
+          if (widget.initialAssignee == null && _selectedAssignee == '전체' && user?.name != null) {
+            if (counts.containsKey(user!.name)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && _selectedAssignee == '전체') {
+                  setState(() => _selectedAssignee = user.name!);
+                }
+              });
+            }
+          }
+
+          // Auto-scroll to selected assignee on first load
+          if (widget.initialAssignee != null && widget.initialAssignee != '전체' && !_hasScrolledToInitial) {
+            final idx = sortedAssignees.indexOf(widget.initialAssignee!);
+            if (idx != -1) {
+              _hasScrolledToInitial = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients) {
+                  // Approximate width per item (padding 12 + approx text + count badge)
+                  // Let's use jumpTo or animateTo with an estimated position
+                  double offset = idx * 90.0; // Estimated width
+                  _scrollController.animateTo(
+                    offset,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeOutQuart,
+                  );
+                }
+              });
+            }
+          }
+
           // Filter items based on selected assignee
           final filteredItems = _selectedAssignee == '전체'
               ? items
@@ -175,6 +219,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                   border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3))),
                 ),
                 child: ListView.builder(
+                  controller: _scrollController,
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
                   itemCount: sortedAssignees.length,
