@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/features/auth/login_screen.dart';
 import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
+import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -14,6 +15,7 @@ class CoadCustomerCallsApp extends ConsumerWidget {
 
     return MaterialApp(
       title: '코아드 고객전화',
+      navigatorKey: NotificationService.navigatorKey,
       locale: const Locale('ko', 'KR'),
       supportedLocales: const [
         Locale('ko', 'KR'),

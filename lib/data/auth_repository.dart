@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/call_permissions.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:coad_customer_calls/services/notification_service.dart';
 
 class AuthRepository {
   AuthRepository(this._deps);
@@ -27,6 +28,10 @@ class AuthRepository {
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
       _user = AppUser.fromJson(map);
+      if (_user != null) {
+        NotificationService.updateTokenInSupabase(_user!.id);
+        NotificationService.listenToTokenRefresh(_user!.id);
+      }
     } catch (_) {
       _user = null;
     }
@@ -62,6 +67,10 @@ class AuthRepository {
     _user = u;
     await _deps.secure.write(key: StorageKeys.userJson, value: jsonEncode(u.toJson()));
     
+    // Register FCM Token
+    NotificationService.updateTokenInSupabase(u.id);
+    NotificationService.listenToTokenRefresh(u.id);
+
     _deps.transport.cookieHeader = null;
     await _deps.secure.delete(key: StorageKeys.sessionCookies);
 

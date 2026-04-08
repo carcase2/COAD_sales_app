@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "219775144763",
+    "project_id": "fir-b17d1",
+    "storage_bucket": "fir-b17d1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:219775144763:android:4adf156ba1a4cb041c5d1e",
+        "android_client_info": {
+          "package_name": "com.coad.customer_calls"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFew_t88RolxSFk01WwI9LE5IY606UV5I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
