@@ -15,11 +15,20 @@ serve(async (req) => {
 
     console.log('Webhook payload received:', JSON.stringify(payload))
 
-    // 2. Fetch all users who have an FCM token
-    const { data: users, error: userError } = await supabaseAdmin
+    // 2. Fetch target users who have an FCM token
+    let query = supabaseAdmin
       .from('users')
       .select('name, fcm_token')
       .not('fcm_token', 'is', null)
+
+    // If an assignee is specified, notify them AND the admin ('관리자').
+    if (record.assigned_to) {
+      // Use OR filter to include both the specific assignee and the admin
+      query = query.or(`id.eq.${record.assigned_to},id.eq.관리자`)
+      console.log(`Targeting assignee (${record.assigned_to}) and admin ('관리자')`)
+    }
+
+    const { data: users, error: userError } = await query
 
     if (userError) {
       console.error('Error fetching users:', userError)
@@ -27,8 +36,8 @@ serve(async (req) => {
     }
     
     if (!users || users.length === 0) {
-      console.log('No users with FCM tokens found in DB')
-      return new Response(JSON.stringify({ message: 'No users with FCM tokens found' }), { status: 200 })
+      console.log('No target users with FCM tokens found')
+      return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
     const tokens = users.map(u => u.fcm_token)

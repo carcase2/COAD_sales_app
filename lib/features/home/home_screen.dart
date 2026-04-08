@@ -54,6 +54,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
+                  actions: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: Center(
+                        child: Text(
+                          'v1.0.0',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   bottom: TabBar(
                     controller: tabController, // 명시적 연결
                     tabs: const [

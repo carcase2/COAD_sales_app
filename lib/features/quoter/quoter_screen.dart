@@ -8,6 +8,21 @@ class QuoterScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('견적기'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                'v1.0.0',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.normal,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Center(
         child: Column(
