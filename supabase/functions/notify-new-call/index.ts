@@ -5,7 +5,10 @@ import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
 serve(async (req) => {
   try {
     const payload = await req.json()
-    const { record } = payload
+    const { type, record, old_record } = payload
+    
+    // For DELETE, use old_record. For INSERT/UPDATE, use record.
+    const activeRecord = record || old_record
 
     // 1. Initialize Supabase Admin Client
     const supabaseAdmin = createClient(
@@ -13,7 +16,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    console.log('Webhook payload received:', JSON.stringify(payload))
+    console.log(`Webhook (${type}) payload received:`, JSON.stringify(payload))
 
     // 2. Fetch target users who have an FCM token
     let query = supabaseAdmin
@@ -22,10 +25,10 @@ serve(async (req) => {
       .not('fcm_token', 'is', null)
 
     // If an assignee is specified, notify them AND the admin ('관리자').
-    if (record.assigned_to) {
+    if (activeRecord && activeRecord.assigned_to) {
       // Use OR filter to include both the specific assignee and the admin
-      query = query.or(`id.eq.${record.assigned_to},id.eq.관리자`)
-      console.log(`Targeting assignee (${record.assigned_to}) and admin ('관리자')`)
+      query = query.or(`id.eq.${activeRecord.assigned_to},id.eq.관리자`)
+      console.log(`Targeting assignee (${activeRecord.assigned_to}) and admin ('관리자')`)
     }
 
     const { data: users, error: userError } = await query
@@ -40,8 +43,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
-    const tokens = users.map(u => u.fcm_token)
-    console.log(`Found ${tokens.length} tokens to notify:`, users.map(u => u.name).join(', '))
+    const tokens = users.map((u: any) => u.fcm_token)
+    console.log(`Found ${tokens.length} tokens to notify:`, users.map((u: any) => u.name).join(', '))
 
     // 3. Authenticate with Firebase Service Account
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
@@ -63,11 +66,11 @@ serve(async (req) => {
     // 4. Fetch related data for richer notification
     let categoryName = '미지정'
     try {
-      if (record.product_category_id) {
+      if (activeRecord && activeRecord.product_category_id) {
         const { data: catData } = await supabaseAdmin
           .from('product_categories')
           .select('name')
-          .eq('id', record.product_category_id)
+          .eq('id', activeRecord.product_category_id)
           .maybeSingle()
         if (catData) categoryName = catData.name
       }
@@ -75,17 +78,17 @@ serve(async (req) => {
       console.error('Error fetching category:', e)
     }
 
-    const regionText = record.region_sido && record.region_name 
-      ? `${record.region_sido} ${record.region_name}`
-      : (record.region_display || record.region_name || '지역 미상')
+    const regionText = activeRecord && activeRecord.region_sido && activeRecord.region_name 
+      ? `${activeRecord.region_sido} ${activeRecord.region_name}`
+      : (activeRecord ? (activeRecord.region_display || activeRecord.region_name || '지역 미상') : '지역 미상')
 
     let assigneeName = '미지정'
     try {
-      if (record.assigned_to) {
+      if (activeRecord && activeRecord.assigned_to) {
         const { data: userData } = await supabaseAdmin
           .from('users')
           .select('name')
-          .eq('id', record.assigned_to)
+          .eq('id', activeRecord.assigned_to)
           .maybeSingle()
         if (userData) assigneeName = userData.name
       }
@@ -94,14 +97,19 @@ serve(async (req) => {
     }
 
     // 5. Build Notification Content
-    const customerName = record.customer_name || '이름없음'
-    const phone = record.customer_phone || ''
-    const content = record.inquiry_content || record.inquiryContent || record.memo || '내용 없음'
+    const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'
+    const phone = (activeRecord && activeRecord.customer_phone) || ''
+    const content = activeRecord ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음') : '내용 없음'
     
-    console.log(`Sending notification for: ${customerName}, assigned to: ${assigneeName}`)
+    // Dynamic Title based on event type
+    let titlePrefix = '[COAD] 새 접수'
+    if (type === 'UPDATE') titlePrefix = '[COAD] 접수 수정'
+    if (type === 'DELETE') titlePrefix = '[COAD] 접수 삭제'
+
+    console.log(`Sending ${type} notification for: ${customerName}, assigned to: ${assigneeName}`)
 
     // 6. Send notifications
-    const results = await Promise.all(tokens.map(async (token) => {
+    const results = await Promise.all(tokens.map(async (token: string) => {
       try {
         const res = await fetch(
           `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
@@ -115,11 +123,13 @@ serve(async (req) => {
               message: {
                 token: token,
                 notification: {
-                  title: `[COAD] 새 접수: ${customerName}님`,
-                  body: `📞 ${phone}\n📍 지역: ${regionText}\n👤 담당: ${assigneeName}\n📝 내용: ${content}`,
+                  title: `${titlePrefix}: ${customerName}님`,
+                  body: type === 'DELETE' 
+                    ? `❌ 접수 삭제: ${customerName}\n👤 담당: ${assigneeName}`
+                    : `📞 ${phone}\n📍 지역: ${regionText}\n👤 담당: ${assigneeName}\n📝 상세: ${content}`,
                 },
                 data: {
-                  call_id: record.id.toString(),
+                  call_id: activeRecord ? activeRecord.id.toString() : '',
                   click_action: 'FLUTTER_NOTIFICATION_CLICK',
                 },
                 android: {
@@ -128,7 +138,7 @@ serve(async (req) => {
                     channel_id: 'high_importance_channel',
                     click_action: 'FLUTTER_NOTIFICATION_CLICK',
                     icon: 'ic_notification_coad',
-                    color: '#28A745',
+                    color: type === 'DELETE' ? '#DC3545' : (type === 'UPDATE' ? '#FFC107' : '#28A745'),
                   },
                 },
               },
@@ -138,7 +148,7 @@ serve(async (req) => {
         const resJson = await res.json()
         console.log(`FCM Response for token ${token.substring(0, 10)}... :`, JSON.stringify(resJson))
         return resJson
-      } catch (e) {
+      } catch (e: any) {
         console.error(`FCM error for token ${token.substring(0, 10)}... :`, e)
         return { error: e.message }
       }
@@ -148,7 +158,7 @@ serve(async (req) => {
       headers: { "Content-Type": "application/json" },
       status: 200,
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error:', error.message)
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { "Content-Type": "application/json" },

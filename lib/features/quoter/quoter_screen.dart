@@ -13,7 +13,7 @@ class QuoterScreen extends StatelessWidget {
             padding: const EdgeInsets.only(right: 16),
             child: Center(
               child: Text(
-                'v1.0.2',
+                'v1.0.3',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.normal,

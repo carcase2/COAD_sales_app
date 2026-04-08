@@ -59,7 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       padding: const EdgeInsets.only(right: 16),
                       child: Center(
                         child: Text(
-                          'v1.0.2',
+                          'v1.0.3',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -649,7 +649,7 @@ class _StatVertical extends StatelessWidget {
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
-                value,
+                'v1.0.3',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w900,
