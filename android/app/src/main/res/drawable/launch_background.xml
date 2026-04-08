@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/white" />
-
-    <!-- Show the optimized COAD logo in the center of the splash screen -->
     <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launcher_icon" />
+            android:src="@drawable/splash_logo" />
     </item>
 </layer-list>
