@@ -59,7 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       padding: const EdgeInsets.only(right: 16),
                       child: Center(
                         child: Text(
-                          'v1.0.0',
+                          'v1.0.1',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,

@@ -14,7 +14,7 @@ class CoadCustomerCallsApp extends ConsumerWidget {
     final user = ref.watch(authControllerProvider);
 
     return MaterialApp(
-      title: '코아드 고객전화',
+      title: 'COAD 영업',
       navigatorKey: NotificationService.navigatorKey,
       debugShowCheckedModeBanner: false,
       locale: const Locale('ko', 'KR'),
