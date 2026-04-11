@@ -115,7 +115,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_title)),
+      appBar: AppBar(
+        title: Text(_title),
+        titleTextStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
       body: FutureBuilder<List<SalesCall>>(
         future: _future,
         builder: (context, snap) {
@@ -144,7 +147,26 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           }
           final items = snap.data ?? [];
           if (items.isEmpty) {
-            return const Center(child: Text('목록이 비어 있습니다.'));
+            final scheme = Theme.of(context).colorScheme;
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.inbox_outlined, size: 56, color: scheme.outlineVariant),
+                    const SizedBox(height: 16),
+                    Text(
+                      '목록이 비어 있습니다.',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           // 1. Calculate counts per assignee
@@ -170,14 +192,16 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           // 2-1. Smart default: filter by logged-in user if no initialAssignee was provided
           final user = ref.watch(authControllerProvider);
-          if (widget.initialAssignee == null && _selectedAssignee == '전체' && user?.name != null) {
-            if (counts.containsKey(user!.name)) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted && _selectedAssignee == '전체') {
-                  setState(() => _selectedAssignee = user.name!);
-                }
-              });
-            }
+          final userName = user?.name;
+          if (widget.initialAssignee == null &&
+              _selectedAssignee == '전체' &&
+              userName != null &&
+              counts.containsKey(userName)) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _selectedAssignee == '전체') {
+                setState(() => _selectedAssignee = userName);
+              }
+            });
           }
 
           // Auto-scroll to selected assignee on first load
@@ -216,7 +240,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
-                  border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3))),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.35),
+                    ),
+                  ),
                 ),
                 child: ListView.builder(
                   controller: _scrollController,
@@ -250,7 +278,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                               Text(
                                 assignee,
                                 style: TextStyle(
-                                  color: isSelected ? Colors.black87 : Colors.black54,
+                                  color: isSelected
+                                      ? Theme.of(context).colorScheme.onSurface
+                                      : Theme.of(context).colorScheme.onSurfaceVariant,
                                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                   fontSize: 14,
                                 ),
@@ -267,7 +297,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: isSelected ? Colors.black87 : Colors.black45,
+                                    color: isSelected
+                                        ? Theme.of(context).colorScheme.onSurface
+                                        : Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ),
@@ -287,7 +319,29 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                     await _future;
                   },
                   child: filteredItems.isEmpty
-                      ? const Center(child: Text('해당 담당자의 목록이 없습니다.'))
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.person_search_rounded,
+                                  size: 48,
+                                  color: Theme.of(context).colorScheme.outlineVariant,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  '해당 담당자의 목록이 없습니다.',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                           itemCount: filteredItems.length,
@@ -336,6 +390,17 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                                             ),
                                           ),
+                                          if (c.images.isNotEmpty) ...[
+                                            Tooltip(
+                                              message: '첨부 ${c.images.length}개',
+                                              child: Icon(
+                                                Icons.attach_file,
+                                                size: 18,
+                                                color: scheme.primary,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                          ],
                                           Text(
                                             timeStr,
                                             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
@@ -349,7 +414,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           const SizedBox(width: 4),
                                           Text(
                                             c.customerPhone ?? '번호 없음',
-                                            style: const TextStyle(fontSize: 14, color: Colors.black87),
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Theme.of(context).colorScheme.onSurface,
+                                            ),
                                           ),
                                           const Spacer(),
                                           if (c.callStage != null)

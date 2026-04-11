@@ -27,6 +27,7 @@ Future<void> main() async {
 
   await dotenv.load(fileName: ".env");
 
+  // 웹 `lib/supabaseClient`와 동일 변수: 메인 Supabase(고객전화 sales_calls 등). Support 전용 DB와 별도.
   await Supabase.initialize(
     url: dotenv.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
     anonKey: dotenv.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '',

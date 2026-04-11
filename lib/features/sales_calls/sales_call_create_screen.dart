@@ -1,9 +1,9 @@
-import 'package:coad_customer_calls/core/config/env.dart';
+import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
-import 'package:coad_customer_calls/core/utils/phone_validation.dart';
-import 'package:coad_customer_calls/data/ai_extractor_service.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +29,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   int? _statusId = 1;
   bool _submitting = false;
   bool _isSimpleInquiry = false;
+  final List<String> _uploadedImageUrls = [];
+  bool _uploadBusy = false;
 
   @override
   void dispose() {
@@ -74,6 +76,10 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
       }
 
+      if (_uploadedImageUrls.isNotEmpty) {
+        body['images'] = List<String>.from(_uploadedImageUrls);
+      }
+
       final created = await ref.read(salesCallsRepositoryProvider).createCall(body);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -91,19 +97,69 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     }
   }
 
+  String _siteNameForUpload(MasterDataBundle master) {
+    if (_regionId == null) return 'coad_home';
+    for (final r in master.regions) {
+      if (r.id == _regionId && r.name.trim().isNotEmpty) return r.name.trim();
+    }
+    return 'coad_home';
+  }
+
+  Future<void> _pickAndUpload(MasterDataBundle master) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const [
+        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'heic', 'heif', 'tif', 'tiff', 'pdf',
+      ],
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    setState(() => _uploadBusy = true);
+    final site = _siteNameForUpload(master);
+    final uploader = ref.read(b2UploadRepositoryProvider);
+
+    try {
+      for (final f in result.files) {
+        final path = f.path;
+        if (path == null) continue;
+        if (!isAllowedPickerPath(path)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('건너뜀: ${f.name} (지원하지 않는 형식)')),
+            );
+          }
+          continue;
+        }
+        try {
+          final url = await uploader.uploadSalesCallFile(filePath: path, siteName: site);
+          if (mounted) setState(() => _uploadedImageUrls.add(url));
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(koreanErrorMessage(e))),
+            );
+          }
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _uploadBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final masterAsync = ref.watch(masterDataProvider);
     final user = ref.watch(authControllerProvider);
 
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: scheme.surface,
       appBar: AppBar(
-        title: const Text('새 통화 등록', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-        backgroundColor: Colors.white,
-        elevation: 0.5,
+        title: const Text('새 통화 등록'),
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.black),
+          icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -132,28 +188,30 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           // ─── 제품군 (세로 배치로 공간 확보) ───
-          const Text('제품군', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          Text('제품군', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           _buildGrid(
+            context: context,
             items: master.productCategories,
             selectedValue: _productId,
             onSelected: (id) => setState(() => _productId = id),
-            selectedColor: const Color(0xFFE94235), // Red
-            crossAxisCount: 3, // 3열로 시원하게 배치
+            selectedColor: const Color(0xFFC62828),
+            crossAxisCount: 3,
             childAspectRatio: 2.8,
           ),
 
           const SizedBox(height: 24),
 
           // ─── 문의방법 (제품군 아래로 이동) ───
-          const Text('문의방법 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          Text('문의방법 *', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           _buildGrid(
+            context: context,
             items: master.inquiryMethods,
             selectedValue: _methodId,
             onSelected: (id) => setState(() => _methodId = id),
-            selectedColor: const Color(0xFFF8991D), // Orange
-            crossAxisCount: 3, // 3열로 시원하게 배치
+            selectedColor: const Color(0xFFE65100),
+            crossAxisCount: 3,
             childAspectRatio: 2.8,
           ),
 
@@ -190,7 +248,12 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('지역 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
+                    Text(
+                      '지역 *',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String?>(
                       value: _regionId,
@@ -228,6 +291,26 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             validator: (v) => (v == null || v.trim().isEmpty) ? '내용 필수' : null,
           ),
 
+          const SizedBox(height: 20),
+
+          Text(
+            '첨부 (사진·PDF)',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SalesCallAttachmentsStrip(
+                urls: _uploadedImageUrls,
+                editable: true,
+                uploadBusy: _uploadBusy,
+                onAdd: () => _pickAndUpload(master),
+                onRemoveAt: (i) => setState(() => _uploadedImageUrls.removeAt(i)),
+              ),
+            ),
+          ),
+
           const SizedBox(height: 16),
 
           // ─── 단순문의 처리 옵션 ───
@@ -236,14 +319,22 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               Checkbox(
                 value: _isSimpleInquiry,
                 onChanged: (v) => setState(() => _isSimpleInquiry = v ?? false),
-                activeColor: Colors.blueAccent,
+                activeColor: Theme.of(context).colorScheme.primary,
               ),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('이번 통화는 단순문의로 바로 마무리', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    Text('체크하면 상담결과가 단순문의로 저장되어 추가 상담 없이 완료됩니다.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(
+                      '이번 통화는 단순문의로 바로 마무리',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      '체크하면 상담결과가 단순문의로 저장되어 추가 상담 없이 완료됩니다.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
                   ],
                 ),
               ),
@@ -258,27 +349,23 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    side: const BorderSide(color: Colors.grey),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                  ),
-                  child: const Text('취소', style: TextStyle(color: Colors.black87)),
+                  child: const Text('취소'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: ElevatedButton(
+                child: FilledButton(
                   onPressed: _submitting ? null : () => _submit(master),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF8BC70), // Light Orange/Gold
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                  ),
                   child: _submitting
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('등록', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ? SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          ),
+                        )
+                      : const Text('등록'),
                 ),
               ),
             ],
@@ -290,6 +377,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Widget _buildGrid({
+    required BuildContext context,
     required List<NamedMasterRow> items,
     required String? selectedValue,
     required Function(String) onSelected,
@@ -297,6 +385,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     required int crossAxisCount,
     double childAspectRatio = 2.5,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -315,17 +404,19 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           child: Container(
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: isSelected ? selectedColor : Colors.white,
-              border: Border.all(color: Colors.grey.withOpacity(0.3)),
-              borderRadius: BorderRadius.circular(4),
+              color: isSelected ? selectedColor : scheme.surface,
+              border: Border.all(
+                color: isSelected ? selectedColor : scheme.outlineVariant.withValues(alpha: 0.65),
+              ),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               item.name,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? Colors.white : Colors.black87,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? Colors.white : scheme.onSurface,
               ),
             ),
           ),
@@ -346,7 +437,10 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -364,12 +458,10 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   InputDecoration _inputDecoration(String? hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      filled: true,
-      fillColor: Colors.white,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+      hintStyle: TextStyle(
+        color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+        fontSize: 13,
+      ),
     );
   }
 }

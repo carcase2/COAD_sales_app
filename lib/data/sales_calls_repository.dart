@@ -5,6 +5,13 @@ import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// **1층: 메타데이터·URL** — 웹 `supabaseClient`와 동일한 **메인** Supabase 프로젝트
+/// (`main.dart`의 `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `.env`).
+///
+/// - 고객전화 첨부 URL은 주로 [SalesCall.images] ↔ DB `sales_calls.images` (`text[]`).
+/// - 스키마의 `sales_call_images`(행 단위 URL·b2_key 등)는 웹 일부 로직용; 이 앱 MVP는 `images` 배열만 읽기/쓰기.
+/// - 고객지원 `call_logs` 등 **Support 전용 Supabase**와는 별도 프로젝트로 가정.
+/// - **2층: 파일 바이너리**는 B2이며, 업로드는 [B2UploadRepository]가 Next API로 수행.
 class SalesCallsRepository {
   SalesCallsRepository(AppDependencies deps);
 
@@ -156,7 +163,6 @@ class SalesCallsRepository {
         'completed_today': completed,
       });
     } catch (e) {
-      print('fetchTodayStats Error: $e');
       throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
     }
   }

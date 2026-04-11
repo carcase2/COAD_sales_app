@@ -1,7 +1,9 @@
 import 'package:coad_customer_calls/core/config/env.dart';
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,7 +26,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   String _savedOrEmpty(AppDependencies deps) {
     if (kBaseUrlDefine.isNotEmpty) return '';
-    return deps.prefs.getString(StorageKeys.prefsBaseUrl) ?? '';
+    final prefsUrl = deps.prefs.getString(StorageKeys.prefsBaseUrl) ?? '';
+    if (prefsUrl.isNotEmpty) return prefsUrl;
+    return dotenv.env['BASE_URL']?.trim() ?? '';
   }
 
   @override
@@ -38,52 +42,105 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final deps = ref.watch(appDependenciesProvider);
     final effective = deps.effectiveBaseUrl;
     final fromDefine = kBaseUrlDefine.trim().isNotEmpty;
+    final fromEnvOnly = !fromDefine &&
+        (deps.prefs.getString(StorageKeys.prefsBaseUrl)?.trim().isEmpty ?? true) &&
+        (dotenv.env['BASE_URL']?.trim().isNotEmpty ?? false);
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         children: [
-          Text(
-            '서버 주소',
-            style: Theme.of(context).textTheme.titleMedium,
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.info_outline, color: scheme.primary),
+            title: const Text('앱 버전'),
+            subtitle: Text('v$kAppVersion'),
           ),
           const SizedBox(height: 8),
           Text(
-            fromDefine
-                ? '빌드 시 --dart-define=BASE_URL 로 고정되어 있습니다. 우선순위가 가장 높습니다.'
-                : '끝에 / 를 붙이지 마세요. 예: https://app.example.com',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+            '연결',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
                 ),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _urlCtrl,
-            enabled: !fromDefine,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'BASE_URL',
-              hintText: 'https://배포도메인',
-              border: OutlineInputBorder(),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.link, size: 20, color: scheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        '서버 주소 (BASE_URL)',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    fromDefine
+                        ? '빌드 시 --dart-define=BASE_URL 로 고정되어 있습니다.'
+                        : fromEnvOnly
+                            ? '지금은 프로젝트 루트 .env 의 BASE_URL 을 씁니다. 아래에 입력 후 저장하면 기기에 저장되어 .env 보다 우선합니다.'
+                            : '끝에 / 를 붙이지 마세요. 예: https://app.example.com',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _urlCtrl,
+                    enabled: !fromDefine,
+                    keyboardType: TextInputType.url,
+                    decoration: const InputDecoration(
+                      labelText: 'BASE_URL',
+                      hintText: 'https://배포도메인',
+                      prefixIcon: Icon(Icons.language),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SelectableText(
+                      effective.isEmpty ? '현재: (미설정)' : '현재: $effective',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: fromDefine
+                        ? null
+                        : () async {
+                            await deps.setDebugBaseUrl(_urlCtrl.text.trim());
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('저장했습니다.')),
+                              );
+                              setState(() {});
+                            }
+                          },
+                    icon: const Icon(Icons.save_outlined, size: 20),
+                    label: const Text('저장'),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text('현재 사용 중: ${effective.isEmpty ? "(미설정)" : effective}'),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: fromDefine
-                ? null
-                : () async {
-                    await deps.setDebugBaseUrl(_urlCtrl.text.trim());
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('저장했습니다.')),
-                      );
-                      setState(() {});
-                    }
-                  },
-            child: const Text('저장'),
           ),
         ],
       ),

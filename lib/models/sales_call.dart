@@ -25,6 +25,7 @@ class SalesCall {
     this.regionLabel,
     this.statusLabel,
     this.callHistory = const [],
+    this.images = const [],
   });
 
   final String id;
@@ -52,6 +53,10 @@ class SalesCall {
   final String? regionLabel;
   final String? statusLabel;
   final List<Map<String, dynamic>> callHistory;
+  /// 메인 Supabase `sales_calls.images` (`text[]`) — 첨부마다 B2 공개 HTTPS URL 문자열.
+  ///
+  /// 웹 고객전화 주 흐름과 동일. 레거시 `sales_call_images` 행과의 동기는 서버/웹에서 처리할 수 있음.
+  final List<String> images;
 
   factory SalesCall.fromJson(Map<String, dynamic> json) {
     final historyRaw = json['call_history'] ?? json['callHistory'];
@@ -101,6 +106,7 @@ class SalesCall {
         'callStatus',
       ]),
       callHistory: history,
+      images: _parseImageUrls(json['images']),
     );
   }
 
@@ -120,8 +126,17 @@ class SalesCall {
       if (regionName != null) 'region_name': regionName,
       if (regionManager != null) 'region_manager': regionManager,
       if (regionBranchType != null) 'region_branch_type': regionBranchType,
+      'images': images,
     };
   }
+}
+
+List<String> _parseImageUrls(dynamic raw) {
+  if (raw == null) return [];
+  if (raw is List) {
+    return raw.map((e) => e.toString()).where((s) => s.trim().isNotEmpty).toList();
+  }
+  return [];
 }
 
 String? _pick(Map<String, dynamic> json, List<String> keys) {

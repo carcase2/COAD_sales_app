@@ -1,7 +1,10 @@
+import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -37,12 +40,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   int? _statusId;
 
   bool _saving = false;
+  List<String> _imageUrls = [];
+  bool _uploadBusy = false;
 
   @override
   void initState() {
     super.initState();
     final i = widget.initial;
     _model = i;
+    _imageUrls = List<String>.from(i?.images ?? const []);
     _nameCtrl = TextEditingController(text: i?.customerName ?? '');
     _phoneCtrl = TextEditingController(text: i?.customerPhone ?? '');
     _inquiryCtrl = TextEditingController(text: i?.inquiryContent ?? '');
@@ -86,6 +92,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       _regionId = m.regionId;
       _methodId = m.inquiryMethodId;
       _statusId = m.statusId;
+      _imageUrls = List<String>.from(m.images);
     });
   }
 
@@ -141,7 +148,58 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         }
       }
     }
+    body['images'] = _imageUrls;
     return body;
+  }
+
+  String _siteNameForUpload(MasterDataBundle master) {
+    if (_regionId == null) return 'coad_home';
+    for (final r in master.regions) {
+      if (r.id == _regionId && r.name.trim().isNotEmpty) return r.name.trim();
+    }
+    return 'coad_home';
+  }
+
+  Future<void> _pickAndUpload(MasterDataBundle master) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const [
+        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'heic', 'heif', 'tif', 'tiff', 'pdf',
+      ],
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    setState(() => _uploadBusy = true);
+    final site = _siteNameForUpload(master);
+    final uploader = ref.read(b2UploadRepositoryProvider);
+
+    try {
+      for (final f in result.files) {
+        final path = f.path;
+        if (path == null) continue;
+        if (!isAllowedPickerPath(path)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('건너뜀: ${f.name} (지원하지 않는 형식)')),
+            );
+          }
+          continue;
+        }
+        try {
+          final url = await uploader.uploadSalesCallFile(filePath: path, siteName: site);
+          if (mounted) setState(() => _imageUrls = [..._imageUrls, url]);
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(koreanErrorMessage(e))),
+            );
+          }
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _uploadBusy = false);
+    }
   }
 
   Future<void> _save(MasterDataBundle master) async {
@@ -272,9 +330,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   Text('통화일: ${formatSeoulDate(m.callDate)} ${m.callTime ?? ''}'.trim(), style: const TextStyle(fontSize: 14)),
                   const SizedBox(height: 4),
                   if (m.createdAt != null)
-                    Text('최초 등록: ${formatSeoulDateTime(DateTime.tryParse(m.createdAt!))}', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                    Text(
+                      '최초 등록: ${formatSeoulDateTime(DateTime.tryParse(m.createdAt!))}',
+                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                    ),
                   if (m.updatedAt != null)
-                    Text('마지막 수정: ${formatSeoulDateTime(DateTime.tryParse(m.updatedAt!))}', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                    Text(
+                      '마지막 수정: ${formatSeoulDateTime(DateTime.tryParse(m.updatedAt!))}',
+                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                    ),
                 ],
               ),
             ),
@@ -417,6 +481,29 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
           ),
 
+          sectionTitle('첨부 파일', Icons.photo_library_outlined),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SalesCallAttachmentsStrip(
+                urls: _imageUrls,
+                editable: true,
+                uploadBusy: _uploadBusy,
+                onAdd: () => _pickAndUpload(master),
+                onRemoveAt: (i) {
+                  setState(() {
+                    _imageUrls = List<String>.from(_imageUrls)..removeAt(i);
+                  });
+                },
+              ),
+            ),
+          ),
+
           if (m != null && m.callHistory.isNotEmpty) ...[
             sectionTitle('이전 상담 이력', Icons.history),
             ...m.callHistory.map(
@@ -427,7 +514,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   side: BorderSide(color: scheme.primary.withOpacity(0.2)),
                 ),
                 child: ListTile(
-                  leading: const Icon(Icons.record_voice_over, color: Colors.grey),
+                  leading: Icon(Icons.record_voice_over, color: scheme.onSurfaceVariant),
                   title: Text(
                     [
                       h['call_date'] ?? h['created_at'] ?? '',

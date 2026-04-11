@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/auth_repository.dart';
+import 'package:coad_customer_calls/data/b2_upload_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,4 +17,8 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 final salesCallsRepositoryProvider = Provider<SalesCallsRepository>((ref) {
   return SalesCallsRepository(ref.watch(appDependenciesProvider));
+});
+
+final b2UploadRepositoryProvider = Provider<B2UploadRepository>((ref) {
+  return B2UploadRepository(ref.watch(appDependenciesProvider));
 });

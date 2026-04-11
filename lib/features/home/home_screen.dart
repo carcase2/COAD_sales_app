@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
@@ -39,49 +40,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Builder(
         builder: (context) {
           final tabController = DefaultTabController.of(context);
-          return ListenableBuilder(
-            listenable: tabController,
-            builder: (context, _) {
-              // Tab-specific colors (Teal for Summary, Deep Purple for Calendar)
-              final isSummary = tabController.index == 0;
-              final primaryColor = isSummary ? const Color(0xFF00796B) : const Color(0xFF512DA8);
-              final bgColor = isSummary ? const Color(0xFFF0F4F8) : const Color(0xFFF3E5F5);
+          final barBg = scheme.primary;
+          final onBar = scheme.onPrimary;
 
-              return Scaffold(
-                backgroundColor: bgColor,
-                appBar: AppBar(
-                  title: const Text('고객전화', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -1)),
-                  backgroundColor: primaryColor,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  actions: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 16),
-                      child: Center(
-                        child: Text(
-                          'v1.0.3',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ),
+          return Scaffold(
+            backgroundColor: scheme.surface,
+            appBar: AppBar(
+              title: const Text('고객전화'),
+              backgroundColor: barBg,
+              foregroundColor: onBar,
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Center(
+                    child: Text(
+                      'v$kAppVersion',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: onBar.withValues(alpha: 0.85),
                       ),
                     ),
-                  ],
-                  bottom: TabBar(
-                    controller: tabController, // 명시적 연결
-                    tabs: const [
-                      Tab(text: '오늘 요약', icon: Icon(Icons.dashboard_rounded, size: 18)),
-                      Tab(text: '미종료 달력', icon: Icon(Icons.calendar_month_rounded, size: 18)),
-                    ],
-                    indicatorColor: Colors.white,
-                    indicatorWeight: 4,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: Colors.white70,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                   ),
                 ),
+              ],
+              bottom: TabBar(
+                controller: tabController,
+                tabs: const [
+                  Tab(text: '오늘 요약', icon: Icon(Icons.dashboard_rounded, size: 18)),
+                  Tab(text: '미종료 달력', icon: Icon(Icons.calendar_month_rounded, size: 18)),
+                ],
+                indicatorColor: onBar,
+                indicatorWeight: 3,
+                labelColor: onBar,
+                unselectedLabelColor: onBar.withValues(alpha: 0.65),
+                labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                dividerColor: Colors.transparent,
+              ),
+            ),
                 drawer: Drawer(
                   child: Column(
                     children: [
@@ -176,8 +172,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: scheme.primary.withOpacity(0.4),
-                        blurRadius: 10,
+                        color: scheme.primary.withValues(alpha: 0.35),
+                        blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
                     ],
@@ -212,8 +208,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
               );
-            },
-          );
         },
       ),
     );
@@ -229,8 +223,6 @@ class _StatsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
-      elevation: 0,
-      color: scheme.surfaceContainerHighest.withOpacity(0.3),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -238,9 +230,12 @@ class _StatsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.insights, size: 20, color: scheme.primary),
-                const SizedBox(width: 8),
-                Text('오늘 요약', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Icon(Icons.insights_outlined, size: 22, color: scheme.primary),
+                const SizedBox(width: 10),
+                Text(
+                  '오늘 요약',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -370,13 +365,14 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
               child: Container(
                 height: 42,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: scheme.surface,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+                      color: scheme.shadow.withValues(alpha: 0.06),
+                      blurRadius: 12,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
@@ -390,19 +386,19 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                       
                       switch (filter) {
                         case _SummaryFilter.today:
-                          filterColor = const Color(0xFF2196F3); // Blue
+                          filterColor = scheme.primary;
                           label = '금일';
                           break;
                         case _SummaryFilter.week:
-                          filterColor = const Color(0xFF4CAF50); // Green
+                          filterColor = scheme.tertiary;
                           label = '금주';
                           break;
                         case _SummaryFilter.month:
-                          filterColor = const Color(0xFFFF9800); // Orange
+                          filterColor = scheme.secondary;
                           label = '금월';
                           break;
                         case _SummaryFilter.total:
-                          filterColor = const Color(0xFF673AB7); // Purple
+                          filterColor = scheme.onSurfaceVariant;
                           label = '전체';
                           break;
                       }
@@ -423,7 +419,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
-                                color: isSelected ? Colors.white : Colors.black54,
+                                color: isSelected ? Colors.white : scheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -440,31 +436,23 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
               final count = counts[name] ?? 0;
               final percent = total > 0 ? count / total : 0.0;
               
-              // 랭킹 스타일 설정
               final rank = idx + 1;
-              String rankEmoji = '';
-              Color rankColor = scheme.primary;
+              Color rankAccent = scheme.primary;
+              Color? rankBg;
               if (rank == 1) {
-                rankEmoji = '🥇 ';
-                rankColor = const Color(0xFFFFD700); // Gold
+                rankAccent = const Color(0xFFB8860B);
+                rankBg = const Color(0xFFFFF8E7);
               } else if (rank == 2) {
-                rankEmoji = '🥈 ';
-                rankColor = const Color(0xFFC0C0C0); // Silver
+                rankAccent = const Color(0xFF6B7280);
+                rankBg = const Color(0xFFF3F4F6);
               } else if (rank == 3) {
-                rankEmoji = '🥉 ';
-                rankColor = const Color(0xFFCD7F32); // Bronze
+                rankAccent = const Color(0xFFA16207);
+                rankBg = const Color(0xFFFFFBEB);
               }
 
               return Card(
-                elevation: 2,
-                shadowColor: rankColor.withOpacity(0.2),
                 margin: const EdgeInsets.only(bottom: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: rank <= 3 
-                    ? BorderSide(color: rankColor, width: 2) 
-                    : BorderSide(color: scheme.outlineVariant.withOpacity(0.4)),
-                ),
+                color: rankBg,
                 child: InkWell(
                   onTap: () {
                     Navigator.of(context).push(
@@ -478,45 +466,65 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                   },
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     child: Column(
                       children: [
                         Row(
                           children: [
-                            Text(
-                              '$rankEmoji$name', 
-                              style: TextStyle(
-                                fontWeight: rank <= 3 ? FontWeight.bold : FontWeight.normal,
-                                fontSize: rank == 1 ? 16 : 14,
-                                color: rank == 1 ? Colors.black : Colors.black87,
+                            SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: rank <= 3
+                                      ? rankAccent.withValues(alpha: 0.15)
+                                      : scheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$rank',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13,
+                                      color: rank <= 3 ? rankAccent : scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                            const Spacer(),
-                            Text(
-                              '$count건',
-                              style: TextStyle(
-                                color: rank <= 3 ? rankColor : scheme.primary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                name,
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      fontWeight: rank <= 3 ? FontWeight.w700 : FontWeight.w500,
+                                    ),
                               ),
                             ),
                             Text(
-                              ' / 총 $total건',
-                              style: const TextStyle(
-                                color: Colors.black45,
-                                fontSize: 12,
-                              ),
+                              '$count',
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: rank <= 3 ? rankAccent : scheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                            Text(
+                              ' / $total',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(99),
                           child: LinearProgressIndicator(
                             value: percent,
                             backgroundColor: scheme.surfaceContainerHighest,
-                            color: rank <= 3 ? rankColor : scheme.primary.withOpacity(0.6),
-                            minHeight: 8,
+                            color: rank <= 3 ? rankAccent : scheme.primary.withValues(alpha: 0.55),
+                            minHeight: 6,
                           ),
                         ),
                       ],
@@ -540,13 +548,14 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
         Container(
           height: 42,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: scheme.surface,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: scheme.shadow.withValues(alpha: 0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -557,22 +566,22 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                 final isSelected = _currentFilter == filter;
                 Color filterColor;
                 String label;
-                
+
                 switch (filter) {
                   case _SummaryFilter.today:
-                    filterColor = const Color(0xFF2196F3);
+                    filterColor = scheme.primary;
                     label = '금일';
                     break;
                   case _SummaryFilter.week:
-                    filterColor = const Color(0xFF4CAF50);
+                    filterColor = scheme.tertiary;
                     label = '금주';
                     break;
                   case _SummaryFilter.month:
-                    filterColor = const Color(0xFFFF9800);
+                    filterColor = scheme.secondary;
                     label = '금월';
                     break;
                   case _SummaryFilter.total:
-                    filterColor = const Color(0xFF673AB7);
+                    filterColor = scheme.onSurfaceVariant;
                     label = '전체';
                     break;
                 }
@@ -593,7 +602,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: isSelected ? Colors.white : Colors.black54,
+                          color: isSelected ? Colors.white : scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -603,16 +612,21 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             ),
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 60),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 48),
           child: Center(
             child: Column(
               children: [
-                Icon(Icons.inventory_2_outlined, size: 48, color: Colors.black12),
-                SizedBox(height: 16),
+                Icon(Icons.task_alt_rounded, size: 52, color: scheme.outlineVariant),
+                const SizedBox(height: 16),
                 Text(
                   '선택한 기간에 미통화 건이 없습니다.',
-                  style: TextStyle(color: Colors.black45, fontSize: 14, fontWeight: FontWeight.w500),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -649,12 +663,13 @@ class _StatVertical extends StatelessWidget {
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
-                'v1.0.3',
+                value,
                 style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
                   color: color,
-                  height: 1.1,
+                  height: 1.05,
+                  letterSpacing: -0.5,
                 ),
               ),
             ),
@@ -685,15 +700,35 @@ class _ErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
-      color: Theme.of(context).colorScheme.errorContainer,
+      color: scheme.errorContainer.withValues(alpha: 0.85),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(message),
-            TextButton(onPressed: onRetry, child: const Text('다시 시도')),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.cloud_off_outlined, color: scheme.error, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: TextStyle(color: scheme.onErrorContainer, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonal(
+                onPressed: onRetry,
+                child: const Text('다시 시도'),
+              ),
+            ),
           ],
         ),
       ),
@@ -761,17 +796,13 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
         // 2-1. Smart default: filter by logged-in user if not already filtered
         final user = ref.watch(authControllerProvider);
-        if (_selectedAssignee == '전체' && user?.name != null) {
-          if (counts.containsKey(user!.name)) {
-            // Use a post-frame callback or simple logic to avoid build-time state changes
-            // But since this is a UI-only filter state, we can just use it in the filtering loop below.
-            // However, to highlight the chip, we need to update state once.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _selectedAssignee == '전체') {
-                setState(() => _selectedAssignee = user.name!);
-              }
-            });
-          }
+        final userName = user?.name;
+        if (_selectedAssignee == '전체' && userName != null && counts.containsKey(userName)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _selectedAssignee == '전체') {
+              setState(() => _selectedAssignee = userName);
+            }
+          });
         }
 
         // 3. Prepare calendar markers (group by date) filtered by selected assignee
@@ -833,7 +864,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                               assignee,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: isSelected ? Colors.black87 : Colors.black54,
+                                color: isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
@@ -842,7 +873,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                               '($count)',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: isSelected ? Colors.black87 : Colors.black45,
+                                color: isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
                               ),
                             ),
                           ],

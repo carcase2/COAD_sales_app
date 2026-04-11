@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/features/auth/login_screen.dart';
 import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
+import 'package:coad_customer_calls/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -27,10 +28,7 @@ class CoadCustomerCallsApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
-      ),
+      theme: AppTheme.light(),
       home: user == null ? const LoginScreen() : const MainTabScreen(),
     );
   }

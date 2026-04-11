@@ -19,30 +19,39 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.phone_outlined),
-            selectedIcon: Icon(Icons.phone),
-            label: '고객전화',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calculate_outlined),
-            selectedIcon: Icon(Icons.calculate),
-            label: '견적기',
-          ),
-        ],
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        child: NavigationBar(
+          selectedIndex: _currentIndex,
+          surfaceTintColor: Colors.transparent,
+          backgroundColor: scheme.surface,
+          onDestinationSelected: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.phone_outlined),
+              selectedIcon: Icon(Icons.phone_rounded),
+              label: '고객전화',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calculate_outlined),
+              selectedIcon: Icon(Icons.calculate_rounded),
+              label: '견적기',
+            ),
+          ],
+        ),
       ),
     );
   }

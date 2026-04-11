@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:flutter/material.dart';
 
 class QuoterScreen extends StatelessWidget {
@@ -13,11 +14,11 @@ class QuoterScreen extends StatelessWidget {
             padding: const EdgeInsets.only(right: 16),
             child: Center(
               child: Text(
-                'v1.0.3',
+                'v$kAppVersion',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.normal,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.65),
                 ),
               ),
             ),
@@ -25,27 +26,44 @@ class QuoterScreen extends StatelessWidget {
         ],
       ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.calculate_outlined,
-              size: 64,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '견적기 기능 준비 중입니다',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '곧 업데이트 될 예정입니다.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.calculate_rounded,
+                      size: 40,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
+                  const SizedBox(height: 20),
+                  Text(
+                    '견적기',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '기능 준비 중입니다.\n곧 업데이트될 예정입니다.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          height: 1.45,
+                        ),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );
