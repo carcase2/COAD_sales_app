@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +34,9 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   bool _isSimpleInquiry = false;
   final List<String> _uploadedImageUrls = [];
   bool _uploadBusy = false;
+  int _uploadTotal = 0;
+  int _uploadCurrent = 0;
+  bool _aiBusy = false;
 
   @override
   void dispose() {
@@ -87,6 +93,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           builder: (_) => SalesCallDetailScreen(id: created.id, initial: created),
         ),
       );
+    } on OfflineException catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // 목록으로 돌아감
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.blueGrey,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,35 +131,139 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     );
     if (result == null || result.files.isEmpty) return;
 
-    setState(() => _uploadBusy = true);
+    final paths = result.files
+        .map((f) => f.path)
+        .whereType<String>()
+        .where((p) => isAllowedPickerPath(p))
+        .toList();
+
+    if (paths.isEmpty) return;
+
+    // 이미지만 골라내서 편집 기회 제공 (1건일 때만 우선 자동 제안)
+    List<String> finalPaths = [];
+    if (paths.length == 1 && isImageFile(paths.first)) {
+      final editedFile = await Navigator.push<File?>(
+        context,
+        MaterialPageRoute(builder: (_) => ImageEditorScreen(initialImage: File(paths.first))),
+      );
+      finalPaths = [editedFile?.path ?? paths.first];
+    } else {
+      finalPaths = List.from(paths);
+    }
+
+    setState(() {
+      _uploadBusy = true;
+      _uploadTotal = finalPaths.length;
+      _uploadCurrent = 0;
+    });
+
     final site = _siteNameForUpload(master);
     final uploader = ref.read(b2UploadRepositoryProvider);
 
     try {
-      for (final f in result.files) {
-        final path = f.path;
-        if (path == null) continue;
-        if (!isAllowedPickerPath(path)) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('건너뜀: ${f.name} (지원하지 않는 형식)')),
-            );
-          }
-          continue;
-        }
+      // 병렬 업로드 수행
+      await Future.wait(finalPaths.map((path) async {
         try {
-          final url = await uploader.uploadSalesCallFile(filePath: path, siteName: site);
-          if (mounted) setState(() => _uploadedImageUrls.add(url));
+          final url = await uploader.uploadSalesCallFile(
+            filePath: path,
+            siteName: site,
+            customerPhone: _phoneCtrl.text,
+          );
+          if (mounted) {
+            setState(() {
+              _uploadedImageUrls.add(url);
+              _uploadCurrent++;
+            });
+          }
         } catch (e) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(koreanErrorMessage(e))),
+              SnackBar(content: Text('업로드 실패 (${p.basename(path)}): ${koreanErrorMessage(e)}')),
             );
           }
         }
+      }));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _uploadBusy = false;
+          _uploadTotal = 0;
+          _uploadCurrent = 0;
+        });
+      }
+    }
+  }
+
+  Future<void> _scanBusinessCard(MasterDataBundle master) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final path = result.files.first.path;
+    if (path == null) return;
+
+    setState(() => _aiBusy = true);
+    
+    try {
+      // 1. 이미지 읽기
+      final bytes = await File(path).readAsBytes();
+
+      // 2. AI 분석 요청
+      final aiResult = await ref.read(aiExtractorServiceProvider).extractBusinessCard(bytes);
+
+      if (mounted) {
+        setState(() {
+          if (aiResult.name.isNotEmpty) _nameCtrl.text = aiResult.name;
+          if (aiResult.phone.isNotEmpty) _phoneCtrl.text = aiResult.phone;
+          // 상호명은 고객명 칸에 이름과 같이 넣거나, 이름이 있으면 회사명을 우선시할 수 있음
+          if (aiResult.company.isNotEmpty && aiResult.name.isEmpty) {
+            _nameCtrl.text = aiResult.company;
+          } else if (aiResult.company.isNotEmpty && aiResult.name.isNotEmpty) {
+            _nameCtrl.text = '${aiResult.name} (${aiResult.company})';
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('명함 정보가 자동으로 입력되었습니다.')),
+        );
+      }
+
+      // 3. 사진 자동 첨부 (기존 업로드 로직 재활용)
+      final site = _siteNameForUpload(master);
+      final uploader = ref.read(b2UploadRepositoryProvider);
+      
+      setState(() {
+        _uploadBusy = true;
+        _uploadTotal = 1;
+        _uploadCurrent = 0;
+      });
+
+      final url = await uploader.uploadSalesCallFile(
+        filePath: path,
+        siteName: site,
+        customerPhone: _phoneCtrl.text,
+      );
+
+      if (mounted) {
+        setState(() => _uploadedImageUrls.add(url));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('명함 인식 실패: ${koreanErrorMessage(e)}')),
+        );
       }
     } finally {
-      if (mounted) setState(() => _uploadBusy = false);
+      if (mounted) {
+        setState(() {
+          _aiBusy = false;
+          _uploadBusy = false;
+          _uploadTotal = 0;
+          _uploadCurrent = 0;
+        });
+      }
     }
   }
 
@@ -218,6 +338,24 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           const SizedBox(height: 32),
 
           // ─── 고객명 & 연락처 ───
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('고객 정보', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+              TextButton.icon(
+                onPressed: _aiBusy || _uploadBusy ? null : () => _scanBusinessCard(master),
+                icon: _aiBusy 
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.contact_page_outlined, size: 18),
+                label: Text(_aiBusy ? '분석 중...' : '명함 스캔'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: Colors.blueGrey,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -305,6 +443,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                 urls: _uploadedImageUrls,
                 editable: true,
                 uploadBusy: _uploadBusy,
+                progressLabel: _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
                 onAdd: () => _pickAndUpload(master),
                 onRemoveAt: (i) => setState(() => _uploadedImageUrls.removeAt(i)),
               ),

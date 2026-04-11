@@ -7,6 +7,8 @@ import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
 import 'package:minio/minio.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// **B2 직접 업로드 기법** — 인트라넷 서버를 거치지 않고 S3 호환 API로 직접 전송.
 class B2UploadRepository {
@@ -38,13 +40,42 @@ class B2UploadRepository {
     return _minioCache!;
   }
 
+  /// 이미지인 경우 압축을 수행하고 임시 파일 경로를 반환합니다.
+  Future<File> _compressIfNeeded(String originalPath) async {
+    if (classifyAttachmentUrl(originalPath) != AttachmentKind.image) {
+      return File(originalPath);
+    }
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final targetPath = p.join(
+        tempDir.path,
+        'compressed_${DateFormat('HHmmss').format(DateTime.now())}_${p.basename(originalPath)}',
+      );
+
+      final result = await FlutterImageCompress.compressAndGetFile(
+        originalPath,
+        targetPath,
+        quality: 80,
+        minWidth: 1920,
+        minHeight: 1080,
+      );
+
+      if (result == null) return File(originalPath);
+      return File(result.path);
+    } catch (e) {
+      // 압축 실패 시 원본 반환 (안전 장치)
+      return File(originalPath);
+    }
+  }
+
   /// 업로드 후 공개 [url] 반환.
   Future<String> uploadSalesCallFile({
     required String filePath,
     required String siteName,
+    String? customerPhone,
   }) async {
     final bucket = dotenv.env['B2_BUCKET']?.trim() ?? 'coadsales2';
-    final region = dotenv.env['B2_REGION']?.trim() ?? 'us-east-005';
     final endpoint = dotenv.env['B2_S3_ENDPOINT']?.trim() ?? '';
 
     if (!isAllowedPickerPath(filePath, mimeType: lookupMimeType(filePath))) {
@@ -52,18 +83,26 @@ class B2UploadRepository {
     }
 
     final minio = _getMinio();
-    final file = File(filePath);
-    if (!await file.exists()) {
-      throw ApiException('파일을 찾을 수 없습니다.');
+    
+    // 이미지 압축 시도
+    final fileToUpload = await _compressIfNeeded(filePath);
+    final isCompressed = fileToUpload.path != filePath;
+
+    if (!await fileToUpload.exists()) {
+      throw ApiException('업로드할 파일을 찾을 수 없습니다.');
     }
 
     final now = DateTime.now();
-    final dateDir = DateFormat('yyyyMMdd').format(now);
+    final dateStr = DateFormat('yyyyMMdd').format(now);
     final fileName = p.basename(filePath);
     final timestamp = now.millisecondsSinceEpoch;
     
-    // 파일명 중복 방지를 위해 타임스탬프 접두어 추가
-    final objectPath = 'sales_calls/$dateDir/${timestamp}_$fileName';
+    // 고객 연락처에서 숫자만 추출하여 폴더명으로 사용 (없으면 'unknown')
+    final phoneFolder = customerPhone?.replaceAll(RegExp(r'[^0-9]'), '') ?? 'unknown';
+    final safePhone = phoneFolder.isEmpty ? 'unknown' : phoneFolder;
+
+    // 경로 규칙: sales_calls/연락처/날짜_타임스탬프_파일명
+    final objectPath = 'sales_calls/$safePhone/${dateStr}_${timestamp}_$fileName';
 
     try {
       final contentType = lookupMimeType(filePath) ?? 'application/octet-stream';
@@ -72,16 +111,20 @@ class B2UploadRepository {
       await minio.putObject(
         bucket,
         objectPath,
-        file.openRead(),
-        size: await file.length(),
+        fileToUpload.openRead(),
+        size: await fileToUpload.length(),
         metadata: {'Content-Type': contentType},
       ).timeout(const Duration(minutes: 5));
 
       // B2 S3 버킷 공개 주소 생성
-      // https://{bucket}.s3.{region}.backblazeb2.com/{objectPath}
       return 'https://$bucket.$endpoint/$objectPath';
     } catch (e) {
       throw ApiException('B2 직접 업로드 실패: $e');
+    } finally {
+      // 압축된 임시 파일인 경우 삭제
+      if (isCompressed && await fileToUpload.exists()) {
+        await fileToUpload.delete();
+      }
     }
   }
 }

@@ -1,36 +1,64 @@
+import 'dart:io';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
+import 'package:coad_customer_calls/data/local/database_helper.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// **1층: 메타데이터·URL** — 웹 `supabaseClient`와 동일한 **메인** Supabase 프로젝트
-/// (`main.dart`의 `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `.env`).
-///
-/// - 고객전화 첨부 URL은 주로 [SalesCall.images] ↔ DB `sales_calls.images` (`text[]`).
-/// - 스키마의 `sales_call_images`(행 단위 URL·b2_key 등)는 웹 일부 로직용; 이 앱 MVP는 `images` 배열만 읽기/쓰기.
-/// - 고객지원 `call_logs` 등 **Support 전용 Supabase**와는 별도 프로젝트로 가정.
-/// - **2층: 파일 바이너리**는 B2이며, 업로드는 [B2UploadRepository]가 Next API로 수행.
 class SalesCallsRepository {
   SalesCallsRepository(AppDependencies deps);
 
   final SupabaseClient _client = Supabase.instance.client;
+  final DatabaseHelper _db = DatabaseHelper.instance;
 
   Future<MasterDataBundle> fetchMasterData() async {
-    try {
-      final pc = await _client.from('product_categories').select();
-      final im = await _client.from('inquiry_methods').select();
-      final regions = await _client.from('regions').select();
+    // 1. 로컬 캐시 확인
+    final cached = await _db.getMasterData('master_bundle');
+    if (cached != null) {
+      // 캐시가 있으면 즉시 반환하고 백그라운드에서 갱신 시도 (옵션)
+      _syncMasterDataInBackground();
+      return MasterDataBundle.fromJson(cached);
+    }
 
-      return MasterDataBundle.fromJson({
-        'product_categories': pc,
-        'inquiry_methods': im,
-        'regions': regions,
-      });
+    try {
+      final data = await _fetchMasterDataFromRemote();
+      await _db.saveMasterData('master_bundle', data);
+      return MasterDataBundle.fromJson(data);
     } catch (e) {
       throw ApiException('마스터 데이터를 불러오는데 실패했습니다: $e');
     }
+  }
+
+  Future<Map<String, dynamic>> _fetchMasterDataFromRemote() async {
+    final pc = await _client.from('product_categories').select();
+    final im = await _client.from('inquiry_methods').select();
+    final regions = await _client.from('regions').select();
+
+    return {
+      'product_categories': pc,
+      'inquiry_methods': im,
+      'regions': regions,
+    };
+  }
+
+  void _syncMasterDataInBackground() async {
+    try {
+      final data = await _fetchMasterDataFromRemote();
+      await _db.saveMasterData('master_bundle', data);
+    } catch (_) {}
+  }
+
+  /// 로컬 DB에서 캐시된 목록 조회
+  Future<List<SalesCall>> fetchCachedCalls({String? date, bool? incompleteOnly}) async {
+    final res = await _db.getSalesCalls(
+      date: date,
+      statusId: incompleteOnly == true ? 1 : null,
+      limit: 100,
+    );
+    return parseSalesCallList(res);
   }
 
   Future<List<SalesCall>> fetchCalls({
@@ -54,11 +82,10 @@ class SalesCallsRepository {
       ''';
       
       if (includeCallHistory) {
-        // Warning: Will gracefully ignore if call_history relation does not exist
         selectStr += ', call_history(*)';
       }
 
-      PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr);
+      PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr); 
 
       if (date != null) {
         queryBuilder = queryBuilder
@@ -83,6 +110,12 @@ class SalesCallsRepository {
       }
 
       final res = await transformBuilder;
+
+      // 로컬 DB 동기화 (Upsert)
+      if (res.isNotEmpty) {
+        await _db.saveSalesCalls(res);
+      }
+
       List<SalesCall> parsed = parseSalesCallList(res);
       if (excludeSimpleInquiries) {
         parsed = parsed.where((c) {
@@ -109,6 +142,10 @@ class SalesCallsRepository {
       if (res == null) {
         throw ApiException('통화를 찾을 수 없습니다.', statusCode: 404);
       }
+      
+      // 개별 상세 조회 시에도 캐시 업데이트
+      await _db.saveSalesCalls([res]);
+
       return SalesCall.fromJson(res);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -121,8 +158,38 @@ class SalesCallsRepository {
       final res = await _client.from('sales_calls').insert(body).select().single();
       return fetchCallById(res['id']);
     } catch (e) {
+      if (e is SocketException || e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
+        await _db.savePendingCall(body);
+        throw OfflineException();
+      }
       throw ApiException('등록에 실패했습니다: $e');
     }
+  }
+
+  /// 오프라인 중 등록된 상담 내역을 서버로 동기화
+  Future<int> syncPendingCalls() async {
+    final pendings = await _db.getPendingCalls();
+    if (pendings.isEmpty) return 0;
+
+    int successCount = 0;
+    for (var item in pendings) {
+      final id = item['id'] as int;
+      final data = item['data'] as Map<String, dynamic>;
+      
+      try {
+        await _client.from('sales_calls').insert(data);
+        await _db.deletePendingCall(id);
+        successCount++;
+      } catch (_) {
+        // 네트워크가 여전히 안 좋거나 데이터 오류면 다음 기회에
+      }
+    }
+    return successCount;
+  }
+
+  Future<int> getPendingCount() async {
+    final list = await _db.getPendingCalls();
+    return list.length;
   }
 
   Future<SalesCall> updateCall(String id, Map<String, dynamic> body) async {

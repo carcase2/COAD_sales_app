@@ -42,6 +42,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   bool _saving = false;
   List<String> _imageUrls = [];
   bool _uploadBusy = false;
+  int _uploadTotal = 0;
+  int _uploadCurrent = 0;
 
   @override
   void initState() {
@@ -170,35 +172,54 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
     if (result == null || result.files.isEmpty) return;
 
-    setState(() => _uploadBusy = true);
+    final paths = result.files
+        .map((f) => f.path)
+        .whereType<String>()
+        .where((p) => isAllowedPickerPath(p))
+        .toList();
+
+    if (paths.isEmpty) return;
+
+    setState(() {
+      _uploadBusy = true;
+      _uploadTotal = paths.length;
+      _uploadCurrent = 0;
+    });
+
     final site = _siteNameForUpload(master);
     final uploader = ref.read(b2UploadRepositoryProvider);
 
     try {
-      for (final f in result.files) {
-        final path = f.path;
-        if (path == null) continue;
-        if (!isAllowedPickerPath(path)) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('건너뜀: ${f.name} (지원하지 않는 형식)')),
-            );
-          }
-          continue;
-        }
+      // 병렬 업로드 수행
+      await Future.wait(paths.map((path) async {
         try {
-          final url = await uploader.uploadSalesCallFile(filePath: path, siteName: site);
-          if (mounted) setState(() => _imageUrls = [..._imageUrls, url]);
+          final url = await uploader.uploadSalesCallFile(
+            filePath: path,
+            siteName: site,
+            customerPhone: _phoneCtrl.text,
+          );
+          if (mounted) {
+            setState(() {
+              _imageUrls = [..._imageUrls, url];
+              _uploadCurrent++;
+            });
+          }
         } catch (e) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(koreanErrorMessage(e))),
+              SnackBar(content: Text('업로드 실패 (${p.basename(path)}): ${koreanErrorMessage(e)}')),
             );
           }
         }
-      }
+      }));
     } finally {
-      if (mounted) setState(() => _uploadBusy = false);
+      if (mounted) {
+        setState(() {
+          _uploadBusy = false;
+          _uploadTotal = 0;
+          _uploadCurrent = 0;
+        });
+      }
     }
   }
 
@@ -494,6 +515,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 urls: _imageUrls,
                 editable: true,
                 uploadBusy: _uploadBusy,
+                progressLabel: _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
                 onAdd: () => _pickAndUpload(master),
                 onRemoveAt: (i) {
                   setState(() {

@@ -11,14 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-final todayStatsProvider = FutureProvider<TodayStats>((ref) async {
+final todayCallsContentProvider = FutureProvider<List<SalesCall>>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchTodayStats();
-});
-
-final incompleteCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCalls(incompleteOnly: true, excludeSimpleInquiries: true, limit: 500, includeCallHistory: false);
+  return repo.fetchCalls(date: todayYmdSeoul(), limit: 100, includeCallHistory: false);
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -29,6 +24,56 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  String? _briefing;
+  bool _isBriefingLoading = false;
+  int _pendingCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndSync());
+  }
+
+  Future<void> _checkAndSync() async {
+    final repo = ref.read(salesCallsRepositoryProvider);
+    final count = await repo.getPendingCount();
+    if (mounted) setState(() => _pendingCount = count);
+
+    if (count > 0) {
+      final success = await repo.syncPendingCalls();
+      final newCount = await repo.getPendingCount();
+      if (mounted) {
+        setState(() => _pendingCount = newCount);
+        if (success > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('미전송 상담 $success건이 동기화되었습니다.')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _generateBriefing() async {
+    setState(() => _isBriefingLoading = true);
+    try {
+      final calls = await ref.read(todayCallsContentProvider.future);
+      final texts = calls
+          .where((c) => c.inquiryContent != null && c.inquiryContent!.isNotEmpty)
+          .map((c) => '[${c.customerName}] ${c.inquiryContent}')
+          .toList();
+      
+      final summary = await ref.read(aiExtractorServiceProvider).summarizeCalls(texts);
+      setState(() => _briefing = summary);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('요약 생성 실패: ${koreanErrorMessage(e)}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isBriefingLoading = false);
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
@@ -133,11 +178,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     RefreshIndicator(
                       onRefresh: () async {
                         ref.invalidate(todayStatsProvider);
-                        await ref.read(todayStatsProvider.future);
+                        ref.invalidate(todayCallsContentProvider);
+                        await Future.wait([
+                          ref.read(todayStatsProvider.future),
+                          ref.read(todayCallsContentProvider.future),
+                          _checkAndSync(),
+                        ]);
                       },
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
                         children: [
+                          if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
+                          if (_pendingCount > 0) const SizedBox(height: 12),
+                          _buildBriefingCard(scheme),
+                          const SizedBox(height: 16),
                           statsAsync.when(
                             data: (s) => _StatsCard(stats: s),
                             loading: () => const Center(
@@ -209,6 +263,111 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
               );
         },
+      ),
+    );
+  }
+
+  Widget _buildBriefingCard(ColorScheme scheme) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: scheme.primary.withValues(alpha: 0.1)),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            colors: [
+              scheme.primaryContainer.withValues(alpha: 0.3),
+              scheme.surface,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.auto_awesome_rounded, size: 20, color: scheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'AI 데일리 브리핑',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: scheme.primary,
+                      ),
+                ),
+                const Spacer(),
+                if (_briefing == null)
+                  TextButton.icon(
+                    onPressed: _isBriefingLoading ? null : _generateBriefing,
+                    icon: _isBriefingLoading 
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.bolt_rounded, size: 16),
+                    label: Text(_isBriefingLoading ? '분석 중...' : '지금 요약'),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    onPressed: _isBriefingLoading ? null : _generateBriefing,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            if (_briefing != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _briefing!,
+                style: const TextStyle(
+                  fontSize: 15,
+                  height: 1.5,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ] else if (!_isBriefingLoading) ...[
+              const SizedBox(height: 12),
+              Text(
+                '오늘의 모든 상담을 분석하여 핵심 요약을 제공해 드릴까요?',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingSyncBanner(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_sync_outlined, size: 20, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '동기화를 기다리는 상담이 $_pendingCount건 있습니다.',
+              style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer, fontWeight: FontWeight.w600),
+            ),
+          ),
+          TextButton(
+            onPressed: _checkAndSync,
+            child: const Text('지금 전송'),
+          ),
+        ],
       ),
     );
   }

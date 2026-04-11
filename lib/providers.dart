@@ -2,6 +2,8 @@ import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/data/b2_upload_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
+import 'package:coad_customer_calls/data/ai_extractor_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 export 'data/auth_controller.dart';
@@ -21,4 +23,9 @@ final salesCallsRepositoryProvider = Provider<SalesCallsRepository>((ref) {
 
 final b2UploadRepositoryProvider = Provider<B2UploadRepository>((ref) {
   return B2UploadRepository(ref.watch(appDependenciesProvider));
+});
+
+final aiExtractorServiceProvider = Provider<AiExtractorService>((ref) {
+  final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+  return AiExtractorService(apiKey: apiKey);
 });

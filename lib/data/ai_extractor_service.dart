@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
 class AiExtractResult {
@@ -17,6 +18,26 @@ class AiExtractResult {
       statusId: (json['status_id'] as num?)?.toInt() ?? 1,
       callStage: json['call_stage']?.toString() ?? '1차',
       inquiryContent: json['inquiry_content']?.toString() ?? '',
+    );
+  }
+}
+
+class BusinessCardResult {
+  final String name;
+  final String company;
+  final String phone;
+
+  BusinessCardResult({
+    required this.name,
+    required this.company,
+    required this.phone,
+  });
+
+  factory BusinessCardResult.fromJson(Map<String, dynamic> json) {
+    return BusinessCardResult(
+      name: json['name']?.toString() ?? '',
+      company: json['company']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
     );
   }
 }
@@ -53,6 +74,24 @@ class AiExtractorService {
 }
 ''';
 
+  static const _businessCardPrompt = '''
+당신은 비즈니스 전문가입니다. 제공된 사진(명함)에서 고객의 정보를 추출하여 JSON으로 반환하세요.
+
+# 추출 항목
+1. name: 사람의 이름. (못 찾으면 빈 문자열)
+2. company: 회사명 또는 상호명. (못 찾으면 빈 문자열)
+3. phone: 휴대폰 번호 또는 일반 전화번호. 숫자와 하이픈(-)만 포함된 1개만 반환하세요. (못 찾으면 빈 문자열)
+
+# 규칙
+- 결과를 오직 JSON으로만 반환하세요.
+- 마크다운 블록(```json)을 사용하지 마세요.
+{
+  "name": "성함",
+  "company": "회사/상호",
+  "phone": "010-0000-0000"
+}
+''';
+
   Future<AiExtractResult> extract(String memo) async {
     final model = GenerativeModel(
       model: 'gemini-1.5-flash',
@@ -69,15 +108,71 @@ class AiExtractorService {
     ]);
 
     final text = response.text?.trim() ?? '';
+    final cleaned = _cleanJson(text);
+    final json = jsonDecode(cleaned) as Map<String, dynamic>;
+    return AiExtractResult.fromJson(json);
+  }
 
-    // Strip potential markdown code fences
-    final cleaned = text
+  Future<BusinessCardResult> extractBusinessCard(Uint8List imageBytes) async {
+    final model = GenerativeModel(
+      model: 'gemini-1.5-flash',
+      apiKey: apiKey,
+      generationConfig: GenerationConfig(
+        responseMimeType: 'application/json',
+        temperature: 0.1,
+      ),
+    );
+
+    final response = await model.generateContent([
+      Content.multi([
+        TextPart(_businessCardPrompt),
+        DataPart('image/jpeg', imageBytes),
+      ]),
+    ]);
+
+    final text = response.text?.trim() ?? '';
+    final cleaned = _cleanJson(text);
+    final json = jsonDecode(cleaned) as Map<String, dynamic>;
+    return BusinessCardResult.fromJson(json);
+  }
+
+  static const _summaryPrompt = '''
+당신은 영업 팀장입니다. 아래 나열된 오늘자 '영업 상담 내역'들을 읽고, 전체적인 현황과 핵심 이슈를 1~2문장으로 아주 명쾌하게 요약하여 브리핑하세요.
+
+# 추출 지침
+- 영업 전략적 관점에서 중요한 내용(견적 요청, 클레임, 긴급 팔로업 등)을 우선 순위로 두세요.
+- 격식 있는 비즈니스 톤을 유지하세요.
+- 2문장을 넘기지 마세요.
+
+# 출력 예시
+"오늘은 스피드도어 대량 견적 요청이 주를 이루었으며, 특정 업체의 설치 일정 조율이 긴급한 이슈로 확인됩니다."
+''';
+
+  Future<String> summarizeCalls(List<String> callTexts) async {
+    if (callTexts.isEmpty) return '오늘 등록된 상담 내역이 없습니다.';
+
+    final model = GenerativeModel(
+      model: 'gemini-1.5-flash',
+      apiKey: apiKey,
+      generationConfig: GenerationConfig(
+        temperature: 0.3,
+      ),
+    );
+
+    final combinedText = callTexts.map((e) => "- $e").join('\n');
+
+    final response = await model.generateContent([
+      Content.text('$_summaryPrompt\n\n# 상담 내역:\n$combinedText'),
+    ]);
+
+    return response.text?.trim() ?? '요약을 생성할 수 없습니다.';
+  }
+
+  String _cleanJson(String text) {
+    return text
         .replaceAll(RegExp(r'^```json\s*', multiLine: true), '')
         .replaceAll(RegExp(r'^```\s*', multiLine: true), '')
         .replaceAll(RegExp(r'\s*```$', multiLine: true), '')
         .trim();
-
-    final json = jsonDecode(cleaned) as Map<String, dynamic>;
-    return AiExtractResult.fromJson(json);
   }
 }

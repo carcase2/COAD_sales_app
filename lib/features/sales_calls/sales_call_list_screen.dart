@@ -20,7 +20,14 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
 }
 
 class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
-  late Future<List<SalesCall>> _future;
+  List<SalesCall> _items = [];
+  bool _isLoading = true;
+  Object? _error;
+  
+  bool _isSearching = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+  
   String _selectedAssignee = '전체';
   final ScrollController _scrollController = ScrollController();
   bool _hasScrolledToInitial = false;
@@ -31,17 +38,73 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     if (widget.initialAssignee != null) {
       _selectedAssignee = widget.initialAssignee!;
     }
-    _future = _load();
+    _loadWithCache();
   }
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<List<SalesCall>> _load() {
+  /// 캐시를 먼저 보여주고 서버 데이터를 가져오는 핵심 로직
+  Future<void> _loadWithCache() async {
     final repo = ref.read(salesCallsRepositoryProvider);
+    
+    // 1. 로컬 캐시 먼저 로드 (즉시 응답)
+    try {
+      final cached = await repo.fetchCachedCalls(
+        date: widget.mode == ListQueryMode.recent ? null : (widget.date ?? todayYmdSeoul()),
+        incompleteOnly: widget.mode == ListQueryMode.incomplete || widget.mode == ListQueryMode.incompleteByDate,
+      );
+      
+      if (mounted && cached.isNotEmpty) {
+        setState(() {
+          _items = cached;
+          _isLoading = false; // 캐시가 있으면 일단 로딩 종료 표시
+        });
+      }
+    } catch (e) {
+      debugPrint('Cache load error: $e');
+    }
+
+    // 2. 서버에서 최신 데이터 가져오기
+    try {
+      if (_items.isEmpty) {
+        setState(() => _isLoading = true);
+      }
+      
+      final remote = await _fetchRemote(repo);
+      
+      if (mounted) {
+        setState(() {
+          _items = remote;
+          _isLoading = false;
+          _error = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          // 캐시가 아예 없는 경우에만 에러 화면 표시
+          if (_items.isEmpty) {
+            _error = e;
+          }
+        });
+        
+        // 캐시가 있는 상태에서 서버 에러면 스낵바로만 알림
+        if (_items.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('최신 데이터를 가져오지 못했습니다: ${koreanErrorMessage(e)}')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<List<SalesCall>> _fetchRemote(SalesCallsRepository repo) {
     switch (widget.mode) {
       case ListQueryMode.today:
         return repo.fetchCalls(
@@ -82,6 +145,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   }
 
   String get _title {
+    // ... 기존 코드와 동일 ...
     switch (widget.mode) {
       case ListQueryMode.today:
         return '오늘 통화';
@@ -100,6 +164,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   }
 
   Color _colorForAssignee(String assignee, ColorScheme scheme) {
+    // ... 기존 코드와 동일 ...
     if (assignee == '미지정') return scheme.surfaceContainerHighest;
     final colors = [
       Colors.blue.shade100,
@@ -116,58 +181,95 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_title),
+        title: _isSearching 
+          ? _buildSearchField()
+          : Text(_title),
         titleTextStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        actions: [
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  _isSearching = false;
+                  _searchCtrl.clear();
+                  _searchQuery = '';
+                } else {
+                  _isSearching = true;
+                }
+              });
+            },
+          ),
+          if (_isLoading && _items.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+        ],
       ),
-      body: FutureBuilder<List<SalesCall>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(koreanErrorMessage(snap.error!)),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: () {
-                        setState(() => _future = _load());
-                      },
-                      child: const Text('다시 시도'),
-                    ),
-                  ],
-                ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchCtrl,
+      autofocus: true,
+      decoration: const InputDecoration(
+        hintText: '고객명, 연락처, 상호명 검색...',
+        border: InputBorder.none,
+        hintStyle: TextStyle(fontSize: 14),
+      ),
+      style: const TextStyle(fontSize: 16),
+      onChanged: (val) {
+        setState(() => _searchQuery = val.trim());
+      },
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading && _items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    if (_error != null && _items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(koreanErrorMessage(_error!)),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: _loadWithCache,
+                child: const Text('다시 시도'),
               ),
-            );
-          }
-          final items = snap.data ?? [];
-          if (items.isEmpty) {
-            final scheme = Theme.of(context).colorScheme;
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.inbox_outlined, size: 56, color: scheme.outlineVariant),
-                    const SizedBox(height: 16),
-                    Text(
-                      '목록이 비어 있습니다.',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
+            ],
+          ),
+        ),
+      );
+    }
+
+    final items = _items;
+    if (items.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.inbox_outlined, size: 56, color: scheme.outlineVariant),
+              const SizedBox(height: 16),
+              const Text('목록이 비어 있습니다.'),
+              const SizedBox(height: 12),
+              TextButton(onPressed: _loadWithCache, child: const Text('새로고침')),
+            ],
+          ),
+        ),
+      );
+    }
 
           // 1. Calculate counts per assignee
           final Map<String, int> counts = {'전체': items.length};
@@ -224,13 +326,24 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             }
           }
 
-          // Filter items based on selected assignee
-          final filteredItems = _selectedAssignee == '전체'
-              ? items
-              : items.where((c) {
-                  final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
-                  return a == _selectedAssignee;
-                }).toList();
+          // Filter items based on selected assignee AND search query
+          final filteredItems = items.where((c) {
+            // 1. Assignee Filter
+            final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+            bool matchesAssignee = _selectedAssignee == '전체' || a == _selectedAssignee;
+            
+            // 2. Search Filter
+            bool matchesSearch = true;
+            if (_searchQuery.isNotEmpty) {
+              final query = _searchQuery.toLowerCase();
+              final name = (c.customerName ?? '').toLowerCase();
+              final phone = (c.customerPhone ?? '').toLowerCase();
+              final company = (c.company ?? '').toLowerCase();
+              matchesSearch = name.contains(query) || phone.contains(query) || company.contains(query);
+            }
+            
+            return matchesAssignee && matchesSearch;
+          }).toList();
 
           return Column(
             children: [
@@ -315,8 +428,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async {
-                    setState(() => _future = _load());
-                    await _future;
+                    await _loadWithCache();
                   },
                   child: filteredItems.isEmpty
                       ? Center(
@@ -375,7 +487,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       builder: (_) => SalesCallDetailScreen(id: c.id, initial: c),
                                     ),
                                   );
-                                  if (mounted) setState(() => _future = _load());
+                                  if (mounted) _loadWithCache(); // 복귀 시 캐시+원격 동기화 재실행
                                 },
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
@@ -488,8 +600,5 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               ),
             ],
           );
-        },
-      ),
-    );
   }
 }

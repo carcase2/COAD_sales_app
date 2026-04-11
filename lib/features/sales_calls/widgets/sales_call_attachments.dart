@@ -11,6 +11,7 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
     this.onRemoveAt,
     this.onAdd,
     this.uploadBusy = false,
+    this.progressLabel,
   });
 
   final List<String> urls;
@@ -18,6 +19,7 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
   final void Function(int index)? onRemoveAt;
   final VoidCallback? onAdd;
   final bool uploadBusy;
+  final String? progressLabel;
 
   Future<void> _openUrl(BuildContext context, String url) async {
     final uri = Uri.tryParse(url);
@@ -93,7 +95,9 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2, color: scheme.primary),
                       )
                     : const Icon(Icons.add_photo_alternate_outlined, size: 20),
-                label: Text(uploadBusy ? '업로드 중…' : '추가'),
+                label: Text(uploadBusy 
+                    ? (progressLabel ?? '업로드 중…') 
+                    : '추가'),
               ),
             ],
           ],
