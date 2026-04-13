@@ -256,10 +256,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(30),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+                      onTap: () async {
+                        final result = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(builder: (_) => const SalesCallCreateScreen()),
                         );
+                        if (result == true) {
+                          ref.invalidate(todayStatsProvider);
+                          ref.invalidate(todayCallsContentProvider);
+                        }
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),

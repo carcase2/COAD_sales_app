@@ -141,14 +141,12 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
 
       final created = await ref.read(salesCallsRepositoryProvider).createCall(body);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => SalesCallDetailScreen(id: created.id, initial: created),
-        ),
-      );
+      
+      // 사용자 요청: 다 끝나면 홈 화면으로 가서 새로고침되도록.
+      Navigator.of(context).pop(true);
     } on OfflineException catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // 목록으로 돌아감
+      Navigator.pop(context, false); // 목록으로 돌아감 (새로고침 안함)
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.message),
