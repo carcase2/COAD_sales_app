@@ -48,3 +48,7 @@ bool isAllowedPickerPath(String path, {String? mimeType}) {
   ];
   return img.any(lower.endsWith);
 }
+
+bool isImageFile(String path) {
+  return classifyAttachmentUrl(path) == AttachmentKind.image;
+}

@@ -92,25 +92,55 @@ class NotificationService {
       _handleNotificationClick(message.data['call_id']);
     });
 
-    // 7. Handle click when app is terminated
+    // 7. Initial message check will be handled in UI layer to ensure navigator is ready
+//    RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+//    if (initialMessage != null) {
+//      _handleNotificationClick(initialMessage.data['call_id']);
+//    }
+  }
+
+  static Future<void> handleInitialMessage() async {
+    // 1. Give some time for the app and FCM service to settle (vital for Cold Start)
+    await Future.delayed(const Duration(milliseconds: 1000));
+    
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null) {
+      if (kDebugMode) {
+        print("[ColdStart] Handling initial notification message: ${initialMessage.data}");
+      }
       _handleNotificationClick(initialMessage.data['call_id']);
     }
   }
 
-  static void _handleNotificationClick(String? callId) {
+  static void _handleNotificationClick(String? callId, {int retryCount = 0}) {
     if (callId == null || callId.isEmpty) return;
     
     if (kDebugMode) {
-      print("Navigating to detail for callId: $callId");
+      print("Notification Click Handler (Retry: $retryCount) - callId: $callId");
     }
 
-    navigatorKey.currentState?.push(
-      MaterialPageRoute(
-        builder: (context) => SalesCallDetailScreen(id: callId),
-      ),
-    );
+    final state = navigatorKey.currentState;
+    if (state != null) {
+      state.push(
+        MaterialPageRoute(
+          builder: (context) => SalesCallDetailScreen(id: callId),
+        ),
+      );
+    } else {
+      // If navigator is not ready, retry after a short delay (up to 3 times)
+      if (retryCount < 3) {
+        if (kDebugMode) {
+          print("NavigatorState is null, retrying in 800ms...");
+        }
+        Future.delayed(const Duration(milliseconds: 800), () {
+          _handleNotificationClick(callId, retryCount: retryCount + 1);
+        });
+      } else {
+        if (kDebugMode) {
+          print("ERROR: NavigatorState is still null after 3 retries. Deep linking failed.");
+        }
+      }
+    }
   }
 
   static Future<String?> getToken() async {

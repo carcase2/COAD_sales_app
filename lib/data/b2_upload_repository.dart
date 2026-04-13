@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
@@ -111,7 +112,7 @@ class B2UploadRepository {
       await minio.putObject(
         bucket,
         objectPath,
-        fileToUpload.openRead(),
+        fileToUpload.openRead().map((chunk) => Uint8List.fromList(chunk)),
         size: await fileToUpload.length(),
         metadata: {'Content-Type': contentType},
       ).timeout(const Duration(minutes: 5));

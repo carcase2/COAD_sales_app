@@ -80,12 +80,15 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
           children: [
             Icon(Icons.attach_file, size: 20, color: scheme.primary),
             const SizedBox(width: 8),
-            Text(
-              '첨부 (${urls.length})',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            Expanded(
+              child: Text(
+                '첨부 (${urls.length})',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
             ),
             if (onAdd != null) ...[
-              const Spacer(),
+              const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: uploadBusy ? null : onAdd,
                 icon: uploadBusy
@@ -98,6 +101,7 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
                 label: Text(uploadBusy 
                     ? (progressLabel ?? '업로드 중…') 
                     : '추가'),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
               ),
             ],
           ],

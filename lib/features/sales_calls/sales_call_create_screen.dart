@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -195,7 +196,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Future<void> _scanBusinessCard(MasterDataBundle master) async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.image,
       allowMultiple: false,
     );
@@ -339,9 +340,15 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
 
           // ─── 고객명 & 연락처 ───
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('고객 정보', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+              Expanded(
+                child: Text(
+                  '고객 정보',
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: _aiBusy || _uploadBusy ? null : () => _scanBusinessCard(master),
                 icon: _aiBusy 
@@ -395,10 +402,17 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String?>(
                       value: _regionId,
+                      isExpanded: true,
                       decoration: _inputDecoration('지역명을 선택하세요'),
                       items: [
-                        const DropdownMenuItem<String?>(value: null, child: Text('반드시 선택하세요')),
-                        ...master.regions.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name, style: const TextStyle(fontSize: 13)))),
+                        const DropdownMenuItem<String?>(
+                          value: null, 
+                          child: Text('반드시 선택하세요', overflow: TextOverflow.ellipsis),
+                        ),
+                        ...master.regions.map((e) => DropdownMenuItem<String?>(
+                          value: e.id, 
+                          child: Text(e.name, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                        )),
                       ],
                       onChanged: (v) => setState(() => _regionId = v),
                       validator: (v) => v == null ? '지역 필수' : null,
@@ -552,6 +566,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             child: Text(
               item.name,
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,

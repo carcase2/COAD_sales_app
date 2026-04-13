@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -338,8 +339,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               final query = _searchQuery.toLowerCase();
               final name = (c.customerName ?? '').toLowerCase();
               final phone = (c.customerPhone ?? '').toLowerCase();
-              final company = (c.company ?? '').toLowerCase();
-              matchesSearch = name.contains(query) || phone.contains(query) || company.contains(query);
+              matchesSearch = name.contains(query) || phone.contains(query);
             }
             
             return matchesAssignee && matchesSearch;

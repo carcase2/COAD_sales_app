@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -311,12 +312,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           children: [
             Icon(icon, size: 20, color: scheme.primary),
             const SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: scheme.onSurface,
+            Expanded(
+              child: Text(
+                title,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: scheme.onSurface,
+                ),
               ),
             ),
           ],
@@ -344,7 +348,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                     children: [
                       Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
                       const SizedBox(width: 6),
-                      Text('기본 접수 정보', style: TextStyle(fontWeight: FontWeight.bold, color: scheme.onSurfaceVariant)),
+                      Expanded(
+                        child: Text(
+                          '기본 접수 정보',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.bold, color: scheme.onSurfaceVariant),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -419,13 +429,14 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<int>(
                     value: _statusId ?? 1,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: '진행 상태', border: OutlineInputBorder(), prefixIcon: Icon(Icons.check_circle_outline)),
                     items: const [
-                      DropdownMenuItem(value: 1, child: Text('미결정/미통화 (1)')),
-                      DropdownMenuItem(value: 2, child: Text('미수주 (2)')),
-                      DropdownMenuItem(value: 3, child: Text('수주 (3)')),
-                      DropdownMenuItem(value: 4, child: Text('단순문의 (4)')),
-                      DropdownMenuItem(value: 5, child: Text('설계문의 (5)')),
+                      DropdownMenuItem(value: 1, child: Text('미결정/미통화 (1)', overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(value: 2, child: Text('미수주 (2)', overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(value: 3, child: Text('수주 (3)', overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(value: 4, child: Text('단순문의 (4)', overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(value: 5, child: Text('설계문의 (5)', overflow: TextOverflow.ellipsis)),
                     ],
                     onChanged: (v) => setState(() => _statusId = v),
                   ),
@@ -470,30 +481,33 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 children: [
                   DropdownButtonFormField<String?>(
                     value: _productId,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: '분류 (제품군)', border: OutlineInputBorder()),
                     items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
-                      ...master.productCategories.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name))),
+                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함', overflow: TextOverflow.ellipsis)),
+                      ...master.productCategories.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name, overflow: TextOverflow.ellipsis))),
                     ],
                     onChanged: (v) => setState(() => _productId = v),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String?>(
                     value: _regionId,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: '지역', border: OutlineInputBorder()),
                     items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
-                      ...master.regions.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name))),
+                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함', overflow: TextOverflow.ellipsis)),
+                      ...master.regions.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name, overflow: TextOverflow.ellipsis))),
                     ],
                     onChanged: (v) => setState(() => _regionId = v),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String?>(
                     value: _methodId,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: '문의 유입 경로', border: OutlineInputBorder()),
                     items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함')),
-                      ...master.inquiryMethods.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name))),
+                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함', overflow: TextOverflow.ellipsis)),
+                      ...master.inquiryMethods.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name, overflow: TextOverflow.ellipsis))),
                     ],
                     onChanged: (v) => setState(() => _methodId = v),
                   ),

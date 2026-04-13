@@ -8,12 +8,23 @@ import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 final todayCallsContentProvider = FutureProvider<List<SalesCall>>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
   return repo.fetchCalls(date: todayYmdSeoul(), limit: 100, includeCallHistory: false);
+});
+
+final todayStatsProvider = FutureProvider<TodayStats>((ref) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  return repo.fetchTodayStats();
+});
+
+final incompleteCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  return repo.fetchCalls(incompleteOnly: true, limit: 1000);
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -24,14 +35,33 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  String? _briefing;
-  bool _isBriefingLoading = false;
   int _pendingCount = 0;
+  late ScrollController _scrollController;
+  bool _isFabVisible = true;
 
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndSync());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.userScrollDirection ==
+        ScrollDirection.reverse) {
+      if (_isFabVisible) setState(() => _isFabVisible = false);
+    } else if (_scrollController.position.userScrollDirection ==
+        ScrollDirection.forward) {
+      if (!_isFabVisible) setState(() => _isFabVisible = true);
+    }
   }
 
   Future<void> _checkAndSync() async {
@@ -53,27 +83,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<void> _generateBriefing() async {
-    setState(() => _isBriefingLoading = true);
-    try {
-      final calls = await ref.read(todayCallsContentProvider.future);
-      final texts = calls
-          .where((c) => c.inquiryContent != null && c.inquiryContent!.isNotEmpty)
-          .map((c) => '[${c.customerName}] ${c.inquiryContent}')
-          .toList();
-      
-      final summary = await ref.read(aiExtractorServiceProvider).summarizeCalls(texts);
-      setState(() => _briefing = summary);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('요약 생성 실패: ${koreanErrorMessage(e)}')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isBriefingLoading = false);
-    }
-  }
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
@@ -186,11 +195,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ]);
                       },
                       child: ListView(
+                        controller: _scrollController,
                         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
                         children: [
                           if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
                           if (_pendingCount > 0) const SizedBox(height: 12),
-                          _buildBriefingCard(scheme),
                           const SizedBox(height: 16),
                           statsAsync.when(
                             data: (s) => _StatsCard(stats: s),
@@ -214,137 +223,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     const _IncompleteCalendar(),
                   ],
                 ),
-                floatingActionButton: Container(
-                  height: 60,
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    gradient: LinearGradient(
-                      colors: [scheme.primary, scheme.tertiary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: scheme.primary.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                floatingActionButton: AnimatedScale(
+                  scale: _isFabVisible ? 1.0 : 0.0,
+                  alignment: Alignment.bottomRight,
+                  duration: const Duration(milliseconds: 250),
+                  child: Container(
+                    height: 60,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      gradient: LinearGradient(
+                        colors: [scheme.primary, scheme.tertiary],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ],
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(30),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.add_call, color: Colors.white, size: 24),
-                          const SizedBox(width: 10),
-                          const Text(
-                            '새 통화 등록',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.5,
+                      boxShadow: [
+                        BoxShadow(
+                          color: scheme.primary.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(30),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.add_call, color: Colors.white, size: 24),
+                            const SizedBox(width: 10),
+                            const Text(
+                              '새 통화 등록',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.5,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-                floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+                floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
               );
         },
       ),
     );
   }
 
-  Widget _buildBriefingCard(ColorScheme scheme) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: scheme.primary.withValues(alpha: 0.1)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            colors: [
-              scheme.primaryContainer.withValues(alpha: 0.3),
-              scheme.surface,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.auto_awesome_rounded, size: 20, color: scheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'AI 데일리 브리핑',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.primary,
-                      ),
-                ),
-                const Spacer(),
-                if (_briefing == null)
-                  TextButton.icon(
-                    onPressed: _isBriefingLoading ? null : _generateBriefing,
-                    icon: _isBriefingLoading 
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.bolt_rounded, size: 16),
-                    label: Text(_isBriefingLoading ? '분석 중...' : '지금 요약'),
-                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    onPressed: _isBriefingLoading ? null : _generateBriefing,
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-            if (_briefing != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _briefing!,
-                style: const TextStyle(
-                  fontSize: 15,
-                  height: 1.5,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ] else if (!_isBriefingLoading) ...[
-              const SizedBox(height: 12),
-              Text(
-                '오늘의 모든 상담을 분석하여 핵심 요약을 제공해 드릴까요?',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildPendingSyncBanner(ColorScheme scheme) {
     return Container(
