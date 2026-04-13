@@ -185,7 +185,26 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
                               shape: const CircleBorder(),
                               child: InkWell(
                                 customBorder: const CircleBorder(),
-                                onTap: () => onRemoveAt!(i),
+                                onTap: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('파일 삭제'),
+                                      content: const Text('첨부된 파일을 삭제하시겠습니까?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, false),
+                                          child: const Text('취소'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          child: const Text('삭제', style: TextStyle(color: Colors.red)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed == true) onRemoveAt?.call(i);
+                                },
                                 child: const Padding(
                                   padding: EdgeInsets.all(4),
                                   child: Icon(Icons.close, size: 16, color: Colors.white),

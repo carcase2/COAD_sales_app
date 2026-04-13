@@ -220,7 +220,7 @@ class SalesCallsRepository {
     try {
       await _client.from('call_history').insert({
         ...historyData,
-        'call_id': callId,
+        'sales_call_id': callId,
       });
     } catch (e) {
       throw ApiException('상담 이력 저장에 실패했습니다: $e');

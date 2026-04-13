@@ -107,11 +107,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       _statusId = m.statusId;
       _imageUrls = List<String>.from(m.images);
       
-      // 최신 이력이 추가되었을 경우 마지막 페이지로 이동
+      // 최신 이력이 추가되었을 경우 첫 번째 페이지(최신)로 이동
       if (m.callHistory.isNotEmpty) {
-        _selectedHistoryIdx = m.callHistory.length - 1;
+        _selectedHistoryIdx = 0;
         if (_historyPageController.hasClients) {
-          _historyPageController.jumpToPage(_selectedHistoryIdx);
+          _historyPageController.jumpToPage(0);
         } else {
           _historyPageController = PageController(initialPage: _selectedHistoryIdx);
         }
@@ -268,17 +268,23 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         }
 
         // 1. History 추가 (상담내용 입력 시 항상 이력으로 저장)
+        final user = ref.read(authControllerProvider);
+        final currentStageNum = _getStageInt(_model?.callStage);
+        
         await repo.addCallHistory(widget.id, {
-          'content': newContent,
+          'consultation_content': newContent, // 스키마 반영: consultation_content
           'call_date': now.toIso8601String().split('T').first,
-          'call_stage': currentStageLabel,
+          'call_time': "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}", // HH:mm:ss
+          'call_stage': currentStageNum, // 스키마 반영: 정수형
+          'status_id': _statusId,
+          'created_by': user?.name ?? 'system', // 스키마 반영: 작성자
+          'status': _getStatusNameById(master, _statusId), // 스키마의 status (text) 필드 대응
         });
 
-        // 2. 메인 정보 업데이트 (문의내용은 더 이상 수정하지 않음)
+        // 2. 메인 정보 업데이트
         final nextStage = _getNextStage(_model?.callStage);
         
         final body = {
-          // 'inquiry_content': cumulativeContent, // 제거: 문의와 상담 원천 분리
           'next_scheduled_date': _nextDateCtrl.text.trim(),
           'status_id': _statusId,
           'call_stage': nextStage,
@@ -309,18 +315,40 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   String _getCurrentStage(String? current) {
-    if (current == null || current.isEmpty || current == '접수') return '1차';
+    if (current == null || current.isEmpty || current == '접수' || current == '0') return '1차';
     return current;
   }
 
+  int _getStageInt(String? current) {
+    if (current == null || current.isEmpty || current == '접수' || current == '0') return 1;
+    final match = RegExp(r'(\d+)').firstMatch(current);
+    if (match != null) {
+      return int.parse(match.group(1)!);
+    }
+    return 1;
+  }
+
   String _getNextStage(String? current) {
-    if (current == null || current.isEmpty || current == '접수') return '2차';
+    if (current == null || current.isEmpty || current == '접수' || current == '0') return '2차';
     final match = RegExp(r'(\d+)').firstMatch(current);
     if (match != null) {
       final num = int.parse(match.group(1)!);
       return '${num + 1}차';
     }
     return '2차';
+  }
+
+  String _getStatusNameById(MasterDataBundle master, int? id) {
+    if (id == null) return '미결정';
+    final mapping = {
+      1: '미결정',
+      3: '수주',
+      2: '미수주',
+      6: '기타',
+      4: '단순문의',
+      5: '설계문의',
+    };
+    return mapping[id] ?? '미결정';
   }
 
   @override
@@ -477,7 +505,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
           const SizedBox(height: 12),
           _buildInfoTile(
-            '다음 예정일', 
+            '${_getNextStage(m?.callStage)} 예정일', 
             m?.nextScheduledDate ?? '예정 없음', 
             Icons.event_available_rounded, 
             scheme,
@@ -661,15 +689,30 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurface,
-              height: multiLine ? 1.5 : 1.2,
+          if (multiLine)
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+                height: 1.5,
+              ),
+            )
+          else
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                  height: 1.2,
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -701,7 +744,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        (h['call_stage'] ?? h['stage'] ?? '기록').toString(),
+                        (h['call_stage'] != null) ? "${h['call_stage']}차" : (h['stage'] ?? '기록').toString(),
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: scheme.primary),
                       ),
                     ),
@@ -717,7 +760,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             const Divider(height: 1),
             const SizedBox(height: 16),
             Text(
-              (h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
+              (h['consultation_content'] ?? h['consultation_result'] ?? h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
               style: const TextStyle(fontSize: 15, height: 1.6, color: Color(0xFF333333)),
             ),
           ],
@@ -738,7 +781,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             itemBuilder: (context, index) {
               final h = history[index];
               final isSelected = _selectedHistoryIdx == index;
-              final stage = (h['call_stage'] ?? h['stage'] ?? '${index + 1}차').toString();
+              final stage = h['call_stage'] != null ? "${h['call_stage']}차" : (h['stage'] ?? '${index + 1}차').toString();
               
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -815,11 +858,28 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           final m = _model;
           final scheme = Theme.of(context).colorScheme;
           
-          return Container(
+          // 선택된 상태에 따른 배경색 정의 (투명해지지 않도록 불투명한 연한 색상 적용)
+          Color bgColor = Colors.white;
+          if (_statusId == 3) { // 수주
+            bgColor = const Color(0xFFE8F5E9);
+          } else if (_statusId == 2) { // 미수주
+            bgColor = const Color(0xFFFFEBEE);
+          } else if (_statusId == 1) { // 미결정
+            bgColor = const Color(0xFFFFF8E1);
+          } else if (_statusId == 4) { // 단순문의
+            bgColor = const Color(0xFFE3F2FD);
+          } else if (_statusId == 5) { // 설계문의
+            bgColor = const Color(0xFFEDE7F6);
+          } else if (_statusId == 6) { // 기타
+            bgColor = const Color(0xFFECEFF1);
+          }
+          
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
             height: MediaQuery.of(context).size.height * 0.85,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Column(
               children: [
@@ -929,19 +989,29 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
-                      const SizedBox(height: 40),
-                      SizedBox(
-                        height: 54,
-                        child: FilledButton(
-                          onPressed: _saving ? null : () async {
-                            await _save(master);
-                            if (mounted) Navigator.pop(context);
-                          },
-                          child: Text(_saving ? '저장 중...' : '상담내용 저장'),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
                     ],
+                  ),
+                ),
+                const Divider(height: 1),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                    child: FilledButton(
+                      onPressed: _saving ? null : () async {
+                        await _save(master);
+                        if (mounted) Navigator.pop(context);
+                      },
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        _saving ? '저장 중...' : '상담내용 저장',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -954,12 +1024,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
   Widget _buildStatusGrid(ColorScheme scheme, [void Function(void Function())? setModalState]) {
     final statuses = [
-      {'id': 1, 'name': '미결정'},
-      {'id': 3, 'name': '수주'},
-      {'id': 2, 'name': '미수주'},
-      {'id': 6, 'name': '기타'},
-      {'id': 4, 'name': '단순문의'},
-      {'id': 5, 'name': '설계문의'},
+      {'id': 1, 'name': '미결정', 'color': const Color(0xFFF2A900)},
+      {'id': 3, 'name': '수주', 'color': const Color(0xFF2E7D32)},
+      {'id': 2, 'name': '미수주', 'color': const Color(0xFFC62828)},
+      {'id': 6, 'name': '기타', 'color': const Color(0xFF546E7A)},
+      {'id': 4, 'name': '단순문의', 'color': const Color(0xFF1565C0)},
+      {'id': 5, 'name': '설계문의', 'color': const Color(0xFF4527A0)},
     ];
 
     return Wrap(
@@ -967,6 +1037,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       runSpacing: 8,
       children: statuses.map((s) {
         final isSelected = _statusId == s['id'];
+        final statusColor = s['color'] as Color;
         return GestureDetector(
           onTap: () {
             if (setModalState != null) {
@@ -979,9 +1050,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             width: (MediaQuery.of(context).size.width - 48) / 2,
             padding: const EdgeInsets.symmetric(vertical: 14),
             decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFFF2A900) : Colors.white,
+              color: isSelected ? statusColor : Colors.white,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: isSelected ? const Color(0xFFF2A900) : Colors.grey.shade300),
+              border: Border.all(color: isSelected ? statusColor : Colors.grey.shade300),
+              boxShadow: isSelected ? [
+                BoxShadow(color: statusColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
+              ] : null,
             ),
             child: Center(
               child: Text(

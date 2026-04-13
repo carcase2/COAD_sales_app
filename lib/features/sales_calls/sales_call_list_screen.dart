@@ -117,8 +117,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         );
       case ListQueryMode.incomplete:
         return repo.fetchCalls(
+          date: widget.date, // 날짜가 전달된 경우 해당 날짜만 (오늘 요약 클릭 시), 없으면 전체 (전체 랭킹 등)
           uncalledOnly: true,
-          limit: 100,
+          limit: 1000,
           includeCallHistory: true,
         );
       case ListQueryMode.recent:
@@ -139,7 +140,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           date: widget.date ?? todayYmdSeoul(),
           incompleteOnly: true,
           excludeSimpleInquiries: true,
-          limit: 100,
+          limit: 1000, // 달력 마커에 대응하는 모든 데이터를 가져올 수 있도록
           includeCallHistory: true,
         );
     }
@@ -289,6 +290,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           final user = ref.watch(authControllerProvider);
           final userName = user?.name;
+          // 특정 담당자를 지정해서 들어온 경우(initialAssignee != null)에는 로그인 사용자 자동 선택 로직을 타지 않음
           if (widget.initialAssignee == null &&
               _selectedAssignee == '전체' &&
               userName != null &&

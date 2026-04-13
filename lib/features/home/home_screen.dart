@@ -349,7 +349,7 @@ class _StatsCard extends StatelessWidget {
                 label: '미통화',
                 value: stats.incompleteCount?.toString() ?? '0',
                 color: scheme.error,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.incomplete))),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SalesCallListScreen(mode: ListQueryMode.incomplete, date: todayYmdSeoul()))),
               ),
             ),
             const SizedBox(width: 8),
@@ -633,6 +633,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                         builder: (_) => SalesCallListScreen(
                           mode: ListQueryMode.incomplete,
                           initialAssignee: name,
+                          date: _currentFilter == _SummaryFilter.today ? todayYmdSeoul() : null,
                         ),
                       ),
                     );

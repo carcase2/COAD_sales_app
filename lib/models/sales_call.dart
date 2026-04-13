@@ -66,6 +66,23 @@ class SalesCall {
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
+      
+      // 최신 이력이 먼저 나오도록 call_stage(정수형 선호) 기준 내림차순 정렬 (3, 2, 1 순서)
+      history.sort((a, b) {
+        // DB 스키마에 맞춰 consultation_content가 있는지 확인 (디버깅용으로도 유용)
+        
+        final stageA = a['call_stage'] is int ? a['call_stage'] : int.tryParse(a['call_stage']?.toString().replaceAll(RegExp(r'[^0-9]'), '') ?? '0') ?? 0;
+        final stageB = b['call_stage'] is int ? b['call_stage'] : int.tryParse(b['call_stage']?.toString()?.replaceAll(RegExp(r'[^0-9]'), '') ?? '0') ?? 0;
+        
+        if (stageB != stageA) {
+          return stageB.compareTo(stageA);
+        }
+        
+        // 차수가 같으면 created_at 기준으로 내림차순
+        final timeA = a['created_at']?.toString() ?? '';
+        final timeB = b['created_at']?.toString() ?? '';
+        return timeB.compareTo(timeA);
+      });
     }
 
     return SalesCall(
