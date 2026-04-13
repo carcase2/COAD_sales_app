@@ -1,3 +1,5 @@
+import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -31,45 +33,94 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     }
   }
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    QuoterScreen(),
-  ];
+  List<Widget> _buildScreens() {
+    return [
+      HomeHubScreen(onNavigateToTab: (index) {
+        setState(() {
+          _currentIndex = index;
+        });
+      }),
+      const ConsultationStatusScreen(),
+      const QuoterScreen(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isVisible = ref.watch(bottomBarVisibilityProvider);
 
     return Scaffold(
+      extendBody: true, // 하단 바가 배경을 가리지 않도록 (플로팅 효과)
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: _buildScreens(),
       ),
-      bottomNavigationBar: NavigationBarTheme(
-        data: NavigationBarThemeData(
-          indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-        child: NavigationBar(
-          selectedIndex: _currentIndex,
-          surfaceTintColor: Colors.transparent,
-          backgroundColor: scheme.surface,
-          onDestinationSelected: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.phone_outlined),
-              selectedIcon: Icon(Icons.phone_rounded),
-              label: '고객전화',
+      bottomNavigationBar: AnimatedSlide(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOutCubic,
+        offset: isVisible ? Offset.zero : const Offset(0, 1.5),
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: NavigationBarTheme(
+            data: NavigationBarThemeData(
+              indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              backgroundColor: Colors.transparent,
+              height: 65,
+              labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.primary,
+                  );
+                }
+                return TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: scheme.onSurfaceVariant.withOpacity(0.7),
+                );
+              }),
             ),
-            NavigationDestination(
-              icon: Icon(Icons.calculate_outlined),
-              selectedIcon: Icon(Icons.calculate_rounded),
-              label: '견적기',
+            child: NavigationBar(
+              selectedIndex: _currentIndex,
+              surfaceTintColor: Colors.transparent,
+              onDestinationSelected: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: '홈',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.assignment_outlined),
+                  selectedIcon: Icon(Icons.assignment_rounded),
+                  label: '상담현황',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.calculate_outlined),
+                  selectedIcon: Icon(Icons.calculate_rounded),
+                  label: '견적기',
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

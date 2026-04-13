@@ -19,3 +19,5 @@ final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   // 미통화와 완료건 모두 가져와서 통계(0/5 등)를 내기 위해 필터 제거
   return repo.fetchCalls(limit: 1000);
 });
+
+final bottomBarVisibilityProvider = StateProvider<bool>((ref) => true);

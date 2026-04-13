@@ -15,16 +15,17 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+class ConsultationStatusScreen extends ConsumerStatefulWidget {
+  const ConsultationStatusScreen({super.key});
 
   @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<ConsultationStatusScreen> createState() => _ConsultationStatusScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScreen> with SingleTickerProviderStateMixin {
   int _pendingCount = 0;
   late ScrollController _scrollController;
+  late TabController _tabController;
   bool _isFabVisible = true;
 
   @override
@@ -32,6 +33,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndSync());
   }
 
@@ -39,16 +44,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
   void _onScroll() {
     if (_scrollController.position.userScrollDirection ==
         ScrollDirection.reverse) {
-      if (_isFabVisible) setState(() => _isFabVisible = false);
+      if (_isFabVisible) {
+        setState(() => _isFabVisible = false);
+        ref.read(bottomBarVisibilityProvider.notifier).state = false;
+      }
     } else if (_scrollController.position.userScrollDirection ==
         ScrollDirection.forward) {
-      if (!_isFabVisible) setState(() => _isFabVisible = true);
+      if (!_isFabVisible) {
+        setState(() => _isFabVisible = true);
+        ref.read(bottomBarVisibilityProvider.notifier).state = true;
+      }
     }
   }
 
@@ -77,69 +89,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final statsAsync = ref.watch(todayStatsProvider);
     final scheme = Theme.of(context).colorScheme;
 
-    return DefaultTabController(
-      length: 2,
-      child: Builder(
-        builder: (context) {
-          final tabController = DefaultTabController.of(context);
-          final barBg = scheme.primary;
-          final onBar = scheme.onPrimary;
+    final currentIndex = _tabController.index;
+    final bgToday = scheme.surface; // 0xFFF8F9FA
+    final bgCalendar = const Color(0xFFF1F8E9); // 옅은 연두 (Light Green 50 느낌)
+    final currentBg = currentIndex == 0 ? bgToday : bgCalendar;
+    final barBg = currentIndex == 0 ? scheme.primary : const Color(0xFF2E7D32); // 요약(남색) vs 달력(진한 초록)
+    final onBar = Colors.white;
 
-          return Scaffold(
-            backgroundColor: scheme.surface,
-            appBar: AppBar(
-              title: const Text('고객전화'),
-              backgroundColor: barBg,
-              foregroundColor: onBar,
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.home_rounded),
-                  onPressed: () {
-                    if (tabController.index != 0) {
-                      tabController.animateTo(0);
-                    }
-                    ref.invalidate(todayStatsProvider);
-                    ref.invalidate(todayCallsContentProvider);
-                    ref.invalidate(rankingCallsProvider);
-                  },
-                  tooltip: '홈 새로고침',
+    return Scaffold(
+      backgroundColor: currentBg,
+      appBar: AppBar(
+        title: const Text('고객전화'),
+        backgroundColor: barBg,
+        foregroundColor: onBar,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home_rounded),
+            onPressed: () {
+              if (_tabController.index != 0) {
+                _tabController.animateTo(0);
+              }
+              ref.invalidate(todayStatsProvider);
+              ref.invalidate(todayCallsContentProvider);
+              ref.invalidate(rankingCallsProvider);
+            },
+            tooltip: '홈 새로고침',
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                'v$kAppVersion',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: onBar.withValues(alpha: 0.85),
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: Center(
-                    child: Text(
-                      'v$kAppVersion',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: onBar.withValues(alpha: 0.85),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              bottom: TabBar(
-                controller: tabController,
-                tabs: [
-                  Tab(
-                    icon: Icon(Icons.dashboard_rounded, size: 20, color: Colors.amberAccent.shade100),
-                    text: '오늘 요약',
-                  ),
-                  Tab(
-                    icon: Icon(Icons.calendar_month_rounded, size: 20, color: Colors.greenAccent.shade100),
-                    text: '미종료 달력',
-                  ),
-                ],
-                indicatorColor: onBar,
-                indicatorWeight: 3,
-                labelColor: onBar,
-                unselectedLabelColor: onBar.withValues(alpha: 0.65),
-                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                dividerColor: Colors.transparent,
               ),
             ),
-                drawer: Drawer(
-                  child: Column(
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(
+              icon: Icon(Icons.dashboard_rounded, size: 20, color: Colors.amberAccent.shade100),
+              text: '오늘 요약',
+            ),
+            Tab(
+              icon: Icon(Icons.calendar_month_rounded, size: 20, color: Colors.greenAccent.shade100),
+              text: '미종료 달력',
+            ),
+          ],
+          indicatorColor: onBar,
+          indicatorWeight: 3,
+          labelColor: onBar,
+          unselectedLabelColor: onBar.withValues(alpha: 0.65),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          dividerColor: Colors.transparent,
+        ),
+      ),
+      drawer: Drawer(
+        child: Column(
                     children: [
                       UserAccountsDrawerHeader(
                         currentAccountPicture: CircleAvatar(
@@ -242,7 +253,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
                 body: TabBarView(
-                  controller: tabController, // 명시적 연결
+                  controller: _tabController, // 명시적 연결
                   children: [
                     // 탭 1: 오늘 요약 뷰
                     RefreshIndicator(
@@ -261,7 +272,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         children: [
                           if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
                           if (_pendingCount > 0) const SizedBox(height: 12),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           statsAsync.when(
                             data: (s) => _StatsCard(stats: s),
                             loading: () => const Center(
@@ -336,11 +347,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
                 floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-              );
-        },
-      ),
-    );
+        );
   }
+
 
   Widget _buildDrawerSectionTitle(String title, ColorScheme scheme) {
     return Padding(
@@ -421,45 +430,60 @@ class _StatsCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(Icons.insights_outlined, size: 22, color: scheme.primary),
-            const SizedBox(width: 10),
+            Row(
+              children: [
+                Icon(Icons.dashboard_customize_rounded, size: 20, color: scheme.primary.withValues(alpha: 0.7)),
+                const SizedBox(width: 8),
+                Text(
+                  '오늘 핵심 지표',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ],
+            ),
             Text(
-              '오늘 요약',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              todayYmdSeoul(),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withValues(alpha: 0.5), fontWeight: FontWeight.w500),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
               child: _StatCardItem(
-                label: '금일접수',
+                label: '금일 접수',
                 value: stats.todayCount?.toString() ?? '0',
+                icon: Icons.assignment_rounded,
                 color: scheme.primary,
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today))),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
               child: _StatCardItem(
-                label: '미통화',
+                label: '미처리',
                 value: stats.incompleteCount?.toString() ?? '0',
+                icon: Icons.pending_rounded,
                 color: scheme.error,
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SalesCallListScreen(mode: ListQueryMode.incomplete, date: todayYmdSeoul()))),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _StatCardItem(
-                label: '완료',
-                value: stats.completedToday?.toString() ?? '0',
-                color: Colors.green.shade600,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.completedToday))),
-              ),
-            ),
           ],
+        ),
+        const SizedBox(height: 10),
+        _StatCardItem(
+          label: '오늘 완료된 상담',
+          value: stats.completedToday?.toString() ?? '0',
+          icon: Icons.check_circle_rounded,
+          color: Colors.teal.shade600,
+          isWide: true,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.completedToday))),
         ),
       ],
     );
@@ -470,14 +494,18 @@ class _StatCardItem extends StatefulWidget {
   const _StatCardItem({
     required this.label,
     required this.value,
+    required this.icon,
     required this.color,
     required this.onTap,
+    this.isWide = false,
   });
 
   final String label;
   final String value;
+  final IconData icon;
   final Color color;
   final VoidCallback onTap;
+  final bool isWide;
 
   @override
   State<_StatCardItem> createState() => _StatCardItemState();
@@ -491,7 +519,7 @@ class _StatCardItemState extends State<_StatCardItem> {
     final scheme = Theme.of(context).colorScheme;
     
     return GestureDetector(
-      onTapDown: (_) => setState(() => _scale = 0.95),
+      onTapDown: (_) => setState(() => _scale = 0.97),
       onTapUp: (_) => setState(() => _scale = 1.0),
       onTapCancel: () => setState(() => _scale = 1.0),
       onTap: () {
@@ -501,45 +529,97 @@ class _StatCardItemState extends State<_StatCardItem> {
       child: AnimatedScale(
         scale: _scale,
         duration: const Duration(milliseconds: 100),
-        child: Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: widget.color.withOpacity(0.2), width: 1.5),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: 0.12),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+            border: Border.all(color: widget.color.withValues(alpha: 0.08), width: 1.5),
           ),
-          color: widget.color.withOpacity(0.04), // 매우 투명한 색상 배경
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
+          padding: EdgeInsets.symmetric(
+            vertical: widget.isWide ? 10 : 14,
+            horizontal: 16,
+          ),
+          child: widget.isWide 
+            ? Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(widget.icon, color: widget.color, size: 24),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
                     widget.value,
                     style: TextStyle(
-                      fontSize: 28,
+                      fontSize: 22,
                       fontWeight: FontWeight.w900,
                       color: widget.color,
                       letterSpacing: -0.5,
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
+                  const SizedBox(width: 4),
+                  Text('건', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: widget.color.withValues(alpha: 0.5))),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: widget.color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(widget.icon, color: widget.color, size: 20),
+                      ),
+                      Text(
+                        widget.value,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: widget.color,
+                          letterSpacing: -1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
                     widget.label,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
+                ],
+              ),
         ),
       ),
     );
@@ -647,74 +727,61 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                 ],
               ),
             ),
-            // ─── 필터 버튼 (개별 컬러 커스텀 필터) ───
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 20),
               child: Container(
-                height: 42,
+                height: 48,
+                padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: scheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.shadow.withValues(alpha: 0.06),
-                      blurRadius: 12,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(4.0),
-                  child: Row(
-                    children: _SummaryFilter.values.map((filter) {
-                      final isSelected = _currentFilter == filter;
-                      Color filterColor;
-                      String label;
-                      
-                      switch (filter) {
-                        case _SummaryFilter.today:
-                          filterColor = scheme.primary;
-                          label = '금일';
-                          break;
-                        case _SummaryFilter.week:
-                          filterColor = scheme.tertiary;
-                          label = '금주';
-                          break;
-                        case _SummaryFilter.month:
-                          filterColor = scheme.secondary;
-                          label = '금월';
-                          break;
-                        case _SummaryFilter.total:
-                          filterColor = scheme.onSurfaceVariant;
-                          label = '전체';
-                          break;
-                      }
+                child: Row(
+                  children: _SummaryFilter.values.map((filter) {
+                    final isSelected = _currentFilter == filter;
+                    Color filterColor;
+                    String label;
+                    
+                    switch (filter) {
+                      case _SummaryFilter.today: filterColor = scheme.primary; label = '금일'; break;
+                      case _SummaryFilter.week: filterColor = scheme.tertiary; label = '금주'; break;
+                      case _SummaryFilter.month: filterColor = scheme.secondary; label = '금월'; break;
+                      case _SummaryFilter.total: filterColor = scheme.onSurfaceVariant; label = '전체'; break;
+                    }
 
-                      return Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _currentFilter = filter),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            decoration: BoxDecoration(
-                              color: isSelected ? filterColor : Colors.transparent,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: isSelected ? Colors.white : scheme.onSurfaceVariant,
-                              ),
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _currentFilter = filter);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutCubic,
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.white : Colors.transparent,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: isSelected ? [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
+                              )
+                            ] : [],
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                              color: isSelected ? filterColor : scheme.onSurfaceVariant.withValues(alpha: 0.6),
                             ),
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
             ),
@@ -726,98 +793,118 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
               final percent = totalPerManager > 0 ? (totalPerManager - incomplete) / totalPerManager : 1.0;
               
               final rank = idx + 1;
-              Color rankAccent = scheme.primary;
-              Color? rankBg;
-              if (rank == 1) {
-                rankAccent = const Color(0xFFB8860B);
-                rankBg = const Color(0xFFFFF8E7);
-              } else if (rank == 2) {
-                rankAccent = const Color(0xFF6B7280);
-                rankBg = const Color(0xFFF3F4F6);
-              } else if (rank == 3) {
-                rankAccent = const Color(0xFFA16207);
-                rankBg = const Color(0xFFFFFBEB);
-              }
+              Color rankColor = scheme.primary;
+              if (rank == 1) rankColor = const Color(0xFFD4AF37); // Gold
+              else if (rank == 2) rankColor = const Color(0xFFC0C0C0); // Silver
+              else if (rank == 3) rankColor = const Color(0xFFCD7F32); // Bronze
 
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                color: rankBg,
-                child: InkWell(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => SalesCallListScreen(
-                          mode: ListQueryMode.incomplete,
-                          initialAssignee: name,
-                          date: _currentFilter == _SummaryFilter.today ? todayYmdSeoul() : null,
-                        ),
-                      ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: rank <= 3
-                                      ? rankAccent.withValues(alpha: 0.15)
-                                      : scheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$rank',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 13,
-                                      color: rank <= 3 ? rankAccent : scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                name,
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                      fontWeight: rank <= 3 ? FontWeight.w700 : FontWeight.w500,
-                                    ),
-                              ),
-                            ),
-                            Text(
-                              '$incomplete',
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    color: rank <= 3 ? rankAccent : scheme.primary,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                            ),
-                            Text(
-                              ' / $totalPerManager',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(99),
-                          child: LinearProgressIndicator(
-                            value: percent,
-                            backgroundColor: scheme.surfaceContainerHighest,
-                            color: rank <= 3 ? rankAccent : scheme.primary.withValues(alpha: 0.55),
-                            minHeight: 6,
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => SalesCallListScreen(
+                            mode: ListQueryMode.incomplete,
+                            initialAssignee: name,
+                            date: _currentFilter == _SummaryFilter.today ? todayYmdSeoul() : null,
                           ),
                         ),
-                      ],
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: rankColor.withValues(alpha: 0.1), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: rankColor.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: rank <= 3 
+                                    ? Icon(Icons.workspace_premium_rounded, size: 18, color: rankColor)
+                                    : Text('$rank', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: scheme.onSurfaceVariant.withValues(alpha: 0.6))),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: rank <= 3 ? FontWeight.w800 : FontWeight.w600,
+                                    color: scheme.onSurface,
+                                  ),
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '$incomplete 건',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                      color: incomplete > 0 ? scheme.error : Colors.teal,
+                                    ),
+                                  ),
+                                  Text(
+                                    '미처리',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: percent,
+                              backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                percent == 1.0 ? Colors.teal : (percent < 0.5 ? scheme.error : scheme.primary),
+                              ),
+                              minHeight: 4,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '${(percent * 100).toInt()}% 완료',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                              ),
+                              Text(
+                                '총 $totalPerManager 건',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant.withValues(alpha: 0.7)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1130,17 +1217,12 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           children: [
             // ─── 상단 담당자 필터 바 (캘린더용) ───
             Container(
-              height: 70,
+              height: 54,
               width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                color: scheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant.withOpacity(0.3)),
-              ),
+              margin: const EdgeInsets.only(bottom: 12),
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
                 itemCount: sortedAssignees.length,
                 itemBuilder: (context, idx) {
                   final assignee = sortedAssignees[idx];
@@ -1149,18 +1231,29 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                   final color = _colorForAssignee(assignee, scheme);
 
                   return Padding(
-                    padding: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
-                      onTap: () => setState(() => _selectedAssignee = assignee),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _selectedAssignee = assignee);
+                      },
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOutCubic,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: isSelected ? color : color.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(10),
+                          color: isSelected ? scheme.onSurface : Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: isSelected ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            )
+                          ] : [],
                           border: Border.all(
-                            color: isSelected ? color : color.withOpacity(0.2),
+                            color: isSelected ? scheme.onSurface : scheme.outlineVariant.withValues(alpha: 0.3),
                             width: 1.5,
                           ),
                         ),
@@ -1170,16 +1263,17 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                               assignee,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isSelected ? Colors.white : scheme.onSurfaceVariant,
+                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                               ),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                             Text(
-                              '($count)',
+                              '$count',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w900,
+                                color: isSelected ? Colors.white.withValues(alpha: 0.7) : scheme.onSurfaceVariant.withValues(alpha: 0.4),
                               ),
                             ),
                           ],
@@ -1191,14 +1285,20 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
               ),
             ),
             // ─── 캘린더 영역 ───
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3), width: 1.5),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
+              padding: const EdgeInsets.all(12),
                 child: TableCalendar(
                   firstDay: DateTime.now().subtract(const Duration(days: 365)),
                   lastDay: DateTime.now().add(const Duration(days: 365)),
@@ -1262,10 +1362,9 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                   },
                 ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
     );
