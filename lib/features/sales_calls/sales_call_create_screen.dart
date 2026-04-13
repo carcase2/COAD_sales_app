@@ -98,6 +98,14 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
 
   Future<void> _submit(MasterDataBundle master) async {
     // 3단계에서는 _formKey가 화면에 없으므로(1~2단계 폼) 수동 검증
+    if (_regionId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('배정될 지역을 선택해주세요.')),
+      );
+      // 2단계로 돌려보내서 선택하게 유도
+      setState(() => _currentStep = 1);
+      return;
+    }
     if (_inquiryCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('상담 내용 본문을 입력해주세요.')),
