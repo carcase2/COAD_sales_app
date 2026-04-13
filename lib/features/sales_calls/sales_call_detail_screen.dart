@@ -385,6 +385,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         title: const Text('통화 상세'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.home_rounded),
+            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            tooltip: '홈으로 이동',
+          ),
+          IconButton(
             icon: Icon(_isEditMode ? Icons.view_headline_rounded : Icons.edit_note_rounded),
             onPressed: () => setState(() => _isEditMode = !_isEditMode),
             tooltip: _isEditMode ? '조회 모드로 변경' : '전체 정보 수정',

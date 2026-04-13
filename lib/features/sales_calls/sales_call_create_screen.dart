@@ -342,6 +342,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home_rounded),
+            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            tooltip: '홈으로 이동',
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(40),
           child: Padding(
