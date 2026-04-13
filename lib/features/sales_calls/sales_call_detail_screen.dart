@@ -383,6 +383,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('통화 상세'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onPrimary),
         actions: [
           IconButton(
             icon: const Icon(Icons.home_rounded),
@@ -395,12 +398,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             tooltip: _isEditMode ? '조회 모드로 변경' : '전체 정보 수정',
           ),
           if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
+                ),
               ),
             ),
         ],

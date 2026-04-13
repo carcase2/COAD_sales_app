@@ -346,6 +346,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       appBar: AppBar(
         title: const Text('새 통화 등록', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         centerTitle: true,
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.pop(context),

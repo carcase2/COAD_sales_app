@@ -92,6 +92,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               backgroundColor: barBg,
               foregroundColor: onBar,
               actions: [
+                IconButton(
+                  icon: const Icon(Icons.home_rounded),
+                  onPressed: () {
+                    if (tabController.index != 0) {
+                      tabController.animateTo(0);
+                    }
+                    ref.invalidate(todayStatsProvider);
+                    ref.invalidate(todayCallsContentProvider);
+                    ref.invalidate(rankingCallsProvider);
+                  },
+                  tooltip: '홈 새로고침',
+                ),
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
                   child: Center(

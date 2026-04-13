@@ -185,7 +185,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         title: _isSearching 
           ? _buildSearchField()
           : Text(_title),
-        titleTextStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        titleTextStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: Theme.of(context).colorScheme.onPrimary,
+        ),
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onPrimary),
         actions: [
           IconButton(
             icon: const Icon(Icons.home_rounded),
@@ -207,9 +213,16 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             },
           ),
           if (_isLoading && _items.isNotEmpty)
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: SizedBox(
+                width: 16, 
+                height: 16, 
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
+                ),
+              ),
             )
         ],
       ),

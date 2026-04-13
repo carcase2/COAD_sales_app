@@ -9,7 +9,14 @@ class QuoterScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('견적기'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.home_rounded),
+            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            tooltip: '홈으로 이동',
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Center(
