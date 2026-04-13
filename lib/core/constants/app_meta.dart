@@ -1,2 +1,2 @@
 /// UI에 표시하는 앱 버전 (`pubspec.yaml`의 version 과 맞추세요)
-const String kAppVersion = '1.0.3';
+const String kAppVersion = '1.1.0';
