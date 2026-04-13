@@ -134,25 +134,73 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           backgroundColor: scheme.primaryContainer,
                           child: Icon(Icons.person, size: 40, color: scheme.onPrimaryContainer),
                         ),
-                        accountName: Text(user?.name ?? '사용자', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        accountEmail: Text(user?.id ?? ''),
-                        decoration: BoxDecoration(color: scheme.primary),
+                        accountName: Text('${user?.name ?? '사용자'} 님', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                        accountEmail: Text('사번/ID: ${user?.id ?? '-'}', style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8))),
+                        decoration: BoxDecoration(
+                          color: scheme.primary,
+                          image: DecorationImage(
+                            image: const NetworkImage('https://www.transparenttextures.com/patterns/cubes.png'),
+                            repeat: ImageRepeat.repeat,
+                            opacity: 0.05,
+                          ),
+                        ),
                       ),
-                      ListTile(
-                        leading: const Icon(Icons.settings_outlined),
-                        title: const Text('설정'),
+                      
+                      _buildDrawerSectionTitle('상담 관리', scheme),
+                      _buildDrawerItem(
+                        icon: Icons.pending_actions_rounded,
+                        title: '미처리 상담 내역',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.incomplete),
+                          ));
+                        },
+                        scheme: scheme,
+                      ),
+                      _buildDrawerItem(
+                        icon: Icons.history_rounded,
+                        title: '최근 등록 현황',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.recent),
+                          ));
+                        },
+                        scheme: scheme,
+                      ),
+                      _buildDrawerItem(
+                        icon: Icons.list_alt_rounded,
+                        title: '전체 상담 목록',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.recent), // 전체도 최근순으로 보기
+                          ));
+                        },
+                        scheme: scheme,
+                      ),
+                      
+                      const Divider(indent: 20, endIndent: 20),
+                      _buildDrawerSectionTitle('시스템', scheme),
+                      _buildDrawerItem(
+                        icon: Icons.settings_outlined,
+                        title: '설정',
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
                           );
                         },
+                        scheme: scheme,
                       ),
-                      const Divider(),
+                      
                       const Spacer(),
-                      ListTile(
-                        leading: Icon(Icons.logout, color: scheme.error),
-                        title: Text('로그아웃', style: TextStyle(color: scheme.error)),
+                      const Divider(),
+                      _buildDrawerItem(
+                        icon: Icons.logout,
+                        title: '로그아웃',
+                        color: scheme.error,
                         onTap: () async {
                           final confirm = await showDialog<bool>(
                             context: context,
@@ -169,8 +217,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             await ref.read(authControllerProvider.notifier).logout();
                           }
                         },
+                        scheme: scheme,
                       ),
-                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'COAD Sales App v$kAppVersion',
+                          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withOpacity(0.5)),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -275,6 +330,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildDrawerSectionTitle(String title, ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: scheme.primary.withOpacity(0.7),
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    required ColorScheme scheme,
+    Color? color,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: color ?? scheme.onSecondaryContainer),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: color ?? scheme.onSurface,
+        ),
+      ),
+      onTap: onTap,
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+    );
+  }
 
   Widget _buildPendingSyncBanner(ColorScheme scheme) {
     return Container(
