@@ -118,7 +118,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         if (_methodId != null) 'inquiry_method_id': _methodId,
         'status_id': targetStatusId,
         if (user != null) 'created_by': user.id,
-        'call_stage': _isSimpleInquiry ? '종료' : null,
+        if (_isSimpleInquiry) 'call_stage': '종료',
       };
 
       NamedMasterRow? regionRow;
@@ -690,9 +690,9 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _buildDetailItem('선택 시/도', sido, scheme),
-                                _buildDetailItem('상세 지역', region, scheme),
-                                _buildDetailItem('담당 관리자', manager, scheme, isHighlight: true),
+                                Expanded(child: _buildDetailItem('선택 시/도', sido, scheme)),
+                                Expanded(child: _buildDetailItem('상세 지역', region, scheme)),
+                                Expanded(child: _buildDetailItem('담당 관리자', manager, scheme, isHighlight: true)),
                               ],
                             ),
                           );
@@ -801,10 +801,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   Widget _buildDetailItem(String label, String value, ColorScheme scheme, {bool isHighlight = false}) {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           label,
           style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600),
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 4),
         Text(
@@ -814,6 +817,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             fontWeight: FontWeight.w800, 
             color: isHighlight ? scheme.primary : scheme.onSurface,
           ),
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
