@@ -7,7 +7,12 @@ serve(async (req) => {
     const payload = await req.json()
     const { type, record, old_record } = payload
     
-    // For DELETE, use old_record. For INSERT/UPDATE, use record.
+    // Only notify on NEW Reception (INSERT)
+    if (type !== 'INSERT') {
+      console.log(`Skipping notification for event type: ${type}`)
+      return new Response(JSON.stringify({ message: 'Only INSERT events are notified' }), { status: 200 })
+    }
+
     const activeRecord = record || old_record
 
     // 1. Initialize Supabase Admin Client
@@ -97,17 +102,6 @@ serve(async (req) => {
     }
 
     // 5. Build Notification Content
-    const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'
-    const phone = (activeRecord && activeRecord.customer_phone) || ''
-    const content = activeRecord ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음') : '내용 없음'
-    
-    // 5. Build Notification Content
-    // Only notify on NEW Reception (INSERT)
-    if (type !== 'INSERT') {
-      console.log(`Skipping notification for event type: ${type}`)
-      return new Response(JSON.stringify({ message: 'Only INSERT events are notified' }), { status: 200 })
-    }
-
     const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'
     const phone = (activeRecord && activeRecord.customer_phone) || ''
     const content = activeRecord ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음') : '내용 없음'

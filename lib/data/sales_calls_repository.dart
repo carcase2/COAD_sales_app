@@ -105,11 +105,6 @@ class SalesCallsRepository {
         // 미통화: 단순문의 제외하고 단계가 초기인 건
         queryBuilder = queryBuilder.neq('status_id', 4);
       }
-      if (completedOnly == true) {
-        // 완료: 수주, 미수주, 단순문의 등 종료된 건
-        queryBuilder = queryBuilder.filter('status_id', 'in', '(2,3,4)');
-      }
-
       PostgrestTransformBuilder<List<Map<String, dynamic>>> transformBuilder = queryBuilder.order('created_at', ascending: false);
 
       if (limit != null) {
@@ -118,7 +113,7 @@ class SalesCallsRepository {
       }
 
       final res = await transformBuilder;
-
+      
       // 로컬 DB 동기화 (Upsert)
       if (res.isNotEmpty) {
         await _db.saveSalesCalls(res);
@@ -127,11 +122,16 @@ class SalesCallsRepository {
       List<SalesCall> parsed = parseSalesCallList(res);
       
       if (uncalledOnly == true) {
+        // 미통화: (초기 단계) && (단순문의 아님)
         parsed = parsed.where((c) => c.isMissed).toList();
       }
       
+      if (completedOnly == true) {
+        // 완료(처리됨): !(미통화) => (단계 진행됨) || (단순문의)
+        parsed = parsed.where((c) => !c.isMissed).toList();
+      }
+      
       if (incompleteOnly == true) {
-        // 이미 서버에서 필터링되었지만 확실하게 한 번 더 (필요 시)
         parsed = parsed.where((c) => ![2,3,4].contains(c.statusId)).toList();
       }
       

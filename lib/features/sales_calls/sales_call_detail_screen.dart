@@ -594,41 +594,40 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      m.customerName ?? '(이름 없음)',
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      m.customerPhone ?? '연락처 없음',
-                      style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ),
-              Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      m.statusLabel ?? '접수',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          // 상태 배지 (긴 텍스트 대응을 위해 상단 독립 배치)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              m.statusLabel ?? '접수',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // 현장명 및 상호명
+          Text(
+            m.customerName ?? '(이름 없음)',
+            style: const TextStyle(
+              fontSize: 28, 
+              fontWeight: FontWeight.w900, 
+              color: Colors.white, 
+              letterSpacing: -0.8,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          // 전화번호
+          Text(
+            m.customerPhone ?? '연락처 없음',
+            style: TextStyle(
+              fontSize: 18, 
+              color: Colors.white.withOpacity(0.9), 
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
           ),
           const SizedBox(height: 24),
           Row(
