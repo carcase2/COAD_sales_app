@@ -670,6 +670,38 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                     onChanged: (v) => setState(() => _regionId = v),
                     validator: (v) => v == null ? '지역을 선택해주세요' : null,
                   ),
+                  if (_regionId != null) ...[
+                    const SizedBox(height: 16),
+                    Builder(
+                      builder: (ctx) {
+                        try {
+                          final selectedRegion = master.regions.firstWhere((r) => r.id == _regionId);
+                          final sido = selectedRegion.extra['sido']?.trim() ?? '-';
+                          final region = selectedRegion.extra['region']?.trim() ?? '-';
+                          final manager = selectedRegion.extra['manager']?.trim() ?? '미지정';
+                          
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: scheme.primary.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _buildDetailItem('선택 시/도', sido, scheme),
+                                _buildDetailItem('상세 지역', region, scheme),
+                                _buildDetailItem('담당 관리자', manager, scheme, isHighlight: true),
+                              ],
+                            ),
+                          );
+                        } catch (_) {
+                          return const SizedBox.shrink();
+                        }
+                      },
+                    ),
+                  ],
                   
                   const SizedBox(height: 24),
                   
@@ -766,6 +798,28 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     );
   }
 
+  Widget _buildDetailItem(String label, String value, ColorScheme scheme, {bool isHighlight = false}) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14, 
+            fontWeight: FontWeight.w800, 
+            color: isHighlight ? scheme.primary : scheme.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── 유틸 ───
   Widget _buildSectionHeader(String title, IconData icon, ColorScheme scheme) {
     return Row(
       children: [
