@@ -1,6 +1,4 @@
-import 'package:coad_customer_calls/core/constants/app_meta.dart';
-import 'package:coad_customer_calls/core/utils/date_seoul.dart';
-import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
@@ -13,22 +11,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
-
-final todayCallsContentProvider = FutureProvider<List<SalesCall>>((ref) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCalls(date: todayYmdSeoul(), limit: 100, includeCallHistory: false);
-});
-
-final todayStatsProvider = FutureProvider<TodayStats>((ref) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchTodayStats();
-});
-
-final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  // 미통화와 완료건 모두 가져와서 통계(0/5 등)를 내기 위해 필터 제거
-  return repo.fetchCalls(limit: 1000);
-});
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -256,14 +238,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(30),
-                      onTap: () async {
-                        final result = await Navigator.of(context).push<bool>(
-                          MaterialPageRoute(builder: (_) => const SalesCallCreateScreen()),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
                         );
-                        if (result == true) {
-                          ref.invalidate(todayStatsProvider);
-                          ref.invalidate(todayCallsContentProvider);
-                        }
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),

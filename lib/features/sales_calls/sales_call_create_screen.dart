@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
@@ -140,13 +141,21 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       }
 
       final created = await ref.read(salesCallsRepositoryProvider).createCall(body);
-      if (!mounted) return;
       
-      // 사용자 요청: 다 끝나면 홈 화면으로 가서 새로고침되도록.
-      Navigator.of(context).pop(true);
+      // 홈 화면 데이터 무기본화(새로고침 예약)
+      ref.invalidate(todayStatsProvider);
+      ref.invalidate(todayCallsContentProvider);
+      ref.invalidate(rankingCallsProvider);
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => SalesCallDetailScreen(id: created.id, initial: created),
+        ),
+      );
     } on OfflineException catch (e) {
       if (!mounted) return;
-      Navigator.pop(context, false); // 목록으로 돌아감 (새로고침 안함)
+      Navigator.pop(context); // 목록으로 돌아감
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.message),
