@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/local/database_helper.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
@@ -229,13 +230,12 @@ class SalesCallsRepository {
 
   Future<TodayStats> fetchTodayStats() async {
     try {
-      final todayStr = DateTime.now().toIso8601String().split('T').first;
+      final todayStr = todayYmdSeoul();
       
       final res = await _client
           .from('sales_calls')
           .select('id, status_id, call_stage')
-          .gte('call_date', '$todayStr 00:00:00')
-          .lte('call_date', '$todayStr 23:59:59');
+          .eq('call_date', todayStr);
 
       final total = res.length;
       

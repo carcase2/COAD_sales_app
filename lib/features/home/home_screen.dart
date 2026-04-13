@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
@@ -23,9 +24,10 @@ final todayStatsProvider = FutureProvider<TodayStats>((ref) async {
   return repo.fetchTodayStats();
 });
 
-final incompleteCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
+final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCalls(incompleteOnly: true, limit: 1000);
+  // 미통화와 완료건 모두 가져와서 통계(0/5 등)를 내기 위해 필터 제거
+  return repo.fetchCalls(limit: 1000);
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -462,56 +464,73 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
 
   @override
   Widget build(BuildContext context) {
-    final asyncCalls = ref.watch(incompleteCallsProvider);
+    final asyncCalls = ref.watch(rankingCallsProvider);
+    final masterAsync = ref.watch(masterDataProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return asyncCalls.when(
       data: (calls) {
-        if (calls.isEmpty) return const SizedBox.shrink();
+        return masterAsync.when(
+          data: (master) {
+            final todayStr = todayYmdSeoul();
+            final now = DateTime.now();
+            final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+            final startOfMonth = DateTime(now.year, now.month, 1);
 
-        // 1. Get filtered list based on date
-        final now = DateTime.now(); // Current time (local)
-        final todayStr = todayYmdSeoul();
-        
-        // Mondary start for the week
-        final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
-        final startOfMonth = DateTime(now.year, now.month, 1);
+            // 1. Filter calls
+            final filteredCalls = calls.where((c) {
+              if (c.callDate == null || c.callDate!.length < 10) return _currentFilter == _SummaryFilter.total;
+              final callDt = DateTime.tryParse(c.callDate!.substring(0, 10));
+              if (callDt == null) return _currentFilter == _SummaryFilter.total;
+              switch (_currentFilter) {
+                case _SummaryFilter.today: return c.callDate!.startsWith(todayStr);
+                case _SummaryFilter.week: return callDt.isAfter(startOfWeek.subtract(const Duration(seconds: 1))) && callDt.isBefore(now.add(const Duration(days: 1)));
+                case _SummaryFilter.month: return callDt.isAfter(startOfMonth.subtract(const Duration(seconds: 1)));
+                case _SummaryFilter.total: return true;
+              }
+            }).toList();
 
-        final filteredCalls = calls.where((c) {
-          if (c.callDate == null || c.callDate!.length < 10) return _currentFilter == _SummaryFilter.total;
-          final callDt = DateTime.tryParse(c.callDate!.substring(0, 10));
-          if (callDt == null) return _currentFilter == _SummaryFilter.total;
+            if (filteredCalls.isEmpty && _currentFilter != _SummaryFilter.total) {
+              return _buildEmptyContent(scheme);
+            }
 
-          switch (_currentFilter) {
-            case _SummaryFilter.today:
-              return c.callDate!.startsWith(todayStr) && c.isMissed;
-            case _SummaryFilter.week:
-              return callDt.isAfter(startOfWeek.subtract(const Duration(seconds: 1))) && 
-                     callDt.isBefore(now.add(const Duration(days: 1))) && c.isMissed;
-            case _SummaryFilter.month:
-              return callDt.isAfter(startOfMonth.subtract(const Duration(seconds: 1))) && c.isMissed;
-            case _SummaryFilter.total:
-              return c.isMissed;
-          }
-        }).toList();
+            final total = filteredCalls.length;
 
-        if (filteredCalls.isEmpty && _currentFilter != _SummaryFilter.total) {
-          return _buildEmptyContent(scheme);
-        }
+            // 2. Count per assignee (Initialize with ALL managers from master data)
+            final Map<String, int> incompleteCounts = {};
+            final Map<String, int> totalCounts = {};
+            
+            // Extract managers from regions
+            for (final r in master.regions) {
+              final manager = r.extra['region_manager'];
+              if (manager != null && manager.isNotEmpty) {
+                incompleteCounts[manager] = 0;
+                totalCounts[manager] = 0;
+              }
+            }
+            
+            // Add counts from filtered calls
+            for (var c in filteredCalls) {
+              final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+              totalCounts[a] = (totalCounts[a] ?? 0) + 1;
+              if (c.isMissed) {
+                incompleteCounts[a] = (incompleteCounts[a] ?? 0) + 1;
+              } else {
+                // Ensure the manager is in our maps even if not in master regions
+                incompleteCounts[a] = incompleteCounts[a] ?? 0;
+              }
+            }
 
-        // 2. Count per assignee
-        final Map<String, int> counts = {};
-        for (var c in filteredCalls) {
-          final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
-          counts[a] = (counts[a] ?? 0) + 1;
-        }
+            final sorted = totalCounts.keys.toList()
+              ..sort((a, b) {
+                // 1. 미통화 많은 순
+                final cmp = (incompleteCounts[b] ?? 0).compareTo(incompleteCounts[a] ?? 0);
+                if (cmp != 0) return cmp;
+                // 2. 전체 건수 많은 순
+                return (totalCounts[b] ?? 0).compareTo(totalCounts[a] ?? 0);
+              });
 
-        final sorted = counts.keys.toList()
-          ..sort((a, b) => (counts[b] ?? 0).compareTo(counts[a] ?? 0));
-
-        final total = filteredCalls.length;
-
-        return Column(
+            return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
@@ -606,8 +625,9 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             ...sorted.asMap().entries.map((entry) {
               final idx = entry.key;
               final name = entry.value;
-              final count = counts[name] ?? 0;
-              final percent = total > 0 ? count / total : 0.0;
+              final incomplete = incompleteCounts[name] ?? 0;
+              final totalPerManager = totalCounts[name] ?? 0;
+              final percent = totalPerManager > 0 ? (totalPerManager - incomplete) / totalPerManager : 1.0;
               
               final rank = idx + 1;
               Color rankAccent = scheme.primary;
@@ -677,14 +697,14 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                               ),
                             ),
                             Text(
-                              '$count',
+                              '$incomplete',
                               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                     color: rank <= 3 ? rankAccent : scheme.primary,
                                     fontWeight: FontWeight.w800,
                                   ),
                             ),
                             Text(
-                              ' / $total',
+                              ' / $totalPerManager',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: scheme.onSurfaceVariant,
                                   ),
@@ -709,9 +729,22 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             }),
           ],
         );
+          },
+          loading: () => const Center(child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: CircularProgressIndicator(),
+          )),
+          error: (e, _) => Center(child: Text('마스터 로드 오류: $e')),
+        );
       },
-      loading: () => const SizedBox.shrink(),
-      error: (e, _) => const SizedBox.shrink(),
+      loading: () => const Center(child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: CircularProgressIndicator(),
+      )),
+      error: (e, _) => _ErrorCard(
+        message: koreanErrorMessage(e),
+        onRetry: () => ref.refresh(rankingCallsProvider),
+      ),
     );
   }
 
@@ -939,7 +972,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
   @override
   Widget build(BuildContext context) {
-    final asyncCalls = ref.watch(incompleteCallsProvider);
+    final asyncCalls = ref.watch(rankingCallsProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return asyncCalls.when(
