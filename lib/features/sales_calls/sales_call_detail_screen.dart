@@ -519,9 +519,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             Container(
               padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
+                color: scheme.surfaceContainerLowest,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                ],
               ),
               child: const Center(
                 child: Text('기록된 상담 이력이 없습니다.', style: TextStyle(color: Colors.black38)),
@@ -530,11 +532,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
           sectionTitle('첨부 파일 자료', Icons.attach_file_rounded),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+              ],
             ),
             child: SalesCallAttachmentsStrip(
               urls: _imageUrls,

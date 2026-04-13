@@ -1,37 +1,39 @@
+// lib/theme/app_theme.dart
 import 'package:flutter/material.dart';
 
 /// 영업 현장용 — 가독성·대비·여백 위주의 Material 3 테마
 class AppTheme {
   AppTheme._();
 
-  static const Color _seed = Color(0xFF1A4A7A);
+  // 조금 더 세련된 네이비 코발트 톤
+  static const Color _seed = Color(0xFF2B5C92);
 
   static ThemeData light() {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: _seed,
       brightness: Brightness.light,
-      surface: const Color(0xFFF4F6F9),
-      surfaceContainerLowest: const Color(0xFFEEF1F6),
+      surface: const Color(0xFFF8F9FA),
+      surfaceContainerLowest: const Color(0xFFFFFFFF),
     );
 
     final textTheme = Typography.material2021(platform: TargetPlatform.android)
         .black
         .apply(
-          fontFamily: null,
-          bodyColor: colorScheme.onSurface,
-          displayColor: colorScheme.onSurface,
+          fontFamily: null, // Keep default for performance, or specify like 'Pretendard' if imported
+          bodyColor: const Color(0xFF1F2937), // 덜 까만 회검색
+          displayColor: const Color(0xFF111827),
         )
         .copyWith(
-          titleLarge: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: -0.3),
-          titleMedium: const TextStyle(fontWeight: FontWeight.w600),
-          bodyLarge: const TextStyle(fontSize: 16, height: 1.45),
-          bodyMedium: const TextStyle(fontSize: 15, height: 1.45),
-          labelLarge: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.2),
+          titleLarge: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5),
+          titleMedium: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: -0.3),
+          bodyLarge: const TextStyle(fontSize: 16, height: 1.5, letterSpacing: -0.1),
+          bodyMedium: const TextStyle(fontSize: 15, height: 1.5, letterSpacing: -0.1),
+          labelLarge: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.1),
         );
 
     final inputBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.35)),
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide.none,
     );
 
     return ThemeData(
@@ -41,12 +43,13 @@ class AppTheme {
       scaffoldBackgroundColor: colorScheme.surface,
       appBarTheme: AppBarTheme(
         elevation: 0,
-        scrolledUnderElevation: 0.5,
+        scrolledUnderElevation: 0,
         centerTitle: false,
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
         titleTextStyle: textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w700,
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
           color: colorScheme.onSurface,
         ),
       ),
@@ -54,70 +57,75 @@ class AppTheme {
         elevation: 0,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.45)),
+          borderRadius: BorderRadius.circular(20),
         ),
-        color: colorScheme.surface,
+        color: colorScheme.surfaceContainerLowest,
+        margin: EdgeInsets.zero,
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.2),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.5)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: colorScheme.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        fillColor: colorScheme.surfaceContainerLowest,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         border: inputBorder,
         enabledBorder: inputBorder,
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.primary.withOpacity(0.5), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.error),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.error.withOpacity(0.5), width: 1.5),
         ),
         labelStyle: TextStyle(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500),
+        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.6), fontSize: 14),
         floatingLabelStyle: WidgetStateTextStyle.resolveWith((states) {
           return TextStyle(
             color: states.contains(WidgetState.focused) ? colorScheme.primary : colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           );
         }),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        elevation: 3,
-        height: 68,
-        indicatorColor: colorScheme.primaryContainer,
+        elevation: 0,
+        backgroundColor: colorScheme.surfaceContainerLowest,
+        height: 64,
+        indicatorColor: colorScheme.primaryContainer.withOpacity(0.6),
         labelTextStyle: WidgetStateTextStyle.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return TextStyle(
             fontSize: 12,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+            color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
           );
         }),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 4,
       ),
       dividerTheme: DividerThemeData(
-        color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
         thickness: 1,
+        space: 1,
       ),
       dialogTheme: DialogThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     );
   }

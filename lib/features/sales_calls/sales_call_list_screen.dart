@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
@@ -325,10 +326,20 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             
             bool matchesSearch = true;
             if (_searchQuery.isNotEmpty) {
-              final query = _searchQuery.toLowerCase();
-              final name = (c.customerName ?? '').toLowerCase();
-              final phone = (c.customerPhone ?? '').toLowerCase();
-              matchesSearch = name.contains(query) || phone.contains(query);
+              final queryTerms = _searchQuery.toLowerCase().split(' ').where((t) => t.isNotEmpty);
+              if (queryTerms.isNotEmpty) {
+                final searchableText = [
+                  c.customerName,
+                  c.customerPhone,
+                  c.inquiryContent,
+                  c.productCategoryName,
+                  c.regionLabel,
+                  c.regionManager,
+                ].where((s) => s != null).join(' ').toLowerCase();
+                
+                // 모든 검색 키워드가 포함되어 있는지 확인 (AND 검색)
+                matchesSearch = queryTerms.every((term) => searchableText.contains(term));
+              }
             }
             
             return matchesAssignee && matchesSearch;
@@ -367,14 +378,21 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: isSelected ? color : color.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(12),
+                            color: isSelected ? color : color.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: isSelected ? [
+                              BoxShadow(
+                                color: color.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              )
+                            ] : null,
                             border: Border.all(
-                              color: isSelected ? color : color.withOpacity(0.2),
-                              width: 1.5,
+                              color: isSelected ? Colors.transparent : color.withOpacity(0.2),
+                              width: 1,
                             ),
                           ),
                           child: Row(
@@ -464,19 +482,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             return Container(
                               margin: const EdgeInsets.only(bottom: 16),
                               decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: scheme.outlineVariant.withOpacity(0.4)),
+                                color: scheme.surfaceContainerLowest,
+                                borderRadius: BorderRadius.circular(24),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.03),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
+                                    color: scheme.shadow.withOpacity(0.04),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 6),
                                   ),
                                 ],
                               ),
                               child: InkWell(
-                                borderRadius: BorderRadius.circular(20),
+                                borderRadius: BorderRadius.circular(24),
                                 onTap: () async {
                                   await Navigator.of(context).push(
                                     MaterialPageRoute<void>(
@@ -495,8 +512,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
                                           Expanded(
-                                            child: Text(
-                                              c.customerName ?? '(이름 없음)',
+                                            child: SearchHighlightText(
+                                              text: c.customerName ?? '(이름 없음)',
+                                              query: _searchQuery,
                                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5),
                                             ),
                                           ),
@@ -512,14 +530,14 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       Row(
                                         children: [
                                           Expanded(
-                                            child: Text(
-                                              c.customerPhone ?? '번호 없음',
+                                            child: SearchHighlightText(
+                                              text: c.customerPhone ?? '번호 없음',
+                                              query: _searchQuery,
                                               style: TextStyle(
                                                 fontSize: 15,
                                                 fontWeight: FontWeight.w600,
                                                 color: scheme.primary,
                                               ),
-                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                           const SizedBox(width: 8),
@@ -540,10 +558,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                             color: scheme.surfaceContainerHighest.withOpacity(0.2),
                                             borderRadius: BorderRadius.circular(12),
                                           ),
-                                          child: Text(
-                                            c.inquiryContent!,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                          child: SearchHighlightText(
+                                            text: c.inquiryContent!,
+                                            query: _searchQuery,
                                             style: TextStyle(fontSize: 14, color: scheme.onSurface.withOpacity(0.8), height: 1.5),
                                           ),
                                         ),
@@ -556,20 +573,20 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           // Assignee Tag
                                           Flexible(
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                               decoration: BoxDecoration(
-                                                color: assignColor.withOpacity(0.1),
-                                                borderRadius: BorderRadius.circular(8),
+                                                color: assignColor.withOpacity(0.15),
+                                                borderRadius: BorderRadius.circular(12),
                                               ),
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   CircleAvatar(radius: 4, backgroundColor: assignColor),
-                                                  const SizedBox(width: 6),
+                                                  const SizedBox(width: 8),
                                                   Flexible(
                                                     child: Text(
                                                       (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!,
-                                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: assignColor.withOpacity(0.9)),
+                                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurface),
                                                       overflow: TextOverflow.ellipsis,
                                                       maxLines: 1,
                                                     ),
@@ -606,17 +623,17 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
   Widget _buildQuickAction(IconData icon, Color color, VoidCallback onTap, {Color iconColor = Colors.white}) {
     return Container(
-      width: 42,
-      height: 42,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withOpacity(0.15),
         shape: BoxShape.circle,
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(21),
+          borderRadius: BorderRadius.circular(22),
           child: Icon(icon, size: 20, color: color),
         ),
       ),

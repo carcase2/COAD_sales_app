@@ -195,13 +195,22 @@ String? _nestedName(Map<String, dynamic> json, List<String> keys) {
 
 String? _regionLabel(Map<String, dynamic> json) {
   final direct = _pick(json, const ['region_display', 'region_label', 'regionLabel']);
-  if (direct != null) return direct;
-  final nested = _nestedName(json, const ['regions', 'region']);
-  if (nested != null) return nested;
-  final sido = _pick(json, const ['region_sido', 'regionSido']);
-  final name = _pick(json, const ['region_name', 'regionName']);
-  if (sido != null && name != null) return '$sido $name';
-  return sido ?? name;
+  final s = _pick(json, const ['region_sido', 'regionSido'])?.trim() ?? '';
+  final r = _pick(json, const ['region_name', 'region_region', 'regionName', 'regionRegion'])?.trim() ?? '';
+  final m = _pick(json, const ['region_manager', 'regionManager'])?.trim() ?? '';
+  final b = _pick(json, const ['region_branch_type', 'regionBranchType'])?.trim() ?? '';
+
+  String label = s.isNotEmpty ? '[$s] ' : '';
+  if (r.isNotEmpty && r != s) {
+    label += r;
+  } else if (r.isEmpty && s.isEmpty) {
+    return null; 
+  }
+
+  if (m.isNotEmpty || b.isNotEmpty) {
+    label += ' ($m${m.isNotEmpty && b.isNotEmpty ? ' - ' : ''}$b)';
+  }
+  return label.isEmpty ? null : label;
 }
 
 List<SalesCall> parseSalesCallList(dynamic decoded) {

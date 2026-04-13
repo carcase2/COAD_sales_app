@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/phone_validation.dart';
+import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -9,6 +12,7 @@ import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_sc
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
+import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -92,8 +96,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Future<void> _submit(MasterDataBundle master) async {
-    if (!_formKey.currentState!.validate()) return;
-    
+    // 3단계에서는 _formKey가 화면에 없으므로(1~2단계 폼) 수동 검증
+    if (_inquiryCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('상담 내용 본문을 입력해주세요.')),
+      );
+      return;
+    }
     // 단순문의로 바로 마무리 체크 시 status_id = 4 (단순문의) 강제 설정 로직 예시
     final targetStatusId = _isSimpleInquiry ? 4 : (_statusId ?? 1);
 
@@ -334,17 +343,25 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           ),
         ),
       ),
-      body: masterAsync.when(
-        data: (master) => AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: _buildStepContent(master, user?.name ?? '작성자'),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: masterAsync.when(
+                data: (master) => AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: _buildStepContent(master, user?.name ?? '작성자'),
+                ),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+              ),
+            ),
+            masterAsync.maybeWhen(
+              data: (master) => _buildFixedFooter(master),
+              orElse: () => const SizedBox.shrink(),
+            ),
+          ],
         ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
-      ),
-      bottomNavigationBar: masterAsync.maybeWhen(
-        data: (master) => _buildFixedFooter(master),
-        orElse: () => const SizedBox.shrink(),
       ),
     );
   }
@@ -397,8 +414,10 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   Widget _buildFixedFooter(MasterDataBundle master) {
     final scheme = Theme.of(context).colorScheme;
     final isLastStep = _currentStep == 2;
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).padding.bottom + 12),
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       decoration: BoxDecoration(
         color: scheme.surface,
         boxShadow: [
@@ -447,7 +466,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ─── Step 1: 분류 ───
@@ -519,12 +538,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           _buildSectionHeader('고객 및 지역 정보', Icons.contact_mail_outlined, scheme),
           const SizedBox(height: 24),
           
-          Card(
-            elevation: 0,
-            color: scheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          Container(
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+              ],
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 children: [
                   Row(
@@ -574,12 +597,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           
           const SizedBox(height: 24),
           
-          Card(
-            elevation: 0,
-            color: scheme.secondaryContainer.withOpacity(0.15),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          Container(
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+              ],
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -593,24 +620,12 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   const Divider(),
                   const SizedBox(height: 12),
                   
-                  DropdownButtonFormField<String?>(
+                  SearchableRegionPicker(
+                    regions: master.regions,
                     value: _regionId,
-                    isExpanded: true,
-                    decoration: _inputDecoration('배정될 지역 선택 *'),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null, 
-                        child: Text('지역을 선택하세요', style: TextStyle(fontSize: 14)),
-                      ),
-                      ...master.regions.map((e) {
-                        final sido = e.extra['sido'] ?? '';
-                        final displayName = sido.isNotEmpty ? '[$sido] ${e.name}' : e.name;
-                        return DropdownMenuItem<String?>(
-                          value: e.id, 
-                          child: Text(displayName, style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis),
-                        );
-                      }),
-                    ],
+                    decoration: _inputDecoration('배정될 지역 검색 및 선택 *').copyWith(
+                      fillColor: scheme.surfaceContainerHighest.withOpacity(0.3),
+                    ),
                     onChanged: (v) => setState(() => _regionId = v),
                     validator: (v) => v == null ? '지역을 선택해주세요' : null,
                   ),
@@ -655,11 +670,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         _buildStepSubsectionTitle('첨부 서류 및 현장 사진', scheme),
         const SizedBox(height: 12),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest.withOpacity(0.4),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+            color: scheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+            ],
           ),
           child: SalesCallAttachmentsStrip(
             urls: _uploadedImageUrls,
