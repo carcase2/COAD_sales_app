@@ -8,6 +8,7 @@ import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -317,53 +318,130 @@ class _StatsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(Icons.insights_outlined, size: 22, color: scheme.primary),
-                const SizedBox(width: 10),
-                Text(
-                  '오늘 요약',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ],
+            Icon(Icons.insights_outlined, size: 22, color: scheme.primary),
+            const SizedBox(width: 10),
+            Text(
+              '오늘 요약',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatVertical(
-                    label: '금일 접수',
-                    value: stats.todayCount?.toString() ?? '0',
-                    color: scheme.primary,
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today))),
-                  ),
-                ),
-                Expanded(
-                  child: _StatVertical(
-                    label: '미통화',
-                    value: stats.incompleteCount?.toString() ?? '0',
-                    color: scheme.error,
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.incomplete))),
-                  ),
-                ),
-                Expanded(
-                  child: _StatVertical(
-                    label: '완료',
-                    value: stats.completedToday?.toString() ?? '0',
-                    color: Colors.green.shade600,
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.completedToday))),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
           ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCardItem(
+                label: '금일접수',
+                value: stats.todayCount?.toString() ?? '0',
+                color: scheme.primary,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today))),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _StatCardItem(
+                label: '미통화',
+                value: stats.incompleteCount?.toString() ?? '0',
+                color: scheme.error,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.incomplete))),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _StatCardItem(
+                label: '완료',
+                value: stats.completedToday?.toString() ?? '0',
+                color: Colors.green.shade600,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.completedToday))),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _StatCardItem extends StatefulWidget {
+  const _StatCardItem({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  State<_StatCardItem> createState() => _StatCardItemState();
+}
+
+class _StatCardItemState extends State<_StatCardItem> {
+  double _scale = 1.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _scale = 0.95),
+      onTapUp: (_) => setState(() => _scale = 1.0),
+      onTapCancel: () => setState(() => _scale = 1.0),
+      onTap: () {
+        HapticFeedback.lightImpact();
+        widget.onTap();
+      },
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 100),
+        child: Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: widget.color.withOpacity(0.2), width: 1.5),
+          ),
+          color: widget.color.withOpacity(0.04), // 매우 투명한 색상 배경
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    widget.value,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: widget.color,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -406,14 +484,14 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
 
           switch (_currentFilter) {
             case _SummaryFilter.today:
-              return c.callDate!.startsWith(todayStr);
+              return c.callDate!.startsWith(todayStr) && c.isMissed;
             case _SummaryFilter.week:
               return callDt.isAfter(startOfWeek.subtract(const Duration(seconds: 1))) && 
-                     callDt.isBefore(now.add(const Duration(days: 1)));
+                     callDt.isBefore(now.add(const Duration(days: 1))) && c.isMissed;
             case _SummaryFilter.month:
-              return callDt.isAfter(startOfMonth.subtract(const Duration(seconds: 1)));
+              return callDt.isAfter(startOfMonth.subtract(const Duration(seconds: 1))) && c.isMissed;
             case _SummaryFilter.total:
-              return true;
+              return c.isMissed;
           }
         }).toList();
 
@@ -748,7 +826,10 @@ class _StatVertical extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        if (onTap != null) onTap!();
+      },
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),

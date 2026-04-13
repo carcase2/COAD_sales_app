@@ -110,6 +110,14 @@ class SalesCall {
     );
   }
 
+  bool get isMissed {
+    // 웹 기준: (단계가 0 또는 null) 이고 (상황이 단순문의가 아닌 건)
+    final s = callStage?.trim();
+    final isInitialStage = s == null || s == '' || s == '0' || s == '접수';
+    final isNotSimpleInquiry = statusId != 4;
+    return isInitialStage && isNotSimpleInquiry;
+  }
+
   Map<String, dynamic> toUpdateBody() {
     return {
       'customer_phone': customerPhone,

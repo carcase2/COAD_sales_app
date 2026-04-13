@@ -101,12 +101,22 @@ serve(async (req) => {
     const phone = (activeRecord && activeRecord.customer_phone) || ''
     const content = activeRecord ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음') : '내용 없음'
     
-    // Dynamic Title based on event type
-    let titlePrefix = '[COAD] 새 접수'
-    if (type === 'UPDATE') titlePrefix = '[COAD] 접수 수정'
-    if (type === 'DELETE') titlePrefix = '[COAD] 접수 삭제'
+    // 5. Build Notification Content
+    // Only notify on NEW Reception (INSERT)
+    if (type !== 'INSERT') {
+      console.log(`Skipping notification for event type: ${type}`)
+      return new Response(JSON.stringify({ message: 'Only INSERT events are notified' }), { status: 200 })
+    }
 
-    console.log(`Sending ${type} notification for: ${customerName}, assigned to: ${assigneeName}`)
+    const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'
+    const phone = (activeRecord && activeRecord.customer_phone) || ''
+    const content = activeRecord ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음') : '내용 없음'
+    
+    // Title with Assignee
+    const title = `[새 접수] ${customerName} (담당: ${assigneeName})`
+    const body = `📦 모델: ${categoryName}\n📍 지역: ${regionText}\n📞 연락처: ${phone}\n📝 상세: ${content}`
+
+    console.log(`Sending reception notification for: ${customerName}, assigned to: ${assigneeName}`)
 
     // 6. Send notifications
     const results = await Promise.all(tokens.map(async (token: string) => {
@@ -123,10 +133,8 @@ serve(async (req) => {
               message: {
                 token: token,
                 notification: {
-                  title: `${titlePrefix}: ${customerName}님`,
-                  body: type === 'DELETE' 
-                    ? `❌ 접수 삭제: ${customerName}\n👤 담당: ${assigneeName}`
-                    : `📞 ${phone}\n📍 지역: ${regionText}\n👤 담당: ${assigneeName}\n📝 상세: ${content}`,
+                  title: title,
+                  body: body,
                 },
                 data: {
                   call_id: activeRecord ? activeRecord.id.toString() : '',
@@ -138,7 +146,7 @@ serve(async (req) => {
                     channel_id: 'high_importance_channel',
                     click_action: 'FLUTTER_NOTIFICATION_CLICK',
                     icon: 'ic_notification_coad',
-                    color: type === 'DELETE' ? '#DC3545' : (type === 'UPDATE' ? '#FFC107' : '#28A745'),
+                    color: '#28A745', // Success Green for new reception
                   },
                 },
               },

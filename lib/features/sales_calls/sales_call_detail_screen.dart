@@ -2,6 +2,7 @@ import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
+import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:file_picker/file_picker.dart';
@@ -39,12 +40,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   String? _regionId;
   String? _methodId;
   int? _statusId;
+  bool _isEditMode = false;
+
+  final _newConsultationCtrl = TextEditingController();
 
   bool _saving = false;
   List<String> _imageUrls = [];
   bool _uploadBusy = false;
   int _uploadTotal = 0;
   int _uploadCurrent = 0;
+
+  // 상담 이력 스와이프 관련 상태
+  late PageController _historyPageController;
+  int _selectedHistoryIdx = 0;
 
   @override
   void initState() {
@@ -62,6 +70,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     _regionId = i?.regionId;
     _methodId = i?.inquiryMethodId;
     _statusId = i?.statusId;
+    _historyPageController = PageController(initialPage: (i?.callHistory.length ?? 1) - 1);
+    _selectedHistoryIdx = (i?.callHistory.length ?? 1) - 1;
     _bootstrap();
   }
 
@@ -96,6 +106,16 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       _methodId = m.inquiryMethodId;
       _statusId = m.statusId;
       _imageUrls = List<String>.from(m.images);
+      
+      // 최신 이력이 추가되었을 경우 마지막 페이지로 이동
+      if (m.callHistory.isNotEmpty) {
+        _selectedHistoryIdx = m.callHistory.length - 1;
+        if (_historyPageController.hasClients) {
+          _historyPageController.jumpToPage(_selectedHistoryIdx);
+        } else {
+          _historyPageController = PageController(initialPage: _selectedHistoryIdx);
+        }
+      }
     });
   }
 
@@ -107,6 +127,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     _assignedCtrl.dispose();
     _stageCtrl.dispose();
     _nextDateCtrl.dispose();
+    _newConsultationCtrl.dispose();
+    _historyPageController.dispose();
     super.dispose();
   }
 
@@ -225,17 +247,54 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   Future<void> _save(MasterDataBundle master) async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_isEditMode && !_formKey.currentState!.validate()) return;
+    
     setState(() => _saving = true);
     try {
-      final updated = await ref.read(salesCallsRepositoryProvider).updateCall(
-            widget.id,
-            _bodyFromForm(master),
-          );
-      _applyModel(updated);
+      final repo = ref.read(salesCallsRepositoryProvider);
+      
+      if (_isEditMode) {
+        final updated = await repo.updateCall(widget.id, _bodyFromForm(master));
+        _applyModel(updated);
+      } else {
+        // Only saving new consultation and next date
+        final now = DateTime.now();
+        final timestamp = "[${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}]";
+        final currentStageLabel = _getCurrentStage(_model?.callStage);
+        
+        final newContent = _newConsultationCtrl.text.trim();
+        if (newContent.isEmpty) {
+          throw Exception('상담 내용을 입력해주세요.');
+        }
+
+        // 1. History 추가 (상담내용 입력 시 항상 이력으로 저장)
+        await repo.addCallHistory(widget.id, {
+          'content': newContent,
+          'call_date': now.toIso8601String().split('T').first,
+          'call_stage': currentStageLabel,
+        });
+
+        // 2. 메인 정보 업데이트 (문의내용은 더 이상 수정하지 않음)
+        final nextStage = _getNextStage(_model?.callStage);
+        
+        final body = {
+          // 'inquiry_content': cumulativeContent, // 제거: 문의와 상담 원천 분리
+          'next_scheduled_date': _nextDateCtrl.text.trim(),
+          'status_id': _statusId,
+          'call_stage': nextStage,
+        };
+
+        final updated = await repo.updateCall(widget.id, body);
+        _applyModel(updated);
+      }
+
       if (mounted) {
+        setState(() {
+          _newConsultationCtrl.clear();
+          _isEditMode = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('저장했습니다.')),
+          const SnackBar(content: Text('상담 내용 및 이력이 저장되었습니다.')),
         );
       }
     } catch (e) {
@@ -247,6 +306,21 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String _getCurrentStage(String? current) {
+    if (current == null || current.isEmpty || current == '접수') return '1차';
+    return current;
+  }
+
+  String _getNextStage(String? current) {
+    if (current == null || current.isEmpty || current == '접수') return '2차';
+    final match = RegExp(r'(\d+)').firstMatch(current);
+    if (match != null) {
+      final num = int.parse(match.group(1)!);
+      return '${num + 1}차';
+    }
+    return '2차';
   }
 
   @override
@@ -282,6 +356,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       appBar: AppBar(
         title: const Text('통화 상세'),
         actions: [
+          IconButton(
+            icon: Icon(_isEditMode ? Icons.view_headline_rounded : Icons.edit_note_rounded),
+            onPressed: () => setState(() => _isEditMode = !_isEditMode),
+            tooltip: _isEditMode ? '조회 모드로 변경' : '전체 정보 수정',
+          ),
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -293,6 +372,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
         ],
       ),
+      floatingActionButton: (!_isEditMode && _model != null)
+          ? FloatingActionButton.extended(
+              onPressed: () => masterAsync.whenData((m) => _showConsultationDialog(m)),
+              icon: const Icon(Icons.add_comment_rounded),
+              label: const Text('상담내용 입력'),
+            )
+          : null,
       body: masterAsync.when(
         data: (master) => _buildScrollable(master),
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -307,20 +393,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
     Widget sectionTitle(String title, IconData icon) {
       return Padding(
-        padding: const EdgeInsets.only(top: 24, bottom: 12, left: 4),
+        padding: const EdgeInsets.only(top: 28, bottom: 12, left: 4),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: scheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: scheme.onSurface,
-                ),
+            Icon(icon, size: 22, color: scheme.primary),
+            const SizedBox(width: 10),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+                letterSpacing: -0.5,
               ),
             ),
           ],
@@ -331,255 +415,586 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return Form(
       key: _formKey,
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          if (m != null)
+          if (m != null) _buildHeroHeader(m, scheme),
+
+          sectionTitle('핵심 문의 및 제품', Icons.rocket_launch_rounded),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInfoTile(
+                  '제품명', 
+                  m?.productCategoryName ?? '미지정', 
+                  Icons.category_rounded, 
+                  scheme,
+                  bgColor: scheme.primary.withOpacity(0.05),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildInfoTile(
+                  '지역', 
+                  m?.regionLabel ?? '미지정', 
+                  Icons.location_on_rounded, 
+                  scheme,
+                  bgColor: Colors.orange.withOpacity(0.05),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInfoTile(
+            '문의내용', 
+            m?.inquiryContent ?? '상세 문의 내용이 없습니다.', 
+            Icons.notes_rounded, 
+            scheme,
+            multiLine: true,
+          ),
+
+          sectionTitle('진행 상태 및 일정', Icons.speed_rounded),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInfoTile(
+                  '현재 성과', 
+                  m?.statusLabel ?? '미확인', 
+                  Icons.stars_rounded, 
+                  scheme,
+                  labelColor: scheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildInfoTile(
+                  '현재 단계', 
+                  m?.callStage ?? '접수', 
+                  Icons.stairs_outlined, 
+                  scheme,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInfoTile(
+            '다음 예정일', 
+            m?.nextScheduledDate ?? '예정 없음', 
+            Icons.event_available_rounded, 
+            scheme,
+            labelColor: Colors.deepOrangeAccent,
+          ),
+
+          sectionTitle('상담 이력 (단계별)', Icons.history_rounded),
+          if (m != null && m.callHistory.isNotEmpty)
+            _buildHistorySwiper(m.callHistory, scheme)
+          else
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          '기본 접수 정보',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.bold, color: scheme.onSurfaceVariant),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text('통화일: ${formatSeoulDate(m.callDate)} ${m.callTime ?? ''}'.trim(), style: const TextStyle(fontSize: 14)),
-                  const SizedBox(height: 4),
-                  if (m.createdAt != null)
-                    Text(
-                      '최초 등록: ${formatSeoulDateTime(DateTime.tryParse(m.createdAt!))}',
-                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-                    ),
-                  if (m.updatedAt != null)
-                    Text(
-                      '마지막 수정: ${formatSeoulDateTime(DateTime.tryParse(m.updatedAt!))}',
-                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-                    ),
-                ],
+              child: const Center(
+                child: Text('기록된 상담 이력이 없습니다.', style: TextStyle(color: Colors.black38)),
               ),
             ),
 
-          sectionTitle('고객 정보', Icons.person),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+          sectionTitle('첨부 파일 자료', Icons.attach_file_rounded),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(labelText: '고객명', border: OutlineInputBorder(), prefixIcon: Icon(Icons.badge_outlined)),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _phoneCtrl,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: '전화번호 *', border: OutlineInputBorder(), prefixIcon: Icon(Icons.phone_android)),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return '전화번호는 필수입니다.';
-                      if (!isValidKoreanPhone(v)) return '전화번호 형식을 확인하세요.';
-                      return null;
-                    },
-                  ),
-                ],
-              ),
+            child: SalesCallAttachmentsStrip(
+              urls: _imageUrls,
+              editable: true,
+              uploadBusy: _uploadBusy,
+              progressLabel: _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
+              onAdd: () => _pickAndUpload(master),
+              onRemoveAt: (i) {
+                setState(() {
+                  _imageUrls = List<String>.from(_imageUrls)..removeAt(i);
+                });
+              },
             ),
           ),
 
-          sectionTitle('상담 및 현황', Icons.support_agent),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: _inquiryCtrl,
-                    minLines: 4,
-                    maxLines: 10,
-                    decoration: const InputDecoration(
-                      labelText: '문의 및 상담 내용',
-                      alignLabelWithHint: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<int>(
-                    value: _statusId ?? 1,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: '진행 상태', border: OutlineInputBorder(), prefixIcon: Icon(Icons.check_circle_outline)),
-                    items: const [
-                      DropdownMenuItem(value: 1, child: Text('미결정/미통화 (1)', overflow: TextOverflow.ellipsis)),
-                      DropdownMenuItem(value: 2, child: Text('미수주 (2)', overflow: TextOverflow.ellipsis)),
-                      DropdownMenuItem(value: 3, child: Text('수주 (3)', overflow: TextOverflow.ellipsis)),
-                      DropdownMenuItem(value: 4, child: Text('단순문의 (4)', overflow: TextOverflow.ellipsis)),
-                      DropdownMenuItem(value: 5, child: Text('설계문의 (5)', overflow: TextOverflow.ellipsis)),
-                    ],
-                    onChanged: (v) => setState(() => _statusId = v),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _assignedCtrl,
-                          decoration: const InputDecoration(labelText: '담당자', border: OutlineInputBorder(), prefixIcon: Icon(Icons.assignment_ind_outlined)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _stageCtrl,
-                          decoration: const InputDecoration(labelText: '콜 차수 (예: 1차)', border: OutlineInputBorder()),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _nextDateCtrl,
-                    decoration: const InputDecoration(labelText: '다음 예정일 (YYYY-MM-DD)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.calendar_today)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          sectionTitle('부가 정보', Icons.tune),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  DropdownButtonFormField<String?>(
-                    value: _productId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: '분류 (제품군)', border: OutlineInputBorder()),
-                    items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함', overflow: TextOverflow.ellipsis)),
-                      ...master.productCategories.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name, overflow: TextOverflow.ellipsis))),
-                    ],
-                    onChanged: (v) => setState(() => _productId = v),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String?>(
-                    value: _regionId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: '지역', border: OutlineInputBorder()),
-                    items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함', overflow: TextOverflow.ellipsis)),
-                      ...master.regions.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name, overflow: TextOverflow.ellipsis))),
-                    ],
-                    onChanged: (v) => setState(() => _regionId = v),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String?>(
-                    value: _methodId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: '문의 유입 경로', border: OutlineInputBorder()),
-                    items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('선택 안 함', overflow: TextOverflow.ellipsis)),
-                      ...master.inquiryMethods.map((e) => DropdownMenuItem<String?>(value: e.id, child: Text(e.name, overflow: TextOverflow.ellipsis))),
-                    ],
-                    onChanged: (v) => setState(() => _methodId = v),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          sectionTitle('첨부 파일', Icons.photo_library_outlined),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: SalesCallAttachmentsStrip(
-                urls: _imageUrls,
-                editable: true,
-                uploadBusy: _uploadBusy,
-                progressLabel: _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
-                onAdd: () => _pickAndUpload(master),
-                onRemoveAt: (i) {
-                  setState(() {
-                    _imageUrls = List<String>.from(_imageUrls)..removeAt(i);
-                  });
-                },
-              ),
-            ),
-          ),
-
-          if (m != null && m.callHistory.isNotEmpty) ...[
-            sectionTitle('이전 상담 이력', Icons.history),
-            ...m.callHistory.map(
-              (h) => Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: scheme.primary.withOpacity(0.2)),
-                ),
-                child: ListTile(
-                  leading: Icon(Icons.record_voice_over, color: scheme.onSurfaceVariant),
-                  title: Text(
-                    [
-                      h['call_date'] ?? h['created_at'] ?? '',
-                      h['stage'] ?? h['call_stage'] ?? '',
-                    ].where((e) => e.toString().isNotEmpty).join(' '),
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    (h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
-                    style: const TextStyle(fontSize: 14),
+          if (_isEditMode)
+            Padding(
+              padding: const EdgeInsets.only(top: 24, bottom: 48),
+              child: SizedBox(
+                height: 58,
+                child: FilledButton.icon(
+                  onPressed: _saving ? null : () => _save(master),
+                  icon: _saving
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.save_as_rounded),
+                  label: Text(
+                    _saving ? '저장 중...' : '전체 정보 수정 저장', 
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
             ),
-          ],
-          const SizedBox(height: 32),
-          SizedBox(
-            height: 54,
-            child: FilledButton.icon(
-              onPressed: _saving ? null : () => _save(master),
-              icon: _saving
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.save),
-              label: Text(_saving ? '저장 중...' : '변경 내용 저장', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ),
-          ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 50),
         ],
       ),
+    );
+  }
+
+  Widget _buildHeroHeader(SalesCall m, ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [scheme.primary, scheme.primary.withOpacity(0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      m.customerName ?? '(이름 없음)',
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      m.customerPhone ?? '연락처 없음',
+                      style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      m.statusLabel ?? '접수',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              _buildLargeQuickAction(Icons.call, '전화', () => LauncherUtils.makePhoneCall(m.customerPhone ?? '')),
+              const SizedBox(width: 12),
+              _buildLargeQuickAction(Icons.message_rounded, '문자', () => LauncherUtils.sendSMS(m.customerPhone ?? '')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLargeQuickAction(IconData icon, String label, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoTile(String label, String value, IconData icon, ColorScheme scheme, {bool multiLine = false, Color? bgColor, Color? labelColor}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: bgColor ?? Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: scheme.outlineVariant.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: labelColor ?? scheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(fontSize: 12, color: labelColor ?? scheme.onSurfaceVariant, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface,
+              height: multiLine ? 1.5 : 1.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryCard(Map<String, dynamic> h, ColorScheme scheme) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        (h['call_stage'] ?? h['stage'] ?? '기록').toString(),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: scheme.primary),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  formatSeoulDate(h['call_date'] ?? h['created_at']),
+                  style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            Text(
+              (h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
+              style: const TextStyle(fontSize: 15, height: 1.6, color: Color(0xFF333333)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistorySwiper(List<Map<String, dynamic>> history, ColorScheme scheme) {
+    return Column(
+      children: [
+        // ─── 차수 선택 칩 바 ───
+        SizedBox(
+          height: 44,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: history.length,
+            itemBuilder: (context, index) {
+              final h = history[index];
+              final isSelected = _selectedHistoryIdx == index;
+              final stage = (h['call_stage'] ?? h['stage'] ?? '${index + 1}차').toString();
+              
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(stage),
+                  selected: isSelected,
+                  onSelected: (val) {
+                    if (val) {
+                      setState(() => _selectedHistoryIdx = index);
+                      _historyPageController.animateToPage(
+                        index,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  },
+                  showCheckmark: false,
+                  selectedColor: scheme.primary,
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : scheme.onSurfaceVariant,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        // ─── 상담 상세 카드 View ───
+        SizedBox(
+          height: 220, // 고정 높이 또는 동적 조정 필요
+          child: PageView.builder(
+            controller: _historyPageController,
+            itemCount: history.length,
+            onPageChanged: (idx) {
+              setState(() => _selectedHistoryIdx = idx);
+            },
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: _buildHistoryCard(history[index], scheme),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(history.length, (index) {
+            return Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _selectedHistoryIdx == index 
+                    ? scheme.primary 
+                    : scheme.outlineVariant.withOpacity(0.5),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  void _showConsultationDialog(MasterDataBundle master) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final m = _model;
+          final scheme = Theme.of(context).colorScheme;
+          
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.85,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${_getCurrentStage(m?.callStage)} 상담내용 입력',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Context Box
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text('모델: ', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                                Expanded(child: Text(m?.productCategoryName ?? '미지정', style: const TextStyle(color: Colors.black54))),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            const Text('문의내용:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                            const SizedBox(height: 4),
+                            Text(
+                              m?.inquiryContent ?? '문의 내용이 없습니다.',
+                              style: const TextStyle(color: Colors.black54, height: 1.4, fontSize: 13),
+                            ),
+                            if (m != null && m.callHistory.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              const Divider(height: 1),
+                              const SizedBox(height: 12),
+                              Text(
+                                '이전(${m.callHistory.last['call_stage'] ?? '직전'}) 상담 내용:',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueAccent),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                m.callHistory.last['content']?.toString() ?? '',
+                                style: const TextStyle(color: Colors.black54, height: 1.4, fontSize: 13),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text('상담내용 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _newConsultationCtrl,
+                        minLines: 5,
+                        maxLines: 15,
+                        decoration: InputDecoration(
+                          hintText: '고객와의 상담 내용을 자세히 입력하세요...',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text('상담 결과 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 12),
+                      _buildStatusGrid(scheme, setModalState),
+                      const SizedBox(height: 24),
+                      Text('${_getNextStage(m?.callStage)} 상담 예정일 *', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _nextDateCtrl,
+                        readOnly: true,
+                        onTap: () async {
+                           final date = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now().add(const Duration(days: 7)),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (date != null) {
+                            setModalState(() {
+                              _nextDateCtrl.text = date.toIso8601String().split('T').first;
+                            });
+                          }
+                        },
+                        decoration: InputDecoration(
+                          hintText: '연도. 월. 일.',
+                          suffixIcon: const Icon(Icons.calendar_today_outlined),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                      SizedBox(
+                        height: 54,
+                        child: FilledButton(
+                          onPressed: _saving ? null : () async {
+                            await _save(master);
+                            if (mounted) Navigator.pop(context);
+                          },
+                          child: Text(_saving ? '저장 중...' : '상담내용 저장'),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStatusGrid(ColorScheme scheme, [void Function(void Function())? setModalState]) {
+    final statuses = [
+      {'id': 1, 'name': '미결정'},
+      {'id': 3, 'name': '수주'},
+      {'id': 2, 'name': '미수주'},
+      {'id': 6, 'name': '기타'},
+      {'id': 4, 'name': '단순문의'},
+      {'id': 5, 'name': '설계문의'},
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: statuses.map((s) {
+        final isSelected = _statusId == s['id'];
+        return GestureDetector(
+          onTap: () {
+            if (setModalState != null) {
+              setModalState(() => _statusId = s['id'] as int);
+            } else {
+              setState(() => _statusId = s['id'] as int);
+            }
+          },
+          child: Container(
+            width: (MediaQuery.of(context).size.width - 48) / 2,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFFF2A900) : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: isSelected ? const Color(0xFFF2A900) : Colors.grey.shade300),
+            ),
+            child: Center(
+              child: Text(
+                s['name'] as String,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black87,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

@@ -68,6 +68,7 @@ class SalesCallsRepository {
     int? offset,
     bool includeCallHistory = true,
     bool? incompleteOnly,
+    bool? uncalledOnly,
     bool? completedOnly,
     bool excludeSimpleInquiries = false,
     bool calendarFull = false,
@@ -96,10 +97,16 @@ class SalesCallsRepository {
         queryBuilder = queryBuilder.gte('call_date', '$fromDate 00:00:00');
       }
       if (incompleteOnly == true) {
-        queryBuilder = queryBuilder.eq('status_id', 1);
+        // 미종료: 수주(3), 미수주(2), 단순문의(4)가 아닌 모든 상태
+        queryBuilder = queryBuilder.not('status_id', 'in', '(2,3,4)');
+      }
+      if (uncalledOnly == true) {
+        // 미통화: 단순문의 제외하고 단계가 초기인 건
+        queryBuilder = queryBuilder.neq('status_id', 4);
       }
       if (completedOnly == true) {
-        queryBuilder = queryBuilder.neq('status_id', 1);
+        // 완료: 수주, 미수주, 단순문의 등 종료된 건
+        queryBuilder = queryBuilder.filter('status_id', 'in', '(2,3,4)');
       }
 
       PostgrestTransformBuilder<List<Map<String, dynamic>>> transformBuilder = queryBuilder.order('created_at', ascending: false);
@@ -117,11 +124,18 @@ class SalesCallsRepository {
       }
 
       List<SalesCall> parsed = parseSalesCallList(res);
+      
+      if (uncalledOnly == true) {
+        parsed = parsed.where((c) => c.isMissed).toList();
+      }
+      
+      if (incompleteOnly == true) {
+        // 이미 서버에서 필터링되었지만 확실하게 한 번 더 (필요 시)
+        parsed = parsed.where((c) => ![2,3,4].contains(c.statusId)).toList();
+      }
+      
       if (excludeSimpleInquiries) {
-        parsed = parsed.where((c) {
-          final n = c.inquiryMethodName;
-          return n != '설계문의' && n != '단순문의' && n != '미결정';
-        }).toList();
+        parsed = parsed.where((c) => c.statusId != 4).toList();
       }
       return parsed;
     } catch (e) {
@@ -136,7 +150,8 @@ class SalesCallsRepository {
         product_categories(name),
         inquiry_methods(name),
         call_statuses(name),
-        regions(*)
+        regions(*),
+        call_history(*)
       ''').eq('id', id).maybeSingle();
 
       if (res == null) {
@@ -201,28 +216,39 @@ class SalesCallsRepository {
     }
   }
 
+  Future<void> addCallHistory(String callId, Map<String, dynamic> historyData) async {
+    try {
+      await _client.from('call_history').insert({
+        ...historyData,
+        'call_id': callId,
+      });
+    } catch (e) {
+      throw ApiException('상담 이력 저장에 실패했습니다: $e');
+    }
+  }
+
   Future<TodayStats> fetchTodayStats() async {
     try {
       final todayStr = DateTime.now().toIso8601String().split('T').first;
       
       final res = await _client
           .from('sales_calls')
-          .select('id, status_id, inquiry_methods(name)')
+          .select('id, status_id, call_stage')
           .gte('call_date', '$todayStr 00:00:00')
           .lte('call_date', '$todayStr 23:59:59');
 
       final total = res.length;
-      final completed = res.where((row) => row['status_id'] != 1).length;
       
+      // 기획 기준 미통화: (단계가 0/null/접수) && (상황이 단순문의(4) 아님)
       final incomplete = res.where((row) {
-        if (row['status_id'] != 1) return false;
-        final im = row['inquiry_methods'];
-        if (im is Map) {
-          final name = im['name'];
-          if (name == '설계문의' || name == '단순문의' || name == '미결정') return false;
-        }
-        return true;
+        final stage = row['call_stage']?.toString().trim();
+        final isInitial = stage == null || stage == '' || stage == '0' || stage == '접수';
+        final isNotSimple = row['status_id'] != 4;
+        return isInitial && isNotSimple;
       }).length;
+      
+      // 완료: 전체 - 미통화 (또는 명시적으로 단계가 존재하거나 단순문의인 건)
+      final completed = total - incomplete;
       
       return TodayStats.fromJson({
         'today_count': total,

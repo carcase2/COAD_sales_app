@@ -1,10 +1,12 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 enum ListQueryMode { today, incomplete, recent, completedToday, incompleteByDate }
@@ -115,9 +117,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         );
       case ListQueryMode.incomplete:
         return repo.fetchCalls(
-          date: todayYmdSeoul(),
-          incompleteOnly: true,
-          excludeSimpleInquiries: true,
+          uncalledOnly: true,
           limit: 100,
           includeCallHistory: true,
         );
@@ -146,7 +146,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   }
 
   String get _title {
-    // ... 기존 코드와 동일 ...
     switch (widget.mode) {
       case ListQueryMode.today:
         return '오늘 통화';
@@ -165,7 +164,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   }
 
   Color _colorForAssignee(String assignee, ColorScheme scheme) {
-    // ... 기존 코드와 동일 ...
     if (assignee == '미지정') return scheme.surfaceContainerHighest;
     final colors = [
       Colors.blue.shade100,
@@ -272,28 +270,23 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       );
     }
 
-          // 1. Calculate counts per assignee
           final Map<String, int> counts = {'전체': items.length};
           for (var c in items) {
             final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
             counts[a] = (counts[a] ?? 0) + 1;
           }
 
-          // 2. Sort assignees by count descending (keep '전체' at the front)
           final sortedAssignees = counts.keys.toList()..sort((a, b) {
             if (a == '전체') return -1;
             if (b == '전체') return 1;
             
-            // Sort by count descending
             final countA = counts[a] ?? 0;
             final countB = counts[b] ?? 0;
             if (countA != countB) return countB.compareTo(countA);
             
-            // If count is same, sort alphabetically
             return a.compareTo(b);
           });
 
-          // 2-1. Smart default: filter by logged-in user if no initialAssignee was provided
           final user = ref.watch(authControllerProvider);
           final userName = user?.name;
           if (widget.initialAssignee == null &&
@@ -307,16 +300,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             });
           }
 
-          // Auto-scroll to selected assignee on first load
           if (widget.initialAssignee != null && widget.initialAssignee != '전체' && !_hasScrolledToInitial) {
             final idx = sortedAssignees.indexOf(widget.initialAssignee!);
             if (idx != -1) {
               _hasScrolledToInitial = true;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (_scrollController.hasClients) {
-                  // Approximate width per item (padding 12 + approx text + count badge)
-                  // Let's use jumpTo or animateTo with an estimated position
-                  double offset = idx * 90.0; // Estimated width
+                  double offset = idx * 90.0;
                   _scrollController.animateTo(
                     offset,
                     duration: const Duration(milliseconds: 500),
@@ -327,13 +317,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             }
           }
 
-          // Filter items based on selected assignee AND search query
           final filteredItems = items.where((c) {
-            // 1. Assignee Filter
             final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
             bool matchesAssignee = _selectedAssignee == '전체' || a == _selectedAssignee;
             
-            // 2. Search Filter
             bool matchesSearch = true;
             if (_searchQuery.isNotEmpty) {
               final query = _searchQuery.toLowerCase();
@@ -347,7 +334,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           return Column(
             children: [
-              // ─── 상단 담당자 필터 바 (건수 포함 및 정렬 적용) ───
               Container(
                 height: 80,
                 width: double.infinity,
@@ -373,7 +359,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                     return Padding(
                       padding: const EdgeInsets.only(right: 12),
                       child: GestureDetector(
-                        onTap: () => setState(() => _selectedAssignee = assignee),
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _selectedAssignee = assignee);
+                        },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -424,7 +413,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                   },
                 ),
               ),
-              // ─── 하단 목록 (디자인 개선) ───
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async {
@@ -459,7 +447,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                           itemCount: filteredItems.length,
                           itemBuilder: (context, i) {
                             final c = filteredItems[i];
-                            // ... 시간 계산 로직 ...
                             String timeStr = '${c.callDate ?? ''} ${c.callTime ?? ''}'.trim();
                             if (c.createdAt != null && c.createdAt!.isNotEmpty) {
                               final parsedDt = DateTime.tryParse(c.createdAt!);
@@ -472,121 +459,134 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final scheme = Theme.of(context).colorScheme;
                             final assignColor = _colorForAssignee(c.assignedTo ?? '미지정', scheme);
 
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: scheme.outlineVariant.withOpacity(0.4)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.03),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
                               ),
                               child: InkWell(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(20),
                                 onTap: () async {
                                   await Navigator.of(context).push(
                                     MaterialPageRoute<void>(
                                       builder: (_) => SalesCallDetailScreen(id: c.id, initial: c),
                                     ),
                                   );
-                                  if (mounted) _loadWithCache(); // 복귀 시 캐시+원격 동기화 재실행
+                                  if (mounted) _loadWithCache();
                                 },
                                 child: Padding(
-                                  padding: const EdgeInsets.all(16),
+                                  padding: const EdgeInsets.all(20),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      // Top Row: Name and Time
                                       Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
                                           Expanded(
                                             child: Text(
                                               c.customerName ?? '(이름 없음)',
-                                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5),
                                             ),
                                           ),
-                                          if (c.images.isNotEmpty) ...[
-                                            Tooltip(
-                                              message: '첨부 ${c.images.length}개',
-                                              child: Icon(
-                                                Icons.attach_file,
-                                                size: 18,
-                                                color: scheme.primary,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                          ],
                                           Text(
                                             timeStr,
-                                            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                                            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withOpacity(0.7), fontWeight: FontWeight.w500),
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 12),
+                                      
+                                      // Call & Quick Actions Bar
                                       Row(
                                         children: [
-                                          Icon(Icons.phone_android, size: 14, color: scheme.primary),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            c.customerPhone ?? '번호 없음',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Theme.of(context).colorScheme.onSurface,
+                                          Expanded(
+                                            child: Text(
+                                              c.customerPhone ?? '번호 없음',
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w600,
+                                                color: scheme.primary,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          const Spacer(),
-                                          if (c.callStage != null)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: scheme.secondaryContainer.withOpacity(0.5),
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: Text('${c.callStage}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                            ),
+                                          const SizedBox(width: 8),
+                                          // Quick Actions
+                                          _buildQuickAction(Icons.call, Colors.green, () => LauncherUtils.makePhoneCall(c.customerPhone ?? '')),
+                                          const SizedBox(width: 8),
+                                          _buildQuickAction(Icons.message_rounded, Colors.blue, () => LauncherUtils.sendSMS(c.customerPhone ?? '')),
                                         ],
                                       ),
-                                      if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty) ...[
-                                        const SizedBox(height: 10),
+                                      const SizedBox(height: 16),
+
+                                      // Inquiry Content Box
+                                      if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty)
                                         Container(
                                           width: double.infinity,
-                                          padding: const EdgeInsets.all(10),
+                                          padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
-                                            color: scheme.surfaceContainerHighest.withOpacity(0.3),
-                                            borderRadius: BorderRadius.circular(8),
+                                            color: scheme.surfaceContainerHighest.withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(12),
                                           ),
                                           child: Text(
                                             c.inquiryContent!,
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(fontSize: 13, color: scheme.onSurface, height: 1.4),
+                                            style: TextStyle(fontSize: 14, color: scheme.onSurface.withOpacity(0.8), height: 1.5),
                                           ),
                                         ),
-                                      ],
-                                      const SizedBox(height: 12),
+                                      
+                                      const SizedBox(height: 16),
+
+                                      // Bottom Row: Assignee and Status/Stage
                                       Row(
                                         children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: assignColor.withOpacity(0.2),
-                                              borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.person, size: 12, color: assignColor.withOpacity(0.8)),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!,
-                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                                ),
-                                              ],
+                                          // Assignee Tag
+                                          Flexible(
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                              decoration: BoxDecoration(
+                                                color: assignColor.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  CircleAvatar(radius: 4, backgroundColor: assignColor),
+                                                  const SizedBox(width: 6),
+                                                  Flexible(
+                                                    child: Text(
+                                                      (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!,
+                                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: assignColor.withOpacity(0.9)),
+                                                      overflow: TextOverflow.ellipsis,
+                                                      maxLines: 1,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
+                                          const SizedBox(width: 8),
                                           const Spacer(),
-                                          if (c.statusLabel != null)
-                                            Text(
-                                              c.statusLabel!,
-                                              style: TextStyle(fontSize: 12, color: scheme.primary, fontWeight: FontWeight.bold),
+                                          // Stage Badge
+                                          if (c.callStage != null && c.callStage!.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(right: 8),
+                                              child: _buildPill(c.callStage!, scheme.secondaryContainer, scheme.onSecondaryContainer),
                                             ),
+                                          // Status Badge
+                                          if (c.statusLabel != null)
+                                            _buildPill(c.statusLabel!, scheme.primaryContainer, scheme.onPrimaryContainer, isBold: true),
                                         ],
                                       ),
                                     ],
@@ -600,5 +600,42 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               ),
             ],
           );
+  }
+
+  Widget _buildQuickAction(IconData icon, Color color, VoidCallback onTap, {Color iconColor = Colors.white}) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        shape: BoxShape.circle,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(21),
+          child: Icon(icon, size: 20, color: color),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPill(String label, Color bgColor, Color textColor, {bool isBold = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isBold ? FontWeight.w900 : FontWeight.w600,
+          color: textColor,
+        ),
+      ),
+    );
   }
 }
