@@ -123,15 +123,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
               bottom: TabBar(
                 controller: tabController,
-                tabs: const [
-                  Tab(text: '오늘 요약', icon: Icon(Icons.dashboard_rounded, size: 18)),
-                  Tab(text: '미종료 달력', icon: Icon(Icons.calendar_month_rounded, size: 18)),
+                tabs: [
+                  Tab(
+                    icon: Icon(Icons.dashboard_rounded, size: 20, color: Colors.amberAccent.shade100),
+                    text: '오늘 요약',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.calendar_month_rounded, size: 20, color: Colors.greenAccent.shade100),
+                    text: '미종료 달력',
+                  ),
                 ],
                 indicatorColor: onBar,
                 indicatorWeight: 3,
                 labelColor: onBar,
                 unselectedLabelColor: onBar.withValues(alpha: 0.65),
-                labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                 dividerColor: Colors.transparent,
               ),
             ),

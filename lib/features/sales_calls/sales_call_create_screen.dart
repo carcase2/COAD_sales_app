@@ -366,36 +366,77 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     );
   }
 
+  void _goToStep(int targetIndex) {
+    // 자유롭게 이동 가능하게 하되, 이동 시 키보드를 내림 (UX 개선)
+    FocusScope.of(context).unfocus();
+    setState(() => _currentStep = targetIndex);
+  }
+
+  bool _isStepCompleted(int index) {
+    if (index == 0) return true; // 기본 분류는 보통 초기값이 있음
+    if (index == 1) return _phoneCtrl.text.trim().isNotEmpty && _regionId != null;
+    if (index == 2) return _inquiryCtrl.text.trim().isNotEmpty;
+    return false;
+  }
+
   Widget _buildStepIndicator(ColorScheme scheme) {
     final stepNames = ['분류', '정보', '내용'];
+    // 각 스텝별 고유 색상 배정: 0(분류) - 에메랄드, 1(정보) - 스카이블루, 2(내용) - 프라이머리
+    final colors = [
+      const Color(0xFF10B981),
+      const Color(0xFF0EA5E9),
+      scheme.primary,
+    ];
+
     return Row(
       children: List.generate(3, (index) {
         final isActive = _currentStep == index;
-        final isCompleted = _currentStep > index;
+        final isCompleted = _isStepCompleted(index);
+        final baseColor = colors[index];
+
         return Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                height: 4,
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  color: isActive 
-                    ? scheme.primary 
-                    : (isCompleted ? scheme.primary.withOpacity(0.5) : scheme.outlineVariant.withOpacity(0.3)),
-                  borderRadius: BorderRadius.circular(2),
+          child: GestureDetector(
+            onTap: () => _goToStep(index),
+            behavior: HitTestBehavior.opaque,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  height: isActive ? 6 : 4,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: isActive 
+                        ? baseColor 
+                        : (isCompleted ? baseColor.withOpacity(0.5) : scheme.outlineVariant.withOpacity(0.2)),
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: isActive ? [
+                      BoxShadow(color: baseColor.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))
+                    ] : null,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                stepNames[index],
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  color: isActive ? scheme.primary : scheme.onSurfaceVariant.withOpacity(0.5),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (isCompleted && !isActive) ...[
+                      Icon(Icons.check_circle_rounded, size: 12, color: baseColor),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(
+                      stepNames[index],
+                      style: TextStyle(
+                        fontSize: isActive ? 12 : 11,
+                        fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+                        color: isActive 
+                            ? baseColor 
+                            : (isCompleted ? baseColor : scheme.onSurfaceVariant.withOpacity(0.5)),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       }),
