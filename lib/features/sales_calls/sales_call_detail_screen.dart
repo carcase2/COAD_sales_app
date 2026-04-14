@@ -264,7 +264,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         
         final newContent = _newConsultationCtrl.text.trim();
         if (newContent.isEmpty) {
-          throw Exception('상담 내용을 입력해주세요.');
+          throw Exception('상담내용을 입력해주세요.');
         }
 
         // 1. History 추가 (상담내용 입력 시 항상 이력으로 저장)
@@ -300,7 +300,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           _isEditMode = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('상담 내용 및 이력이 저장되었습니다.')),
+          const SnackBar(content: Text('상담내용 및 이력이 저장되었습니다.')),
         );
       }
     } catch (e) {
@@ -349,6 +349,22 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       5: '설계문의',
     };
     return mapping[id] ?? '미결정';
+  }
+
+  Color _colorForAssignee(String assignee, ColorScheme scheme) {
+    if (assignee == '미지정') return scheme.outline;
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.indigo,
+      Colors.pink,
+      Colors.cyan,
+    ];
+    final hash = assignee.runes.fold(0, (prev, element) => prev + element);
+    return colors[hash % colors.length];
   }
 
   @override
@@ -474,7 +490,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               Expanded(
                 child: _buildInfoTile(
                   '지역', 
-                  m?.regionLabel ?? '미지정', 
+                  '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'.trim().isEmpty 
+                    ? '미지정' 
+                    : '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'.trim(), 
                   Icons.location_on_rounded, 
                   scheme,
                   bgColor: Colors.orange.withOpacity(0.05),
@@ -507,7 +525,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               Expanded(
                 child: _buildInfoTile(
                   '현재 단계', 
-                  m?.callStage ?? '접수', 
+                  (RegExp(r'^\d+$').hasMatch(m?.callStage ?? '')) ? '${m!.callStage}차' : (m?.callStage ?? '접수'), 
                   Icons.stairs_outlined, 
                   scheme,
                 ),
@@ -609,17 +627,41 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 상태 배지 (긴 텍스트 대응을 위해 상단 독립 배치)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              m.statusLabel ?? '접수',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  m.statusLabel ?? '접수',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+              // 담당자 명시 (색상 적용)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _colorForAssignee(m.assignedTo ?? '미지정', scheme).withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white.withOpacity(0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person_outline, size: 14, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      m.assignedTo ?? '담당 미지정',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           // 현장명 및 상호명
@@ -948,7 +990,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                               const Divider(height: 1),
                               const SizedBox(height: 12),
                               Text(
-                                '이전(${m.callHistory.last['call_stage'] ?? '직전'}) 상담 내용:',
+                                '이전(${m.callHistory.last['call_stage'] ?? '직전'}) 상담내용:',
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueAccent),
                               ),
                               const SizedBox(height: 4),
@@ -970,7 +1012,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         minLines: 5,
                         maxLines: 15,
                         decoration: InputDecoration(
-                          hintText: '고객와의 상담 내용을 자세히 입력하세요...',
+                          hintText: '고객와의 상담내용을 자세히 입력하세요...',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),

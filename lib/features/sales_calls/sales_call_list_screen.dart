@@ -525,7 +525,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // Top Row: Name and Time
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
@@ -534,12 +533,42 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                               text: c.customerName ?? '(이름 없음)',
                                               query: _searchQuery,
                                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                           Text(
                                             timeStr,
-                                            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant.withOpacity(0.7), fontWeight: FontWeight.w500),
+                                            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withOpacity(0.5), fontWeight: FontWeight.w500),
                                           ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+
+                                      // NEW: Metadata Row (Region & Product)
+                                      Row(
+                                        children: [
+                                          if (c.regionSido != null || c.regionName != null) ...[
+                                            Icon(Icons.location_on_outlined, size: 14, color: scheme.onSurfaceVariant.withOpacity(0.6)),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                '${c.regionSido != null ? '[${c.regionSido}] ' : ''}${c.regionName ?? ''}'.trim(),
+                                                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withOpacity(0.7), fontWeight: FontWeight.w500),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                          const SizedBox(width: 12),
+                                          if (c.productCategoryName != null) ...[
+                                            Icon(Icons.inventory_2_outlined, size: 14, color: scheme.onSurfaceVariant.withOpacity(0.6)),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              c.productCategoryName!,
+                                              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withOpacity(0.7), fontWeight: FontWeight.w500),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                       const SizedBox(height: 12),
@@ -565,13 +594,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           _buildQuickAction(Icons.message_rounded, Colors.blue, () => LauncherUtils.sendSMS(c.customerPhone ?? '')),
                                         ],
                                       ),
-                                      const SizedBox(height: 16),
+                                      const SizedBox(height: 12),
 
-                                      // Inquiry Content Box
                                       if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty)
                                         Container(
                                           width: double.infinity,
-                                          padding: const EdgeInsets.all(12),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                           decoration: BoxDecoration(
                                             color: scheme.surfaceContainerHighest.withOpacity(0.2),
                                             borderRadius: BorderRadius.circular(12),
@@ -579,7 +607,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           child: SearchHighlightText(
                                             text: c.inquiryContent!,
                                             query: _searchQuery,
-                                            style: TextStyle(fontSize: 14, color: scheme.onSurface.withOpacity(0.8), height: 1.5),
+                                            style: TextStyle(fontSize: 14, color: scheme.onSurface.withOpacity(0.8), height: 1.4),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       
@@ -588,8 +618,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       // Bottom Row: Assignee and Status/Stage
                                       Row(
                                         children: [
-                                          // Assignee Tag
-                                          Flexible(
+                                          // Assignee Tag (Takes available space and truncates if needed)
+                                          Expanded(
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                               decoration: BoxDecoration(
@@ -607,20 +637,24 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurface),
                                                       overflow: TextOverflow.ellipsis,
                                                       maxLines: 1,
+                                                      softWrap: false,
                                                     ),
                                                   ),
                                                 ],
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(width: 8),
-                                          const Spacer(),
+                                          const SizedBox(width: 12),
                                           // Stage Badge
                                           if (c.callStage != null && c.callStage!.isNotEmpty)
-                                            Padding(
-                                              padding: const EdgeInsets.only(right: 8),
-                                              child: _buildPill(c.callStage!, scheme.secondaryContainer, scheme.onSecondaryContainer),
+                                            _buildPill(
+                                              (RegExp(r'^\d+$').hasMatch(c.callStage ?? '')) 
+                                                ? '${c.callStage}차' 
+                                                : (c.callStage ?? '접수'), 
+                                              scheme.secondaryContainer, 
+                                              scheme.onSecondaryContainer
                                             ),
+                                          const SizedBox(width: 8),
                                           // Status Badge
                                           if (c.statusLabel != null)
                                             _buildPill(c.statusLabel!, scheme.primaryContainer, scheme.onPrimaryContainer, isBold: true),

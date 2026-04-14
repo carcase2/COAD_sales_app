@@ -108,7 +108,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     }
     if (_inquiryCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('상담 내용 본문을 입력해주세요.')),
+        const SnackBar(content: Text('문의내용 본문을 입력해주세요.')),
       );
       return;
     }
@@ -749,7 +749,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        _buildSectionHeader('상담 내용 및 자료', Icons.edit_note_rounded, scheme),
+        _buildSectionHeader('문의내용 및 자료', Icons.edit_note_rounded, scheme),
         const SizedBox(height: 24),
         
         _buildStepSubsectionTitle('문의 내용 본문 *', scheme),
@@ -758,8 +758,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           label: '',
           controller: _inquiryCtrl,
           maxLines: 8,
-          hint: '고객의 구체적인 요청 사항이나 상담 내용을 기록하세요...',
-          validator: (v) => (v == null || v.trim().isEmpty) ? '상담 내용을 입력해주세요' : null,
+          hint: '고객의 구체적인 요청 사항이나 문의내용을 기록하세요...',
+          validator: (v) => (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
         ),
         
         const SizedBox(height: 32),

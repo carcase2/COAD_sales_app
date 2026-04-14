@@ -7,17 +7,26 @@ class SearchHighlightText extends StatelessWidget {
     required this.query,
     this.style,
     this.highlightStyle,
+    this.maxLines,
+    this.overflow,
   });
 
   final String text;
   final String query;
   final TextStyle? style;
   final TextStyle? highlightStyle;
+  final int? maxLines;
+  final TextOverflow? overflow;
 
   @override
   Widget build(BuildContext context) {
     if (query.isEmpty) {
-      return Text(text, style: style);
+      return Text(
+        text,
+        style: style,
+        maxLines: maxLines,
+        overflow: overflow,
+      );
     }
 
     final theme = Theme.of(context);
@@ -31,7 +40,14 @@ class SearchHighlightText extends StatelessWidget {
 
     // Split query into individual keywords (space-separated)
     final words = query.toLowerCase().split(' ').where((w) => w.isNotEmpty).toList();
-    if (words.isEmpty) return Text(text, style: effectiveStyle);
+    if (words.isEmpty) {
+      return Text(
+        text,
+        style: effectiveStyle,
+        maxLines: maxLines,
+        overflow: overflow,
+      );
+    }
 
     // Create a regex that matches any of the words (case insensitive)
     final pattern = words.map((w) => RegExp.escape(w)).join('|');
@@ -66,8 +82,8 @@ class SearchHighlightText extends StatelessWidget {
 
     return RichText(
       text: TextSpan(children: spans),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
+      maxLines: maxLines,
+      overflow: overflow ?? TextOverflow.clip,
     );
   }
 }

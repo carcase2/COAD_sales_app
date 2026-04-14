@@ -208,7 +208,7 @@ class _MiniStatsWidget extends StatelessWidget {
           children: [
             _StatItem(label: '금일 접수', value: today.toString(), color: scheme.primary),
             Container(width: 1, height: 40, color: scheme.primary.withValues(alpha: 0.1)),
-            _StatItem(label: '미처리', value: incomplete.toString(), color: scheme.error),
+            _StatItem(label: '미통화', value: incomplete.toString(), color: scheme.error),
           ],
         ),
       ),

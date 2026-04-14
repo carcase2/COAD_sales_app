@@ -178,7 +178,7 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                       _buildDrawerSectionTitle('상담 관리', scheme),
                       _buildDrawerItem(
                         icon: Icons.pending_actions_rounded,
-                        title: '미처리 상담 내역',
+                        title: '미통화 상담 내역',
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.of(context).push(MaterialPageRoute(
@@ -313,14 +313,16 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                         await ref.read(rankingCallsProvider.future);
                       },
                       child: ListView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
                         children: const [
                           _IncompleteBreakdown(),
                         ],
                       ),
                     ),
-                    // 탭 2: 미종료 캘린더 뷰
-                    const _IncompleteCalendar(),
+                    // 탭 3: 미종료 캘린더 뷰
+                    _IncompleteCalendar(scrollController: _scrollController),
                   ],
                 ),
                 floatingActionButton: AnimatedScale(
@@ -495,7 +497,7 @@ class _StatsCard extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: _StatCardItem(
-                label: '미처리',
+                label: '미통화',
                 value: stats.incompleteCount?.toString() ?? '0',
                 icon: Icons.pending_rounded,
                 color: scheme.error,
@@ -898,7 +900,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                                     ),
                                   ),
                                   Text(
-                                    '미처리',
+                                    '미통화',
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
                                   ),
                                 ],
@@ -1158,7 +1160,8 @@ class _ErrorCard extends StatelessWidget {
 }
 
 class _IncompleteCalendar extends ConsumerStatefulWidget {
-  const _IncompleteCalendar();
+  const _IncompleteCalendar({super.key, required this.scrollController});
+  final ScrollController scrollController;
 
   @override
   ConsumerState<_IncompleteCalendar> createState() => _IncompleteCalendarState();
@@ -1241,6 +1244,8 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
         }
 
         return ListView(
+          controller: widget.scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 200), // 압도적인 하단 여백 추가
           children: [
             // ─── 상단 담당자 필터 바 (캘린더용) ───
