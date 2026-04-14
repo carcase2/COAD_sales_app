@@ -53,10 +53,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         slivers: [
           SliverToBoxAdapter(
             child: Stack(
-              clipBehavior: Clip.none,
               children: [
+                // 1. 배여 배경 (파란색 상단)
                 Container(
-                  height: 200 + topPad,
+                  height: 240 + topPad,
                   width: double.infinity,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -68,7 +68,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ],
                     ),
                   ),
-                  padding: EdgeInsets.fromLTRB(24, topPad + 28, 24, 56),
+                  padding: EdgeInsets.fromLTRB(24, topPad + 28, 24, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -112,98 +112,101 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ],
                   ),
                 ),
-                Positioned(
-                  left: 20,
-                  right: 20,
-                  top: 168 + topPad,
-                  child: Card(
-                    elevation: 4,
-                    shadowColor: scheme.shadow.withValues(alpha: 0.2),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            '로그인',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '인트라넷 계정으로 접속합니다.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                          ),
-                          const SizedBox(height: 20),
-                          TextField(
-                            controller: _idCtrl,
-                            textInputAction: TextInputAction.next,
-                            textCapitalization: TextCapitalization.none,
-                            autocorrect: false,
-                            decoration: const InputDecoration(
-                              labelText: '아이디',
-                              prefixIcon: Icon(Icons.person_outline),
+                
+                // 2. 실제 카드 높이를 확보하기 위한 투명한 Column
+                Padding(
+                  padding: EdgeInsets.only(top: 168 + topPad),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Card(
+                      elevation: 4,
+                      shadowColor: scheme.shadow.withValues(alpha: 0.2),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              '로그인',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                             ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            controller: _pwCtrl,
-                            obscureText: true,
-                            onSubmitted: (_) => _submit(),
-                            decoration: const InputDecoration(
-                              labelText: '비밀번호',
-                              prefixIcon: Icon(Icons.lock_outline),
-                            ),
-                          ),
-                          if (_error != null) ...[
-                            const SizedBox(height: 14),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: scheme.errorContainer.withValues(alpha: 0.65),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(Icons.error_outline, size: 20, color: scheme.error),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      _error!,
-                                      style: TextStyle(color: scheme.onErrorContainer, fontSize: 13, height: 1.35),
-                                    ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '인트라넷 계정으로 접속합니다.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
                                   ),
-                                ],
+                            ),
+                            const SizedBox(height: 20),
+                            TextField(
+                              controller: _idCtrl,
+                              textInputAction: TextInputAction.next,
+                              textCapitalization: TextCapitalization.none,
+                              autocorrect: false,
+                              decoration: const InputDecoration(
+                                labelText: '아이디',
+                                prefixIcon: Icon(Icons.person_outline),
                               ),
+                            ),
+                            const SizedBox(height: 14),
+                            TextField(
+                              controller: _pwCtrl,
+                              obscureText: true,
+                              onSubmitted: (_) => _submit(),
+                              decoration: const InputDecoration(
+                                labelText: '비밀번호',
+                                prefixIcon: Icon(Icons.lock_outline),
+                              ),
+                            ),
+                            if (_error != null) ...[
+                              const SizedBox(height: 14),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: scheme.errorContainer.withValues(alpha: 0.65),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.error_outline, size: 20, color: scheme.error),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        _error!,
+                                        style: TextStyle(color: scheme.onErrorContainer, fontSize: 13, height: 1.35),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 22),
+                            FilledButton(
+                              onPressed: _loading ? null : _submit,
+                              child: _loading
+                                  ? SizedBox(
+                                      height: 22,
+                                      width: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: scheme.onPrimary,
+                                      ),
+                                    )
+                                  : const Text('로그인'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+                                );
+                              },
+                              icon: const Icon(Icons.dns_outlined, size: 18),
+                              label: const Text('서버 주소 설정'),
                             ),
                           ],
-                          const SizedBox(height: 22),
-                          FilledButton(
-                            onPressed: _loading ? null : _submit,
-                            child: _loading
-                                ? SizedBox(
-                                    height: 22,
-                                    width: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: scheme.onPrimary,
-                                    ),
-                                  )
-                                : const Text('로그인'),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-                              );
-                            },
-                            icon: const Icon(Icons.dns_outlined, size: 18),
-                            label: const Text('서버 주소 설정'),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -211,7 +214,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ],
             ),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 280)),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 60)),
         ],
       ),
     );
