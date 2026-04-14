@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -68,7 +69,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       drawer: _buildDrawer(context, user, scheme),
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'COAD Hub' : (_currentIndex == 1 ? '상담현황' : '견적기'),
+          _currentIndex == 0 ? 'COAD' : (_currentIndex == 1 ? '상담현황' : '견적기'),
           style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5),
         ),
         centerTitle: true,
@@ -80,12 +81,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           tooltip: '메뉴 열기',
         ),
         actions: [
+          Center(
+            child: Text(
+              'v$kAppVersion',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.search_rounded),
             onPressed: () {
               final repository = ref.read(salesCallsRepositoryProvider);
-              // 현재 상황에 맞는 초기 데이터를 넘겨줄 수도 있지만, 
-              // 전역 검색이므로 빈 목록이나 오늘 목록을 유연하게 넘김
               final calls = ref.read(todayCallsContentProvider).value ?? [];
               showSearch(
                 context: context,
