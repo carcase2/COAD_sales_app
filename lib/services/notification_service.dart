@@ -158,22 +158,40 @@ class NotificationService {
     final token = await getToken();
     if (token == null) return;
 
-    await Supabase.instance.client
-        .from('users')
-        .update({'fcm_token': token})
-        .eq('id', userId);
-    
-    if (kDebugMode) {
-      print("FCM Token updated for user $userId: $token");
+    try {
+      await Supabase.instance.client
+          .from('users')
+          .update({'fcm_token': token})
+          .eq('id', userId);
+      
+      if (kDebugMode) {
+        print("[NotificationService] FCM Token updated successfully for user $userId");
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print("[NotificationService] ERROR updating FCM token in Supabase: $e");
+      }
     }
   }
 
   static void listenToTokenRefresh(String userId) {
     FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
-      await Supabase.instance.client
-          .from('users')
-          .update({'fcm_token': token})
-          .eq('id', userId);
+      if (kDebugMode) {
+        print("[NotificationService] FCM Token refreshed: $token");
+      }
+      try {
+        await Supabase.instance.client
+            .from('users')
+            .update({'fcm_token': token})
+            .eq('id', userId);
+        if (kDebugMode) {
+          print("[NotificationService] Refreshed FCM Token synced with Supabase");
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print("[NotificationService] ERROR syncing refreshed token: $e");
+        }
+      }
     });
   }
 }

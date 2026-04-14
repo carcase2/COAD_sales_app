@@ -33,7 +33,7 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
@@ -90,10 +90,12 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     final scheme = Theme.of(context).colorScheme;
 
     final currentIndex = _tabController.index;
-    final bgToday = scheme.surface; // 0xFFF8F9FA
-    final bgCalendar = const Color(0xFFF1F8E9); // 옅은 연두 (Light Green 50 느낌)
-    final currentBg = currentIndex == 0 ? bgToday : bgCalendar;
-    final barBg = currentIndex == 0 ? scheme.primary : const Color(0xFF2E7D32); // 요약(남색) vs 달력(진한 초록)
+    final bgToday = scheme.surface; 
+    final bgIncomplete = const Color(0xFFFFF9F2); // 옅은 오렌지빛 (Sand 느낌)
+    final bgCalendar = const Color(0xFFF1F8E9); 
+    
+    final currentBg = currentIndex == 0 ? bgToday : (currentIndex == 1 ? bgIncomplete : bgCalendar);
+    final barBg = currentIndex == 0 ? scheme.primary : (currentIndex == 1 ? const Color(0xFFEF6C00) : const Color(0xFF2E7D32));
     final onBar = Colors.white;
 
     return Scaffold(
@@ -134,11 +136,15 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
           tabs: [
             Tab(
               icon: Icon(Icons.dashboard_rounded, size: 20, color: Colors.amberAccent.shade100),
-              text: '오늘 요약',
+              text: '요약',
+            ),
+            Tab(
+              icon: Icon(Icons.pending_actions_rounded, size: 20, color: Colors.orangeAccent.shade100),
+              text: '미통화',
             ),
             Tab(
               icon: Icon(Icons.calendar_month_rounded, size: 20, color: Colors.greenAccent.shade100),
-              text: '미종료 달력',
+              text: '달력',
             ),
           ],
           indicatorColor: onBar,
@@ -255,7 +261,7 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                 body: TabBarView(
                   controller: _tabController, // 명시적 연결
                   children: [
-                    // 탭 1: 오늘 요약 뷰
+                    // 탭 1: 요약 뷰 (심플/간결)
                     RefreshIndicator(
                       onRefresh: () async {
                         ref.invalidate(todayStatsProvider);
@@ -286,8 +292,30 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                               onRetry: () => ref.invalidate(todayStatsProvider),
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          const _IncompleteBreakdown(),
+                          const SizedBox(height: 40),
+                          Center(
+                            child: Icon(Icons.auto_graph_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.1)),
+                          ),
+                          const SizedBox(height: 16),
+                          Center(
+                            child: Text(
+                              '오늘 하루도 수고 많으십니다!',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 탭 2: 미통화 리스트 (담당자별)
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        ref.invalidate(rankingCallsProvider);
+                        await ref.read(rankingCallsProvider.future);
+                      },
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+                        children: const [
+                          _IncompleteBreakdown(),
                         ],
                       ),
                     ),

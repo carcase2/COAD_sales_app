@@ -23,20 +23,13 @@ serve(async (req) => {
 
     console.log(`Webhook (${type}) payload received:`, JSON.stringify(payload))
 
-    // 2. Fetch target users who have an FCM token
-    let query = supabaseAdmin
+    // 2. Fetch ALL target users who have an FCM token (Broadcast mode)
+    console.log(`Querying ALL users with FCM tokens for broadcast...`)
+
+    const { data: users, error: userError } = await supabaseAdmin
       .from('users')
-      .select('name, fcm_token')
+      .select('id, name, role, fcm_token')
       .not('fcm_token', 'is', null)
-
-    // If an assignee is specified, notify them AND the admin ('관리자').
-    if (activeRecord && activeRecord.assigned_to) {
-      // Use OR filter to include both the specific assignee and the admin
-      query = query.or(`id.eq.${activeRecord.assigned_to},id.eq.관리자`)
-      console.log(`Targeting assignee (${activeRecord.assigned_to}) and admin ('관리자')`)
-    }
-
-    const { data: users, error: userError } = await query
 
     if (userError) {
       console.error('Error fetching users:', userError)
@@ -48,8 +41,9 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
-    const tokens = users.map((u: any) => u.fcm_token)
-    console.log(`Found ${tokens.length} tokens to notify:`, users.map((u: any) => u.name).join(', '))
+    const tokens = users.map((u: any) => u.fcm_token).filter((t: any) => t && t.length > 5)
+    console.log(`Found ${tokens.length} valid tokens to notify from ${users.length} matching users.`)
+    console.log(`Target users:`, users.map((u: any) => `${u.name}(${u.fcm_token ? 'Token OK' : 'No Token'})`).join(', '))
 
     // 3. Authenticate with Firebase Service Account
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
@@ -57,7 +51,7 @@ serve(async (req) => {
 
     const auth = new GoogleAuth({
       credentials: FIREBASE_SERVICE_ACCOUNT,
-      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
     })
 
     const client = await auth.getClient()
@@ -139,17 +133,16 @@ serve(async (req) => {
                   notification: {
                     channel_id: 'high_importance_channel',
                     click_action: 'FLUTTER_NOTIFICATION_CLICK',
-                    icon: 'ic_notification_coad',
-                    color: '#28A745', // Success Green for new reception
+                    // Using default launcher icon to prevent missing resource errors
                   },
                 },
               },
             }),
           }
         )
-        const resJson = await res.json()
-        console.log(`FCM Response for token ${token.substring(0, 10)}... :`, JSON.stringify(resJson))
-        return resJson
+        const resText = await res.text()
+        console.log(`FCM Response for token ${token.substring(0, 10)}... (Status: ${res.status}):`, resText)
+        return { status: res.status, body: resText }
       } catch (e: any) {
         console.error(`FCM error for token ${token.substring(0, 10)}... :`, e)
         return { error: e.message }
