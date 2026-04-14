@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -199,18 +200,14 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             tooltip: '홈으로 이동',
           ),
           IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            icon: const Icon(Icons.search_rounded),
             onPressed: () {
-              setState(() {
-                if (_isSearching) {
-                  _isSearching = false;
-                  _searchCtrl.clear();
-                  _searchQuery = '';
-                } else {
-                  _isSearching = true;
-                }
-              });
+              showSearch(
+                context: context,
+                delegate: SalesCallSearchDelegate(items: _items),
+              );
             },
+            tooltip: '통화 내역 검색',
           ),
           if (_isLoading && _items.isNotEmpty)
             Padding(

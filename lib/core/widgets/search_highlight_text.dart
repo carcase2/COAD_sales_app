@@ -33,9 +33,9 @@ class SearchHighlightText extends StatelessWidget {
     final effectiveStyle = style ?? theme.textTheme.bodyMedium;
     final effectiveHighlightStyle = highlightStyle ??
         TextStyle(
-          backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
-          fontWeight: FontWeight.bold,
-          color: theme.colorScheme.primary,
+          backgroundColor: Colors.amber.withValues(alpha: 0.9),
+          fontWeight: FontWeight.w900,
+          color: Colors.black,
         );
 
     // Split query into individual keywords (space-separated)

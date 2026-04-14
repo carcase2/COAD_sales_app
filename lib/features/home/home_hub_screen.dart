@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -75,6 +76,36 @@ class HomeHubScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildWelcomeHeader(user?.name, scheme),
+                const SizedBox(height: 24),
+
+                // -- New: Quick Search Bar --
+                GestureDetector(
+                  onTap: () {
+                    final calls = ref.read(todayCallsContentProvider).value ?? [];
+                    showSearch(
+                      context: context,
+                      delegate: SalesCallSearchDelegate(items: calls),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.search_rounded, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 12),
+                        Text(
+                          '전화번호, 현장명, 상담내용 검색...',
+                          style: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.7), fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 32),
 
                 // ─── 미니 대시보드 (현황 요약) ───
