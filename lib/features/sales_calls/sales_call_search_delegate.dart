@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
+import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:flutter/material.dart';
@@ -7,10 +8,13 @@ import 'package:flutter/services.dart';
 
 class SalesCallSearchDelegate extends SearchDelegate<void> {
   SalesCallSearchDelegate({
-    required this.items,
+    required this.initialItems,
+    required this.repository,
   });
 
-  final List<SalesCall> items;
+  /// 초기 제안용 목록 (오늘 접수분 등)
+  final List<SalesCall> initialItems;
+  final SalesCallsRepository repository;
 
   @override
   String get searchFieldLabel => '전화번호, 현장명, 상담내용 검색';
@@ -39,43 +43,71 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
 
   @override
   Widget buildResults(BuildContext context) {
-    return _buildSearchResults(context);
+    return _buildServerSearchResults(context);
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
     if (query.isEmpty) {
-      return _buildEmptyState(context, '검색어를 입력하여 상담 내역을 찾아주세요.');
+      return _buildEmptyState(context, '검색어를 입력하여 전체 상담 내역을 찾아보세요.');
     }
-    return _buildSearchResults(context);
+
+    final localResults = _filterLocalItems(query);
+    
+    return ListView(
+      children: [
+        if (localResults.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('현재 목록 내 결과 (${localResults.length})', 
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+          ),
+          ...localResults.map((c) => _buildSearchItem(context, c, Theme.of(context).colorScheme)),
+        ],
+        ListTile(
+          leading: const Icon(Icons.search_rounded, color: Colors.blue),
+          title: Text('"$query" 전체 내역 서버 검색'),
+          subtitle: const Text('오늘 이전의 모든 과거 기록을 포함하여 검색합니다.'),
+          onTap: () => showResults(context),
+        ),
+      ],
+    );
   }
 
-  Widget _buildSearchResults(BuildContext context) {
-    final results = _filterItems(query);
+  Widget _buildServerSearchResults(BuildContext context) {
+    return FutureBuilder<List<SalesCall>>(
+      future: repository.searchCalls(query),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _buildEmptyState(context, '검색 중 오류가 발생했습니다.\n${snapshot.error}');
+        }
+        
+        final results = snapshot.data ?? [];
+        if (results.isEmpty) {
+          return _buildEmptyState(context, '"$query"에 대한 전체 검색 결과가 없습니다.');
+        }
 
-    if (results.isEmpty) {
-      return _buildEmptyState(context, '"$query"에 대한 검색 결과가 없습니다.');
-    }
-
-    final scheme = Theme.of(context).colorScheme;
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: results.length,
-      itemBuilder: (context, index) {
-        final c = results[index];
-        return _buildSearchItem(context, c, scheme);
+        final scheme = Theme.of(context).colorScheme;
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          itemCount: results.length,
+          itemBuilder: (context, index) {
+            final c = results[index];
+            return _buildSearchItem(context, c, scheme);
+          },
+        );
       },
     );
   }
 
-  List<SalesCall> _filterItems(String q) {
-    if (q.isEmpty) return [];
-    
+  List<SalesCall> _filterLocalItems(String q) {
     final terms = q.toLowerCase().split(' ').where((t) => t.isNotEmpty);
     if (terms.isEmpty) return [];
 
-    return items.where((c) {
+    return initialItems.where((c) {
       final searchableText = [
         c.customerName,
         c.customerPhone,
@@ -90,7 +122,7 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
 
   Widget _buildSearchItem(BuildContext context, SalesCall c, ColorScheme scheme) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(20),
@@ -160,6 +192,7 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
               const SizedBox(height: 8),
               if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty) ...[
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),

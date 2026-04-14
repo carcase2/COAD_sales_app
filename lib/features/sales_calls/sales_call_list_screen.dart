@@ -204,7 +204,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             onPressed: () {
               showSearch(
                 context: context,
-                delegate: SalesCallSearchDelegate(items: _items),
+                delegate: SalesCallSearchDelegate(
+                  initialItems: _items,
+                  repository: ref.read(salesCallsRepositoryProvider),
+                ),
               );
             },
             tooltip: '통화 내역 검색',

@@ -64,8 +64,42 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
     return Scaffold(
       key: scaffoldKey,
-      extendBody: true, // 하단 바가 배경을 가리지 않도록 (플로팅 효과)
+      extendBody: true,
       drawer: _buildDrawer(context, user, scheme),
+      appBar: AppBar(
+        title: Text(
+          _currentIndex == 0 ? 'COAD Hub' : (_currentIndex == 1 ? '상담현황' : '견적기'),
+          style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5),
+        ),
+        centerTitle: true,
+        backgroundColor: scheme.primary,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.menu_rounded),
+          onPressed: () => scaffoldKey.currentState?.openDrawer(),
+          tooltip: '메뉴 열기',
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () {
+              final repository = ref.read(salesCallsRepositoryProvider);
+              // 현재 상황에 맞는 초기 데이터를 넘겨줄 수도 있지만, 
+              // 전역 검색이므로 빈 목록이나 오늘 목록을 유연하게 넘김
+              final calls = ref.read(todayCallsContentProvider).value ?? [];
+              showSearch(
+                context: context,
+                delegate: SalesCallSearchDelegate(
+                  initialItems: calls,
+                  repository: repository,
+                ),
+              );
+            },
+            tooltip: '통합 검색',
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: IndexedStack(
         index: _currentIndex,
         children: _buildScreens(),

@@ -21,51 +21,22 @@ class HomeHubScreen extends ConsumerWidget {
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        // ─── 상단 앱바 ───
-        SliverAppBar(
-          expandedHeight: 120,
-          floating: false,
-          pinned: true,
-          backgroundColor: scheme.primary,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.menu_rounded),
-            onPressed: () => ref.read(mainScaffoldKeyProvider).currentState?.openDrawer(),
-            tooltip: '메뉴 열기',
-          ),
-          flexibleSpace: FlexibleSpaceBar(
-            title: const Text(
-              'COAD Hub',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 20,
-                color: Colors.white,
-                letterSpacing: -0.5,
+        // ─── 상단 배경 헤더 (Global AppBar가 있으므로 배경 역할만 수행) ───
+        SliverToBoxAdapter(
+          child: Container(
+            height: 60,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [scheme.primary, scheme.primary.withValues(alpha: 0.8)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
               ),
-            ),
-            centerTitle: true,
-            background: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [scheme.primary, scheme.primary.withValues(alpha: 0.8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
               ),
             ),
           ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: Text(
-                  'v$kAppVersion',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.7)),
-                ),
-              ),
-            ),
-          ],
         ),
         
         // ─── 본문 영역 ───
@@ -78,13 +49,17 @@ class HomeHubScreen extends ConsumerWidget {
                 _buildWelcomeHeader(user?.name, scheme),
                 const SizedBox(height: 24),
 
-                // -- New: Quick Search Bar --
+                // -- New: Quick Search Bar (fixed overflow) --
                 GestureDetector(
                   onTap: () {
                     final calls = ref.read(todayCallsContentProvider).value ?? [];
+                    final repository = ref.read(salesCallsRepositoryProvider);
                     showSearch(
                       context: context,
-                      delegate: SalesCallSearchDelegate(items: calls),
+                      delegate: SalesCallSearchDelegate(
+                        initialItems: calls,
+                        repository: repository,
+                      ),
                     );
                   },
                   child: Container(
@@ -98,9 +73,16 @@ class HomeHubScreen extends ConsumerWidget {
                       children: [
                         Icon(Icons.search_rounded, color: scheme.onSurfaceVariant),
                         const SizedBox(width: 12),
-                        Text(
-                          '전화번호, 현장명, 상담내용 검색...',
-                          style: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.7), fontSize: 14),
+                        const Expanded(
+                          child: Text(
+                            '전화번호, 현장명, 상담내용 검색...',
+                            style: TextStyle(
+                              color: Color(0xB244474E), // Using a slightly more opaque version of scheme.onSurfaceVariant
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),

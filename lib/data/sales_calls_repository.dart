@@ -259,4 +259,26 @@ class SalesCallsRepository {
       throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
     }
   }
+
+  Future<List<SalesCall>> searchCalls(String query, {int limit = 50}) async {
+    if (query.trim().isEmpty) return [];
+    
+    try {
+      final q = '%${query.trim()}%';
+      // or filter: customer_name, customer_phone, inquiry_content, region_sido, region_name
+      final res = await _client.from('sales_calls').select('''
+        *,
+        product_categories(name),
+        inquiry_methods(name),
+        call_statuses(name),
+        regions(*)
+      ''').or('customer_name.ilike.$q,customer_phone.ilike.$q,inquiry_content.ilike.$q,region_sido.ilike.$q,region_name.ilike.$q')
+      .order('created_at', ascending: false)
+      .limit(limit);
+
+      return parseSalesCallList(res);
+    } catch (e) {
+      throw ApiException('검색 중 오류가 발생했습니다: $e');
+    }
+  }
 }
