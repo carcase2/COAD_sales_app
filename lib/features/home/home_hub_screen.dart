@@ -4,21 +4,64 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_create_scree
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class HomeHubScreen extends ConsumerWidget {
+class HomeHubScreen extends ConsumerStatefulWidget {
   const HomeHubScreen({super.key, required this.onNavigateToTab});
 
   final Function(int) onNavigateToTab;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeHubScreen> createState() => _HomeHubScreenState();
+}
+
+class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
+  late ScrollController _scrollController;
+  bool _isBottomBarVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+    // 탭 진입 시 바가 보이도록 초기화
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(bottomBarVisibilityProvider.notifier).state = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final direction = _scrollController.position.userScrollDirection;
+    if (direction == ScrollDirection.reverse) {
+      if (_isBottomBarVisible) {
+        setState(() => _isBottomBarVisible = false);
+        ref.read(bottomBarVisibilityProvider.notifier).state = false;
+      }
+    } else if (direction == ScrollDirection.forward) {
+      if (!_isBottomBarVisible) {
+        setState(() => _isBottomBarVisible = true);
+        ref.read(bottomBarVisibilityProvider.notifier).state = true;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
     final statsAsync = ref.watch(todayStatsProvider);
 
     return CustomScrollView(
+      controller: _scrollController,
       physics: const BouncingScrollPhysics(),
       slivers: [
         // ─── 상단 배경 헤더 (Global AppBar가 있으므로 배경 역할만 수행) ───
@@ -59,7 +102,7 @@ class HomeHubScreen extends ConsumerWidget {
                   data: (s) => _MiniStatsWidget(
                     today: s.todayCount ?? 0,
                     incomplete: s.incompleteCount ?? 0,
-                    onTap: () => onNavigateToTab(1),
+                    onTap: () => widget.onNavigateToTab(1),
                   ),
                   loading: () => const LinearProgressIndicator(),
                   error: (_, __) => const SizedBox.shrink(),
@@ -79,7 +122,7 @@ class HomeHubScreen extends ConsumerWidget {
                   subtitle: '오늘 들어온 모든 전화를 한눈에',
                   icon: Icons.assignment_rounded,
                   color: scheme.primary,
-                  onTap: () => onNavigateToTab(1),
+                  onTap: () => widget.onNavigateToTab(1),
                 ),
                 const SizedBox(height: 16),
 
@@ -101,7 +144,7 @@ class HomeHubScreen extends ConsumerWidget {
                   subtitle: '일반/단열 셔터 정확한 가격 확인',
                   icon: Icons.calculate_rounded,
                   color: Colors.teal.shade600,
-                  onTap: () => onNavigateToTab(2),
+                  onTap: () => widget.onNavigateToTab(2),
                 ),
                 const SizedBox(height: 16),
 

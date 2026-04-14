@@ -37,7 +37,11 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndSync());
+    // 탭 진입 시 바가 보이도록 초기화
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(bottomBarVisibilityProvider.notifier).state = true;
+      _checkAndSync();
+    });
   }
 
   @override
