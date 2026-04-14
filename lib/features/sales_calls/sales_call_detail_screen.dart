@@ -727,9 +727,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: bgColor ?? Colors.white,
+        color: bgColor ?? scheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(0.4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -778,13 +777,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
+      color: scheme.surfaceContainerLowest,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -817,7 +816,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             const SizedBox(height: 16),
             Text(
               (h['consultation_content'] ?? h['consultation_result'] ?? h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
-              style: const TextStyle(fontSize: 15, height: 1.6, color: Color(0xFF333333)),
+              style: TextStyle(fontSize: 15, height: 1.6, color: scheme.onSurface),
             ),
           ],
         ),

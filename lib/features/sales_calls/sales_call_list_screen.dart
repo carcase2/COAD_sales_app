@@ -599,10 +599,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty)
                                         Container(
                                           width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                          padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
                                           decoration: BoxDecoration(
-                                            color: scheme.surfaceContainerHighest.withOpacity(0.2),
-                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border(
+                                              left: BorderSide(color: scheme.outlineVariant.withOpacity(0.5), width: 3),
+                                            ),
                                           ),
                                           child: SearchHighlightText(
                                             text: c.inquiryContent!,
