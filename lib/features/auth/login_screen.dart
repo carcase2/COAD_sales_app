@@ -195,16 +195,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     )
                                   : const Text('로그인'),
                             ),
-                            const SizedBox(height: 8),
-                            TextButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-                                );
-                              },
-                              icon: const Icon(Icons.dns_outlined, size: 18),
-                              label: const Text('서버 주소 설정'),
-                            ),
                           ],
                         ),
                       ),

@@ -1,7 +1,11 @@
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
+import 'package:coad_customer_calls/features/settings/settings_screen.dart';
+import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
@@ -55,9 +59,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isVisible = ref.watch(bottomBarVisibilityProvider);
+    final user = ref.watch(authControllerProvider);
+    final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
 
     return Scaffold(
+      key: scaffoldKey,
       extendBody: true, // 하단 바가 배경을 가리지 않도록 (플로팅 효과)
+      drawer: _buildDrawer(context, user, scheme),
       body: IndexedStack(
         index: _currentIndex,
         children: _buildScreens(),
@@ -125,6 +133,151 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDrawer(BuildContext context, AppUser? user, ColorScheme scheme) {
+    return Drawer(
+      child: Column(
+        children: [
+          UserAccountsDrawerHeader(
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: scheme.primaryContainer,
+              child: Icon(Icons.person, size: 40, color: scheme.onPrimaryContainer),
+            ),
+            accountName: Text('${user?.name ?? '사용자'} 님', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            accountEmail: Text('사번/ID: ${user?.id ?? '-'}', style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8))),
+            decoration: BoxDecoration(
+              color: scheme.primary,
+              image: const DecorationImage(
+                image: NetworkImage('https://www.transparenttextures.com/patterns/cubes.png'),
+                repeat: ImageRepeat.repeat,
+                opacity: 0.05,
+              ),
+            ),
+          ),
+          
+          _buildDrawerSectionTitle('상담 관리', scheme),
+          _buildDrawerItem(
+            icon: Icons.pending_actions_rounded,
+            title: '미통화 상담 내역',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SalesCallListScreen(mode: ListQueryMode.incomplete),
+              ));
+            },
+            scheme: scheme,
+          ),
+          _buildDrawerItem(
+            icon: Icons.history_rounded,
+            title: '최근 등록 현황',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SalesCallListScreen(mode: ListQueryMode.recent),
+              ));
+            },
+            scheme: scheme,
+          ),
+          _buildDrawerItem(
+            icon: Icons.list_alt_rounded,
+            title: '전체 상담 목록',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SalesCallListScreen(mode: ListQueryMode.recent), // 전체도 최근순으로 보기
+              ));
+            },
+            scheme: scheme,
+          ),
+          
+          const Divider(indent: 20, endIndent: 20),
+          _buildDrawerSectionTitle('시스템', scheme),
+          _buildDrawerItem(
+            icon: Icons.settings_outlined,
+            title: '설정',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+              );
+            },
+            scheme: scheme,
+          ),
+          
+          const Spacer(),
+          const Divider(),
+          _buildDrawerItem(
+            icon: Icons.logout,
+            title: '로그아웃',
+            color: scheme.error,
+            onTap: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('로그아웃'),
+                  content: const Text('정말 로그아웃 하시겠습니까?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                await ref.read(authControllerProvider.notifier).logout();
+              }
+            },
+            scheme: scheme,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24), // 충분한 하단 여백 부여 (탭바 간섭 방지)
+            child: Text(
+              'COAD Sales App v$kAppVersion',
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withOpacity(0.5)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerSectionTitle(String title, ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: scheme.primary.withOpacity(0.7),
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    required ColorScheme scheme,
+    Color? color,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: color ?? scheme.onSecondaryContainer),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: color ?? scheme.onSurface,
+        ),
+      ),
+      onTap: onTap,
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
     );
   }
 }

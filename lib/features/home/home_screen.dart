@@ -102,6 +102,11 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
       backgroundColor: currentBg,
       appBar: AppBar(
         title: const Text('고객전화'),
+        leading: IconButton(
+          icon: const Icon(Icons.menu_rounded),
+          onPressed: () => ref.read(mainScaffoldKeyProvider).currentState?.openDrawer(),
+          tooltip: '메뉴 열기',
+        ),
         backgroundColor: barBg,
         foregroundColor: onBar,
         actions: [
@@ -155,268 +160,125 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
           dividerColor: Colors.transparent,
         ),
       ),
-      drawer: Drawer(
-        child: Column(
-                    children: [
-                      UserAccountsDrawerHeader(
-                        currentAccountPicture: CircleAvatar(
-                          backgroundColor: scheme.primaryContainer,
-                          child: Icon(Icons.person, size: 40, color: scheme.onPrimaryContainer),
-                        ),
-                        accountName: Text('${user?.name ?? '사용자'} 님', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                        accountEmail: Text('사번/ID: ${user?.id ?? '-'}', style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8))),
-                        decoration: BoxDecoration(
-                          color: scheme.primary,
-                          image: DecorationImage(
-                            image: const NetworkImage('https://www.transparenttextures.com/patterns/cubes.png'),
-                            repeat: ImageRepeat.repeat,
-                            opacity: 0.05,
-                          ),
-                        ),
-                      ),
-                      
-                      _buildDrawerSectionTitle('상담 관리', scheme),
-                      _buildDrawerItem(
-                        icon: Icons.pending_actions_rounded,
-                        title: '미통화 상담 내역',
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.of(context).push(MaterialPageRoute(
-                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.incomplete),
-                          ));
-                        },
-                        scheme: scheme,
-                      ),
-                      _buildDrawerItem(
-                        icon: Icons.history_rounded,
-                        title: '최근 등록 현황',
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.of(context).push(MaterialPageRoute(
-                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.recent),
-                          ));
-                        },
-                        scheme: scheme,
-                      ),
-                      _buildDrawerItem(
-                        icon: Icons.list_alt_rounded,
-                        title: '전체 상담 목록',
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.of(context).push(MaterialPageRoute(
-                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.recent), // 전체도 최근순으로 보기
-                          ));
-                        },
-                        scheme: scheme,
-                      ),
-                      
-                      const Divider(indent: 20, endIndent: 20),
-                      _buildDrawerSectionTitle('시스템', scheme),
-                      _buildDrawerItem(
-                        icon: Icons.settings_outlined,
-                        title: '설정',
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-                          );
-                        },
-                        scheme: scheme,
-                      ),
-                      
-                      const Spacer(),
-                      const Divider(),
-                      _buildDrawerItem(
-                        icon: Icons.logout,
-                        title: '로그아웃',
-                        color: scheme.error,
-                        onTap: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('로그아웃'),
-                              content: const Text('정말 로그아웃 하시겠습니까?'),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-                                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            await ref.read(authControllerProvider.notifier).logout();
-                          }
-                        },
-                        scheme: scheme,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          'COAD Sales App v$kAppVersion',
-                          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withOpacity(0.5)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                body: TabBarView(
-                  controller: _tabController, // 명시적 연결
-                  children: [
-                    // 탭 1: 요약 뷰 (심플/간결)
-                    RefreshIndicator(
-                      onRefresh: () async {
-                        ref.invalidate(todayStatsProvider);
-                        ref.invalidate(todayCallsContentProvider);
-                        await Future.wait([
-                          ref.read(todayStatsProvider.future),
-                          ref.read(todayCallsContentProvider.future),
-                          _checkAndSync(),
-                        ]);
-                      },
-                      child: ListView(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                        children: [
-                          if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
-                          if (_pendingCount > 0) const SizedBox(height: 12),
-                          const SizedBox(height: 12),
-                          statsAsync.when(
-                            data: (s) => _StatsCard(stats: s),
-                            loading: () => const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: CircularProgressIndicator(),
-                              ),
-                            ),
-                            error: (e, _) => _ErrorCard(
-                              message: koreanErrorMessage(e),
-                              onRetry: () => ref.invalidate(todayStatsProvider),
-                            ),
-                          ),
-                          const SizedBox(height: 40),
-                          Center(
-                            child: Icon(Icons.auto_graph_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.1)),
-                          ),
-                          const SizedBox(height: 16),
-                          Center(
-                            child: Text(
-                              '오늘 하루도 수고 많으십니다!',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // 탭 2: 미통화 리스트 (담당자별)
-                    RefreshIndicator(
-                      onRefresh: () async {
-                        ref.invalidate(rankingCallsProvider);
-                        await ref.read(rankingCallsProvider.future);
-                      },
-                      child: ListView(
-                        controller: _scrollController,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                        children: const [
-                          _IncompleteBreakdown(),
-                        ],
-                      ),
-                    ),
-                    // 탭 3: 미종료 캘린더 뷰
-                    _IncompleteCalendar(scrollController: _scrollController),
-                  ],
-                ),
-                floatingActionButton: AnimatedScale(
-                  scale: _isFabVisible ? 1.0 : 0.0,
-                  alignment: Alignment.bottomRight,
-                  duration: const Duration(milliseconds: 250),
-                  child: Container(
-                    height: 60,
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
-                      gradient: LinearGradient(
-                        colors: [scheme.primary, scheme.tertiary],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: scheme.primary.withValues(alpha: 0.35),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(30),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.add_call, color: Colors.white, size: 24),
-                            const SizedBox(width: 10),
-                            const Text(
-                              '새 통화 등록',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+      body: TabBarView(
+        controller: _tabController, // 명시적 연결
+        children: [
+          // 탭 1: 요약 뷰 (심플/간결)
+          RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(todayStatsProvider);
+              ref.invalidate(todayCallsContentProvider);
+              await Future.wait([
+                ref.read(todayStatsProvider.future),
+                ref.read(todayCallsContentProvider.future),
+                _checkAndSync(),
+              ]);
+            },
+            child: ListView(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+              children: [
+                if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
+                if (_pendingCount > 0) const SizedBox(height: 12),
+                const SizedBox(height: 12),
+                statsAsync.when(
+                  data: (s) => _StatsCard(stats: s),
+                  loading: () => const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
                     ),
                   ),
+                  error: (e, _) => _ErrorCard(
+                    message: koreanErrorMessage(e),
+                    onRetry: () => ref.invalidate(todayStatsProvider),
+                  ),
                 ),
-                floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        );
-  }
-
-
-  Widget _buildDrawerSectionTitle(String title, ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: scheme.primary.withOpacity(0.7),
-          letterSpacing: 1.2,
+                const SizedBox(height: 40),
+                Center(
+                  child: Icon(Icons.auto_graph_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.1)),
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    '오늘 하루도 수고 많으십니다!',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 탭 2: 미통화 리스트 (담당자별)
+          RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(rankingCallsProvider);
+              await ref.read(rankingCallsProvider.future);
+            },
+            child: ListView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+              children: const [
+                _IncompleteBreakdown(),
+              ],
+            ),
+          ),
+          // 탭 3: 미종료 캘린더 뷰
+          _IncompleteCalendar(scrollController: _scrollController),
+        ],
+      ),
+      floatingActionButton: AnimatedScale(
+        scale: _isFabVisible ? 1.0 : 0.0,
+        alignment: Alignment.bottomRight,
+        duration: const Duration(milliseconds: 250),
+        child: Container(
+          height: 60,
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(30),
+            gradient: LinearGradient(
+              colors: [scheme.primary, scheme.tertiary],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.primary.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(30),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.add_call, color: Colors.white, size: 24),
+                  const SizedBox(width: 10),
+                  const Text(
+                    '새 통화 등록',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildDrawerItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    required ColorScheme scheme,
-    Color? color,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: color ?? scheme.onSecondaryContainer),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: color ?? scheme.onSurface,
-        ),
-      ),
-      onTap: onTap,
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 

@@ -17,123 +17,134 @@ class HomeHubScreen extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final statsAsync = ref.watch(todayStatsProvider);
 
-    return Scaffold(
-      backgroundColor: scheme.surface,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ─── 상단 앱바 ───
-          SliverAppBar(
-            expandedHeight: 120,
-            floating: false,
-            pinned: true,
-            backgroundColor: scheme.primary,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            flexibleSpace: FlexibleSpaceBar(
-              title: Text(
-                'COAD Hub',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 20,
-                  color: Colors.white,
-                  letterSpacing: -0.5,
-                ),
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        // ─── 상단 앱바 ───
+        SliverAppBar(
+          expandedHeight: 120,
+          floating: false,
+          pinned: true,
+          backgroundColor: scheme.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: () => ref.read(mainScaffoldKeyProvider).currentState?.openDrawer(),
+            tooltip: '메뉴 열기',
+          ),
+          flexibleSpace: FlexibleSpaceBar(
+            title: const Text(
+              'COAD Hub',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 20,
+                color: Colors.white,
+                letterSpacing: -0.5,
               ),
-              centerTitle: true,
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [scheme.primary, scheme.primary.withValues(alpha: 0.8)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+            ),
+            centerTitle: true,
+            background: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [scheme.primary, scheme.primary.withValues(alpha: 0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
             ),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Center(
-                  child: Text(
-                    'v$kAppVersion',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.7)),
-                  ),
+          ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: Text(
+                  'v$kAppVersion',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.7)),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
+        
+        // ─── 본문 영역 ───
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildWelcomeHeader(user?.name, scheme),
+                const SizedBox(height: 32),
 
-          // ─── 본문 영역 ───
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildWelcomeHeader(user?.name, scheme),
-                  const SizedBox(height: 32),
-
-                  // ─── 미니 대시보드 (현황 요약) ───
-                  Text(
-                    '오늘의 흐름',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                  ),
-                  const SizedBox(height: 12),
-                  statsAsync.when(
-                    data: (s) => _MiniStatsWidget(
-                      today: s.todayCount ?? 0,
-                      incomplete: s.incompleteCount ?? 0,
-                      onTap: () => onNavigateToTab(1),
-                    ),
-                    loading: () => const LinearProgressIndicator(),
-                    error: (_, __) => const SizedBox.shrink(),
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // ─── 주요 액션 카드 ───
-                  Text(
-                    '주요 업무',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                  ),
-                  const SizedBox(height: 16),
-
-                  _HubActionCard(
-                    title: '최신 상담 현황 확인',
-                    subtitle: '오늘 들어온 모든 전화를 한눈에',
-                    icon: Icons.assignment_rounded,
-                    color: scheme.primary,
+                // ─── 미니 대시보드 (현황 요약) ───
+                Text(
+                  '오늘의 흐름',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+                ),
+                const SizedBox(height: 12),
+                statsAsync.when(
+                  data: (s) => _MiniStatsWidget(
+                    today: s.todayCount ?? 0,
+                    incomplete: s.incompleteCount ?? 0,
                     onTap: () => onNavigateToTab(1),
                   ),
-                  const SizedBox(height: 16),
+                  loading: () => const LinearProgressIndicator(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
 
-                  _HubActionCard(
-                    title: '새로운 상담 등록',
-                    subtitle: '빠르고 정확하게 고객 정보 입력',
-                    icon: Icons.add_ic_call_rounded,
-                    color: scheme.secondary,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SalesCallCreateScreen()),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
+                const SizedBox(height: 32),
 
-                  _HubActionCard(
-                    title: '셔터 견적 산출',
-                    subtitle: '일반/단열 셔터 정확한 가격 확인',
-                    icon: Icons.calculate_rounded,
-                    color: Colors.teal.shade600,
-                    onTap: () => onNavigateToTab(2),
-                  ),
-                ],
-              ),
+                // ─── 주요 액션 카드 ───
+                Text(
+                  '주요 업무',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+                ),
+                const SizedBox(height: 16),
+
+                _HubActionCard(
+                  title: '최신 상담 현황 확인',
+                  subtitle: '오늘 들어온 모든 전화를 한눈에',
+                  icon: Icons.assignment_rounded,
+                  color: scheme.primary,
+                  onTap: () => onNavigateToTab(1),
+                ),
+                const SizedBox(height: 16),
+
+                _HubActionCard(
+                  title: '새로운 상담 등록',
+                  subtitle: '빠르고 정확하게 고객 정보 입력',
+                  icon: Icons.add_ic_call_rounded,
+                  color: scheme.secondary,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SalesCallCreateScreen()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                _HubActionCard(
+                  title: '셔터 견적 산출',
+                  subtitle: '일반/단열 셔터 정확한 가격 확인',
+                  icon: Icons.calculate_rounded,
+                  color: Colors.teal.shade600,
+                  onTap: () => onNavigateToTab(2),
+                ),
+                const SizedBox(height: 16),
+
+                _HubActionCard(
+                  title: '시스템 설정',
+                  subtitle: '알림 및 앱 환경 설정',
+                  icon: Icons.settings_rounded,
+                  color: Colors.grey.shade700,
+                  onTap: () => ref.read(mainScaffoldKeyProvider).currentState?.openDrawer(),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
