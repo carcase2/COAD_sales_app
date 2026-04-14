@@ -16,47 +16,62 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  // 1. 병렬 초기화 (상호 의존성 없는 작업들 먼저 수행)
-  final results = await Future.wait([
-    Firebase.initializeApp(),
-    initializeDateFormatting('ko_KR', null),
-    dotenv.load(fileName: ".env"),
-    SharedPreferences.getInstance(),
-  ]);
+  // 앱 시작 시 예기치 않은 중단을 방지하기 위해 전체를 보호합니다.
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    try {
+      // 1. 필수 로컬 설정 (빠른 작업)
+      await initializeDateFormatting('ko_KR', null);
+      tzdata.initializeTimeZones();
+      tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
 
-  final prefs = results[3] as SharedPreferences;
+      // 2. 환경 변수 및 로컬 DB (동시 실행 가능)
+      final initResults = await Future.wait([
+        dotenv.load(fileName: ".env"),
+        SharedPreferences.getInstance(),
+      ]);
+      final prefs = initResults[1] as SharedPreferences;
 
-  // 타임존 설정 (비동기 아님)
-  tzdata.initializeTimeZones();
-  tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
+      // 3. 외부 서비스 초기화 (상호 의존성 고려하여 순차 또는 안전한 병렬 실행)
+      await Firebase.initializeApp();
+      
+      // Supabase와 Notification은 각각 독립적으로 초기화 시도
+      await Future.wait([
+        Supabase.initialize(
+          url: dotenv.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
+          anonKey: dotenv.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '',
+        ).catchError((e) => debugPrint("Supabase 초기화 실패: $e")),
+        NotificationService.init().catchError((e) => debugPrint("알림 서비스 초기화 실패: $e")),
+      ]);
 
-  // 2. 의존성 있는 작업 병렬 수행 (Firebase와 dotenv가 준비된 후)
-  await Future.wait([
-    NotificationService.init(),
-    Supabase.initialize(
-      url: dotenv.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
-      anonKey: dotenv.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '',
-    ),
-  ]);
+      // 4. 앱 의존성 및 세션 복구
+      const secure = FlutterSecureStorage();
+      final transport = SalesApiTransport();
+      final deps = AppDependencies(prefs: prefs, secure: secure, transport: transport);
 
-  // 3. 앱 의존성 및 세션 복구
-  const secure = FlutterSecureStorage();
-  final transport = SalesApiTransport();
-  final deps = AppDependencies(prefs: prefs, secure: secure, transport: transport);
+      final authRepo = AuthRepository(deps);
+      await authRepo.restoreSession().catchError((e) => debugPrint("세션 복구 실패: $e"));
+      final authController = AuthController(authRepo);
 
-  final authRepo = AuthRepository(deps);
-  await authRepo.restoreSession();
-  final authController = AuthController(authRepo);
-
-  runApp(
-    ProviderScope(
-      overrides: [
-        appDependenciesProvider.overrideWithValue(deps),
-        authControllerProvider.overrideWith((_) => authController),
-      ],
-      child: const CoadCustomerCallsApp(),
-    ),
-  );
+      runApp(
+        ProviderScope(
+          overrides: [
+            appDependenciesProvider.overrideWithValue(deps),
+            authControllerProvider.overrideWith((_) => authController),
+          ],
+          child: const CoadCustomerCallsApp(),
+        ),
+      );
+    } catch (e, stack) {
+      debugPrint("치명적인 앱 초기화 에러: $e");
+      debugPrint(stack.toString());
+      
+      // 최소한 앱이라도 실행될 수 있도록 빈 상태로 앱을 띄웁니다.
+      runApp(const MaterialApp(home: Scaffold(body: Center(child: Text("앱 초기화 중 오류가 발생했습니다. 다시 시작해 주세요.")))));
+    }
+  }, (error, stack) {
+    debugPrint("Uncaught error: $error");
+    debugPrint(stack.toString());
+  });
 }
