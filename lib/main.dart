@@ -18,22 +18,30 @@ import 'package:coad_customer_calls/services/notification_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  await Firebase.initializeApp();
-  await NotificationService.init();
+  // 1. 병렬 초기화 (상호 의존성 없는 작업들 먼저 수행)
+  final results = await Future.wait([
+    Firebase.initializeApp(),
+    initializeDateFormatting('ko_KR', null),
+    dotenv.load(fileName: ".env"),
+    SharedPreferences.getInstance(),
+  ]);
 
-  await initializeDateFormatting('ko_KR', null);
+  final prefs = results[3] as SharedPreferences;
+
+  // 타임존 설정 (비동기 아님)
   tzdata.initializeTimeZones();
   tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
 
-  await dotenv.load(fileName: ".env");
+  // 2. 의존성 있는 작업 병렬 수행 (Firebase와 dotenv가 준비된 후)
+  await Future.wait([
+    NotificationService.init(),
+    Supabase.initialize(
+      url: dotenv.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
+      anonKey: dotenv.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '',
+    ),
+  ]);
 
-  // 웹 `lib/supabaseClient`와 동일 변수: 메인 Supabase(고객전화 sales_calls 등). Support 전용 DB와 별도.
-  await Supabase.initialize(
-    url: dotenv.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '',
-    anonKey: dotenv.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '',
-  );
-
-  final prefs = await SharedPreferences.getInstance();
+  // 3. 앱 의존성 및 세션 복구
   const secure = FlutterSecureStorage();
   final transport = SalesApiTransport();
   final deps = AppDependencies(prefs: prefs, secure: secure, transport: transport);

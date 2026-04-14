@@ -16,6 +16,7 @@ class MainTabScreen extends ConsumerStatefulWidget {
 
 class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   int _currentIndex = 0;
+  final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
 
   @override
   void initState() {
@@ -33,15 +34,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     }
   }
 
+  void _onTabSelected(int index) {
+    if (_currentIndex == index) return;
+    
+    setState(() {
+      _currentIndex = index;
+      _loadedIndices.add(index); // 선택한 탭을 로드 목록에 추가
+    });
+  }
+
   List<Widget> _buildScreens() {
     return [
-      HomeHubScreen(onNavigateToTab: (index) {
-        setState(() {
-          _currentIndex = index;
-        });
-      }),
-      const ConsultationStatusScreen(),
-      const QuoterScreen(),
+      HomeHubScreen(onNavigateToTab: _onTabSelected),
+      _loadedIndices.contains(1) ? const ConsultationStatusScreen() : const SizedBox.shrink(),
+      _loadedIndices.contains(2) ? const QuoterScreen() : const SizedBox.shrink(),
     ];
   }
 
@@ -97,11 +103,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
             child: NavigationBar(
               selectedIndex: _currentIndex,
               surfaceTintColor: Colors.transparent,
-              onDestinationSelected: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
+              onDestinationSelected: _onTabSelected,
               destinations: const [
                 NavigationDestination(
                   icon: Icon(Icons.home_outlined),
