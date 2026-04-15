@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/data/shutter_repository.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
@@ -218,17 +220,25 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         ),
       );
 
+      // Web과 동일: 견적 확정 직후 1회 fire-and-forget 로그 전송 (실패해도 UI 영향 없음)
       final currentUser = ref.read(authControllerProvider);
-      final dbInfo = ShutterCalculator.getDbInfo(_selectedType);
-      ref.read(shutterRepositoryProvider).logEstimate({
-        'user_id': currentUser?.id,
-        'user_name': currentUser?.name,
-        'width_mm': input.widthMm.toInt(),
-        'height_mm': input.heightMm.toInt(),
-        'model_type': dbInfo['model_type'] ?? dbInfo['category'],
-        'total_price': res.totalAmount,
-        'created_at': DateTime.now().toIso8601String(),
-      }).catchError((e) => debugPrint('Logging failed: $e'));
+      final userId = currentUser?.id.trim() ?? '';
+      final userName = currentUser?.name.trim() ?? '';
+      if (userId.isNotEmpty && userName.isNotEmpty) {
+        unawaited(
+          ref.read(shutterRepositoryProvider).logEstimate({
+            'user_id': userId,
+            'user_name': userName,
+            'width_mm': input.widthMm.toInt(),
+            'height_mm': input.heightMm.toInt(),
+            // 웹과 동일한 모델 문자열 사용
+            'model_type': _getTypeLabel(_selectedType),
+            // JSON number로 전송되도록 숫자 타입 유지
+            'total_price': res.totalAmount,
+            'created_at': DateTime.now().toIso8601String(),
+          }).catchError((e) => debugPrint('Logging failed: $e')),
+        );
+      }
 
     } catch (e) {
       if (!mounted) return;
