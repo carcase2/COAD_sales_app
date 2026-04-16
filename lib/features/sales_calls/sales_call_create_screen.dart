@@ -450,6 +450,22 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                       },
                     ),
                     _quickActionTile(
+                      icon: Icons.event_note_rounded,
+                      label: '금일팔로우',
+                      color: Colors.deepPurple.shade600,
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SalesCallListScreen(
+                              mode: ListQueryMode.incompleteByDate,
+                              date: todayYmdSeoul(),
+                              initialAssignee: '전체',
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _quickActionTile(
                       icon: Icons.calculate_rounded,
                       label: '견적기',
                       color: Colors.teal.shade600,

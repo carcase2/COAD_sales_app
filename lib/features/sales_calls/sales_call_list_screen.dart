@@ -202,9 +202,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         return '오늘 완료';
       case ListQueryMode.incompleteByDate:
         if (widget.date == todayYmdSeoul()) {
-          return '오늘 미통화';
+          return '오늘 날짜 팔로우';
         }
-        return '${widget.date?.substring(5) ?? ''} 미통화';
+        return '${widget.date?.substring(5) ?? ''} 날짜 팔로우';
     }
   }
 
@@ -275,6 +275,24 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               builder: (_) => Scaffold(
                 appBar: AppBar(title: const Text('견적기')),
                 body: const QuoterScreen(),
+              ),
+            ),
+          );
+        },
+      ),
+      _QuickActionItem(
+        label: '금일팔로우',
+        color: Colors.deepPurple.shade600,
+        icon: Icons.event_note_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SalesCallListScreen(
+                mode: ListQueryMode.incompleteByDate,
+                date: todayYmdSeoul(),
+                initialAssignee: '전체',
               ),
             ),
           );
@@ -594,6 +612,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             return matchesAssignee && matchesSearch;
           }).toList();
 
+          final hasPinnedInitialAssignee =
+              widget.mode == ListQueryMode.incompleteByDate &&
+              widget.initialAssignee != null &&
+              widget.initialAssignee != '전체';
+
           return Column(
             children: [
               Container(
@@ -622,6 +645,24 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       padding: const EdgeInsets.only(right: 12),
                       child: GestureDetector(
                         onTap: () {
+                          if (hasPinnedInitialAssignee) {
+                            final pinned = widget.initialAssignee!;
+                            // 날짜 팔로우를 담당자 기준으로 열었을 때:
+                            // 1) 현재 담당자 칩 재탭 => 전체
+                            // 2) 전체에서 해당 담당자 칩 탭 => 담당자
+                            // 3) 그 외 담당자 칩은 비활성
+                            if (_selectedAssignee == assignee) {
+                              HapticFeedback.selectionClick();
+                              setState(() => _selectedAssignee = '전체');
+                              return;
+                            }
+                            if (_selectedAssignee == '전체' && assignee == pinned) {
+                              HapticFeedback.selectionClick();
+                              setState(() => _selectedAssignee = pinned);
+                              return;
+                            }
+                            return;
+                          }
                           HapticFeedback.selectionClick();
                           setState(() => _selectedAssignee = assignee);
                         },
@@ -731,11 +772,15 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             return Container(
                               margin: const EdgeInsets.only(bottom: 16),
                               decoration: BoxDecoration(
-                                color: scheme.surfaceContainerLowest,
+                                color: assignColor.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: assignColor.withValues(alpha: 0.35),
+                                  width: 1.2,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: scheme.shadow.withOpacity(0.04),
+                                    color: assignColor.withValues(alpha: 0.14),
                                     blurRadius: 16,
                                     offset: const Offset(0, 6),
                                   ),
@@ -756,6 +801,15 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      Container(
+                                        width: 44,
+                                        height: 4,
+                                        decoration: BoxDecoration(
+                                          color: assignColor.withValues(alpha: 0.9),
+                                          borderRadius: BorderRadius.circular(99),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [

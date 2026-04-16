@@ -1,19 +1,13 @@
-import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class HomeHubScreen extends ConsumerStatefulWidget {
-  const HomeHubScreen({super.key, required this.onNavigateToTab});
-
-  final Function(int) onNavigateToTab;
+  const HomeHubScreen({super.key});
 
   @override
   ConsumerState<HomeHubScreen> createState() => _HomeHubScreenState();
@@ -22,6 +16,145 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   late ScrollController _scrollController;
   bool _isBottomBarVisible = true;
+
+  Future<void> _openTodayFollowPicker() async {
+    final repo = ref.read(salesCallsRepositoryProvider);
+    final rows = await repo.fetchCalls(
+      date: todayYmdSeoul(),
+      incompleteOnly: true,
+      excludeSimpleInquiries: true,
+      limit: 1000,
+      includeCallHistory: false,
+    );
+
+    if (!mounted) return;
+
+    final Map<String, int> counts = {'전체': rows.length};
+    for (final row in rows) {
+      final assignee = (row.assignedTo == null || row.assignedTo!.isEmpty) ? '미지정' : row.assignedTo!;
+      counts[assignee] = (counts[assignee] ?? 0) + 1;
+    }
+    final loginName = ref.read(authControllerProvider)?.name;
+    final defaultAssignee = (loginName != null && counts.containsKey(loginName)) ? loginName : '전체';
+
+    final assignees = counts.keys.toList()
+      ..sort((a, b) {
+        if (a == '전체') return -1;
+        if (b == '전체') return 1;
+        if (a == defaultAssignee) return -1;
+        if (b == defaultAssignee) return 1;
+        final countA = counts[a] ?? 0;
+        final countB = counts[b] ?? 0;
+        if (countA != countB) return countB.compareTo(countA);
+        return a.compareTo(b);
+      });
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '날짜 팔로우 담당자 선택',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${todayYmdSeoul()} 기준',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => Navigator.of(context).pop(defaultAssignee),
+                    icon: const Icon(Icons.check_circle_rounded),
+                    label: Text('기본 선택: $defaultAssignee'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: assignees.length,
+                    separatorBuilder: (_, __) => Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                    itemBuilder: (context, index) {
+                      final assignee = assignees[index];
+                      final count = counts[assignee] ?? 0;
+                      final isDefault = assignee == defaultAssignee;
+                      return ListTile(
+                        onTap: () => Navigator.of(context).pop(assignee),
+                        leading: Icon(
+                          assignee == '전체' ? Icons.people_alt_rounded : Icons.person_rounded,
+                          color: scheme.primary,
+                        ),
+                        title: Text(
+                          assignee,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: isDefault
+                            ? Text(
+                                '로그인 기본 담당자',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: scheme.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              )
+                            : null,
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: scheme.primaryContainer.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '$count건',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selected == null) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.incompleteByDate,
+          date: todayYmdSeoul(),
+          initialAssignee: selected,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -61,6 +194,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
     final statsAsync = ref.watch(todayStatsProvider);
+    final todayFollowAsync = ref.watch(todayFollowCountProvider);
 
     return CustomScrollView(
       controller: _scrollController,
@@ -101,77 +235,36 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 ),
                 const SizedBox(height: 12),
                 statsAsync.when(
-                  data: (s) => _MiniStatsWidget(
-                    today: s.todayCount ?? 0,
-                    incomplete: s.incompleteCount ?? 0,
-                    onTapToday: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today),
-                        ),
-                      );
-                    },
-                    onTapIncomplete: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => SalesCallListScreen(
-                            mode: ListQueryMode.incomplete,
-                            date: todayYmdSeoul(),
+                  data: (s) {
+                    final todayFollowCount = todayFollowAsync.valueOrNull ?? 0;
+                    return _MiniStatsWidget(
+                      today: s.todayCount ?? 0,
+                      incomplete: s.incompleteCount ?? 0,
+                      todayFollow: todayFollowCount,
+                      onTapToday: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                  loading: () => const LinearProgressIndicator(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
-
-                const SizedBox(height: 32),
-
-                // ─── 주요 액션 카드 ───
-                Text(
-                  '주요 업무',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                ),
-                const SizedBox(height: 16),
-
-                _HubActionCard(
-                  title: '최신 상담 현황 확인',
-                  subtitle: '오늘 들어온 모든 전화를 한눈에',
-                  icon: Icons.assignment_rounded,
-                  color: scheme.primary,
-                  onTap: () => widget.onNavigateToTab(1),
-                ),
-                const SizedBox(height: 16),
-
-                _HubActionCard(
-                  title: '새로운 상담 등록',
-                  subtitle: '빠르고 정확하게 고객 정보 입력',
-                  icon: Icons.add_ic_call_rounded,
-                  color: scheme.secondary,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const SalesCallCreateScreen()),
+                        );
+                      },
+                      onTapIncomplete: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SalesCallListScreen(
+                              mode: ListQueryMode.incomplete,
+                              date: todayYmdSeoul(),
+                            ),
+                          ),
+                        );
+                      },
+                      onTapTodayFollow: () {
+                        _openTodayFollowPicker();
+                      },
                     );
                   },
-                ),
-                const SizedBox(height: 16),
-
-                _HubActionCard(
-                  title: '셔터 견적 산출',
-                  subtitle: '일반/단열 셔터 정확한 가격 확인',
-                  icon: Icons.calculate_rounded,
-                  color: Colors.teal.shade600,
-                  onTap: () => widget.onNavigateToTab(2),
-                ),
-                const SizedBox(height: 16),
-
-                _HubActionCard(
-                  title: '시스템 설정',
-                  subtitle: '알림 및 앱 환경 설정',
-                  icon: Icons.settings_rounded,
-                  color: Colors.grey.shade700,
-                  onTap: () => ref.read(mainScaffoldKeyProvider).currentState?.openDrawer(),
+                  loading: () => const LinearProgressIndicator(),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
               ],
             ),
@@ -227,14 +320,18 @@ class _MiniStatsWidget extends StatelessWidget {
   const _MiniStatsWidget({
     required this.today,
     required this.incomplete,
+    required this.todayFollow,
     required this.onTapToday,
     required this.onTapIncomplete,
+    required this.onTapTodayFollow,
   });
 
   final int today;
   final int incomplete;
+  final int todayFollow;
   final VoidCallback onTapToday;
   final VoidCallback onTapIncomplete;
+  final VoidCallback onTapTodayFollow;
 
   @override
   Widget build(BuildContext context) {
@@ -247,7 +344,6 @@ class _MiniStatsWidget extends StatelessWidget {
         border: Border.all(color: scheme.primary.withValues(alpha: 0.1), width: 1.5),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           Expanded(
             child: InkWell(
@@ -267,6 +363,17 @@ class _MiniStatsWidget extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: _StatItem(label: '금일 미통화', value: incomplete.toString(), color: scheme.error),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 40, color: scheme.primary.withValues(alpha: 0.1)),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTapTodayFollow,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: _StatItem(label: '달력 오늘 팔로우', value: todayFollow.toString(), color: Colors.deepPurple),
               ),
             ),
           ),
@@ -300,88 +407,3 @@ class _StatItem extends StatelessWidget {
   }
 }
 
-class _HubActionCard extends StatefulWidget {
-  const _HubActionCard({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  State<_HubActionCard> createState() => _HubActionCardState();
-}
-
-class _HubActionCardState extends State<_HubActionCard> {
-  double _scale = 1.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _scale = 0.97),
-      onTapUp: (_) => setState(() => _scale = 1.0),
-      onTapCancel: () => setState(() => _scale = 1.0),
-      onTap: () {
-        HapticFeedback.lightImpact();
-        widget.onTap();
-      },
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 100),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-              ),
-            ],
-            border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3), width: 1),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: widget.color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(widget.icon, color: widget.color, size: 28),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: scheme.onSurface),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.subtitle,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

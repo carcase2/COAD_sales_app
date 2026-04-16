@@ -967,6 +967,19 @@ class _IncompleteCalendar extends ConsumerStatefulWidget {
 class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
   DateTime _focusedDay = DateTime.now();
   String _selectedAssignee = '전체';
+  CalendarFormat _calendarFormat = CalendarFormat.month;
+
+  DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  List<DateTime> _weekDays(DateTime focusedDay) {
+    final start = _dayOnly(focusedDay).subtract(Duration(days: focusedDay.weekday - 1));
+    return List<DateTime>.generate(7, (i) => start.add(Duration(days: i)));
+  }
+
+  String _weekdayKo(int weekday) {
+    const labels = ['월', '화', '수', '목', '금', '토', '일'];
+    return labels[(weekday - 1).clamp(0, 6)];
+  }
 
   Color _colorForAssignee(String assignee, ColorScheme scheme) {
     if (assignee == '미지정') return scheme.surfaceContainerHighest;
@@ -981,6 +994,21 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
     return colors[assignee.hashCode.abs() % colors.length];
   }
 
+  Color _strongColorForAssignee(String assignee) {
+    if (assignee == '전체') return Colors.blueGrey.shade700;
+    if (assignee == '미지정') return Colors.grey.shade700;
+    final colors = [
+      Colors.blue.shade700,
+      Colors.red.shade700,
+      Colors.green.shade700,
+      Colors.orange.shade800,
+      Colors.purple.shade700,
+      Colors.teal.shade700,
+      Colors.indigo.shade700,
+    ];
+    return colors[assignee.hashCode.abs() % colors.length];
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncCalls = ref.watch(rankingCallsProvider);
@@ -988,19 +1016,33 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
     return asyncCalls.when(
       data: (calls) {
-        // 1. Filter calls by the currently focused month
+        // 날짜 팔로우 화면과 동일 기준:
+        // SalesCallListScreen(incompleteByDate) -> repository.incompleteOnly(true)
+        // => status_id NOT IN (2,3,4)
+        final followCalls = calls.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
+
         final focusedYear = _focusedDay.year;
         final focusedMonth = _focusedDay.month;
         final focusedMonthStr = "$focusedYear-${focusedMonth.toString().padLeft(2, '0')}";
+        final weekStart = DateTime(_focusedDay.year, _focusedDay.month, _focusedDay.day)
+            .subtract(Duration(days: _focusedDay.weekday - 1));
+        final weekEnd = weekStart.add(const Duration(days: 6));
 
-        final visibleCallsInMonth = calls.where((c) {
-          if (c.callDate == null || c.callDate!.length < 7) return false;
-          return c.callDate!.startsWith(focusedMonthStr);
-        }).toList();
+        bool inFocusedPeriod(String? callDate) {
+          if (callDate == null || callDate.length < 10) return false;
+          if (_calendarFormat == CalendarFormat.month) {
+            return callDate.startsWith(focusedMonthStr);
+          }
+          final dt = DateTime.tryParse(callDate.substring(0, 10));
+          if (dt == null) return false;
+          final dayOnly = DateTime(dt.year, dt.month, dt.day);
+          return !dayOnly.isBefore(weekStart) && !dayOnly.isAfter(weekEnd);
+        }
 
-        // 2. Calculate counts for filter bar (Only for the visible month)
-        final Map<String, int> counts = {'전체': visibleCallsInMonth.length};
-        for (var c in visibleCallsInMonth) {
+        final visibleCallsInPeriod = followCalls.where((c) => inFocusedPeriod(c.callDate)).toList();
+
+        final Map<String, int> counts = {'전체': visibleCallsInPeriod.length};
+        for (var c in visibleCallsInPeriod) {
           final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
           counts[a] = (counts[a] ?? 0) + 1;
         }
@@ -1028,9 +1070,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
         // 3. Prepare calendar markers (group by date) filtered by selected assignee
         final Map<String, int> dateMarkers = {};
-        for (final c in calls) { // Markers should still be pre-calculated for all calls to show them as user swipes? 
-          // Usually markers are calculated for all, but user asked "그달 숫자만 카운트 되게".
-          // This refers to the top "Filter Chips".
+        for (final c in followCalls) {
           final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
           if (_selectedAssignee != '전체' && a != _selectedAssignee) continue;
 
@@ -1038,6 +1078,22 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
             final dateKey = c.callDate!.substring(0, 10);
             dateMarkers[dateKey] = (dateMarkers[dateKey] ?? 0) + 1;
           }
+        }
+
+        final weekDays = _weekDays(_focusedDay);
+        final Map<String, Map<String, int>> weekAssigneeCounts = {};
+        for (final day in weekDays) {
+          weekAssigneeCounts[day.toIso8601String().substring(0, 10)] = <String, int>{};
+        }
+        for (final c in followCalls) {
+          final callDate = c.callDate;
+          if (callDate == null || callDate.length < 10) continue;
+          final dateKey = callDate.substring(0, 10);
+          final bucket = weekAssigneeCounts[dateKey];
+          if (bucket == null) continue;
+          final assignee = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+          if (_selectedAssignee != '전체' && assignee != _selectedAssignee) continue;
+          bucket[assignee] = (bucket[assignee] ?? 0) + 1;
         }
 
         return RefreshIndicator(
@@ -1094,11 +1150,20 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                         ),
                         child: Row(
                           children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: _strongColorForAssignee(assignee),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
                             Text(
                               assignee,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: isSelected ? Colors.white : scheme.onSurfaceVariant,
+                                color: isSelected ? Colors.white : _strongColorForAssignee(assignee),
                                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                               ),
                             ),
@@ -1121,6 +1186,62 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
             ),
             // ─── 캘린더 영역 ───
             Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => setState(() => _calendarFormat = CalendarFormat.month),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _calendarFormat == CalendarFormat.month ? Colors.white : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '월간 달력',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: _calendarFormat == CalendarFormat.month ? scheme.primary : scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => setState(() => _calendarFormat = CalendarFormat.week),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _calendarFormat == CalendarFormat.week ? Colors.white : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '주간 달력',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: _calendarFormat == CalendarFormat.week ? scheme.primary : scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
@@ -1138,10 +1259,11 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                   firstDay: DateTime.now().subtract(const Duration(days: 365)),
                   lastDay: DateTime.now().add(const Duration(days: 365)),
                   focusedDay: _focusedDay,
+                  calendarFormat: _calendarFormat,
                   locale: 'ko_KR',
                   daysOfWeekHeight: 40,
                   rowHeight: 52,
-                  availableGestures: AvailableGestures.none, // ListView 스크롤에 맡김
+                  availableGestures: AvailableGestures.horizontalSwipe,
                   headerStyle: const HeaderStyle(
                     formatButtonVisible: false,
                     titleCentered: true,
@@ -1197,6 +1319,140 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                   },
                 ),
               ),
+            if (_calendarFormat == CalendarFormat.week) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.view_week_rounded, size: 16, color: scheme.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          '주간 상세',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.onSurface),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ...weekDays.map((day) {
+                      final dateKey = day.toIso8601String().substring(0, 10);
+                      final dayMap = weekAssigneeCounts[dateKey] ?? const <String, int>{};
+                      final total = dayMap.values.fold<int>(0, (sum, v) => sum + v);
+                      final sorted = dayMap.entries.toList()
+                        ..sort((a, b) => b.value.compareTo(a.value));
+                      final isToday = _dayOnly(day) == _dayOnly(DateTime.now());
+
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => SalesCallListScreen(
+                                mode: ListQueryMode.incompleteByDate,
+                                date: dateKey,
+                                initialAssignee: _selectedAssignee,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isToday ? scheme.primaryContainer.withValues(alpha: 0.25) : scheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isToday ? scheme.primary.withValues(alpha: 0.45) : scheme.outlineVariant.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 68,
+                                child: Text(
+                                  '${day.month}/${day.day} (${_weekdayKo(day.weekday)})',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: isToday ? scheme.primary : scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: total == 0
+                                    ? Text(
+                                        '데이터 없음',
+                                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withValues(alpha: 0.75)),
+                                      )
+                                    : Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: sorted
+                                            .map(
+                                              (e) => Material(
+                                                color: Colors.transparent,
+                                                child: InkWell(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  onTap: () {
+                                                    Navigator.of(context).push(
+                                                      MaterialPageRoute<void>(
+                                                        builder: (_) => SalesCallListScreen(
+                                                          mode: ListQueryMode.incompleteByDate,
+                                                          date: dateKey,
+                                                          initialAssignee: e.key,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  },
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                                    decoration: BoxDecoration(
+                                                      color: _strongColorForAssignee(e.key).withValues(alpha: 0.12),
+                                                      borderRadius: BorderRadius.circular(10),
+                                                    ),
+                                                    child: Text(
+                                                      '${e.key} ${e.value}',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: _strongColorForAssignee(e.key),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                      ),
+                              ),
+                              const SizedBox(width: 4),
+                              SizedBox(
+                                width: 34,
+                                child: Text(
+                                  '$total건',
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: scheme.error),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
             ],
           ),
         );

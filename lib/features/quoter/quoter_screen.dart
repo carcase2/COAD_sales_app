@@ -361,6 +361,22 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         },
       ),
       _QuoterQuickActionItem(
+        label: '금일팔로우',
+        color: Colors.deepPurple.shade600,
+        icon: Icons.event_note_rounded,
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SalesCallListScreen(
+                mode: ListQueryMode.incompleteByDate,
+                date: todayYmdSeoul(),
+                initialAssignee: '전체',
+              ),
+            ),
+          );
+        },
+      ),
+      _QuoterQuickActionItem(
         label: '발행요청',
         color: Colors.indigo.shade600,
         icon: Icons.receipt_long_rounded,

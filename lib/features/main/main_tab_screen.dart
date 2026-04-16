@@ -117,7 +117,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
   List<Widget> _buildScreens() {
     return [
-      HomeHubScreen(onNavigateToTab: _onTabSelected),
+      const HomeHubScreen(),
       _loadedIndices.contains(1) ? const ConsultationStatusScreen() : const SizedBox.shrink(),
       _loadedIndices.contains(2) ? const QuoterScreen() : const SizedBox.shrink(),
       _loadedIndices.contains(3) ? const IssuanceRequestScreen() : const SizedBox.shrink(),
@@ -198,6 +198,25 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
               builder: (_) => SalesCallListScreen(
                 mode: ListQueryMode.incomplete,
                 date: todayYmdSeoul(),
+              ),
+            ),
+          );
+        },
+      ),
+      _QuickActionItem(
+        heroTag: 'global_today_follow_open',
+        color: Colors.deepPurple.shade600,
+        tooltip: '금일팔로우',
+        icon: Icons.event_note_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SalesCallListScreen(
+                mode: ListQueryMode.incompleteByDate,
+                date: todayYmdSeoul(),
+                initialAssignee: '전체',
               ),
             ),
           );

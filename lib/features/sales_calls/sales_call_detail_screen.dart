@@ -445,6 +445,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   Widget _buildScrollable(MasterDataBundle master) {
     final m = _model;
     final scheme = Theme.of(context).colorScheme;
+    final assigneeLabel = (m?.assignedTo == null || m!.assignedTo!.trim().isEmpty) ? '미지정' : m.assignedTo!.trim();
+    final assigneeColor = _colorForAssignee(assigneeLabel, scheme);
 
     Widget sectionTitle(String title, IconData icon) {
       return Padding(
@@ -472,7 +474,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          if (m != null) _buildHeroHeader(m, scheme),
+          if (m != null) _buildHeroHeader(m, scheme, assigneeColor),
 
           sectionTitle('핵심 문의 및 제품', Icons.rocket_launch_rounded),
           Row(
@@ -483,7 +485,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   m?.productCategoryName ?? '미지정', 
                   Icons.category_rounded, 
                   scheme,
-                  bgColor: scheme.primary.withOpacity(0.05),
+                  bgColor: assigneeColor.withOpacity(0.08),
                 ),
               ),
               const SizedBox(width: 12),
@@ -495,7 +497,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                     : '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'.trim(), 
                   Icons.location_on_rounded, 
                   scheme,
-                  bgColor: Colors.orange.withOpacity(0.05),
+                  bgColor: assigneeColor.withOpacity(0.08),
                 ),
               ),
             ],
@@ -545,7 +547,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             m?.nextScheduledDate ?? '예정 없음', 
             Icons.event_available_rounded, 
             scheme,
-            labelColor: Colors.deepOrangeAccent,
+              labelColor: assigneeColor,
+              bgColor: assigneeColor.withOpacity(0.08),
           ),
 
           sectionTitle('상담 이력 (단계별)', Icons.history_rounded),
@@ -555,8 +558,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             Container(
               padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerLowest,
+                color: assigneeColor.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: assigneeColor.withOpacity(0.25)),
                 boxShadow: [
                   BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
                 ],
@@ -570,8 +574,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerLowest,
+              color: assigneeColor.withOpacity(0.08),
               borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: assigneeColor.withOpacity(0.25)),
               boxShadow: [
                 BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
               ],
@@ -613,19 +618,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
-  Widget _buildHeroHeader(SalesCall m, ColorScheme scheme) {
+  Widget _buildHeroHeader(SalesCall m, ColorScheme scheme, Color assigneeColor) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [scheme.primary, scheme.primary.withOpacity(0.8)],
+          colors: [assigneeColor, assigneeColor.withOpacity(0.78)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: scheme.primary.withOpacity(0.3),
+            color: assigneeColor.withOpacity(0.35),
             blurRadius: 15,
             offset: const Offset(0, 8),
           ),

@@ -15,6 +15,18 @@ final todayStatsProvider = FutureProvider<TodayStats>((ref) async {
   return repo.fetchTodayStats();
 });
 
+final todayFollowCountProvider = FutureProvider<int>((ref) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  final rows = await repo.fetchCalls(
+    date: todayYmdSeoul(),
+    incompleteOnly: true,
+    excludeSimpleInquiries: true,
+    limit: 1000,
+    includeCallHistory: false,
+  );
+  return rows.length;
+});
+
 final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
   // 미통화와 완료건 모두 가져와서 통계(0/5 등)를 내기 위해 필터 제거

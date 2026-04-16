@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
@@ -439,6 +440,23 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
           await Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => SalesCallListScreen(mode: ListQueryMode.incomplete),
+            ),
+          );
+        },
+      ),
+      _CreateQuickActionItem(
+        label: '금일팔로우',
+        color: Colors.deepPurple.shade600,
+        icon: Icons.event_note_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SalesCallListScreen(
+                mode: ListQueryMode.incompleteByDate,
+                date: todayYmdSeoul(),
+                initialAssignee: '전체',
+              ),
             ),
           );
         },
