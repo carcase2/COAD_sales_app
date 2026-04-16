@@ -839,7 +839,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           crossAxisCount: 2,
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 2.2,
+          childAspectRatio: 2.9,
           children: ShutterType.values.map((t) {
             final isSelected = _selectedType == t;
             final color = _getTypeColor(t);
@@ -867,14 +867,14 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(icon, size: 20, color: isSelected ? Colors.white : color),
-                    const SizedBox(width: 8),
+                    Icon(icon, size: 18, color: isSelected ? Colors.white : color),
+                    const SizedBox(width: 6),
                     Flexible(
                       child: Text(
                         _getTypeLabel(t),
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
                           color: isSelected ? Colors.white : color.withValues(alpha: 0.85),
                         ),
