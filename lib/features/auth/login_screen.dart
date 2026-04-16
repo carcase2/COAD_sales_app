@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
+import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -17,6 +18,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _pwCtrl = TextEditingController();
   bool _loading = false;
   String? _error;
+  bool _rememberId = true;
+  bool _autoLogin = false;
+  bool _autoLoginTried = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreLoginOptions();
+  }
 
   @override
   void dispose() {
@@ -25,16 +35,53 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _restoreLoginOptions() async {
+    final secure = ref.read(appDependenciesProvider).secure;
+    final remember = await secure.read(key: StorageKeys.rememberLoginId);
+    final auto = await secure.read(key: StorageKeys.autoLoginEnabled);
+    final savedId = await secure.read(key: StorageKeys.savedLoginId);
+    final savedPw = await secure.read(key: StorageKeys.savedLoginPassword);
+
+    if (!mounted) return;
+    setState(() {
+      _rememberId = remember != 'false';
+      _autoLogin = auto == 'true';
+      _idCtrl.text = savedId ?? '';
+      if (_autoLogin) {
+        _pwCtrl.text = savedPw ?? '';
+      }
+    });
+
+    if (_autoLogin && !_autoLoginTried && _idCtrl.text.trim().isNotEmpty && _pwCtrl.text.isNotEmpty) {
+      _autoLoginTried = true;
+      await _submit();
+    }
+  }
+
   Future<void> _submit() async {
     setState(() {
       _error = null;
       _loading = true;
     });
     try {
+      final secure = ref.read(appDependenciesProvider).secure;
       await ref.read(authControllerProvider.notifier).login(
             id: _idCtrl.text.trim(),
             password: _pwCtrl.text,
           );
+      // 로그인 성공 시 사용자 설정 저장
+      await secure.write(key: StorageKeys.rememberLoginId, value: _rememberId.toString());
+      await secure.write(key: StorageKeys.autoLoginEnabled, value: _autoLogin.toString());
+      if (_rememberId) {
+        await secure.write(key: StorageKeys.savedLoginId, value: _idCtrl.text.trim());
+      } else {
+        await secure.delete(key: StorageKeys.savedLoginId);
+      }
+      if (_autoLogin) {
+        await secure.write(key: StorageKeys.savedLoginPassword, value: _pwCtrl.text);
+      } else {
+        await secure.delete(key: StorageKeys.savedLoginPassword);
+      }
     } catch (e) {
       setState(() => _error = koreanErrorMessage(e));
     } finally {
@@ -143,9 +190,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               textInputAction: TextInputAction.next,
                               textCapitalization: TextCapitalization.none,
                               autocorrect: false,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: '아이디',
-                                prefixIcon: Icon(Icons.person_outline),
+                                prefixIcon: const Icon(Icons.person_outline),
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.8), width: 1.2),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: scheme.primary, width: 1.8),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 14),
@@ -153,10 +211,60 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               controller: _pwCtrl,
                               obscureText: true,
                               onSubmitted: (_) => _submit(),
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: '비밀번호',
-                                prefixIcon: Icon(Icons.lock_outline),
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.8), width: 1.2),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: scheme.primary, width: 1.8),
+                                ),
                               ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: CheckboxListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    controlAffinity: ListTileControlAffinity.leading,
+                                    title: const Text('아이디 저장', style: TextStyle(fontSize: 13)),
+                                    value: _rememberId,
+                                    onChanged: (v) async {
+                                      final next = v ?? false;
+                                      setState(() => _rememberId = next);
+                                      if (!next) {
+                                        final secure = ref.read(appDependenciesProvider).secure;
+                                        await secure.delete(key: StorageKeys.savedLoginId);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                Expanded(
+                                  child: CheckboxListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    controlAffinity: ListTileControlAffinity.leading,
+                                    title: const Text('자동 로그인', style: TextStyle(fontSize: 13)),
+                                    value: _autoLogin,
+                                    onChanged: (v) async {
+                                      final next = v ?? false;
+                                      setState(() => _autoLogin = next);
+                                      if (!next) {
+                                        final secure = ref.read(appDependenciesProvider).secure;
+                                        await secure.delete(key: StorageKeys.savedLoginPassword);
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                             if (_error != null) ...[
                               const SizedBox(height: 14),

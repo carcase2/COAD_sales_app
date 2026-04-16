@@ -3,6 +3,9 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -60,6 +63,7 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
   final _bondRequestDeadline = TextEditingController();
   List<PlatformFile> _bondBizFiles = [];
   List<PlatformFile> _bondContractFiles = [];
+  bool _quickActionsOpen = false;
 
   @override
   void initState() {
@@ -382,6 +386,60 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
   Widget build(BuildContext context) {
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
+    final scheme = Theme.of(context).colorScheme;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final actionsBottom = 12.0 + safeBottom;
+    final quickActions = <_CreateQuickActionItem>[
+      _CreateQuickActionItem(
+        label: '홈',
+        color: Colors.blueGrey.shade700,
+        icon: Icons.home_rounded,
+        onTap: () {
+          setState(() => _quickActionsOpen = false);
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+      ),
+      _CreateQuickActionItem(
+        label: '접수',
+        color: scheme.tertiary,
+        icon: Icons.add_ic_call_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+          );
+        },
+      ),
+      _CreateQuickActionItem(
+        label: '견적기',
+        color: Colors.teal.shade600,
+        icon: Icons.calculate_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('견적기')),
+                body: const QuoterScreen(),
+              ),
+            ),
+          );
+        },
+      ),
+      _CreateQuickActionItem(
+        label: '미통화',
+        color: Colors.orange.shade700,
+        icon: Icons.pending_actions_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SalesCallListScreen(mode: ListQueryMode.incomplete),
+            ),
+          );
+        },
+      ),
+    ];
     final inputTheme = Theme.of(context).inputDecorationTheme.copyWith(
           filled: true,
           fillColor: Colors.white,
@@ -409,87 +467,183 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       appBar: AppBar(
         title: const Text('발행요청 등록'),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.09),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: accent.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                children: [
-                  Icon(isTax ? Icons.receipt_long_rounded : Icons.gavel_rounded, color: accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      isTax ? '세금계산서 발행요청 작성' : '이행증권 발행요청 작성',
-                      style: TextStyle(fontWeight: FontWeight.w700, color: accent),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: accent.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(isTax ? Icons.receipt_long_rounded : Icons.gavel_rounded, color: accent),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          isTax ? '세금계산서 발행요청 작성' : '이행증권 발행요청 작성',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: accent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: SegmentedButton<IssuanceDomain>(
+                    segments: const [
+                      ButtonSegment(value: IssuanceDomain.taxInvoice, label: Text('세금계산서')),
+                      ButtonSegment(value: IssuanceDomain.performanceBond, label: Text('이행증권')),
+                    ],
+                    selected: {_domain},
+                    onSelectionChanged: (v) => setState(() => _domain = v.first),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: accent.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.touch_app_rounded, size: 16, color: accent),
+                        const SizedBox(width: 6),
+                        Text(
+                          '아래 입력칸을 눌러 작성하세요',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accent),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: SegmentedButton<IssuanceDomain>(
-                segments: const [
-                  ButtonSegment(value: IssuanceDomain.taxInvoice, label: Text('세금계산서')),
-                  ButtonSegment(value: IssuanceDomain.performanceBond, label: Text('이행증권')),
-                ],
-                selected: {_domain},
-                onSelectionChanged: (v) => setState(() => _domain = v.first),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: accent.withValues(alpha: 0.25)),
                 ),
-                child: Row(
+                Expanded(
+                  child: Theme(
+                    data: Theme.of(context).copyWith(inputDecorationTheme: inputTheme),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                      child: _domain == IssuanceDomain.taxInvoice ? _buildTaxForm() : _buildBondForm(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_quickActionsOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => setState(() => _quickActionsOpen = false),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          Positioned(
+            right: 16,
+            bottom: actionsBottom,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (_quickActionsOpen)
+                  Container(
+                    width: 182,
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: scheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Column(
+                        children: quickActions
+                            .map(
+                              (item) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 3),
+                                child: Material(
+                                  color: item.color.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: item.onTap,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                      child: Row(
+                                        children: [
+                                          Icon(item.icon, size: 18, color: item.color),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              item.label,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: scheme.onSurface,
+                                              ),
+                                            ),
+                                          ),
+                                          Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.touch_app_rounded, size: 16, color: accent),
-                    const SizedBox(width: 6),
-                    Text(
-                      '아래 입력칸을 눌러 작성하세요',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accent),
+                    FloatingActionButton(
+                      heroTag: 'issuance_create_open_menu',
+                      mini: true,
+                      backgroundColor: scheme.primary,
+                      foregroundColor: Colors.white,
+                      onPressed: () => setState(() => _quickActionsOpen = !_quickActionsOpen),
+                      tooltip: _quickActionsOpen ? '닫기' : '열기',
+                      child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
+                    ),
+                    const SizedBox(width: 10),
+                    FloatingActionButton.extended(
+                      onPressed: _saving ? null : _submit,
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(_saving ? '저장 중...' : '저장'),
                     ),
                   ],
                 ),
-              ),
+              ],
             ),
-            Expanded(
-              child: Theme(
-                data: Theme.of(context).copyWith(inputDecorationTheme: inputTheme),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-                  child: _domain == IssuanceDomain.taxInvoice ? _buildTaxForm() : _buildBondForm(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _saving ? null : _submit,
-        backgroundColor: accent,
-        foregroundColor: Colors.white,
-        icon: _saving
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.save_rounded),
-        label: Text(_saving ? '저장 중...' : '저장'),
+          ),
+        ],
       ),
     );
   }
@@ -896,6 +1050,20 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       onSelected: (_) => onTap(),
     );
   }
+}
+
+class _CreateQuickActionItem {
+  const _CreateQuickActionItem({
+    required this.label,
+    required this.color,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final IconData icon;
+  final VoidCallback onTap;
 }
 
 class _ThousandsFormatter extends TextInputFormatter {

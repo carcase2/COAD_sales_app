@@ -57,6 +57,7 @@ dependencies:
   sqflite: ^2.4.1
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
+  in_app_update: ^4.2.3
 
 dev_dependencies:
   flutter_test:

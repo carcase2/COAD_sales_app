@@ -3,7 +3,6 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
@@ -96,9 +95,6 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     final user = ref.watch(authControllerProvider);
     final statsAsync = ref.watch(todayStatsProvider);
     final scheme = Theme.of(context).colorScheme;
-    final tabVisible = ref.watch(bottomBarVisibilityProvider);
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final ctaBottom = (tabVisible ? 118.0 : 24.0) + safeBottom;
 
     final currentIndex = _tabController.index;
     final bgToday = scheme.surface; 
@@ -111,10 +107,8 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
 
     return Scaffold(
       backgroundColor: currentBg,
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
               Container(
                 color: barBg,
                 child: TabBar(
@@ -211,62 +205,7 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                   ],
                 ),
               ),
-            ],
-          ),
-          Positioned(
-            right: 16,
-            bottom: ctaBottom,
-            child: _buildCreateCallButton(scheme),
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCreateCallButton(ColorScheme scheme) {
-    return Container(
-      height: 60,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.tertiary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.primary.withValues(alpha: 0.35),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(30),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
-          );
-        },
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 24),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_call, color: Colors.white, size: 24),
-              SizedBox(width: 10),
-              Text(
-                '접수',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

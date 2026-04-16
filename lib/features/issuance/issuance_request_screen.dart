@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -19,158 +20,109 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     final rowsAsync = ref.watch(issuanceRequestRowsProvider(_domain));
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
-    final accentSoft = isTax ? Colors.indigo.shade50 : Colors.deepOrange.shade50;
     return SafeArea(
-      child: Stack(
+      child: Column(
         children: [
-          Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [accent.withValues(alpha: 0.92), accent.withValues(alpha: 0.72)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.25),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [accent.withValues(alpha: 0.92), accent.withValues(alpha: 0.72)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.25),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.receipt_long_rounded, color: Colors.white),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              '발급요청',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
+                      const Icon(Icons.receipt_long_rounded, color: Colors.white),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '발급요청',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.2,
                           ),
-                          rowsAsync.when(
-                            data: (rows) => Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Text(
-                                '${rows.length}건',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
-                              ),
-                            ),
-                            loading: () => const SizedBox.shrink(),
-                            error: (error, stack) => const SizedBox.shrink(),
-                          ),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 10),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(14),
+                      IconButton(
+                        tooltip: '새로고침',
+                        visualDensity: VisualDensity.compact,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.2),
+                          foregroundColor: Colors.white,
                         ),
-                        padding: const EdgeInsets.all(4),
-                        child: SegmentedButton<IssuanceDomain>(
-                          segments: const [
-                            ButtonSegment(value: IssuanceDomain.taxInvoice, label: Text('세금계산서')),
-                            ButtonSegment(value: IssuanceDomain.performanceBond, label: Text('이행증권')),
-                          ],
-                          showSelectedIcon: false,
-                          selected: {_domain},
-                          style: ButtonStyle(
-                            backgroundColor: WidgetStateProperty.resolveWith((states) {
-                              if (states.contains(WidgetState.selected)) return Colors.white;
-                              return Colors.transparent;
-                            }),
-                            foregroundColor: WidgetStateProperty.resolveWith((states) {
-                              if (states.contains(WidgetState.selected)) return accent;
-                              return Colors.white.withValues(alpha: 0.92);
-                            }),
-                            textStyle: WidgetStateProperty.resolveWith((states) {
-                              return TextStyle(
-                                fontWeight: states.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w600,
-                              );
-                            }),
-                            side: WidgetStateProperty.all(BorderSide.none),
+                        onPressed: () {
+                          ref.invalidate(issuanceRequestRowsProvider(_domain));
+                          ref.invalidate(issuanceRequestBadgeCountProvider);
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                      ),
+                      const SizedBox(width: 6),
+                      rowsAsync.when(
+                        data: (rows) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          onSelectionChanged: (selection) {
-                            final next = selection.first;
-                            if (next == _domain) return;
-                            setState(() => _domain = next);
-                          },
+                          child: Text(
+                            '${rows.length}건',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                          ),
                         ),
+                        loading: () => const SizedBox.shrink(),
+                        error: (error, stack) => const SizedBox.shrink(),
                       ),
                     ],
                   ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-                child: Row(
-                  children: [
-                    rowsAsync.when(
-                      data: (rows) => Text(
-                        '발급요청 ${rows.length}건',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant),
-                      ),
-                      loading: () => Text(
-                        '발급요청 불러오는 중...',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant),
-                      ),
-                      error: (error, stack) => Text(
-                        '발급요청 로드 실패',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: scheme.error),
-                      ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    const Spacer(),
-                    FilledButton.tonalIcon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: accentSoft,
-                        foregroundColor: accent,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: () {
-                        ref.invalidate(issuanceRequestRowsProvider(_domain));
-                        ref.invalidate(issuanceRequestBadgeCountProvider);
-                      },
-                      icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('새로고침'),
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      children: [
+                        _buildDomainTabButton(
+                          label: '세금계산서',
+                          selected: _domain == IssuanceDomain.taxInvoice,
+                          accent: accent,
+                          onTap: () => setState(() => _domain = IssuanceDomain.taxInvoice),
+                        ),
+                        const SizedBox(width: 6),
+                        _buildDomainTabButton(
+                          label: '이행증권',
+                          selected: _domain == IssuanceDomain.performanceBond,
+                          accent: accent,
+                          onTap: () => setState(() => _domain = IssuanceDomain.performanceBond),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Expanded(child: _buildBody(scheme, rowsAsync)),
-            ],
-          ),
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton.extended(
-              heroTag: 'issuance_request_create',
-              backgroundColor: accent,
-              foregroundColor: Colors.white,
-              onPressed: _openCreateForCurrentDomain,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('발행요청'),
             ),
           ),
+          const SizedBox(height: 4),
+          Expanded(child: _buildBody(scheme, rowsAsync)),
         ],
       ),
     );
@@ -221,12 +173,43 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
           );
         }
         return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           itemCount: rows.length,
           separatorBuilder: (_, index) => const SizedBox(height: 10),
           itemBuilder: (context, index) => _IssuanceRequestCard(row: rows[index]),
         );
       },
+    );
+  }
+
+  Widget _buildDomainTabButton({
+    required String label,
+    required bool selected,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected ? accent : Colors.white.withValues(alpha: 0.92),
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -34,11 +34,28 @@ class IssuanceRequestRow {
 
   String get subtitle {
     final requester = (master['created_by_name'] ?? master['created_by'] ?? '').toString();
-    final status = (master['status'] ?? '').toString();
+    final status = _statusLabel((master['status'] ?? '').toString());
     final width = (master['width_mm'] ?? '').toString();
     final height = (master['height_mm'] ?? '').toString();
     final size = (width.isNotEmpty && height.isNotEmpty) ? ' · ${width}x$height' : '';
     return '상태: $status${requester.isNotEmpty ? ' · 담당: $requester' : ''}$size';
+  }
+
+  String _statusLabel(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'pending':
+        return '대기';
+      case 'draft':
+        return '임시저장';
+      case 'in_progress':
+      case 'inprogress':
+        return '진행중';
+      case 'completed':
+      case 'complete':
+        return '완료';
+      default:
+        return raw.isEmpty ? '-' : raw;
+    }
   }
 }
 
