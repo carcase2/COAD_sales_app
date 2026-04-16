@@ -1,6 +1,8 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -102,7 +104,23 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   data: (s) => _MiniStatsWidget(
                     today: s.todayCount ?? 0,
                     incomplete: s.incompleteCount ?? 0,
-                    onTap: () => widget.onNavigateToTab(1),
+                    onTapToday: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today),
+                        ),
+                      );
+                    },
+                    onTapIncomplete: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => SalesCallListScreen(
+                            mode: ListQueryMode.incomplete,
+                            date: todayYmdSeoul(),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   loading: () => const LinearProgressIndicator(),
                   error: (_, __) => const SizedBox.shrink(),
@@ -209,34 +227,50 @@ class _MiniStatsWidget extends StatelessWidget {
   const _MiniStatsWidget({
     required this.today,
     required this.incomplete,
-    required this.onTap,
+    required this.onTapToday,
+    required this.onTapIncomplete,
   });
 
   final int today;
   final int incomplete;
-  final VoidCallback onTap;
+  final VoidCallback onTapToday;
+  final VoidCallback onTapIncomplete;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-        decoration: BoxDecoration(
-          color: scheme.primaryContainer.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: scheme.primary.withValues(alpha: 0.1), width: 1.5),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _StatItem(label: '금일 접수', value: today.toString(), color: scheme.primary),
-            Container(width: 1, height: 40, color: scheme.primary.withValues(alpha: 0.1)),
-            _StatItem(label: '미통화', value: incomplete.toString(), color: scheme.error),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.1), width: 1.5),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTapToday,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: _StatItem(label: '금일 접수', value: today.toString(), color: scheme.primary),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 40, color: scheme.primary.withValues(alpha: 0.1)),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTapIncomplete,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: _StatItem(label: '금일 미통화', value: incomplete.toString(), color: scheme.error),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

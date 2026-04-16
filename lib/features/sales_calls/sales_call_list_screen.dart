@@ -59,9 +59,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     
     // 1. 로컬 캐시 먼저 로드 (즉시 응답)
     try {
+      final cacheDate = switch (widget.mode) {
+        ListQueryMode.today => widget.date ?? todayYmdSeoul(),
+        ListQueryMode.completedToday => widget.date ?? todayYmdSeoul(),
+        ListQueryMode.incompleteByDate => widget.date ?? todayYmdSeoul(),
+        ListQueryMode.incomplete => widget.date,
+        ListQueryMode.recent => null,
+      };
+      final cacheIncompleteOnly = widget.mode == ListQueryMode.incomplete || widget.mode == ListQueryMode.incompleteByDate;
+
       final cached = await repo.fetchCachedCalls(
-        date: widget.mode == ListQueryMode.recent ? null : (widget.date ?? todayYmdSeoul()),
-        incompleteOnly: widget.mode == ListQueryMode.incomplete || widget.mode == ListQueryMode.incompleteByDate,
+        date: cacheDate,
+        incompleteOnly: cacheIncompleteOnly,
       );
       
       if (mounted && cached.isNotEmpty) {
@@ -153,6 +162,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       case ListQueryMode.today:
         return '오늘 통화';
       case ListQueryMode.incomplete:
+        if (widget.date == todayYmdSeoul()) {
+          return '금일 미통화';
+        }
         return '미통화';
       case ListQueryMode.recent:
         return '최근 통화';

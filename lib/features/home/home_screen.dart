@@ -35,7 +35,11 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     _scrollController.addListener(_onScroll);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {
+        // 탭 전환 시 접수 버튼이 사라진 상태로 남지 않도록 복원
+        _isFabVisible = true;
+      });
     });
     // 탭 진입 시 바가 보이도록 초기화
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -53,18 +57,18 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.offset <= 8) {
+      ref.read(bottomBarVisibilityProvider.notifier).state = true;
+      return;
+    }
+
     if (_scrollController.position.userScrollDirection ==
         ScrollDirection.reverse) {
-      if (_isFabVisible) {
-        setState(() => _isFabVisible = false);
-        ref.read(bottomBarVisibilityProvider.notifier).state = false;
-      }
+      ref.read(bottomBarVisibilityProvider.notifier).state = false;
     } else if (_scrollController.position.userScrollDirection ==
         ScrollDirection.forward) {
-      if (!_isFabVisible) {
-        setState(() => _isFabVisible = true);
-        ref.read(bottomBarVisibilityProvider.notifier).state = true;
-      }
+      ref.read(bottomBarVisibilityProvider.notifier).state = true;
     }
   }
 
@@ -92,6 +96,9 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     final user = ref.watch(authControllerProvider);
     final statsAsync = ref.watch(todayStatsProvider);
     final scheme = Theme.of(context).colorScheme;
+    final tabVisible = ref.watch(bottomBarVisibilityProvider);
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final ctaBottom = (tabVisible ? 118.0 : 24.0) + safeBottom;
 
     final currentIndex = _tabController.index;
     final bgToday = scheme.surface; 
@@ -104,157 +111,163 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
 
     return Scaffold(
       backgroundColor: currentBg,
-      body: Column(
+      body: Stack(
         children: [
-          Container(
-            color: barBg,
-            child: TabBar(
-              controller: _tabController,
-              tabs: [
-                Tab(
-                  icon: Icon(Icons.dashboard_rounded, size: 20, color: Colors.amberAccent.shade100),
-                  text: '요약',
+          Column(
+            children: [
+              Container(
+                color: barBg,
+                child: TabBar(
+                  controller: _tabController,
+                  tabs: [
+                    Tab(
+                      icon: Icon(Icons.dashboard_rounded, size: 20, color: Colors.amberAccent.shade100),
+                      text: '요약',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.pending_actions_rounded, size: 20, color: Colors.orangeAccent.shade100),
+                      text: '미통화',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.calendar_month_rounded, size: 20, color: Colors.greenAccent.shade100),
+                      text: '달력',
+                    ),
+                  ],
+                  indicatorColor: onBar,
+                  indicatorWeight: 3,
+                  labelColor: onBar,
+                  unselectedLabelColor: onBar.withValues(alpha: 0.65),
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  dividerColor: Colors.transparent,
                 ),
-                Tab(
-                  icon: Icon(Icons.pending_actions_rounded, size: 20, color: Colors.orangeAccent.shade100),
-                  text: '미통화',
-                ),
-                Tab(
-                  icon: Icon(Icons.calendar_month_rounded, size: 20, color: Colors.greenAccent.shade100),
-                  text: '달력',
-                ),
-              ],
-              indicatorColor: onBar,
-              indicatorWeight: 3,
-              labelColor: onBar,
-              unselectedLabelColor: onBar.withValues(alpha: 0.65),
-              labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-              dividerColor: Colors.transparent,
-            ),
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // 탭 1: 요약 뷰 (심플/간결)
-                RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(todayStatsProvider);
-                    ref.invalidate(todayCallsContentProvider);
-                    await Future.wait([
-                      ref.read(todayStatsProvider.future),
-                      ref.read(todayCallsContentProvider.future),
-                      _checkAndSync(),
-                    ]);
-                  },
-                  child: ListView(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                    children: [
-                      if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
-                      if (_pendingCount > 0) const SizedBox(height: 12),
-                      const SizedBox(height: 12),
-                      statsAsync.when(
-                        data: (s) => _StatsCard(stats: s),
-                        loading: () => const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: CircularProgressIndicator(),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // 탭 1: 요약 뷰 (심플/간결)
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        ref.invalidate(todayStatsProvider);
+                        ref.invalidate(todayCallsContentProvider);
+                        await Future.wait([
+                          ref.read(todayStatsProvider.future),
+                          ref.read(todayCallsContentProvider.future),
+                          _checkAndSync(),
+                        ]);
+                      },
+                      child: ListView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+                        children: [
+                          if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
+                          if (_pendingCount > 0) const SizedBox(height: 12),
+                          const SizedBox(height: 12),
+                          statsAsync.when(
+                            data: (s) => _StatsCard(stats: s),
+                            loading: () => const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: CircularProgressIndicator(),
+                              ),
+                            ),
+                            error: (e, _) => _ErrorCard(
+                              message: koreanErrorMessage(e),
+                              onRetry: () => ref.invalidate(todayStatsProvider),
+                            ),
                           ),
-                        ),
-                        error: (e, _) => _ErrorCard(
-                          message: koreanErrorMessage(e),
-                          onRetry: () => ref.invalidate(todayStatsProvider),
-                        ),
+                          const SizedBox(height: 40),
+                          Center(
+                            child: Icon(Icons.auto_graph_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.1)),
+                          ),
+                          const SizedBox(height: 16),
+                          Center(
+                            child: Text(
+                              '오늘 하루도 수고 많으십니다!',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 40),
-                      Center(
-                        child: Icon(Icons.auto_graph_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.1)),
+                    ),
+                    // 탭 2: 미통화 리스트 (담당자별)
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        ref.invalidate(rankingCallsProvider);
+                        await ref.read(rankingCallsProvider.future);
+                      },
+                      child: ListView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+                        children: const [
+                          _IncompleteBreakdown(),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      Center(
-                        child: Text(
-                          '오늘 하루도 수고 많으십니다!',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    // 탭 3: 미종료 캘린더 뷰
+                    _IncompleteCalendar(scrollController: _scrollController),
+                  ],
                 ),
-                // 탭 2: 미통화 리스트 (담당자별)
-                RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(rankingCallsProvider);
-                    await ref.read(rankingCallsProvider.future);
-                  },
-                  child: ListView(
-                    controller: _scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                    children: const [
-                      _IncompleteBreakdown(),
-                    ],
-                  ),
-                ),
-                // 탭 3: 미종료 캘린더 뷰
-                _IncompleteCalendar(scrollController: _scrollController),
-              ],
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: AnimatedScale(
-        scale: _isFabVisible ? 1.0 : 0.0,
-        alignment: Alignment.bottomRight,
-        duration: const Duration(milliseconds: 250),
-        child: Container(
-          height: 60,
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
-            gradient: LinearGradient(
-              colors: [scheme.primary, scheme.tertiary],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(30),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.add_call, color: Colors.white, size: 24),
-                  const SizedBox(width: 10),
-                  const Text(
-                    '새 통화 등록',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ],
+          Positioned(
+            right: 16,
+            bottom: ctaBottom,
+            child: _buildCreateCallButton(scheme),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreateCallButton(ColorScheme scheme) {
+    return Container(
+      height: 60,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        gradient: LinearGradient(
+          colors: [scheme.primary, scheme.tertiary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: 0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(30),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+          );
+        },
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_call, color: Colors.white, size: 24),
+              SizedBox(width: 10),
+              Text(
+                '접수',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -335,11 +348,18 @@ class _StatsCard extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: _StatCardItem(
-                label: '미통화',
+                label: '금일 미통화',
                 value: stats.incompleteCount?.toString() ?? '0',
                 icon: Icons.pending_rounded,
                 color: scheme.error,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SalesCallListScreen(mode: ListQueryMode.incomplete, date: todayYmdSeoul()))),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SalesCallListScreen(
+                      mode: ListQueryMode.incomplete,
+                      date: todayYmdSeoul(),
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -1081,10 +1101,15 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           }
         }
 
-        return ListView(
-          controller: widget.scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 200), // 압도적인 하단 여백 추가
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(rankingCallsProvider);
+            await ref.read(rankingCallsProvider.future);
+          },
+          child: ListView(
+            controller: widget.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 200), // 압도적인 하단 여백 추가
           children: [
             // ─── 상단 담당자 필터 바 (캘린더용) ───
             Container(
@@ -1234,7 +1259,8 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                 ),
               ),
             ],
-          );
+          ),
+        );
         },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text(koreanErrorMessage(e))),

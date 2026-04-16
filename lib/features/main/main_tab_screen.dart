@@ -2,6 +2,8 @@ import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -53,6 +55,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       HomeHubScreen(onNavigateToTab: _onTabSelected),
       _loadedIndices.contains(1) ? const ConsultationStatusScreen() : const SizedBox.shrink(),
       _loadedIndices.contains(2) ? const QuoterScreen() : const SizedBox.shrink(),
+      _loadedIndices.contains(3) ? const IssuanceRequestScreen() : const SizedBox.shrink(),
     ];
   }
 
@@ -62,6 +65,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     final isVisible = ref.watch(bottomBarVisibilityProvider);
     final user = ref.watch(authControllerProvider);
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
+    final issuanceBadgeAsync = ref.watch(issuanceRequestBadgeCountProvider);
+    final statsAsync = ref.watch(todayStatsProvider);
 
     return Scaffold(
       key: scaffoldKey,
@@ -69,7 +74,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       drawer: _buildDrawer(context, user, scheme),
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'COAD' : (_currentIndex == 1 ? '상담현황' : '견적기'),
+          _currentIndex == 0
+              ? 'COAD'
+              : (_currentIndex == 1
+                  ? '상담현황'
+                  : (_currentIndex == 2 ? '견적기' : '발급요청')),
           style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5),
         ),
         centerTitle: true,
@@ -155,21 +164,68 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
               selectedIndex: _currentIndex,
               surfaceTintColor: Colors.transparent,
               onDestinationSelected: _onTabSelected,
-              destinations: const [
-                NavigationDestination(
+              destinations: [
+                const NavigationDestination(
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home_rounded),
                   label: '홈',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.assignment_outlined),
-                  selectedIcon: Icon(Icons.assignment_rounded),
+                  icon: statsAsync.when(
+                    data: (stats) {
+                      final count = stats.incompleteCount ?? 0;
+                      return count > 0
+                          ? Badge(
+                              label: Text('$count'),
+                              child: const Icon(Icons.assignment_outlined),
+                            )
+                          : const Icon(Icons.assignment_outlined);
+                    },
+                    loading: () => const Icon(Icons.assignment_outlined),
+                    error: (error, stack) => const Icon(Icons.assignment_outlined),
+                  ),
+                  selectedIcon: statsAsync.when(
+                    data: (stats) {
+                      final count = stats.incompleteCount ?? 0;
+                      return count > 0
+                          ? Badge(
+                              label: Text('$count'),
+                              child: const Icon(Icons.assignment_rounded),
+                            )
+                          : const Icon(Icons.assignment_rounded);
+                    },
+                    loading: () => const Icon(Icons.assignment_rounded),
+                    error: (error, stack) => const Icon(Icons.assignment_rounded),
+                  ),
                   label: '상담현황',
                 ),
-                NavigationDestination(
+                const NavigationDestination(
                   icon: Icon(Icons.calculate_outlined),
                   selectedIcon: Icon(Icons.calculate_rounded),
                   label: '견적기',
+                ),
+                NavigationDestination(
+                  icon: issuanceBadgeAsync.when(
+                    data: (count) => count > 0
+                        ? Badge(
+                            label: Text('$count'),
+                            child: _navIssuanceIcon(selected: false),
+                          )
+                        : _navIssuanceIcon(selected: false),
+                    loading: () => _navIssuanceIcon(selected: false),
+                    error: (error, stack) => _navIssuanceIcon(selected: false),
+                  ),
+                  selectedIcon: issuanceBadgeAsync.when(
+                    data: (count) => count > 0
+                        ? Badge(
+                            label: Text('$count'),
+                            child: _navIssuanceIcon(selected: true),
+                          )
+                        : _navIssuanceIcon(selected: true),
+                    loading: () => _navIssuanceIcon(selected: true),
+                    error: (error, stack) => _navIssuanceIcon(selected: true),
+                  ),
+                  label: '발급요청',
                 ),
               ],
             ),
@@ -282,6 +338,22 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _navIssuanceIcon({required bool selected}) {
+    if (!selected) return const Icon(Icons.receipt_long_outlined);
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.indigo.shade500, Colors.deepOrange.shade400],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 18),
     );
   }
 
