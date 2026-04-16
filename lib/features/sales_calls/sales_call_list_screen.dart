@@ -2,6 +2,10 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
@@ -36,6 +40,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   String _selectedAssignee = '전체';
   final ScrollController _scrollController = ScrollController();
   bool _hasScrolledToInitial = false;
+  bool _quickActionsOpen = false;
+  final ScrollController _quickActionsScrollCtrl = ScrollController();
+  bool _quickHasMoreAbove = false;
+  bool _quickHasMoreBelow = false;
 
   @override
   void initState() {
@@ -50,7 +58,29 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _scrollController.dispose();
+    _quickActionsScrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _refreshQuickHints() {
+    if (!_quickActionsOpen || !_quickActionsScrollCtrl.hasClients) {
+      if (_quickHasMoreAbove || _quickHasMoreBelow) {
+        setState(() {
+          _quickHasMoreAbove = false;
+          _quickHasMoreBelow = false;
+        });
+      }
+      return;
+    }
+    final pos = _quickActionsScrollCtrl.position;
+    final nextAbove = pos.pixels > 1;
+    final nextBelow = pos.pixels < (pos.maxScrollExtent - 1);
+    if (nextAbove != _quickHasMoreAbove || nextBelow != _quickHasMoreBelow) {
+      setState(() {
+        _quickHasMoreAbove = nextAbove;
+        _quickHasMoreBelow = nextBelow;
+      });
+    }
   }
 
   /// 캐시를 먼저 보여주고 서버 데이터를 가져오는 핵심 로직
@@ -59,9 +89,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     
     // 1. 로컬 캐시 먼저 로드 (즉시 응답)
     try {
+      final cacheDate = switch (widget.mode) {
+        ListQueryMode.today => widget.date ?? todayYmdSeoul(),
+        ListQueryMode.completedToday => widget.date ?? todayYmdSeoul(),
+        ListQueryMode.incompleteByDate => widget.date ?? todayYmdSeoul(),
+        ListQueryMode.incomplete => widget.date,
+        ListQueryMode.recent => null,
+      };
+      final cacheIncompleteOnly = widget.mode == ListQueryMode.incomplete || widget.mode == ListQueryMode.incompleteByDate;
+
       final cached = await repo.fetchCachedCalls(
-        date: widget.mode == ListQueryMode.recent ? null : (widget.date ?? todayYmdSeoul()),
-        incompleteOnly: widget.mode == ListQueryMode.incomplete || widget.mode == ListQueryMode.incompleteByDate,
+        date: cacheDate,
+        incompleteOnly: cacheIncompleteOnly,
       );
       
       if (mounted && cached.isNotEmpty) {
@@ -153,6 +192,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       case ListQueryMode.today:
         return '오늘 통화';
       case ListQueryMode.incomplete:
+        if (widget.date == todayYmdSeoul()) {
+          return '금일 미통화';
+        }
         return '미통화';
       case ListQueryMode.recent:
         return '최근 통화';
@@ -181,6 +223,65 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final actionsBottom = 12.0 + safeBottom;
+    final quickActions = <_QuickActionItem>[
+      _QuickActionItem(
+        label: '홈',
+        color: Colors.blueGrey.shade700,
+        icon: Icons.home_rounded,
+        onTap: () {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+      ),
+      _QuickActionItem(
+        label: '접수',
+        color: scheme.tertiary,
+        icon: Icons.add_ic_call_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+          );
+        },
+      ),
+      _QuickActionItem(
+        label: '발행요청',
+        color: Colors.indigo.shade600,
+        icon: Icons.receipt_long_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          await Navigator.of(context).push(
+            MaterialPageRoute<bool>(
+              builder: (_) => const IssuanceRequestCreateScreen(initialDomain: IssuanceDomain.taxInvoice),
+            ),
+          );
+        },
+      ),
+      _QuickActionItem(
+        label: '견적기',
+        color: Colors.teal.shade600,
+        icon: Icons.calculate_rounded,
+        onTap: () async {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('견적기')),
+                body: const QuoterScreen(),
+              ),
+            ),
+          );
+        },
+      ),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         title: _isSearching 
@@ -226,7 +327,137 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             )
         ],
       ),
-      body: _buildBody(),
+      body: Stack(
+        children: [
+          _buildBody(),
+          if (_quickActionsOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => setState(() => _quickActionsOpen = false),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          Positioned(
+            right: 16,
+            bottom: actionsBottom,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (_quickActionsOpen)
+                  Container(
+                    width: 182,
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: scheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        if (_quickHasMoreAbove)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2, bottom: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.keyboard_arrow_up_rounded, size: 16, color: scheme.onSurfaceVariant),
+                                const SizedBox(width: 2),
+                                Text('위에 메뉴 더 있음', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+                              ],
+                            ),
+                          ),
+                        Expanded(
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: (n) {
+                              _refreshQuickHints();
+                              return false;
+                            },
+                            child: SingleChildScrollView(
+                              controller: _quickActionsScrollCtrl,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Column(
+                                children: quickActions
+                                    .map(
+                                      (item) => Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 3),
+                                        child: Material(
+                                          color: item.color.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: InkWell(
+                                            borderRadius: BorderRadius.circular(12),
+                                            onTap: item.onTap,
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                              child: Row(
+                                                children: [
+                                                  Icon(item.icon, size: 18, color: item.color),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      item.label,
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: scheme.onSurface,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (_quickHasMoreBelow)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 2),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: scheme.onSurfaceVariant),
+                                const SizedBox(width: 2),
+                                Text('아래 메뉴 더 있음', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                FloatingActionButton(
+                  heroTag: 'list_actions_toggle',
+                  backgroundColor: scheme.primary,
+                  foregroundColor: Colors.white,
+                  mini: true,
+                  onPressed: () {
+                    setState(() => _quickActionsOpen = !_quickActionsOpen);
+                    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshQuickHints());
+                  },
+                  tooltip: _quickActionsOpen ? '닫기' : '열기',
+                  child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -710,4 +941,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
     );
   }
+}
+
+class _QuickActionItem {
+  const _QuickActionItem({
+    required this.label,
+    required this.color,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final IconData icon;
+  final VoidCallback onTap;
 }

@@ -534,6 +534,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
           const SizedBox(height: 12),
           _buildInfoTile(
+            '작성자',
+            (m?.createdBy ?? '').trim().isEmpty ? '미기재' : m!.createdBy!.trim(),
+            Icons.edit_note_rounded,
+            scheme,
+          ),
+          const SizedBox(height: 12),
+          _buildInfoTile(
             '${_getNextStage(m?.callStage)} 예정일', 
             m?.nextScheduledDate ?? '예정 없음', 
             Icons.event_available_rounded, 

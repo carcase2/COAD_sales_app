@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/data/shutter_repository.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
@@ -7,16 +9,47 @@ import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.d
 import 'package:coad_customer_calls/models/shutter_models.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+final shutterPriceRefreshKeyProvider = StateProvider<int>((ref) => 0);
+const Duration _shutterPriceCacheTtl = Duration(hours: 24);
+
 final shutterPricesFutureProvider = FutureProvider((ref) async {
   final repo = ref.read(shutterRepositoryProvider);
-  final grid = await repo.fetchGridPrices();
-  final unit = await repo.fetchUnitPrices();
-  return {'grid': grid, 'unit': unit};
+  final prefs = ref.read(appDependenciesProvider).prefs;
+  final refreshKey = ref.watch(shutterPriceRefreshKeyProvider);
+  final forceNetwork = refreshKey > 0;
+
+  Future<Map<String, List<Map<String, dynamic>>>> fetchAndCache() async {
+    final grid = await repo.fetchGridPrices();
+    final unit = await repo.fetchUnitPrices();
+    await prefs.setString(StorageKeys.shutterPriceGridCache, jsonEncode(grid));
+    await prefs.setString(StorageKeys.shutterPriceUnitCache, jsonEncode(unit));
+    await prefs.setString(StorageKeys.shutterPriceCachedAt, DateTime.now().toIso8601String());
+    return {'grid': grid, 'unit': unit};
+  }
+
+  if (!forceNetwork) {
+    final cachedGrid = prefs.getString(StorageKeys.shutterPriceGridCache);
+    final cachedUnit = prefs.getString(StorageKeys.shutterPriceUnitCache);
+    final cachedAtRaw = prefs.getString(StorageKeys.shutterPriceCachedAt);
+    final cachedAt = cachedAtRaw == null ? null : DateTime.tryParse(cachedAtRaw);
+    final cacheIsFresh = cachedAt != null && DateTime.now().difference(cachedAt) < _shutterPriceCacheTtl;
+
+    if (cachedGrid != null && cachedUnit != null && cacheIsFresh) {
+      final grid = List<Map<String, dynamic>>.from(
+        (jsonDecode(cachedGrid) as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+      final unit = List<Map<String, dynamic>>.from(
+        (jsonDecode(cachedUnit) as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+      return {'grid': grid, 'unit': unit};
+    }
+  }
+
+  return fetchAndCache();
 });
 
 class QuoterScreen extends ConsumerStatefulWidget {
@@ -30,6 +63,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   int _currentStep = 1;
   bool _isCostSettingsExpanded = false;
   bool _isCalculating = false;
+  DateTime? _lastPriceSyncAt;
+  bool _priceUpdateAvailable = false;
   final NumberFormat _krwFormat = NumberFormat.currency(locale: 'ko_KR', symbol: '₩', decimalDigits: 0);
 
   // -- State --
@@ -71,7 +106,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     _bendingCostController.addListener(_invalidateCalculatedResult);
     _profitCostController.addListener(_invalidateCalculatedResult);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(bottomBarVisibilityProvider.notifier).state = true;
+      _loadCachedSyncTime();
+      _checkIfPriceRefreshNeeded();
     });
   }
 
@@ -125,13 +161,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     });
   }
 
-  void _setBottomBarVisible(bool visible) {
-    final current = ref.read(bottomBarVisibilityProvider);
-    if (current != visible) {
-      ref.read(bottomBarVisibilityProvider.notifier).state = visible;
-    }
-  }
-
   void _onDimensionChanged(String _) {
     _invalidateCalculatedResult();
     if (mounted) {
@@ -148,15 +177,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     if (step == 4 && _canCalculate && !_isCalculating) {
       await _calculate();
     }
-  }
-
-  bool _handleScrollDirection(UserScrollNotification n) {
-    if (n.direction == ScrollDirection.reverse) {
-      _setBottomBarVisible(false);
-    } else if (n.direction == ScrollDirection.forward) {
-      _setBottomBarVisible(true);
-    }
-    return false;
   }
 
   Future<void> _calculate() async {
@@ -255,52 +275,172 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     final scheme = Theme.of(context).colorScheme;
     final pricesAsync = ref.watch(shutterPricesFutureProvider);
 
-    return pricesAsync.when(
-      data: (_) => _buildContent(scheme),
-      loading: () => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: scheme.primary),
-            const SizedBox(height: 16),
-            Text('단가 데이터 로딩 중...', style: TextStyle(color: scheme.onSurfaceVariant)),
-          ],
+    return Material(
+      color: scheme.surface,
+      child: pricesAsync.when(
+        data: (_) {
+          if (_lastPriceSyncAt == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || _lastPriceSyncAt != null) return;
+              setState(() => _lastPriceSyncAt = DateTime.now());
+            });
+          }
+          return _buildContent(scheme);
+        },
+        loading: () => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: scheme.primary),
+              const SizedBox(height: 16),
+              Text('단가 데이터 로딩 중...', style: TextStyle(color: scheme.onSurfaceVariant)),
+            ],
+          ),
         ),
-      ),
-      error: (e, stack) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.cloud_off_rounded, size: 48, color: scheme.error),
-            const SizedBox(height: 12),
-            Text('데이터 로딩 실패', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: scheme.error)),
-            const SizedBox(height: 8),
-            TextButton(onPressed: () => ref.invalidate(shutterPricesFutureProvider), child: const Text('다시 시도')),
-          ],
+        error: (e, stack) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cloud_off_rounded, size: 48, color: scheme.error),
+              const SizedBox(height: 12),
+              Text('데이터 로딩 실패', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: scheme.error)),
+              const SizedBox(height: 8),
+              TextButton(onPressed: () => ref.invalidate(shutterPricesFutureProvider), child: const Text('다시 시도')),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildContent(ColorScheme scheme) {
-    final tabVisible = ref.watch(bottomBarVisibilityProvider);
-    final bottomPad = tabVisible ? 110.0 : 16.0;
+    const bottomPad = 16.0;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
       child: Column(
         children: [
+          _buildPriceSyncBar(scheme),
+          const SizedBox(height: 8),
           _buildWizardHeader(scheme),
           const SizedBox(height: 8),
           _buildWizardActions(scheme),
           const SizedBox(height: 10),
           Expanded(
-            child: NotificationListener<UserScrollNotification>(
-              onNotification: _handleScrollDirection,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                child: _buildStepBody(scheme),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: _buildStepBody(scheme),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatSyncTime(DateTime value) {
+    return DateFormat('MM/dd HH:mm').format(value);
+  }
+
+  Future<void> _refreshPricesManually() async {
+    ref.read(shutterPriceRefreshKeyProvider.notifier).state++;
+    ref.invalidate(shutterPricesFutureProvider);
+    try {
+      await ref.read(shutterPricesFutureProvider.future);
+      if (!mounted) return;
+      setState(() => _lastPriceSyncAt = DateTime.now());
+      if (mounted) setState(() => _priceUpdateAvailable = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('단가를 최신값으로 갱신했습니다.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('단가 새로고침에 실패했습니다.'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _loadCachedSyncTime() async {
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    final cachedAt = prefs.getString(StorageKeys.shutterPriceCachedAt);
+    if (cachedAt == null || cachedAt.trim().isEmpty || !mounted) return;
+    final parsed = DateTime.tryParse(cachedAt);
+    if (parsed == null) return;
+    setState(() => _lastPriceSyncAt = parsed.toLocal());
+  }
+
+  Future<void> _checkIfPriceRefreshNeeded() async {
+    try {
+      final prefs = ref.read(appDependenciesProvider).prefs;
+      final cachedGrid = prefs.getString(StorageKeys.shutterPriceGridCache);
+      final cachedUnit = prefs.getString(StorageKeys.shutterPriceUnitCache);
+      if (cachedGrid == null || cachedUnit == null) return;
+
+      final repo = ref.read(shutterRepositoryProvider);
+      final remoteGrid = await repo.fetchGridPrices();
+      final remoteUnit = await repo.fetchUnitPrices();
+      final remoteGridJson = jsonEncode(remoteGrid);
+      final remoteUnitJson = jsonEncode(remoteUnit);
+      if (!mounted) return;
+      setState(() => _priceUpdateAvailable = remoteGridJson != cachedGrid || remoteUnitJson != cachedUnit);
+    } catch (_) {
+      // 네트워크 실패 시에는 조용히 무시 (캐시 사용 지속)
+    }
+  }
+
+  Widget _buildPriceSyncBar(ColorScheme scheme) {
+    final syncText = _lastPriceSyncAt == null ? '단가 갱신 정보 없음' : '단가 갱신: ${_formatSyncTime(_lastPriceSyncAt!)}';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              syncText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_priceUpdateAvailable)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade300),
+              ),
+              child: Text(
+                '새 단가 있음',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.orange.shade800,
+                ),
+              ),
+            ),
+          Tooltip(
+            message: '단가 새로고침',
+            child: OutlinedButton(
+              onPressed: _refreshPricesManually,
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(36, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              ),
+              child: const Icon(Icons.refresh_rounded, size: 16),
             ),
           ),
         ],
@@ -384,9 +524,14 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           child: _buildSizeInput(scheme),
         );
       case 3:
-        return SingleChildScrollView(
+        return LayoutBuilder(
           key: const ValueKey('step3'),
-          child: _buildCostSettings(scheme),
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: _buildCostSettings(scheme),
+            ),
+          ),
         );
       case 4:
       default:
