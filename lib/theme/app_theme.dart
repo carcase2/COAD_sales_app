@@ -8,6 +8,33 @@ class AppTheme {
   // 조금 더 세련된 네이비 코발트 톤
   static const Color _seed = Color(0xFF2B5C92);
 
+  static TextStyle? _scaled(TextStyle? style, double factor) {
+    if (style == null) return null;
+    final size = style.fontSize;
+    if (size == null) return style;
+    return style.copyWith(fontSize: size * factor);
+  }
+
+  static TextTheme _scaleTextTheme(TextTheme theme, double factor) {
+    return theme.copyWith(
+      displayLarge: _scaled(theme.displayLarge, factor),
+      displayMedium: _scaled(theme.displayMedium, factor),
+      displaySmall: _scaled(theme.displaySmall, factor),
+      headlineLarge: _scaled(theme.headlineLarge, factor),
+      headlineMedium: _scaled(theme.headlineMedium, factor),
+      headlineSmall: _scaled(theme.headlineSmall, factor),
+      titleLarge: _scaled(theme.titleLarge, factor),
+      titleMedium: _scaled(theme.titleMedium, factor),
+      titleSmall: _scaled(theme.titleSmall, factor),
+      bodyLarge: _scaled(theme.bodyLarge, factor),
+      bodyMedium: _scaled(theme.bodyMedium, factor),
+      bodySmall: _scaled(theme.bodySmall, factor),
+      labelLarge: _scaled(theme.labelLarge, factor),
+      labelMedium: _scaled(theme.labelMedium, factor),
+      labelSmall: _scaled(theme.labelSmall, factor),
+    );
+  }
+
   static ThemeData light() {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: _seed,
@@ -16,7 +43,7 @@ class AppTheme {
       surfaceContainerLowest: const Color(0xFFFFFFFF),
     );
 
-    final textTheme = Typography.material2021(platform: TargetPlatform.android)
+    final baseTextTheme = Typography.material2021(platform: TargetPlatform.android)
         .black
         .apply(
           fontFamily: null, // Keep default for performance, or specify like 'Pretendard' if imported
@@ -30,6 +57,7 @@ class AppTheme {
           bodyMedium: const TextStyle(fontSize: 15, height: 1.5, letterSpacing: -0.1),
           labelLarge: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.1),
         );
+    final textTheme = _scaleTextTheme(baseTextTheme, 0.8);
 
     final inputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
@@ -48,7 +76,7 @@ class AppTheme {
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
         titleTextStyle: textTheme.titleMedium?.copyWith(
-          fontSize: 18,
+          fontSize: 17,
           fontWeight: FontWeight.w800,
           color: colorScheme.onSurface,
         ),
@@ -67,7 +95,7 @@ class AppTheme {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: -0.2),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.2),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(

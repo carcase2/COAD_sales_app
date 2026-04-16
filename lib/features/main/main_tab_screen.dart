@@ -212,14 +212,16 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         title: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () => _onTabSelected(0),
-          child: Text(
-            _currentIndex == 0
-                ? 'COAD'
-                : (_currentIndex == 1
-                    ? '상담현황'
-                    : (_currentIndex == 2 ? '견적기' : '발급요청')),
-            style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5),
-          ),
+          child: _currentIndex == 0
+              ? _buildBrandTitle()
+              : Text(
+                  _currentIndex == 1 ? '상담현황' : (_currentIndex == 2 ? '견적기' : '발급요청'),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                    color: Colors.white,
+                  ),
+                ),
         ),
         centerTitle: true,
         backgroundColor: scheme.primary,
@@ -499,6 +501,49 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBrandTitle() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+          ),
+          child: const Icon(Icons.door_front_door_rounded, size: 14, color: Colors.white),
+        ),
+        const SizedBox(width: 8),
+        RichText(
+          text: TextSpan(
+            children: [
+              const TextSpan(
+                text: 'COAD',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              TextSpan(
+                text: ' DOOR',
+                style: TextStyle(
+                  color: const Color(0xFFFFC857).withValues(alpha: 0.95),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

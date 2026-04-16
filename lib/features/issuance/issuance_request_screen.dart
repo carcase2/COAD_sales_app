@@ -122,6 +122,22 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             ),
           ),
           const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _openCreateForCurrentDomain,
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('발급하기'),
+              ),
+            ),
+          ),
           Expanded(child: _buildBody(scheme, rowsAsync)),
         ],
       ),

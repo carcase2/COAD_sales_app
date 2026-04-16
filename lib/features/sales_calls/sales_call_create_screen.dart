@@ -5,9 +5,13 @@ import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
 import 'package:file_picker/file_picker.dart';
@@ -71,6 +75,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   
   int _currentStep = 0;
   bool _aiBusy = false;
+  bool _quickActionsOpen = false;
 
   void _nextStep() {
     if (_currentStep == 1) {
@@ -340,6 +345,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     final masterAsync = ref.watch(masterDataProvider);
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final actionsBottom = 12.0 + safeBottom;
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -347,7 +354,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         title: const Text('새 통화 등록', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         centerTitle: true,
         backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 18,
+        ),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.pop(context),
@@ -385,6 +398,145 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               orElse: () => const SizedBox.shrink(),
             ),
           ],
+        ),
+      ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (_quickActionsOpen)
+            Container(
+              width: 182,
+              constraints: const BoxConstraints(maxHeight: 240),
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Column(
+                  children: [
+                    _quickActionTile(
+                      icon: Icons.home_rounded,
+                      label: '홈',
+                      color: Colors.blueGrey.shade700,
+                      onTap: () async {
+                        Navigator.of(context).popUntil((route) => route.isFirst);
+                      },
+                    ),
+                    _quickActionTile(
+                      icon: Icons.pending_actions_rounded,
+                      label: '미통화',
+                      color: Colors.orange.shade700,
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SalesCallListScreen(
+                              mode: ListQueryMode.incomplete,
+                              date: todayYmdSeoul(),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _quickActionTile(
+                      icon: Icons.calculate_rounded,
+                      label: '견적기',
+                      color: Colors.teal.shade600,
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => Scaffold(
+                              appBar: AppBar(title: const Text('견적기')),
+                              body: const QuoterScreen(),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _quickActionTile(
+                      icon: Icons.receipt_long_rounded,
+                      label: '발행요청',
+                      color: Colors.indigo.shade600,
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<bool>(
+                            builder: (_) => const IssuanceRequestCreateScreen(
+                              initialDomain: IssuanceDomain.taxInvoice,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.only(bottom: actionsBottom),
+            child: FloatingActionButton(
+              heroTag: 'call_create_open_menu',
+              mini: true,
+              backgroundColor: scheme.primary,
+              foregroundColor: Colors.white,
+              tooltip: _quickActionsOpen ? '닫기' : '열기',
+              onPressed: () => setState(() => _quickActionsOpen = !_quickActionsOpen),
+              child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickActionTile({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required Future<void> Function() onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Material(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () async {
+            setState(() => _quickActionsOpen = false);
+            await onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
+              ],
+            ),
+          ),
         ),
       ),
     );

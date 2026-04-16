@@ -29,6 +29,13 @@ class CoadCustomerCallsApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: AppTheme.light(),
+      builder: (context, child) {
+        final media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(textScaler: const TextScaler.linear(0.8)),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: user == null ? const LoginScreen() : const MainTabScreen(),
     );
   }

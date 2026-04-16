@@ -2,10 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/data/shutter_repository.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/models/shutter_models.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -63,6 +68,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   int _currentStep = 1;
   bool _isCostSettingsExpanded = false;
   bool _isCalculating = false;
+  bool _quickActionsOpen = false;
   DateTime? _lastPriceSyncAt;
   bool _priceUpdateAvailable = false;
   final NumberFormat _krwFormat = NumberFormat.currency(locale: 'ko_KR', symbol: '₩', decimalDigits: 0);
@@ -285,31 +291,184 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               setState(() => _lastPriceSyncAt = DateTime.now());
             });
           }
-          return _buildContent(scheme);
+          return _buildWithQuickActions(scheme, _buildContent(scheme));
         },
-        loading: () => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: scheme.primary),
-              const SizedBox(height: 16),
-              Text('단가 데이터 로딩 중...', style: TextStyle(color: scheme.onSurfaceVariant)),
-            ],
+        loading: () => _buildWithQuickActions(
+          scheme,
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(color: scheme.primary),
+                const SizedBox(height: 16),
+                Text('단가 데이터 로딩 중...', style: TextStyle(color: scheme.onSurfaceVariant)),
+              ],
+            ),
           ),
         ),
-        error: (e, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.cloud_off_rounded, size: 48, color: scheme.error),
-              const SizedBox(height: 12),
-              Text('데이터 로딩 실패', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: scheme.error)),
-              const SizedBox(height: 8),
-              TextButton(onPressed: () => ref.invalidate(shutterPricesFutureProvider), child: const Text('다시 시도')),
-            ],
+        error: (e, stack) => _buildWithQuickActions(
+          scheme,
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.cloud_off_rounded, size: 48, color: scheme.error),
+                const SizedBox(height: 12),
+                Text('데이터 로딩 실패', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: scheme.error)),
+                const SizedBox(height: 8),
+                TextButton(onPressed: () => ref.invalidate(shutterPricesFutureProvider), child: const Text('다시 시도')),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildWithQuickActions(ColorScheme scheme, Widget content) {
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final actionsBottom = 72.0 + safeBottom;
+    final quickActions = <_QuoterQuickActionItem>[
+      _QuoterQuickActionItem(
+        label: '홈',
+        color: Colors.blueGrey.shade700,
+        icon: Icons.home_rounded,
+        onTap: () async => Navigator.of(context).popUntil((route) => route.isFirst),
+      ),
+      _QuoterQuickActionItem(
+        label: '접수',
+        color: scheme.tertiary,
+        icon: Icons.add_ic_call_rounded,
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+          );
+        },
+      ),
+      _QuoterQuickActionItem(
+        label: '미통화',
+        color: Colors.orange.shade700,
+        icon: Icons.pending_actions_rounded,
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SalesCallListScreen(
+                mode: ListQueryMode.incomplete,
+                date: todayYmdSeoul(),
+              ),
+            ),
+          );
+        },
+      ),
+      _QuoterQuickActionItem(
+        label: '발행요청',
+        color: Colors.indigo.shade600,
+        icon: Icons.receipt_long_rounded,
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute<bool>(
+              builder: (_) => const IssuanceRequestCreateScreen(
+                initialDomain: IssuanceDomain.taxInvoice,
+              ),
+            ),
+          );
+        },
+      ),
+    ];
+
+    return Stack(
+      children: [
+        content,
+        if (_quickActionsOpen)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => setState(() => _quickActionsOpen = false),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        Positioned(
+          right: 16,
+          bottom: actionsBottom,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (_quickActionsOpen)
+                Container(
+                  width: 182,
+                  constraints: const BoxConstraints(maxHeight: 240),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Column(
+                      children: quickActions
+                          .map(
+                            (item) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Material(
+                                color: item.color.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () async {
+                                    setState(() => _quickActionsOpen = false);
+                                    await item.onTap();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    child: Row(
+                                      children: [
+                                        Icon(item.icon, size: 18, color: item.color),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            item.label,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: scheme.onSurface,
+                                            ),
+                                          ),
+                                        ),
+                                        Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                ),
+              FloatingActionButton(
+                heroTag: 'quoter_open_menu',
+                mini: true,
+                backgroundColor: scheme.primary,
+                foregroundColor: Colors.white,
+                tooltip: _quickActionsOpen ? '닫기' : '열기',
+                onPressed: () => setState(() => _quickActionsOpen = !_quickActionsOpen),
+                child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -2007,6 +2166,20 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       case ShutterType.fireScreen: return const Color(0xFFE65100);
     }
   }
+}
+
+class _QuoterQuickActionItem {
+  const _QuoterQuickActionItem({
+    required this.label,
+    required this.color,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final IconData icon;
+  final Future<void> Function() onTap;
 }
 
 class _ThousandsFormatter extends TextInputFormatter {

@@ -419,7 +419,11 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
           await Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => Scaffold(
-                appBar: AppBar(title: const Text('견적기')),
+                appBar: AppBar(
+                  title: const Text('견적기'),
+                  backgroundColor: scheme.primary,
+                  foregroundColor: Colors.white,
+                ),
                 body: const QuoterScreen(),
               ),
             ),
@@ -466,6 +470,14 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
     return Scaffold(
       appBar: AppBar(
         title: const Text('발행요청 등록'),
+        backgroundColor: accent,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 18,
+        ),
       ),
       body: Stack(
         children: [
