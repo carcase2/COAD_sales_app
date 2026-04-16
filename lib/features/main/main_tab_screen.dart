@@ -119,7 +119,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     return [
       const HomeHubScreen(),
       _loadedIndices.contains(1) ? const ConsultationStatusScreen() : const SizedBox.shrink(),
-      _loadedIndices.contains(2) ? const QuoterScreen() : const SizedBox.shrink(),
+      _loadedIndices.contains(2) ? const QuoterScreen(showQuickActions: false) : const SizedBox.shrink(),
       _loadedIndices.contains(3) ? const IssuanceRequestScreen() : const SizedBox.shrink(),
     ];
   }

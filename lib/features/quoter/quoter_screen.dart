@@ -58,7 +58,12 @@ final shutterPricesFutureProvider = FutureProvider((ref) async {
 });
 
 class QuoterScreen extends ConsumerStatefulWidget {
-  const QuoterScreen({super.key});
+  const QuoterScreen({
+    super.key,
+    this.showQuickActions = true,
+  });
+
+  final bool showQuickActions;
 
   @override
   ConsumerState<QuoterScreen> createState() => _QuoterScreenState();
@@ -291,36 +296,60 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               setState(() => _lastPriceSyncAt = DateTime.now());
             });
           }
-          return _buildWithQuickActions(scheme, _buildContent(scheme));
+          return widget.showQuickActions ? _buildWithQuickActions(scheme, _buildContent(scheme)) : _buildContent(scheme);
         },
-        loading: () => _buildWithQuickActions(
-          scheme,
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircularProgressIndicator(color: scheme.primary),
-                const SizedBox(height: 16),
-                Text('단가 데이터 로딩 중...', style: TextStyle(color: scheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-        ),
-        error: (e, stack) => _buildWithQuickActions(
-          scheme,
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.cloud_off_rounded, size: 48, color: scheme.error),
-                const SizedBox(height: 12),
-                Text('데이터 로딩 실패', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: scheme.error)),
-                const SizedBox(height: 8),
-                TextButton(onPressed: () => ref.invalidate(shutterPricesFutureProvider), child: const Text('다시 시도')),
-              ],
-            ),
-          ),
-        ),
+        loading: () => widget.showQuickActions
+            ? _buildWithQuickActions(
+                scheme,
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: scheme.primary),
+                      const SizedBox(height: 16),
+                      Text('단가 데이터 로딩 중...', style: TextStyle(color: scheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+              )
+            : Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: scheme.primary),
+                    const SizedBox(height: 16),
+                    Text('단가 데이터 로딩 중...', style: TextStyle(color: scheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+        error: (e, stack) => widget.showQuickActions
+            ? _buildWithQuickActions(
+                scheme,
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.cloud_off_rounded, size: 48, color: scheme.error),
+                      const SizedBox(height: 12),
+                      Text('데이터 로딩 실패', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: scheme.error)),
+                      const SizedBox(height: 8),
+                      TextButton(onPressed: () => ref.invalidate(shutterPricesFutureProvider), child: const Text('다시 시도')),
+                    ],
+                  ),
+                ),
+              )
+            : Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.cloud_off_rounded, size: 48, color: scheme.error),
+                    const SizedBox(height: 12),
+                    Text('데이터 로딩 실패', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: scheme.error)),
+                    const SizedBox(height: 8),
+                    TextButton(onPressed: () => ref.invalidate(shutterPricesFutureProvider), child: const Text('다시 시도')),
+                  ],
+                ),
+              ),
       ),
     );
   }
