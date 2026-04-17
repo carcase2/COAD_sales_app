@@ -53,13 +53,19 @@ class SalesCallsRepository {
   }
 
   /// 로컬 DB에서 캐시된 목록 조회
+  /// [incompleteOnly]: 미통화는 `status_id=1`이 아니라 **isMissed**(초기 단계·단순문의 제외)와
+  /// `fetchCalls(uncalledOnly: true)`·홈 `fetchTodayStats`와 동일 기준이어야 함.
   Future<List<SalesCall>> fetchCachedCalls({String? date, bool? incompleteOnly}) async {
     final res = await _db.getSalesCalls(
       date: date,
-      statusId: incompleteOnly == true ? 1 : null,
-      limit: 100,
+      statusId: null,
+      limit: 200,
     );
-    return parseSalesCallList(res);
+    var parsed = parseSalesCallList(res);
+    if (incompleteOnly == true) {
+      parsed = parsed.where((c) => c.isMissed).toList();
+    }
+    return parsed;
   }
 
   /// [followDate] `yyyy-MM-dd` — `next_scheduled_date`가 해당 날짜인 건만 (날짜 팔로우).

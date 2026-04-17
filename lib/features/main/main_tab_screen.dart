@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
@@ -57,6 +59,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       NotificationService.handleInitialMessage();
       AppUpdateService.checkAndUpdateIfNeeded(context);
+    });
+
+    // 상담현황(미통화/달력)이 쓰는 대량 목록을 백그라운드로 미리 불러 탭 전환 시 빨리 표시
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ref.read(rankingCallsProvider.future));
     });
 
     // 2. Sync FCM token with Supabase for the current user

@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
+import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -23,7 +24,9 @@ class ConsultationStatusScreen extends ConsumerStatefulWidget {
 
 class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScreen> with SingleTickerProviderStateMixin {
   int _pendingCount = 0;
-  late ScrollController _scrollController;
+  late final ScrollController _scrollSummary;
+  late final ScrollController _scrollIncomplete;
+  late final ScrollController _scrollCalendar;
   late TabController _tabController;
   bool _isFabVisible = true;
   CalendarFormat _launchCalendarFormat = CalendarFormat.month;
@@ -32,8 +35,12 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
   @override
   void initState() {
     super.initState();
-    _scrollController = ScrollController();
-    _scrollController.addListener(_onScroll);
+    _scrollSummary = ScrollController();
+    _scrollIncomplete = ScrollController();
+    _scrollCalendar = ScrollController();
+    _scrollSummary.addListener(_onScroll);
+    _scrollIncomplete.addListener(_onScroll);
+    _scrollCalendar.addListener(_onScroll);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (!mounted) return;
@@ -67,24 +74,40 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
+    _scrollSummary.removeListener(_onScroll);
+    _scrollIncomplete.removeListener(_onScroll);
+    _scrollCalendar.removeListener(_onScroll);
+    _scrollSummary.dispose();
+    _scrollIncomplete.dispose();
+    _scrollCalendar.dispose();
     _tabController.dispose();
     super.dispose();
   }
 
+  ScrollController? _scrollForActiveTab() {
+    switch (_tabController.index) {
+      case 0:
+        return _scrollSummary;
+      case 1:
+        return _scrollIncomplete;
+      case 2:
+        return _scrollCalendar;
+      default:
+        return null;
+    }
+  }
+
   void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    if (_scrollController.offset <= 8) {
+    final c = _scrollForActiveTab();
+    if (c == null || !c.hasClients) return;
+    if (c.offset <= 8) {
       ref.read(bottomBarVisibilityProvider.notifier).state = true;
       return;
     }
 
-    if (_scrollController.position.userScrollDirection ==
-        ScrollDirection.reverse) {
+    if (c.position.userScrollDirection == ScrollDirection.reverse) {
       ref.read(bottomBarVisibilityProvider.notifier).state = false;
-    } else if (_scrollController.position.userScrollDirection ==
-        ScrollDirection.forward) {
+    } else if (c.position.userScrollDirection == ScrollDirection.forward) {
       ref.read(bottomBarVisibilityProvider.notifier).state = true;
     }
   }
@@ -159,7 +182,6 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    // 탭 1: 요약 뷰 (심플/간결)
                     RefreshIndicator(
                       onRefresh: () async {
                         ref.invalidate(todayStatsProvider);
@@ -171,7 +193,7 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                         ]);
                       },
                       child: ListView(
-                        controller: _scrollController,
+                        controller: _scrollSummary,
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
                         children: [
@@ -205,25 +227,21 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                         ],
                       ),
                     ),
-                    // 탭 2: 미통화 리스트 (담당자별)
                     RefreshIndicator(
                       onRefresh: () async {
                         ref.invalidate(rankingCallsProvider);
                         await ref.read(rankingCallsProvider.future);
                       },
-                      child: ListView(
-                        controller: _scrollController,
+                      child: SingleChildScrollView(
+                        controller: _scrollIncomplete,
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                        children: const [
-                          _IncompleteBreakdown(),
-                        ],
+                        child: const _IncompleteBreakdown(),
                       ),
                     ),
-                    // 탭 3: 미종료 캘린더 뷰
                     _IncompleteCalendar(
                       key: ValueKey(_calendarKeyNonce),
-                      scrollController: _scrollController,
+                      scrollController: _scrollCalendar,
                       initialCalendarFormat: _launchCalendarFormat,
                     ),
                   ],
@@ -497,8 +515,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
 
     return asyncCalls.when(
       data: (calls) {
-        return masterAsync.when(
-          data: (master) {
+        Widget buildWithMaster(MasterDataBundle? master) {
             final todayStr = todayYmdSeoul();
             final now = DateTime.now();
             final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
@@ -527,12 +544,14 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             final Map<String, int> incompleteCounts = {};
             final Map<String, int> totalCounts = {};
             
-            // Extract managers from regions
-            for (final r in master.regions) {
-              final manager = r.extra['region_manager'];
-              if (manager != null && manager.isNotEmpty) {
-                incompleteCounts[manager] = 0;
-                totalCounts[manager] = 0;
+            // Extract managers from regions (마스터 로딩 중에는 통화만으로 목록 구성)
+            if (master != null) {
+              for (final r in master.regions) {
+                final manager = r.extra['region_manager'];
+                if (manager != null && manager.isNotEmpty) {
+                  incompleteCounts[manager] = 0;
+                  totalCounts[manager] = 0;
+                }
               }
             }
             
@@ -763,12 +782,12 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             }),
           ],
         );
-          },
-          loading: () => const Center(child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: CircularProgressIndicator(),
-          )),
-          error: (e, _) => Center(child: Text('마스터 로드 오류: $e')),
+        }
+
+        return masterAsync.when(
+          data: (m) => buildWithMaster(m),
+          loading: () => buildWithMaster(null),
+          error: (_, __) => buildWithMaster(null),
         );
       },
       loading: () => const Center(child: Padding(

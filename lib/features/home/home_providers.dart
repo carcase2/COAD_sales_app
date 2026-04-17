@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
@@ -12,7 +14,9 @@ typedef ConsultationLaunchTarget = ({int tabIndex, CalendarFormat calendarFormat
 final pendingConsultationLaunchProvider = StateProvider<ConsultationLaunchTarget?>((ref) => null);
 
 /// 열기 메뉴 등: 상담현황의 **달력** 탭, **주간 달력** 형식으로 이동.
+/// [`rankingCallsProvider`]를 먼저 시작해 탭 전환 후 로딩 대기 시간을 줄임.
 void requestConsultationCalendarWeekNavigation(WidgetRef ref) {
+  unawaited(ref.read(rankingCallsProvider.future));
   ref.read(pendingConsultationLaunchProvider.notifier).state = (
     tabIndex: 2,
     calendarFormat: CalendarFormat.week,
@@ -44,8 +48,8 @@ final todayFollowCountProvider = FutureProvider<int>((ref) async {
 
 final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  // 미통화와 완료건 모두 가져와서 통계(0/5 등)를 내기 위해 필터 제거
-  return repo.fetchCalls(limit: 1000);
+  // 미통화·달력 집계에는 상담 이력 불필요. embed 제거로 페이로드·타임아웃(연결 끊김) 방지
+  return repo.fetchCalls(limit: 1000, includeCallHistory: false);
 });
 
 final bottomBarVisibilityProvider = StateProvider<bool>((ref) => true);
