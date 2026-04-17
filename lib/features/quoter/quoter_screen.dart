@@ -406,6 +406,15 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         },
       ),
       _QuoterQuickActionItem(
+        label: '달력',
+        color: Colors.green.shade700,
+        icon: Icons.calendar_view_week_rounded,
+        onTap: () async {
+          requestConsultationCalendarWeekNavigation(ref);
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+      ),
+      _QuoterQuickActionItem(
         label: '발행요청',
         color: Colors.indigo.shade600,
         icon: Icons.receipt_long_rounded,
@@ -442,7 +451,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               if (_quickActionsOpen)
                 Container(
                   width: 182,
-                  constraints: const BoxConstraints(maxHeight: 240),
+                  constraints: const BoxConstraints(maxHeight: 300),
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
@@ -803,7 +812,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed: _newEstimate,
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                _newEstimate();
+              },
               icon: const Icon(Icons.restart_alt_rounded, size: 18),
               label: const Text('다시 견적내기'),
             ),
@@ -812,7 +824,12 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: canPrev ? () => _goToStep(_currentStep - 1) : null,
+                onPressed: canPrev
+                    ? () {
+                        HapticFeedback.lightImpact();
+                        _goToStep(_currentStep - 1);
+                      }
+                    : null,
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -826,6 +843,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 onPressed: !nextEnabled()
                     ? null
                     : () async {
+                        HapticFeedback.lightImpact();
                         if (_currentStep < 4) await _goToStep(_currentStep + 1);
                       },
                 style: FilledButton.styleFrom(

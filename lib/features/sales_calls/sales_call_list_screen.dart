@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
@@ -88,29 +89,32 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     final repo = ref.read(salesCallsRepositoryProvider);
     
     // 1. 로컬 캐시 먼저 로드 (즉시 응답)
-    try {
-      final cacheDate = switch (widget.mode) {
-        ListQueryMode.today => widget.date ?? todayYmdSeoul(),
-        ListQueryMode.completedToday => widget.date ?? todayYmdSeoul(),
-        ListQueryMode.incompleteByDate => widget.date ?? todayYmdSeoul(),
-        ListQueryMode.incomplete => widget.date,
-        ListQueryMode.recent => null,
-      };
-      final cacheIncompleteOnly = widget.mode == ListQueryMode.incomplete || widget.mode == ListQueryMode.incompleteByDate;
+    // 날짜 팔로우는 next_scheduled_date 기준이라 call_date 캐시와 맞지 않아 사용하지 않음.
+    if (widget.mode != ListQueryMode.incompleteByDate) {
+      try {
+        final cacheDate = switch (widget.mode) {
+          ListQueryMode.today => widget.date ?? todayYmdSeoul(),
+          ListQueryMode.completedToday => widget.date ?? todayYmdSeoul(),
+          ListQueryMode.incomplete => widget.date,
+          ListQueryMode.recent => null,
+          ListQueryMode.incompleteByDate => null,
+        };
+        final cacheIncompleteOnly = widget.mode == ListQueryMode.incomplete;
 
-      final cached = await repo.fetchCachedCalls(
-        date: cacheDate,
-        incompleteOnly: cacheIncompleteOnly,
-      );
-      
-      if (mounted && cached.isNotEmpty) {
-        setState(() {
-          _items = cached;
-          _isLoading = false; // 캐시가 있으면 일단 로딩 종료 표시
-        });
+        final cached = await repo.fetchCachedCalls(
+          date: cacheDate,
+          incompleteOnly: cacheIncompleteOnly,
+        );
+
+        if (mounted && cached.isNotEmpty) {
+          setState(() {
+            _items = cached;
+            _isLoading = false; // 캐시가 있으면 일단 로딩 종료 표시
+          });
+        }
+      } catch (e) {
+        debugPrint('Cache load error: $e');
       }
-    } catch (e) {
-      debugPrint('Cache load error: $e');
     }
 
     // 2. 서버에서 최신 데이터 가져오기
@@ -178,11 +182,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         );
       case ListQueryMode.incompleteByDate:
         return repo.fetchCalls(
-          date: widget.date ?? todayYmdSeoul(),
+          followDate: widget.date ?? todayYmdSeoul(),
           incompleteOnly: true,
           excludeSimpleInquiries: true,
-          limit: 1000, // 달력 마커에 대응하는 모든 데이터를 가져올 수 있도록
-          includeCallHistory: true,
+          limit: 1000,
+          // `todayFollowCountProvider`·홈 바텀시트와 동일 조건 (call_history 포함 시 일부 행 누락 가능)
+          includeCallHistory: false,
         );
     }
   }
@@ -298,6 +303,17 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           );
         },
       ),
+      _QuickActionItem(
+        label: '달력',
+        color: Colors.green.shade700,
+        icon: Icons.calendar_view_week_rounded,
+        onTap: () {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          requestConsultationCalendarWeekNavigation(ref);
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+      ),
     ];
 
     return Scaffold(
@@ -366,7 +382,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 if (_quickActionsOpen)
                   Container(
                     width: 182,
-                    constraints: const BoxConstraints(maxHeight: 240),
+                    constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -558,8 +574,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           final user = ref.watch(authControllerProvider);
           final userName = user?.name;
-          // 특정 담당자를 지정해서 들어온 경우(initialAssignee != null)에는 로그인 사용자 자동 선택 로직을 타지 않음
-          if (widget.initialAssignee == null &&
+          // 날짜 팔로우: 로그인명 자동 선택 시 전체 건수와 칩 필터가 어긋나 0건으로 보일 수 있음 → 비활성화
+          if (widget.mode != ListQueryMode.incompleteByDate &&
+              widget.initialAssignee == null &&
               _selectedAssignee == '전체' &&
               userName != null &&
               counts.containsKey(userName)) {
@@ -620,7 +637,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           return Column(
             children: [
               Container(
-                height: 80,
+                height: 50,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
@@ -633,7 +650,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 child: ListView.builder(
                   controller: _scrollController,
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   itemCount: sortedAssignees.length,
                   itemBuilder: (context, idx) {
                     final assignee = sortedAssignees[idx];

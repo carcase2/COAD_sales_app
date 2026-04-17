@@ -62,8 +62,11 @@ class SalesCallsRepository {
     return parseSalesCallList(res);
   }
 
+  /// [followDate] `yyyy-MM-dd` — `next_scheduled_date`가 해당 날짜인 건만 (날짜 팔로우).
+  /// [date]가 함께 넘어오면 [followDate]가 우선이며, 접수일(`call_date`) 필터는 적용하지 않음.
   Future<List<SalesCall>> fetchCalls({
     String? date,
+    String? followDate,
     String? fromDate,
     int? limit,
     int? offset,
@@ -87,9 +90,14 @@ class SalesCallsRepository {
         selectStr += ', call_history(*)';
       }
 
-      PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr); 
+      PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr);
 
-      if (date != null) {
+      if (followDate != null) {
+        final endExclusive = _ymdPlusOneDay(followDate);
+        queryBuilder = queryBuilder
+            .gte('next_scheduled_date', followDate)
+            .lt('next_scheduled_date', endExclusive);
+      } else if (date != null) {
         queryBuilder = queryBuilder
             .gte('call_date', '$date 00:00:00')
             .lte('call_date', '$date 23:59:59');
@@ -281,4 +289,15 @@ class SalesCallsRepository {
       throw ApiException('검색 중 오류가 발생했습니다: $e');
     }
   }
+}
+
+String _ymdPlusOneDay(String ymd) {
+  final parts = ymd.split('-');
+  if (parts.length != 3) return ymd;
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final d = int.tryParse(parts[2]);
+  if (y == null || m == null || d == null) return ymd;
+  final next = DateTime(y, m, d).add(const Duration(days: 1));
+  return '${next.year}-${next.month.toString().padLeft(2, '0')}-${next.day.toString().padLeft(2, '0')}';
 }

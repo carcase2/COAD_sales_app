@@ -20,7 +20,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   Future<void> _openTodayFollowPicker() async {
     final repo = ref.read(salesCallsRepositoryProvider);
     final rows = await repo.fetchCalls(
-      date: todayYmdSeoul(),
+      followDate: todayYmdSeoul(),
       incompleteOnly: true,
       excludeSimpleInquiries: true,
       limit: 1000,
@@ -189,6 +189,15 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     }
   }
 
+  Future<void> _onRefresh() async {
+    ref.invalidate(todayStatsProvider);
+    ref.invalidate(todayFollowCountProvider);
+    await Future.wait([
+      ref.read(todayStatsProvider.future),
+      ref.read(todayFollowCountProvider.future),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
@@ -196,10 +205,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final statsAsync = ref.watch(todayStatsProvider);
     final todayFollowAsync = ref.watch(todayFollowCountProvider);
 
-    return CustomScrollView(
-      controller: _scrollController,
-      physics: const BouncingScrollPhysics(),
-      slivers: [
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        slivers: [
         // ─── 상단 배경 헤더 (Global AppBar가 있으므로 배경 역할만 수행) ───
         SliverToBoxAdapter(
           child: Container(
@@ -271,6 +284,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           ),
         ),
       ],
+      ),
     );
   }
 

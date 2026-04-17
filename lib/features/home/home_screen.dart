@@ -26,6 +26,8 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
   late ScrollController _scrollController;
   late TabController _tabController;
   bool _isFabVisible = true;
+  CalendarFormat _launchCalendarFormat = CalendarFormat.month;
+  int _calendarKeyNonce = 0;
 
   @override
   void initState() {
@@ -44,7 +46,23 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(bottomBarVisibilityProvider.notifier).state = true;
       _checkAndSync();
+      _consumePendingLaunch();
     });
+  }
+
+  void _consumePendingLaunch() {
+    final next = ref.read(pendingConsultationLaunchProvider);
+    if (next == null || !mounted) return;
+    setState(() {
+      _launchCalendarFormat = next.calendarFormat;
+      _calendarKeyNonce++;
+    });
+    _tabController.animateTo(
+      next.tabIndex.clamp(0, 2),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+    ref.read(pendingConsultationLaunchProvider.notifier).state = null;
   }
 
   @override
@@ -92,6 +110,8 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(pendingConsultationLaunchProvider, (_, __) => _consumePendingLaunch());
+
     final user = ref.watch(authControllerProvider);
     final statsAsync = ref.watch(todayStatsProvider);
     final scheme = Theme.of(context).colorScheme;
@@ -201,7 +221,11 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                       ),
                     ),
                     // 탭 3: 미종료 캘린더 뷰
-                    _IncompleteCalendar(scrollController: _scrollController),
+                    _IncompleteCalendar(
+                      key: ValueKey(_calendarKeyNonce),
+                      scrollController: _scrollController,
+                      initialCalendarFormat: _launchCalendarFormat,
+                    ),
                   ],
                 ),
               ),
@@ -957,8 +981,13 @@ class _ErrorCard extends StatelessWidget {
 }
 
 class _IncompleteCalendar extends ConsumerStatefulWidget {
-  const _IncompleteCalendar({super.key, required this.scrollController});
+  const _IncompleteCalendar({
+    super.key,
+    required this.scrollController,
+    this.initialCalendarFormat = CalendarFormat.month,
+  });
   final ScrollController scrollController;
+  final CalendarFormat initialCalendarFormat;
 
   @override
   ConsumerState<_IncompleteCalendar> createState() => _IncompleteCalendarState();
@@ -967,7 +996,21 @@ class _IncompleteCalendar extends ConsumerStatefulWidget {
 class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
   DateTime _focusedDay = DateTime.now();
   String _selectedAssignee = '전체';
-  CalendarFormat _calendarFormat = CalendarFormat.month;
+  late CalendarFormat _calendarFormat;
+
+  @override
+  void initState() {
+    super.initState();
+    _calendarFormat = widget.initialCalendarFormat;
+  }
+
+  @override
+  void didUpdateWidget(_IncompleteCalendar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialCalendarFormat != widget.initialCalendarFormat) {
+      _calendarFormat = widget.initialCalendarFormat;
+    }
+  }
 
   DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -979,19 +1022,6 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
   String _weekdayKo(int weekday) {
     const labels = ['월', '화', '수', '목', '금', '토', '일'];
     return labels[(weekday - 1).clamp(0, 6)];
-  }
-
-  Color _colorForAssignee(String assignee, ColorScheme scheme) {
-    if (assignee == '미지정') return scheme.surfaceContainerHighest;
-    final colors = [
-      Colors.blue.shade100,
-      Colors.red.shade100,
-      Colors.green.shade100,
-      Colors.orange.shade100,
-      Colors.purple.shade100,
-      Colors.teal.shade100,
-    ];
-    return colors[assignee.hashCode.abs() % colors.length];
   }
 
   Color _strongColorForAssignee(String assignee) {
@@ -1016,10 +1046,10 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
     return asyncCalls.when(
       data: (calls) {
-        // 날짜 팔로우 화면과 동일 기준:
-        // SalesCallListScreen(incompleteByDate) -> repository.incompleteOnly(true)
-        // => status_id NOT IN (2,3,4)
-        final followCalls = calls.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
+        // 날짜 팔로우: 미종료(status_id NOT IN 2,3,4) + next_scheduled_date 있음 (접수일과 무관)
+        final followCalls = calls
+            .where((c) => ![2, 3, 4].contains(c.statusId) && c.followCalendarDateKey != null)
+            .toList();
 
         final focusedYear = _focusedDay.year;
         final focusedMonth = _focusedDay.month;
@@ -1028,18 +1058,18 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
             .subtract(Duration(days: _focusedDay.weekday - 1));
         final weekEnd = weekStart.add(const Duration(days: 6));
 
-        bool inFocusedPeriod(String? callDate) {
-          if (callDate == null || callDate.length < 10) return false;
+        bool inFocusedPeriod(String? followYmd) {
+          if (followYmd == null || followYmd.length < 10) return false;
           if (_calendarFormat == CalendarFormat.month) {
-            return callDate.startsWith(focusedMonthStr);
+            return followYmd.startsWith(focusedMonthStr);
           }
-          final dt = DateTime.tryParse(callDate.substring(0, 10));
+          final dt = DateTime.tryParse(followYmd.substring(0, 10));
           if (dt == null) return false;
           final dayOnly = DateTime(dt.year, dt.month, dt.day);
           return !dayOnly.isBefore(weekStart) && !dayOnly.isAfter(weekEnd);
         }
 
-        final visibleCallsInPeriod = followCalls.where((c) => inFocusedPeriod(c.callDate)).toList();
+        final visibleCallsInPeriod = followCalls.where((c) => inFocusedPeriod(c.followCalendarDateKey)).toList();
 
         final Map<String, int> counts = {'전체': visibleCallsInPeriod.length};
         for (var c in visibleCallsInPeriod) {
@@ -1074,9 +1104,9 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
           if (_selectedAssignee != '전체' && a != _selectedAssignee) continue;
 
-          if (c.callDate != null && c.callDate!.length >= 10) {
-            final dateKey = c.callDate!.substring(0, 10);
-            dateMarkers[dateKey] = (dateMarkers[dateKey] ?? 0) + 1;
+          final fk = c.followCalendarDateKey;
+          if (fk != null) {
+            dateMarkers[fk] = (dateMarkers[fk] ?? 0) + 1;
           }
         }
 
@@ -1086,9 +1116,9 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           weekAssigneeCounts[day.toIso8601String().substring(0, 10)] = <String, int>{};
         }
         for (final c in followCalls) {
-          final callDate = c.callDate;
-          if (callDate == null || callDate.length < 10) continue;
-          final dateKey = callDate.substring(0, 10);
+          final fk = c.followCalendarDateKey;
+          if (fk == null || fk.length < 10) continue;
+          final dateKey = fk.substring(0, 10);
           final bucket = weekAssigneeCounts[dateKey];
           if (bucket == null) continue;
           final assignee = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
@@ -1108,9 +1138,9 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           children: [
             // ─── 상단 담당자 필터 바 (캘린더용) ───
             Container(
-              height: 54,
+              height: 38,
               width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 12),
+              margin: const EdgeInsets.only(bottom: 10),
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -1119,10 +1149,9 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                   final assignee = sortedAssignees[idx];
                   final count = counts[assignee] ?? 0;
                   final isSelected = _selectedAssignee == assignee;
-                  final color = _colorForAssignee(assignee, scheme);
 
                   return Padding(
-                    padding: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.only(right: 6),
                     child: GestureDetector(
                       onTap: () {
                         HapticFeedback.selectionClick();
@@ -1131,7 +1160,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: isSelected ? scheme.onSurface : Colors.white,
@@ -1162,7 +1191,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                             Text(
                               assignee,
                               style: TextStyle(
-                                fontSize: 13,
+                                fontSize: 12,
                                 color: isSelected ? Colors.white : _strongColorForAssignee(assignee),
                                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                               ),

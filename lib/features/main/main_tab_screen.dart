@@ -126,6 +126,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(pendingConsultationLaunchProvider, (prev, next) {
+      if (next == null) return;
+      setState(() {
+        _currentIndex = 1;
+        _loadedIndices.add(1);
+      });
+    });
+
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
@@ -222,6 +230,17 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           );
         },
       ),
+      _QuickActionItem(
+        heroTag: 'global_consultation_calendar_week',
+        color: Colors.green.shade700,
+        tooltip: '달력',
+        icon: Icons.calendar_view_week_rounded,
+        onTap: () {
+          setState(() => _quickActionsOpen = false);
+          _refreshQuickHints();
+          requestConsultationCalendarWeekNavigation(ref);
+        },
+      ),
     ];
 
     return Scaffold(
@@ -251,6 +270,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           tooltip: '메뉴 열기',
         ),
         actions: [
+          if (_currentIndex == 2)
+            IconButton(
+              icon: const Icon(Icons.home_rounded),
+              onPressed: () => _onTabSelected(0),
+              tooltip: '홈으로 이동',
+            ),
           Center(
             child: Text(
               'v$kAppVersion',
@@ -304,7 +329,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
                   Container(
                     key: const ValueKey('quick_actions_scroll_panel'),
                     width: 182,
-                    constraints: const BoxConstraints(maxHeight: 260),
+                    constraints: const BoxConstraints(maxHeight: 320),
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(

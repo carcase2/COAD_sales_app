@@ -338,6 +338,29 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return '2차';
   }
 
+  /// `call_date` + `call_time` 우선, 없으면 `created_at`(서울 기준).
+  String _formatReceptionDateTime(SalesCall? call) {
+    if (call == null) return '—';
+    final d = call.callDate?.trim();
+    final t = call.callTime?.trim();
+    if (d != null && d.isNotEmpty) {
+      final dateStr = formatSeoulDate(d);
+      if (t != null && t.isNotEmpty) {
+        return '$dateStr $t';
+      }
+      return dateStr;
+    }
+    final created = call.createdAt?.trim();
+    if (created != null && created.isNotEmpty) {
+      try {
+        return formatSeoulDateTime(DateTime.parse(created));
+      } catch (_) {
+        return created;
+      }
+    }
+    return '—';
+  }
+
   String _getStatusNameById(MasterDataBundle master, int? id) {
     if (id == null) return '미결정';
     final mapping = {
@@ -512,6 +535,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
 
           sectionTitle('진행 상태 및 일정', Icons.speed_rounded),
+          _buildInfoTile(
+            '접수 일시',
+            _formatReceptionDateTime(m),
+            Icons.schedule_rounded,
+            scheme,
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(

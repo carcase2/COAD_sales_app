@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -20,6 +21,7 @@ import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // -- New Global State for Selections --
@@ -82,12 +84,14 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       if (!_formKey.currentState!.validate()) return;
     }
     if (_currentStep < 2) {
+      HapticFeedback.selectionClick();
       setState(() => _currentStep++);
     }
   }
 
   void _prevStep() {
     if (_currentStep > 0) {
+      HapticFeedback.selectionClick();
       setState(() => _currentStep--);
     }
   }
@@ -368,7 +372,12 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.home_rounded),
-            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            onPressed: () {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute<void>(builder: (_) => const MainTabScreen()),
+                (route) => false,
+              );
+            },
             tooltip: '홈으로 이동',
           ),
         ],
@@ -463,6 +472,15 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                             ),
                           ),
                         );
+                      },
+                    ),
+                    _quickActionTile(
+                      icon: Icons.calendar_view_week_rounded,
+                      label: '달력',
+                      color: Colors.green.shade700,
+                      onTap: () async {
+                        requestConsultationCalendarWeekNavigation(ref);
+                        Navigator.of(context).popUntil((route) => route.isFirst);
                       },
                     ),
                     _quickActionTile(
@@ -667,7 +685,10 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             Expanded(
               flex: 1,
               child: OutlinedButton(
-                onPressed: _prevStep,
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _prevStep();
+                },
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -681,8 +702,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             flex: 2,
             child: FilledButton(
               onPressed: isLastStep 
-                ? (_submitting ? null : () => _submit(master))
-                : _nextStep,
+                ? (_submitting
+                    ? null
+                    : () {
+                        HapticFeedback.mediumImpact();
+                        _submit(master);
+                      })
+                : () {
+                    HapticFeedback.lightImpact();
+                    _nextStep();
+                  },
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: isLastStep ? scheme.primary : scheme.secondary,
@@ -731,8 +760,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           selectedValue: _productId,
           onSelected: (id) => setState(() => _productId = id),
           selectedColor: const Color(0xFF10B981), // Emerald
-          crossAxisCount: 2, // 2열로 변경하여 가로 공간 확보
-          childAspectRatio: 3.2, // 더 넓고 납작하게
+          crossAxisCount: 3, // 3열로 더 촘촘하게 표시
+          childAspectRatio: 2.35,
         ),
         
         const SizedBox(height: 40),
@@ -746,8 +775,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           selectedValue: _methodId,
           onSelected: (id) => setState(() => _methodId = id),
           selectedColor: const Color(0xFF0EA5E9), // Sky Blue
-          crossAxisCount: 2, // 2열로 변경
-          childAspectRatio: 3.2,
+          crossAxisCount: 3, // 3열로 더 촘촘하게 표시
+          childAspectRatio: 2.35,
         ),
         
         const SizedBox(height: 40),
@@ -1076,14 +1105,14 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               child: Text(
                 item.name,
                 textAlign: TextAlign.center,
                 maxLines: 1, // 다시 1줄로 시도 (칸이 넓어졌으므로)
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 13, // 폰트 다시 조금 키움
+                  fontSize: 12,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   color: isSelected ? Colors.white : scheme.onSurface,
                 ),

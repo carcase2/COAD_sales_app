@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
@@ -461,6 +462,16 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
           );
         },
       ),
+      _CreateQuickActionItem(
+        label: '달력',
+        color: Colors.green.shade700,
+        icon: Icons.calendar_view_week_rounded,
+        onTap: () {
+          setState(() => _quickActionsOpen = false);
+          requestConsultationCalendarWeekNavigation(ref);
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+      ),
     ];
     final inputTheme = Theme.of(context).inputDecorationTheme.copyWith(
           filled: true,
@@ -586,7 +597,7 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 if (_quickActionsOpen)
                   Container(
                     width: 182,
-                    constraints: const BoxConstraints(maxHeight: 240),
+                    constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(

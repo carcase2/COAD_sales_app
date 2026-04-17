@@ -135,6 +135,22 @@ class SalesCall {
     return isInitialStage && isNotSimpleInquiry;
   }
 
+  /// 날짜 팔로우·캘린더 집계 기준: `next_scheduled_date`(다음 회차 예정일)의 yyyy-MM-dd.
+  /// 없으면 null — 접수일(`call_date`)로 대체하지 않음.
+  String? get followCalendarDateKey {
+    final raw = nextScheduledDate?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.length >= 10) {
+      final head = raw.substring(0, 10);
+      if (RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(head)) return head;
+    }
+    final dt = DateTime.tryParse(raw);
+    if (dt != null) {
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+    return null;
+  }
+
   Map<String, dynamic> toUpdateBody() {
     return {
       'customer_phone': customerPhone,
