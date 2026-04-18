@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
@@ -18,9 +20,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
-  
-  // Navigation key to support navigation without context
+
+  /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+  /// Cold start: [init] reads [FirebaseMessaging.getInitialMessage] once and stores the id here.
+  /// [MainTabScreen] calls [handleInitialMessage] after login so detail opens reliably.
+  static String? _pendingCallIdFromNotification;
 
   static Future<void> init() async {
     // 1. Initialize Firebase Messaging
@@ -33,23 +39,34 @@ class NotificationService {
     // 2. Set Background Handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // 3. Setup Local Notifications (for foreground)
+    // 3. Cold start: read once as early as possible (after Firebase.initializeApp in main).
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    if (initial != null) {
+      final id = _extractCallIdFromData(initial.data);
+      if (id != null) {
+        _pendingCallIdFromNotification = id;
+      }
+      if (kDebugMode) {
+        print('[FCM] getInitialMessage data=${initial.data} → callId=$id');
+      }
+    }
+
+    // 4. Setup Local Notifications (for foreground)
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const InitializationSettings initializationSettings =
         InitializationSettings(android: initializationSettingsAndroid);
-    
+
     await _localNotifications.initialize(
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse details) {
-        // Handle foreground notification tap
-        if (details.payload != null) {
+        if (details.payload != null && details.payload!.isNotEmpty) {
           _handleNotificationClick(details.payload);
         }
       },
     );
 
-    // 4. Create Notification Channel for Android
+    // 5. Create Notification Channel for Android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'high_importance_channel',
       'High Importance Notifications',
@@ -61,17 +78,18 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
 
-    // 5. Listen for foreground messages
+    // 6. Listen for foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
       AndroidNotification? android = message.notification?.android;
 
       if (notification != null && android != null) {
+        final payload = _extractCallIdFromData(message.data) ?? '';
         _localNotifications.show(
           id: notification.hashCode,
           title: notification.title,
           body: notification.body,
-          payload: message.data['call_id'], // Pass call_id as payload
+          payload: payload.isEmpty ? null : payload,
           notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
               channel.id,
@@ -87,59 +105,92 @@ class NotificationService {
       }
     });
 
-    // 6. Handle click when app is in background
+    // 7. Background → user taps system notification (app still in memory)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      _handleNotificationClick(message.data['call_id']);
-    });
-
-    // 7. Initial message check will be handled in UI layer to ensure navigator is ready
-//    RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-//    if (initialMessage != null) {
-//      _handleNotificationClick(initialMessage.data['call_id']);
-//    }
-  }
-
-  static Future<void> handleInitialMessage() async {
-    // 1. Give some time for the app and FCM service to settle (vital for Cold Start)
-    await Future.delayed(const Duration(milliseconds: 1000));
-    
-    RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
+      final id = _extractCallIdFromData(message.data);
       if (kDebugMode) {
-        print("[ColdStart] Handling initial notification message: ${initialMessage.data}");
+        print('[FCM] onMessageOpenedApp data=${message.data} → callId=$id');
       }
-      _handleNotificationClick(initialMessage.data['call_id']);
-    }
+      if (id != null) {
+        _navigateToCallDetail(id);
+      }
+    });
   }
 
-  static void _handleNotificationClick(String? callId, {int retryCount = 0}) {
-    if (callId == null || callId.isEmpty) return;
-    
-    if (kDebugMode) {
-      print("Notification Click Handler (Retry: $retryCount) - callId: $callId");
-    }
+  /// Called from [MainTabScreen] when the user is logged in and the navigator is mounted.
+  static void handleInitialMessage() {
+    final id = _pendingCallIdFromNotification;
+    if (id == null || id.isEmpty) return;
+    _navigateToCallDetail(id);
+  }
 
-    final state = navigatorKey.currentState;
-    if (state != null) {
-      state.push(
-        MaterialPageRoute(
-          builder: (context) => SalesCallDetailScreen(id: callId),
+  static String? _extractCallIdFromData(Map<String, dynamic> data) {
+    const keys = ['call_id', 'callId', 'sales_call_id'];
+    for (final k in keys) {
+      if (!data.containsKey(k)) continue;
+      final n = _normalizeCallId(data[k]);
+      if (n != null) return n;
+    }
+    for (final e in data.entries) {
+      if (e.key.toLowerCase() == 'call_id') {
+        final n = _normalizeCallId(e.value);
+        if (n != null) return n;
+      }
+    }
+    return null;
+  }
+
+  static String? _normalizeCallId(Object? raw) {
+    if (raw == null) return null;
+    final s = raw.toString().trim();
+    if (s.isEmpty || s == 'null') return null;
+    return s;
+  }
+
+  static void _handleNotificationClick(String? raw) {
+    final id = _normalizeCallId(raw);
+    if (id == null) return;
+    if (kDebugMode) {
+      print('[FCM] local notification tap callId=$id');
+    }
+    _navigateToCallDetail(id);
+  }
+
+  static void _navigateToCallDetail(String id) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null) {
+      try {
+        final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
+        if (user == null) {
+          _pendingCallIdFromNotification = id;
+          return;
+        }
+      } catch (_) {
+        _pendingCallIdFromNotification = id;
+        return;
+      }
+    }
+    _pushDetailRoute(id);
+  }
+
+  static void _pushDetailRoute(String id, {int attempt = 0}) {
+    final nav = navigatorKey.currentState;
+    if (nav != null) {
+      _pendingCallIdFromNotification = null;
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (context) => SalesCallDetailScreen(id: id),
+          settings: RouteSettings(name: 'SalesCallDetail/$id'),
         ),
       );
-    } else {
-      // If navigator is not ready, retry after a short delay (up to 3 times)
-      if (retryCount < 3) {
-        if (kDebugMode) {
-          print("NavigatorState is null, retrying in 800ms...");
-        }
-        Future.delayed(const Duration(milliseconds: 800), () {
-          _handleNotificationClick(callId, retryCount: retryCount + 1);
-        });
-      } else {
-        if (kDebugMode) {
-          print("ERROR: NavigatorState is still null after 3 retries. Deep linking failed.");
-        }
-      }
+      return;
+    }
+    if (attempt < 30) {
+      final ms = 30 + attempt * 25;
+      Future<void>.delayed(Duration(milliseconds: ms), () => _pushDetailRoute(id, attempt: attempt + 1));
+    } else if (kDebugMode) {
+      print('[FCM] NavigatorState still null after retries; keeping pending call id');
+      _pendingCallIdFromNotification = id;
     }
   }
 
@@ -159,11 +210,8 @@ class NotificationService {
     if (token == null) return;
 
     try {
-      await Supabase.instance.client
-          .from('users')
-          .update({'fcm_token': token})
-          .eq('id', userId);
-      
+      await Supabase.instance.client.from('users').update({'fcm_token': token}).eq('id', userId);
+
       if (kDebugMode) {
         print("[NotificationService] FCM Token updated successfully for user $userId");
       }
@@ -180,10 +228,7 @@ class NotificationService {
         print("[NotificationService] FCM Token refreshed: $token");
       }
       try {
-        await Supabase.instance.client
-            .from('users')
-            .update({'fcm_token': token})
-            .eq('id', userId);
+        await Supabase.instance.client.from('users').update({'fcm_token': token}).eq('id', userId);
         if (kDebugMode) {
           print("[NotificationService] Refreshed FCM Token synced with Supabase");
         }
