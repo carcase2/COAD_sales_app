@@ -1,0 +1,113 @@
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
+
+serve(async (req) => {
+  try {
+    const body = await req.json().catch(() => ({}))
+    const latestVersion = String(body.latest_version ?? '').trim()
+    const minVersion = String(body.min_version ?? latestVersion).trim()
+    const storeUrl = String(
+      body.store_url ?? 'https://play.google.com/store/apps/details?id=com.coad.customer_calls',
+    ).trim()
+
+    if (!latestVersion) {
+      return new Response(JSON.stringify({ error: 'latest_version is required' }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      })
+    }
+
+    const title = String(body.title ?? '새 버전 업데이트 안내').trim()
+    const message = String(
+      body.message ?? `최신 버전(v${latestVersion})이 배포되었습니다. 설정 > 업데이트 확인에서 확인해 주세요.`,
+    ).trim()
+
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    )
+
+    const { data: users, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('id, name, fcm_token')
+      .not('fcm_token', 'is', null)
+
+    if (userError) throw userError
+
+    const tokens = (users ?? [])
+      .map((u: any) => u.fcm_token)
+      .filter((t: any) => typeof t === 'string' && t.length > 5)
+
+    if (tokens.length == 0) {
+      return new Response(JSON.stringify({ success: true, message: 'No fcm tokens found', count: 0 }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      })
+    }
+
+    const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
+    const FIREBASE_SERVICE_ACCOUNT = JSON.parse(Deno.env.get('FIREBASE_SERVICE_ACCOUNT') || '{}')
+    const auth = new GoogleAuth({
+      credentials: FIREBASE_SERVICE_ACCOUNT,
+      scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
+    })
+
+    const client = await auth.getClient()
+    const accessToken = (await client.getAccessToken()).token
+    if (!accessToken) throw new Error('Failed to get FCM access token')
+
+    const results = await Promise.all(tokens.map(async (token: string) => {
+      try {
+        const res = await fetch(
+          `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: {
+                token,
+                notification: {
+                  title,
+                  body: message,
+                },
+                data: {
+                  type: 'app_update',
+                  action: 'open_update',
+                  latest_version: latestVersion,
+                  min_version: minVersion,
+                  store_url: storeUrl,
+                  click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android: {
+                  priority: 'high',
+                  notification: {
+                    channel_id: 'high_importance_channel',
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                  },
+                },
+              },
+            }),
+          },
+        )
+        const text = await res.text()
+        return { status: res.status, body: text }
+      } catch (e: any) {
+        return { error: e.message ?? String(e) }
+      }
+    }))
+
+    return new Response(JSON.stringify({ success: true, count: tokens.length, results }), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    })
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message ?? String(error) }), {
+      headers: { "Content-Type": "application/json" },
+      status: 500,
+    })
+  }
+})

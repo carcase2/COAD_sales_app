@@ -13,6 +13,7 @@ class AppUpdateService {
     BuildContext context, {
     bool forceRecheck = false,
     bool showUpToDateMessage = false,
+    String? preferredStoreUrl,
   }) async {
     if ((!forceRecheck && _alreadyChecked) || kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     _alreadyChecked = true;
@@ -24,13 +25,21 @@ class AppUpdateService {
         final shouldRecommend = _compareVersion(kAppVersion, policy.latestVersion) < 0;
 
         if (shouldForce) {
-          await _showForceUpdateDialog(context, policy);
+          await _showForceUpdateDialog(
+            context,
+            policy,
+            preferredStoreUrl: preferredStoreUrl,
+          );
           return;
         }
 
         if (shouldRecommend && !_optionalDialogShown) {
           _optionalDialogShown = true;
-          await _showOptionalUpdateDialog(context, policy);
+          await _showOptionalUpdateDialog(
+            context,
+            policy,
+            preferredStoreUrl: preferredStoreUrl,
+          );
         }
       }
 
@@ -104,7 +113,11 @@ class AppUpdateService {
     return 0;
   }
 
-  static Future<void> _showForceUpdateDialog(BuildContext context, _UpdatePolicy policy) async {
+  static Future<void> _showForceUpdateDialog(
+    BuildContext context,
+    _UpdatePolicy policy, {
+    String? preferredStoreUrl,
+  }) async {
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
@@ -116,8 +129,11 @@ class AppUpdateService {
           actions: [
             FilledButton(
               onPressed: () async {
-                if (policy.storeUrl.isNotEmpty) {
-                  await _openStoreUrl(policy.storeUrl);
+                final targetUrl = (preferredStoreUrl ?? '').trim().isNotEmpty
+                    ? preferredStoreUrl!.trim()
+                    : policy.storeUrl;
+                if (targetUrl.isNotEmpty) {
+                  await _openStoreUrl(targetUrl);
                 } else {
                   await _runInAppUpdateBestEffort();
                 }
@@ -130,7 +146,11 @@ class AppUpdateService {
     );
   }
 
-  static Future<void> _showOptionalUpdateDialog(BuildContext context, _UpdatePolicy policy) async {
+  static Future<void> _showOptionalUpdateDialog(
+    BuildContext context,
+    _UpdatePolicy policy, {
+    String? preferredStoreUrl,
+  }) async {
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
@@ -147,8 +167,11 @@ class AppUpdateService {
             FilledButton(
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
-                if (policy.storeUrl.isNotEmpty) {
-                  await _openStoreUrl(policy.storeUrl);
+                final targetUrl = (preferredStoreUrl ?? '').trim().isNotEmpty
+                    ? preferredStoreUrl!.trim()
+                    : policy.storeUrl;
+                if (targetUrl.isNotEmpty) {
+                  await _openStoreUrl(targetUrl);
                 } else {
                   await _runInAppUpdateBestEffort();
                 }

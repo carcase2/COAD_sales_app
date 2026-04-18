@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -24,9 +26,8 @@ class NotificationService {
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  /// Cold start: [init] reads [FirebaseMessaging.getInitialMessage] once and stores the id here.
-  /// [MainTabScreen] calls [handleInitialMessage] after login so detail opens reliably.
-  static String? _pendingCallIdFromNotification;
+  /// Cold start payload cache. [MainTabScreen] calls [handleInitialMessage] after login.
+  static Map<String, dynamic>? _pendingMessageData;
 
   static Future<void> init() async {
     // 1. Initialize Firebase Messaging
@@ -42,12 +43,9 @@ class NotificationService {
     // 3. Cold start: read once as early as possible (after Firebase.initializeApp in main).
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) {
-      final id = _extractCallIdFromData(initial.data);
-      if (id != null) {
-        _pendingCallIdFromNotification = id;
-      }
+      _pendingMessageData = Map<String, dynamic>.from(initial.data);
       if (kDebugMode) {
-        print('[FCM] getInitialMessage data=${initial.data} → callId=$id');
+        print('[FCM] getInitialMessage data=${initial.data}');
       }
     }
 
@@ -84,12 +82,12 @@ class NotificationService {
       AndroidNotification? android = message.notification?.android;
 
       if (notification != null && android != null) {
-        final payload = _extractCallIdFromData(message.data) ?? '';
+        final payload = _buildLocalPayload(message.data);
         _localNotifications.show(
           id: notification.hashCode,
           title: notification.title,
           body: notification.body,
-          payload: payload.isEmpty ? null : payload,
+          payload: payload,
           notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
               channel.id,
@@ -107,21 +105,36 @@ class NotificationService {
 
     // 7. Background → user taps system notification (app still in memory)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      final id = _extractCallIdFromData(message.data);
+      final data = Map<String, dynamic>.from(message.data);
       if (kDebugMode) {
-        print('[FCM] onMessageOpenedApp data=${message.data} → callId=$id');
+        print('[FCM] onMessageOpenedApp data=${message.data}');
       }
-      if (id != null) {
-        _navigateToCallDetail(id);
-      }
+      _handleMessageData(data);
     });
   }
 
   /// Called from [MainTabScreen] when the user is logged in and the navigator is mounted.
   static void handleInitialMessage() {
-    final id = _pendingCallIdFromNotification;
-    if (id == null || id.isEmpty) return;
-    _navigateToCallDetail(id);
+    final data = _pendingMessageData;
+    if (data == null) return;
+    _pendingMessageData = null;
+    _handleMessageData(data);
+  }
+
+  static String? _buildLocalPayload(Map<String, dynamic> data) {
+    if (_isAppUpdateNotification(data)) {
+      final storeUrl = (data['store_url'] ?? '').toString().trim();
+      return jsonEncode({
+        'type': 'app_update',
+        'store_url': storeUrl,
+      });
+    }
+    final callId = _extractCallIdFromData(data);
+    if (callId == null) return null;
+    return jsonEncode({
+      'type': 'sales_call',
+      'call_id': callId,
+    });
   }
 
   static String? _extractCallIdFromData(Map<String, dynamic> data) {
@@ -147,13 +160,69 @@ class NotificationService {
     return s;
   }
 
-  static void _handleNotificationClick(String? raw) {
-    final id = _normalizeCallId(raw);
+  static void _handleNotificationClick(String? rawPayload) {
+    if (rawPayload == null || rawPayload.isEmpty) return;
+    try {
+      final decoded = jsonDecode(rawPayload);
+      if (decoded is Map<String, dynamic>) {
+        _handleMessageData(decoded);
+        return;
+      }
+      if (decoded is Map) {
+        _handleMessageData(decoded.map((key, value) => MapEntry('$key', value)));
+        return;
+      }
+    } catch (_) {
+      // Legacy payload compatibility: raw call_id string.
+    }
+    final id = _normalizeCallId(rawPayload);
     if (id == null) return;
     if (kDebugMode) {
-      print('[FCM] local notification tap callId=$id');
+      print('[FCM] local notification tap legacy callId=$id');
     }
     _navigateToCallDetail(id);
+  }
+
+  static void _handleMessageData(Map<String, dynamic> data) {
+    if (_isAppUpdateNotification(data)) {
+      _openUpdateFlow(data);
+      return;
+    }
+    final id = _extractCallIdFromData(data);
+    if (id != null) {
+      _navigateToCallDetail(id);
+    }
+  }
+
+  static bool _isAppUpdateNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '').toString().trim().toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'app_update' || action == 'open_update';
+  }
+
+  static Future<void> _openUpdateFlow(Map<String, dynamic> data) async {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) {
+      _pendingMessageData = data;
+      return;
+    }
+    try {
+      final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
+      if (user == null) {
+        _pendingMessageData = data;
+        return;
+      }
+    } catch (_) {
+      _pendingMessageData = data;
+      return;
+    }
+    final storeUrl = (data['store_url'] ?? '').toString().trim();
+    await AppUpdateService.checkAndUpdateIfNeeded(
+      ctx,
+      forceRecheck: true,
+      showUpToDateMessage: true,
+      preferredStoreUrl: storeUrl.isEmpty ? null : storeUrl,
+    );
   }
 
   static void _navigateToCallDetail(String id) {
@@ -162,11 +231,11 @@ class NotificationService {
       try {
         final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
         if (user == null) {
-          _pendingCallIdFromNotification = id;
+          _pendingMessageData = {'type': 'sales_call', 'call_id': id};
           return;
         }
       } catch (_) {
-        _pendingCallIdFromNotification = id;
+        _pendingMessageData = {'type': 'sales_call', 'call_id': id};
         return;
       }
     }
@@ -176,7 +245,7 @@ class NotificationService {
   static void _pushDetailRoute(String id, {int attempt = 0}) {
     final nav = navigatorKey.currentState;
     if (nav != null) {
-      _pendingCallIdFromNotification = null;
+      _pendingMessageData = null;
       nav.push(
         MaterialPageRoute<void>(
           builder: (context) => SalesCallDetailScreen(id: id),
@@ -189,8 +258,8 @@ class NotificationService {
       final ms = 30 + attempt * 25;
       Future<void>.delayed(Duration(milliseconds: ms), () => _pushDetailRoute(id, attempt: attempt + 1));
     } else if (kDebugMode) {
-      print('[FCM] NavigatorState still null after retries; keeping pending call id');
-      _pendingCallIdFromNotification = id;
+      print('[FCM] NavigatorState still null after retries; keeping pending payload');
+      _pendingMessageData = {'type': 'sales_call', 'call_id': id};
     }
   }
 
