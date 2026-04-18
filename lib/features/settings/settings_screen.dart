@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -57,6 +58,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: Icon(Icons.info_outline, color: scheme.primary),
             title: const Text('앱 버전'),
             subtitle: Text('v$kAppVersion'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.system_update_alt_rounded, color: scheme.primary),
+            title: const Text('업데이트 확인'),
+            subtitle: const Text('최신 버전 여부를 확인합니다.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () async {
+              await AppUpdateService.checkAndUpdateIfNeeded(
+                context,
+                forceRecheck: true,
+                showUpToDateMessage: true,
+              );
+            },
           ),
           const SizedBox(height: 8),
           Text(

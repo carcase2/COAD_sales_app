@@ -9,8 +9,12 @@ class AppUpdateService {
   static bool _alreadyChecked = false;
   static bool _optionalDialogShown = false;
 
-  static Future<void> checkAndUpdateIfNeeded(BuildContext context) async {
-    if (_alreadyChecked || kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+  static Future<void> checkAndUpdateIfNeeded(
+    BuildContext context, {
+    bool forceRecheck = false,
+    bool showUpToDateMessage = false,
+  }) async {
+    if ((!forceRecheck && _alreadyChecked) || kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     _alreadyChecked = true;
 
     try {
@@ -31,7 +35,14 @@ class AppUpdateService {
       }
 
       final info = await InAppUpdate.checkForUpdate();
-      if (info.updateAvailability != UpdateAvailability.updateAvailable) return;
+      if (info.updateAvailability != UpdateAvailability.updateAvailable) {
+        if (showUpToDateMessage && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('최신 버전(v$kAppVersion)입니다.')),
+          );
+        }
+        return;
+      }
 
       if (info.immediateUpdateAllowed) {
         await InAppUpdate.performImmediateUpdate();
@@ -48,6 +59,11 @@ class AppUpdateService {
       }
     } catch (e) {
       debugPrint('앱 업데이트 체크 실패: $e');
+      if (showUpToDateMessage && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('업데이트 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.')),
+        );
+      }
     }
   }
 
