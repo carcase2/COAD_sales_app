@@ -259,8 +259,6 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       } else {
         // Only saving new consultation and next date
         final now = DateTime.now();
-        final timestamp = "[${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}]";
-        final currentStageLabel = _getCurrentStage(_model?.callStage);
         
         final newContent = _newConsultationCtrl.text.trim();
         if (newContent.isEmpty) {
@@ -269,7 +267,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
         // 1. History 추가 (상담내용 입력 시 항상 이력으로 저장)
         final user = ref.read(authControllerProvider);
-        final currentStageNum = _getStageInt(_model?.callStage);
+        final currentStageNum = _resolveInputStageNumber(_model);
         
         await repo.addCallHistory(widget.id, {
           'consultation_content': newContent, // 스키마 반영: consultation_content
@@ -282,7 +280,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         });
 
         // 2. 메인 정보 업데이트
-        final nextStage = _getNextStage(_model?.callStage);
+        final nextStage = '${currentStageNum + 1}차';
         
         final body = {
           'next_scheduled_date': _nextDateCtrl.text.trim(),
@@ -314,11 +312,6 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     }
   }
 
-  String _getCurrentStage(String? current) {
-    if (current == null || current.isEmpty || current == '접수' || current == '0') return '1차';
-    return current;
-  }
-
   int _getStageInt(String? current) {
     if (current == null || current.isEmpty || current == '접수' || current == '0') return 1;
     final match = RegExp(r'(\d+)').firstMatch(current);
@@ -327,6 +320,24 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     }
     return 1;
   }
+
+  int _resolveInputStageNumber(SalesCall? call) {
+    final stageFromCall = _getStageInt(call?.callStage);
+    var historyMax = 0;
+    if (call != null) {
+      for (final h in call.callHistory) {
+        final raw = (h['call_stage'] ?? h['stage'])?.toString() ?? '';
+        final m = RegExp(r'(\d+)').firstMatch(raw);
+        if (m == null) continue;
+        final n = int.tryParse(m.group(1) ?? '');
+        if (n != null && n > historyMax) historyMax = n;
+      }
+    }
+    final nextByHistory = historyMax > 0 ? historyMax + 1 : 1;
+    return stageFromCall > nextByHistory ? stageFromCall : nextByHistory;
+  }
+
+  String _inputStageLabel(SalesCall? call) => '${_resolveInputStageNumber(call)}차';
 
   String _getNextStage(String? current) {
     if (current == null || current.isEmpty || current == '접수' || current == '0') return '2차';
@@ -372,6 +383,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       5: '설계문의',
     };
     return mapping[id] ?? '미결정';
+  }
+
+  String _attachmentSavePrefix(SalesCall? call) {
+    final now = DateTime.now();
+    final ymd = (call?.callDate?.trim().isNotEmpty ?? false)
+        ? call!.callDate!.trim().replaceAll('-', '')
+        : '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    final site = (call?.customerName ?? '현장')
+        .trim()
+        .replaceAll(RegExp(r'[^0-9a-zA-Z가-힣_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    return '${ymd}_${site.isEmpty ? '현장' : site}';
   }
 
   Color _colorForAssignee(String assignee, ColorScheme scheme) {
@@ -454,7 +477,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ? FloatingActionButton.extended(
               onPressed: () => masterAsync.whenData((m) => _showConsultationDialog(m)),
               icon: const Icon(Icons.add_comment_rounded),
-              label: const Text('상담내용 입력'),
+              label: Text('${_inputStageLabel(_model)} 상담내용 입력'),
             )
           : null,
       body: masterAsync.when(
@@ -613,6 +636,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
             child: SalesCallAttachmentsStrip(
               urls: _imageUrls,
+              saveNamePrefix: _attachmentSavePrefix(m),
               editable: true,
               uploadBusy: _uploadBusy,
               progressLabel: _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
@@ -650,7 +674,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
   Widget _buildHeroHeader(SalesCall m, ColorScheme scheme, Color assigneeColor) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [assigneeColor, assigneeColor.withOpacity(0.78)],
@@ -661,8 +685,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         boxShadow: [
           BoxShadow(
             color: assigneeColor.withOpacity(0.35),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -673,19 +697,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   m.statusLabel ?? '접수',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                 ),
               ),
               // 담당자 명시 (색상 적용)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: _colorForAssignee(m.assignedTo ?? '미지정', scheme).withOpacity(0.9),
                   borderRadius: BorderRadius.circular(10),
@@ -694,41 +718,41 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.person_outline, size: 14, color: Colors.white),
-                    const SizedBox(width: 4),
+                    const Icon(Icons.person_outline, size: 13, color: Colors.white),
+                    const SizedBox(width: 3),
                     Text(
                       m.assignedTo ?? '담당 미지정',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           // 현장명 및 상호명
           Text(
             m.customerName ?? '(이름 없음)',
             style: const TextStyle(
-              fontSize: 28, 
+              fontSize: 22, 
               fontWeight: FontWeight.w900, 
               color: Colors.white, 
-              letterSpacing: -0.8,
+              letterSpacing: -0.4,
               height: 1.2,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           // 전화번호
           Text(
             m.customerPhone ?? '연락처 없음',
             style: TextStyle(
-              fontSize: 18, 
+              fontSize: 15, 
               color: Colors.white.withOpacity(0.9), 
               fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
+              letterSpacing: 0.2,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 14),
           Row(
             children: [
               _buildLargeQuickAction(Icons.call, '전화', () => LauncherUtils.makePhoneCall(m.customerPhone ?? '')),
@@ -746,17 +770,17 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 9),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+              Icon(icon, color: Colors.white, size: 16),
+              const SizedBox(width: 6),
+              Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
             ],
           ),
         ),
@@ -816,6 +840,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   Widget _buildHistoryCard(Map<String, dynamic> h, ColorScheme scheme) {
+    final content = (h['consultation_content'] ?? h['consultation_result'] ?? h['content'] ?? h['note'] ?? h['memo'] ?? '').toString();
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -856,9 +881,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             const SizedBox(height: 16),
             const Divider(height: 1),
             const SizedBox(height: 16),
-            Text(
-              (h['consultation_content'] ?? h['consultation_result'] ?? h['content'] ?? h['note'] ?? h['memo'] ?? '').toString(),
-              style: TextStyle(fontSize: 15, height: 1.6, color: scheme.onSurface),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Text(
+                  content.isEmpty ? '기록된 상담 내용이 없습니다.' : content,
+                  style: TextStyle(fontSize: 15, height: 1.6, color: scheme.onSurface),
+                ),
+              ),
             ),
           ],
         ),
@@ -909,7 +938,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         const SizedBox(height: 16),
         // ─── 상담 상세 카드 View ───
         SizedBox(
-          height: 220, // 고정 높이 또는 동적 조정 필요
+          height: 280,
           child: PageView.builder(
             controller: _historyPageController,
             itemCount: history.length,
@@ -987,7 +1016,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '${_getCurrentStage(m?.callStage)} 상담내용 입력',
+                        '${_inputStageLabel(m)} 상담내용 입력',
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       IconButton(

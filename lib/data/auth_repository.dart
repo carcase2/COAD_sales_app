@@ -56,7 +56,8 @@ class AuthRepository {
     final Map<String, dynamic> userMap = {
       ...res,
       'groupName': res['groups'] != null ? res['groups']['name'] : null,
-      'permissions': [],
+      // DB permissions를 우선 사용하고, 미존재 시에도 fromJson이 빈 배열로 안전 처리
+      if (res.containsKey('permissions')) 'permissions': res['permissions'],
     };
 
     final u = AppUser.fromJson(userMap);
@@ -82,5 +83,8 @@ class AuthRepository {
     _deps.transport.cookieHeader = null;
     await _deps.secure.delete(key: StorageKeys.userJson);
     await _deps.secure.delete(key: StorageKeys.sessionCookies);
+    // 사용자가 의도적으로 로그아웃한 경우 자동 재로그인을 막는다.
+    await _deps.secure.write(key: StorageKeys.autoLoginEnabled, value: 'false');
+    await _deps.secure.delete(key: StorageKeys.savedLoginPassword);
   }
 }

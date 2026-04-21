@@ -1043,6 +1043,22 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
     return labels[(weekday - 1).clamp(0, 6)];
   }
 
+  void _jumpToThisMonth() {
+    final now = DateTime.now();
+    setState(() {
+      _calendarFormat = CalendarFormat.month;
+      _focusedDay = DateTime(now.year, now.month, now.day);
+    });
+  }
+
+  void _jumpToThisWeek() {
+    final now = DateTime.now();
+    setState(() {
+      _calendarFormat = CalendarFormat.week;
+      _focusedDay = DateTime(now.year, now.month, now.day);
+    });
+  }
+
   Color _strongColorForAssignee(String assignee) {
     if (assignee == '전체') return Colors.blueGrey.shade700;
     if (assignee == '미지정') return Colors.grey.shade700;
@@ -1106,6 +1122,36 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
             return a.compareTo(b);
           });
 
+        // 담당자별 색상 충돌 방지: 화면 내 팔레트 맵을 고정 생성
+        final palette = <Color>[
+          Colors.blue.shade700,
+          Colors.red.shade700,
+          Colors.green.shade700,
+          Colors.orange.shade800,
+          Colors.purple.shade700,
+          Colors.teal.shade700,
+          Colors.indigo.shade700,
+          Colors.pink.shade700,
+          Colors.cyan.shade700,
+          Colors.brown.shade700,
+        ];
+        final assigneeColorMap = <String, Color>{};
+        var paletteIdx = 0;
+        for (final a in sortedAssignees) {
+          if (a == '전체') {
+            assigneeColorMap[a] = Colors.blueGrey.shade700;
+            continue;
+          }
+          if (a == '미지정') {
+            assigneeColorMap[a] = Colors.grey.shade700;
+            continue;
+          }
+          assigneeColorMap[a] = palette[paletteIdx % palette.length];
+          paletteIdx += 1;
+        }
+        Color colorForAssignee(String name) =>
+            assigneeColorMap[name] ?? _strongColorForAssignee(name);
+
         // 2-1. Smart default: filter by logged-in user if not already filtered
         final user = ref.watch(authControllerProvider);
         final userName = user?.name;
@@ -1157,7 +1203,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           children: [
             // ─── 상단 담당자 필터 바 (캘린더용) ───
             Container(
-              height: 38,
+              height: 44,
               width: double.infinity,
               margin: const EdgeInsets.only(bottom: 10),
               child: ListView.builder(
@@ -1179,21 +1225,25 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: isSelected ? scheme.onSurface : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
+                          color: isSelected
+                              ? _strongColorForAssignee(assignee).withValues(alpha: 0.18)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(22),
                           boxShadow: isSelected ? [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
+                              color: _strongColorForAssignee(assignee).withValues(alpha: 0.25),
                               blurRadius: 10,
-                              offset: const Offset(0, 4),
+                              offset: const Offset(0, 3),
                             )
                           ] : [],
                           border: Border.all(
-                            color: isSelected ? scheme.onSurface : scheme.outlineVariant.withValues(alpha: 0.3),
-                            width: 1.5,
+                            color: isSelected
+                                ? _strongColorForAssignee(assignee).withValues(alpha: 0.45)
+                                : scheme.outlineVariant.withValues(alpha: 0.3),
+                            width: isSelected ? 1.6 : 1.2,
                           ),
                         ),
                         child: Row(
@@ -1202,7 +1252,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
-                                color: _strongColorForAssignee(assignee),
+                                color: colorForAssignee(assignee),
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -1211,17 +1261,26 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                               assignee,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isSelected ? Colors.white : _strongColorForAssignee(assignee),
+                                color: colorForAssignee(assignee),
                                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                               ),
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              '$count',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
-                                color: isSelected ? Colors.white.withValues(alpha: 0.7) : scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? colorForAssignee(assignee)
+                                    : colorForAssignee(assignee).withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '$count',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: isSelected ? Colors.white : colorForAssignee(assignee),
+                                ),
                               ),
                             ),
                           ],
@@ -1235,53 +1294,153 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
             // ─── 캘린더 영역 ───
             Container(
               margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(14),
+                gradient: LinearGradient(
+                  colors: [
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.65),
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
               ),
               child: Row(
                 children: [
                   Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => setState(() => _calendarFormat = CalendarFormat.month),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: _calendarFormat == CalendarFormat.month ? Colors.white : Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '월간 달력',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: _calendarFormat == CalendarFormat.month ? scheme.primary : scheme.onSurfaceVariant,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => setState(() => _calendarFormat = CalendarFormat.month),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: _calendarFormat == CalendarFormat.month
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: _calendarFormat == CalendarFormat.month
+                                      ? Colors.indigo.withValues(alpha: 0.35)
+                                      : Colors.transparent,
+                                ),
+                                boxShadow: _calendarFormat == CalendarFormat.month
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.indigo.withValues(alpha: 0.16),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              alignment: Alignment.center,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.calendar_month_rounded,
+                                    size: 14,
+                                    color: _calendarFormat == CalendarFormat.month
+                                        ? Colors.indigo
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '월간 달력',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: _calendarFormat == CalendarFormat.month
+                                          ? Colors.indigo
+                                          : scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => setState(() => _calendarFormat = CalendarFormat.week),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: _calendarFormat == CalendarFormat.week
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: _calendarFormat == CalendarFormat.week
+                                      ? Colors.teal.withValues(alpha: 0.35)
+                                      : Colors.transparent,
+                                ),
+                                boxShadow: _calendarFormat == CalendarFormat.week
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.teal.withValues(alpha: 0.16),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              alignment: Alignment.center,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.view_week_rounded,
+                                    size: 14,
+                                    color: _calendarFormat == CalendarFormat.week
+                                        ? Colors.teal
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '주간 달력',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: _calendarFormat == CalendarFormat.week
+                                          ? Colors.teal
+                                          : scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => setState(() => _calendarFormat = CalendarFormat.week),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: _calendarFormat == CalendarFormat.week ? Colors.white : Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
+                  const SizedBox(width: 6),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: _calendarFormat == CalendarFormat.month ? _jumpToThisMonth : _jumpToThisWeek,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: (_calendarFormat == CalendarFormat.month ? Colors.indigo : Colors.teal).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: (_calendarFormat == CalendarFormat.month ? Colors.indigo : Colors.teal)
+                              .withValues(alpha: 0.35),
                         ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '주간 달력',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: _calendarFormat == CalendarFormat.week ? scheme.primary : scheme.onSurfaceVariant,
-                          ),
+                      ),
+                      child: Text(
+                        _calendarFormat == CalendarFormat.month ? '이번달' : '이번주',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: _calendarFormat == CalendarFormat.month ? Colors.indigo : Colors.teal,
                         ),
                       ),
                     ),
@@ -1289,6 +1448,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                 ],
               ),
             ),
+            const SizedBox(height: 4),
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -1317,7 +1477,53 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                     titleCentered: true,
                     titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
+                  daysOfWeekStyle: const DaysOfWeekStyle(
+                    weekendStyle: TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  calendarStyle: CalendarStyle(
+                    holidayTextStyle: const TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   calendarBuilders: CalendarBuilders(
+                    dowBuilder: (context, day) {
+                      final txt = _weekdayKo(day.weekday);
+                      Color color = scheme.onSurfaceVariant;
+                      if (day.weekday == DateTime.saturday) color = Colors.blueAccent;
+                      if (day.weekday == DateTime.sunday) color = Colors.redAccent;
+                      return Center(
+                        child: Text(
+                          txt,
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color),
+                        ),
+                      );
+                    },
+                    defaultBuilder: (context, day, focusedDay) {
+                      Color color = scheme.onSurface;
+                      if (day.weekday == DateTime.saturday) color = Colors.blueAccent;
+                      if (day.weekday == DateTime.sunday) color = Colors.redAccent;
+                      return Center(
+                        child: Text(
+                          '${day.day}',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color),
+                        ),
+                      );
+                    },
+                    outsideBuilder: (context, day, focusedDay) {
+                      Color color = scheme.onSurfaceVariant.withValues(alpha: 0.45);
+                      if (day.weekday == DateTime.saturday) color = Colors.blueAccent.withValues(alpha: 0.5);
+                      if (day.weekday == DateTime.sunday) color = Colors.redAccent.withValues(alpha: 0.5);
+                      return Center(
+                        child: Text(
+                          '${day.day}',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: color),
+                        ),
+                      );
+                    },
                     markerBuilder: (context, date, events) {
                       final dateKey = date.toIso8601String().substring(0, 10);
                       final count = dateMarkers[dateKey] ?? 0;
@@ -1465,7 +1671,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                                                   child: Container(
                                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                                     decoration: BoxDecoration(
-                                                      color: _strongColorForAssignee(e.key).withValues(alpha: 0.12),
+                                                      color: colorForAssignee(e.key).withValues(alpha: 0.12),
                                                       borderRadius: BorderRadius.circular(10),
                                                     ),
                                                     child: Text(
@@ -1473,7 +1679,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                                                       style: TextStyle(
                                                         fontSize: 10,
                                                         fontWeight: FontWeight.w700,
-                                                        color: _strongColorForAssignee(e.key),
+                                                        color: colorForAssignee(e.key),
                                                       ),
                                                     ),
                                                   ),

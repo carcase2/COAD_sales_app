@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:coad_customer_calls/services/app_update_service.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -242,6 +243,23 @@ class NotificationService {
     _pushDetailRoute(id);
   }
 
+  /// 푸시로 상세 진입 시 홈·상담현황에 쓰이는 목록/통계가 이전 캐시를 유지하는 문제 방지
+  /// ([SalesCallCreateScreen] 접수 성공 시와 동일하게 무효화)
+  static void _invalidateHomeSalesCaches() {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
+    try {
+      final container = ProviderScope.containerOf(ctx);
+      container.invalidate(todayStatsProvider);
+      container.invalidate(todayCallsContentProvider);
+      container.invalidate(todayFollowOverviewProvider);
+      container.invalidate(todayIncompleteOverviewProvider);
+      container.invalidate(rankingCallsProvider);
+    } catch (_) {
+      // ProviderScope 미연결(테스트 등) 시 무시
+    }
+  }
+
   static void _pushDetailRoute(String id, {int attempt = 0}) {
     final nav = navigatorKey.currentState;
     if (nav != null) {
@@ -252,6 +270,7 @@ class NotificationService {
           settings: RouteSettings(name: 'SalesCallDetail/$id'),
         ),
       );
+      _invalidateHomeSalesCaches();
       return;
     }
     if (attempt < 30) {

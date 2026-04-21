@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class HomeHubScreen extends ConsumerStatefulWidget {
@@ -156,6 +157,246 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
+  void _openTodayFollowForAssignee(String assignee) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.incompleteByDate,
+          date: todayYmdSeoul(),
+          initialAssignee: assignee,
+        ),
+      ),
+    );
+  }
+
+  void _openTodayIncompleteForAssignee(String assignee) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.incomplete,
+          date: todayYmdSeoul(),
+          initialAssignee: assignee,
+        ),
+      ),
+    );
+  }
+
+  /// 홈 하단: 왼쪽 미통화 / 오른쪽 팔로우 (가로 2열)
+  Widget _buildTwinAssigneeColumns({
+    required ColorScheme scheme,
+    required AsyncValue<AssigneeOverview> incompleteAsync,
+    required AsyncValue<AssigneeOverview> followAsync,
+  }) {
+    Widget columnShell({
+      required String title,
+      required AsyncValue<AssigneeOverview> async,
+      required String emptyMessage,
+      required Color accent,
+      required void Function(String assignee) onAssigneeTap,
+    }) {
+      return async.when(
+        data: (overview) => _buildAssigneeHalfColumn(
+          scheme: scheme,
+          title: title,
+          emptyMessage: emptyMessage,
+          overview: overview,
+          accent: accent,
+          onAssigneeTap: onAssigneeTap,
+        ),
+        loading: () => _buildAssigneeHalfColumnLoading(scheme),
+        error: (_, _) => _buildAssigneeHalfColumnError(scheme),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 20),
+        Text(
+          '담당자별',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: columnShell(
+                title: '오늘 미통화',
+                async: incompleteAsync,
+                emptyMessage: '없음',
+                accent: scheme.error,
+                onAssigneeTap: _openTodayIncompleteForAssignee,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: columnShell(
+                title: '오늘 팔로우',
+                async: followAsync,
+                emptyMessage: '없음',
+                accent: Colors.deepPurple,
+                onAssigneeTap: _openTodayFollowForAssignee,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAssigneeHalfColumnLoading(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: const SizedBox(
+        height: 120,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+    );
+  }
+
+  Widget _buildAssigneeHalfColumnError(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        '불러오기 실패',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: scheme.error.withValues(alpha: 0.85),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssigneeHalfColumn({
+    required ColorScheme scheme,
+    required String title,
+    required String emptyMessage,
+    required AssigneeOverview overview,
+    required Color accent,
+    required void Function(String assignee) onAssigneeTap,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            height: 1.15,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (overview.byAssignee.isEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: accent.withValues(alpha: 0.12)),
+            ),
+            child: Text(
+              emptyMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: accent.withValues(alpha: 0.14)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                for (var i = 0; i < overview.byAssignee.length; i++) ...[
+                  if (i > 0)
+                    Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.35)),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.vertical(
+                        top: i == 0 ? const Radius.circular(14) : Radius.zero,
+                        bottom: i == overview.byAssignee.length - 1 ? const Radius.circular(14) : Radius.zero,
+                      ),
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        onAssigneeTap(overview.byAssignee[i].assignee);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                overview.byAssignee[i].assignee,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${overview.byAssignee[i].count}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 11.5,
+                                  color: accent is MaterialColor ? accent.shade700 : accent,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -191,10 +432,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   Future<void> _onRefresh() async {
     ref.invalidate(todayStatsProvider);
-    ref.invalidate(todayFollowCountProvider);
+    ref.invalidate(todayFollowOverviewProvider);
+    ref.invalidate(todayIncompleteOverviewProvider);
     await Future.wait([
       ref.read(todayStatsProvider.future),
-      ref.read(todayFollowCountProvider.future),
+      ref.read(todayFollowOverviewProvider.future),
+      ref.read(todayIncompleteOverviewProvider.future),
     ]);
   }
 
@@ -203,7 +446,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
     final statsAsync = ref.watch(todayStatsProvider);
-    final todayFollowAsync = ref.watch(todayFollowCountProvider);
+    final followOverviewAsync = ref.watch(todayFollowOverviewProvider);
+    final incompleteOverviewAsync = ref.watch(todayIncompleteOverviewProvider);
 
     return RefreshIndicator(
       onRefresh: _onRefresh,
@@ -249,35 +493,45 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 const SizedBox(height: 12),
                 statsAsync.when(
                   data: (s) {
-                    final todayFollowCount = todayFollowAsync.valueOrNull ?? 0;
-                    return _MiniStatsWidget(
-                      today: s.todayCount ?? 0,
-                      incomplete: s.incompleteCount ?? 0,
-                      todayFollow: todayFollowCount,
-                      onTapToday: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today),
-                          ),
-                        );
-                      },
-                      onTapIncomplete: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => SalesCallListScreen(
-                              mode: ListQueryMode.incomplete,
-                              date: todayYmdSeoul(),
-                            ),
-                          ),
-                        );
-                      },
-                      onTapTodayFollow: () {
-                        _openTodayFollowPicker();
-                      },
+                    final todayFollowCount = followOverviewAsync.valueOrNull?.total ?? 0;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _MiniStatsWidget(
+                          today: s.todayCount ?? 0,
+                          incomplete: s.incompleteCount ?? 0,
+                          todayFollow: todayFollowCount,
+                          onTapToday: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today),
+                              ),
+                            );
+                          },
+                          onTapIncomplete: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => SalesCallListScreen(
+                                  mode: ListQueryMode.incomplete,
+                                  date: todayYmdSeoul(),
+                                ),
+                              ),
+                            );
+                          },
+                          onTapTodayFollow: () {
+                            _openTodayFollowPicker();
+                          },
+                        ),
+                        _buildTwinAssigneeColumns(
+                          scheme: scheme,
+                          incompleteAsync: incompleteOverviewAsync,
+                          followAsync: followOverviewAsync,
+                        ),
+                      ],
                     );
                   },
                   loading: () => const LinearProgressIndicator(),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (e, _) => const SizedBox.shrink(),
                 ),
               ],
             ),

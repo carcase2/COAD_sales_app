@@ -19,6 +19,7 @@ import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class MainTabScreen extends ConsumerStatefulWidget {
@@ -47,6 +48,8 @@ class _QuickActionItem {
 class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   int _currentIndex = 0;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
+  /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
+  DateTime? _lastBackExitHintAt;
   bool _quickActionsOpen = false;
   final ScrollController _quickActionsScrollCtrl = ScrollController();
   bool _quickHasMoreAbove = false;
@@ -87,6 +90,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       _quickActionsOpen = false;
       _currentIndex = index;
       _loadedIndices.add(index); // 선택한 탭을 로드 목록에 추가
+      if (index != 0) _lastBackExitHintAt = null;
     });
   }
 
@@ -250,7 +254,51 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       ),
     ];
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (didPop) return;
+
+        if (_quickActionsOpen) {
+          setState(() => _quickActionsOpen = false);
+          return;
+        }
+
+        final sm = scaffoldKey.currentState;
+        if (sm != null && sm.isDrawerOpen) {
+          sm.closeDrawer();
+          return;
+        }
+
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+          return;
+        }
+
+        final nav = Navigator.of(context);
+        if (nav.canPop()) {
+          nav.pop();
+          return;
+        }
+
+        final now = DateTime.now();
+        const exitWindow = Duration(seconds: 2);
+        if (_lastBackExitHintAt != null && now.difference(_lastBackExitHintAt!) < exitWindow) {
+          SystemNavigator.pop();
+          return;
+        }
+        _lastBackExitHintAt = now;
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('뒤로가기를 한 번 더 누르면 앱이 종료됩니다.'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      child: Scaffold(
       key: scaffoldKey,
       drawer: _buildDrawer(context, user, scheme),
       appBar: AppBar(
@@ -446,6 +494,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

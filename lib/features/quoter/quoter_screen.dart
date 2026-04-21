@@ -21,6 +21,14 @@ import 'package:intl/intl.dart';
 final shutterPriceRefreshKeyProvider = StateProvider<int>((ref) => 0);
 const Duration _shutterPriceCacheTtl = Duration(hours: 24);
 
+/// 견적기 마법사 단계별 악센트 (1=종류, 2=규격, 3=비용, 4=결과)
+const kQuoterStepAccents = <Color>[
+  Color(0xFF1565C0),
+  Color(0xFF00897B),
+  Color(0xFFE65100),
+  Color(0xFF6A1B9A),
+];
+
 final shutterPricesFutureProvider = FutureProvider((ref) async {
   final repo = ref.read(shutterRepositoryProvider);
   final prefs = ref.read(appDependenciesProvider).prefs;
@@ -105,6 +113,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         _heightController.text.trim().isNotEmpty ||
         _result != null;
   }
+
+  Color _quoterStepAccent(int step) => kQuoterStepAccents[step - 1];
 
   @override
   void initState() {
@@ -528,6 +538,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   Widget _buildContent(ColorScheme scheme) {
     const bottomPad = 16.0;
+    final accent = _quoterStepAccent(_currentStep);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panelTint = accent.withValues(alpha: isDark ? 0.12 : 0.085);
+    final panelBorder = accent.withValues(alpha: isDark ? 0.52 : 0.34);
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
@@ -535,14 +549,56 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         children: [
           _buildPriceSyncBar(scheme),
           const SizedBox(height: 8),
-          _buildWizardHeader(scheme),
-          const SizedBox(height: 8),
-          _buildWizardActions(scheme),
-          const SizedBox(height: 10),
           Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: _buildStepBody(scheme),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Color.alphaBlend(panelTint, scheme.surface),
+                  border: Border.all(color: panelBorder, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: isDark ? 0.14 : 0.10),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      height: 5,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [accent, accent.withValues(alpha: 0.72)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+                        child: Column(
+                          children: [
+                            _buildWizardHeader(scheme),
+                            const SizedBox(height: 8),
+                            _buildWizardActions(scheme),
+                            const SizedBox(height: 10),
+                            Expanded(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 220),
+                                child: _buildStepBody(scheme),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -663,8 +719,36 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   Widget _buildWizardHeader(ColorScheme scheme) {
     Widget stepChip(int step, String label) {
+      final accent = kQuoterStepAccents[step - 1];
       final active = _currentStep == step;
       final done = step < _currentStep || (step == 4 && _result != null);
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final surface = scheme.surface;
+
+      final double activeTint = isDark ? 0.34 : 0.17;
+      final double doneTint = isDark ? 0.16 : 0.10;
+      final Color bg;
+      final Color borderColor;
+      final Color stepNumColor;
+      final Color nameColor;
+
+      if (active) {
+        bg = Color.alphaBlend(accent.withValues(alpha: activeTint), surface);
+        borderColor = accent;
+        stepNumColor = accent;
+        nameColor = scheme.onSurface;
+      } else if (done) {
+        bg = Color.alphaBlend(accent.withValues(alpha: doneTint), surface);
+        borderColor = accent.withValues(alpha: isDark ? 0.55 : 0.42);
+        stepNumColor = accent.withValues(alpha: isDark ? 0.95 : 0.92);
+        nameColor = scheme.onSurfaceVariant;
+      } else {
+        bg = scheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.65 : 0.55);
+        borderColor = scheme.outlineVariant.withValues(alpha: isDark ? 0.55 : 0.4);
+        stepNumColor = scheme.onSurfaceVariant;
+        nameColor = scheme.onSurfaceVariant;
+      }
+
       return Expanded(
         child: InkWell(
           onTap: () => _goToStep(step),
@@ -672,14 +756,11 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
             decoration: BoxDecoration(
-              color: active
-                  ? scheme.primaryContainer
-                  : done
-                      ? scheme.tertiaryContainer.withValues(alpha: 0.75)
-                      : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              color: bg,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: active ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.35),
+                color: borderColor,
+                width: active ? 2 : 1,
               ),
             ),
             child: Column(
@@ -690,7 +771,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
-                    color: active ? scheme.primary : scheme.onSurfaceVariant,
+                    color: stepNumColor,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -701,7 +782,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: active ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+                    color: nameColor,
                   ),
                 ),
               ],
@@ -748,10 +829,27 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         );
       case 4:
       default:
+        final a4 = _quoterStepAccent(4);
         return Container(
           key: const ValueKey('step4'),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.insights_rounded, size: 18, color: a4),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '4단계 · 최종 견적',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: a4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               _buildCalculateButton(scheme),
               if (_selectedType == ShutterType.fireSteel || _selectedType == ShutterType.fireScreen)
                 _buildSimilarEstimatesSection(scheme),
@@ -768,17 +866,18 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Widget _buildStep4Placeholder(ColorScheme scheme) {
+    final a = _quoterStepAccent(4);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.calculate_rounded, size: 42, color: scheme.primary),
+            Icon(Icons.calculate_rounded, size: 42, color: a),
             const SizedBox(height: 10),
             Text(
               '최종 견적 산출',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: scheme.onSurface),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: a),
             ),
             const SizedBox(height: 6),
             Text(
@@ -801,63 +900,77 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       return canNext;
     }
 
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
+    final navAccent = _quoterStepAccent(_currentStep);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(navAccent.withValues(alpha: isDark ? 0.10 : 0.06), scheme.surface),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: navAccent.withValues(alpha: isDark ? 0.38 : 0.26)),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
         child: Column(
-      children: [
-        if (_hasAnyInput)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () {
-                HapticFeedback.mediumImpact();
-                _newEstimate();
-              },
-              icon: const Icon(Icons.restart_alt_rounded, size: 18),
-              label: const Text('다시 견적내기'),
-            ),
-          ),
-        Row(
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: canPrev
-                    ? () {
-                        HapticFeedback.lightImpact();
-                        _goToStep(_currentStep - 1);
-                      }
-                    : null,
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+            if (_hasAnyInput)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () {
+                    HapticFeedback.mediumImpact();
+                    _newEstimate();
+                  },
+                  icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                  label: const Text('다시 견적내기'),
                 ),
-                child: const Text('이전'),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: !nextEnabled()
-                    ? null
-                    : () async {
-                        HapticFeedback.lightImpact();
-                        if (_currentStep < 4) await _goToStep(_currentStep + 1);
-                      },
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: canPrev
+                        ? () {
+                            HapticFeedback.lightImpact();
+                            _goToStep(_currentStep - 1);
+                          }
+                        : null,
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      foregroundColor: scheme.onSurface,
+                      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.8)),
+                    ),
+                    child: const Text('이전'),
+                  ),
                 ),
-                icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                label: const Text('다음'),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: !nextEnabled()
+                        ? null
+                        : () async {
+                            HapticFeedback.lightImpact();
+                            // 2단계(규격)에서는 비용(3단계)을 건너뛰고 바로 4단계(결과)로 이동
+                            final nextStep = _currentStep == 2
+                                ? 4
+                                : (_currentStep < 4 ? _currentStep + 1 : null);
+                            if (nextStep != null) await _goToStep(nextStep);
+                          },
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      backgroundColor: navAccent,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                    label: Text(_currentStep == 2 ? '견적 산출' : '다음'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-      ],
-    ),
       ),
     );
   }
@@ -866,6 +979,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // 셔터 종류 선택
   // ─────────────────────────────────────────────────
   Widget _buildTypeSelector(ColorScheme scheme) {
+    final a = _quoterStepAccent(1);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -873,9 +987,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Row(
             children: [
-              Icon(Icons.view_module_rounded, size: 18, color: scheme.primary),
+              Icon(Icons.view_module_rounded, size: 18, color: a),
               const SizedBox(width: 8),
-              Text('1단계 · 셔터 종류 선택', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurface)),
+              Text('1단계 · 셔터 종류 선택', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: a)),
             ],
           ),
         ),
@@ -941,13 +1055,17 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // 규격 입력
   // ─────────────────────────────────────────────────
   Widget _buildSizeInput(ColorScheme scheme) {
+    final a = _quoterStepAccent(2);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))],
+        border: Border.all(color: a.withValues(alpha: 0.42), width: 1.5),
+        boxShadow: [
+          BoxShadow(color: a.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -960,7 +1078,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.straighten_rounded, size: 18, color: scheme.primary),
+                      Icon(Icons.straighten_rounded, size: 18, color: a),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -970,7 +1088,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
-                            color: scheme.onSurface,
+                            color: a,
                           ),
                         ),
                       ),
@@ -1076,12 +1194,16 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // 비용 설정 (접이식)
   // ─────────────────────────────────────────────────
   Widget _buildCostSettings(ColorScheme scheme) {
+    final a = _quoterStepAccent(3);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))],
+        border: Border.all(color: a.withValues(alpha: 0.42), width: 1.5),
+        boxShadow: [
+          BoxShadow(color: a.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
       ),
       child: Column(
         children: [
@@ -1099,17 +1221,17 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: scheme.secondaryContainer.withValues(alpha: 0.5),
+                      color: a.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(Icons.tune_rounded, size: 18, color: scheme.secondary),
+                    child: Icon(Icons.tune_rounded, size: 18, color: a),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('3단계 · 비용 설정', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurface)),
+                        Text('3단계 · 비용 설정', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: a)),
                         Text(
                           _isCostSettingsExpanded ? '탭하여 접기' : '탭하여 상세 비용 조정',
                           style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),

@@ -162,6 +162,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       // 홈 화면 데이터 무기본화(새로고침 예약)
       ref.invalidate(todayStatsProvider);
       ref.invalidate(todayCallsContentProvider);
+      ref.invalidate(todayFollowOverviewProvider);
+      ref.invalidate(todayIncompleteOverviewProvider);
       ref.invalidate(rankingCallsProvider);
 
       if (!mounted) return;

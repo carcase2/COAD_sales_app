@@ -186,7 +186,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           incompleteOnly: true,
           excludeSimpleInquiries: true,
           limit: 1000,
-          // `todayFollowCountProvider`·홈 바텀시트와 동일 조건 (call_history 포함 시 일부 행 누락 가능)
+          // `todayFollowOverviewProvider`·홈 바텀시트와 동일 조건 (call_history 포함 시 일부 행 누락 가능)
           includeCallHistory: false,
         );
     }
@@ -224,6 +224,36 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       Colors.teal.shade100,
     ];
     return colors[assignee.hashCode.abs() % colors.length];
+  }
+
+  DateTime? _parseCreatedLocal(SalesCall c) {
+    final raw = c.createdAt;
+    if (raw == null || raw.isEmpty) return null;
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return null;
+    return dt.toLocal();
+  }
+
+  String _elapsedLabelSince(DateTime? createdLocal) {
+    if (createdLocal == null) return '';
+    final diff = DateTime.now().difference(createdLocal);
+    if (diff.isNegative) return '방금 접수';
+    if (diff.inMinutes < 1) return '방금 전';
+    if (diff.inHours < 1) return '${diff.inMinutes}분 경과';
+    if (diff.inDays < 1) {
+      final hours = diff.inHours;
+      final mins = diff.inMinutes % 60;
+      if (mins == 0) return '${hours}시간 경과';
+      return '${hours}시간 ${mins}분 경과';
+    }
+    return '${diff.inDays}일 경과';
+  }
+
+  String _stageLabelForCard(SalesCall c) {
+    final raw = (c.callStage ?? '').trim();
+    if (RegExp(r'^\d+$').hasMatch(raw)) return '${raw}차';
+    if (raw.isEmpty || raw == '0' || raw == '접수') return '1차';
+    return raw;
   }
 
   @override
@@ -629,11 +659,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             return matchesAssignee && matchesSearch;
           }).toList();
 
-          final hasPinnedInitialAssignee =
-              widget.mode == ListQueryMode.incompleteByDate &&
-              widget.initialAssignee != null &&
-              widget.initialAssignee != '전체';
-
           return Column(
             children: [
               Container(
@@ -662,24 +687,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       padding: const EdgeInsets.only(right: 12),
                       child: GestureDetector(
                         onTap: () {
-                          if (hasPinnedInitialAssignee) {
-                            final pinned = widget.initialAssignee!;
-                            // 날짜 팔로우를 담당자 기준으로 열었을 때:
-                            // 1) 현재 담당자 칩 재탭 => 전체
-                            // 2) 전체에서 해당 담당자 칩 탭 => 담당자
-                            // 3) 그 외 담당자 칩은 비활성
-                            if (_selectedAssignee == assignee) {
-                              HapticFeedback.selectionClick();
-                              setState(() => _selectedAssignee = '전체');
-                              return;
-                            }
-                            if (_selectedAssignee == '전체' && assignee == pinned) {
-                              HapticFeedback.selectionClick();
-                              setState(() => _selectedAssignee = pinned);
-                              return;
-                            }
-                            return;
-                          }
                           HapticFeedback.selectionClick();
                           setState(() => _selectedAssignee = assignee);
                         },
@@ -775,36 +782,39 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                           itemBuilder: (context, i) {
                             final c = filteredItems[i];
                             String timeStr = '${c.callDate ?? ''} ${c.callTime ?? ''}'.trim();
+                            DateTime? createdLocal;
                             if (c.createdAt != null && c.createdAt!.isNotEmpty) {
-                              final parsedDt = DateTime.tryParse(c.createdAt!);
-                              if (parsedDt != null) {
-                                final kstDt = parsedDt.toUtc().add(const Duration(hours: 9));
-                                timeStr = '${kstDt.month}/${kstDt.day} ${kstDt.hour}:${kstDt.minute.toString().padLeft(2, '0')}';
+                              createdLocal = _parseCreatedLocal(c);
+                              if (createdLocal != null) {
+                                timeStr = '${createdLocal.month}/${createdLocal.day} ${createdLocal.hour}:${createdLocal.minute.toString().padLeft(2, '0')}';
                               }
                             }
+                            final elapsedLabel = _elapsedLabelSince(createdLocal);
+                            final showElapsed = c.isMissed && elapsedLabel.isNotEmpty;
+                            final stageLabel = _stageLabelForCard(c);
 
                             final scheme = Theme.of(context).colorScheme;
                             final assignColor = _colorForAssignee(c.assignedTo ?? '미지정', scheme);
 
                             return Container(
-                              margin: const EdgeInsets.only(bottom: 16),
+                              margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
                                 color: assignColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(24),
+                                borderRadius: BorderRadius.circular(18),
                                 border: Border.all(
                                   color: assignColor.withValues(alpha: 0.35),
-                                  width: 1.2,
+                                  width: 1,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: assignColor.withValues(alpha: 0.14),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 6),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 3),
                                   ),
                                 ],
                               ),
                               child: InkWell(
-                                borderRadius: BorderRadius.circular(24),
+                                borderRadius: BorderRadius.circular(18),
                                 onTap: () async {
                                   await Navigator.of(context).push(
                                     MaterialPageRoute<void>(
@@ -814,19 +824,19 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   if (mounted) _loadWithCache();
                                 },
                                 child: Padding(
-                                  padding: const EdgeInsets.all(20),
+                                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Container(
-                                        width: 44,
-                                        height: 4,
+                                        width: 34,
+                                        height: 3,
                                         decoration: BoxDecoration(
                                           color: assignColor.withValues(alpha: 0.9),
                                           borderRadius: BorderRadius.circular(99),
                                         ),
                                       ),
-                                      const SizedBox(height: 10),
+                                      const SizedBox(height: 8),
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
@@ -834,17 +844,72 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                             child: SearchHighlightText(
                                               text: c.customerName ?? '(이름 없음)',
                                               query: _searchQuery,
-                                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+                                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.4),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                           Text(
                                             timeStr,
-                                            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withOpacity(0.5), fontWeight: FontWeight.w500),
+                                            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withOpacity(0.55), fontWeight: FontWeight.w500),
                                           ),
                                         ],
                                       ),
+                                      if (showElapsed) ...[
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: scheme.errorContainer.withOpacity(0.55),
+                                                borderRadius: BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                '접수 후 $elapsedLabel',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: scheme.onErrorContainer,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: scheme.secondaryContainer.withOpacity(0.8),
+                                                borderRadius: BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                '상담이력 $stageLabel',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: scheme.onSecondaryContainer,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ] else ...[
+                                        const SizedBox(height: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: scheme.secondaryContainer.withOpacity(0.8),
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            '상담이력 $stageLabel',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: scheme.onSecondaryContainer,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                       const SizedBox(height: 4),
 
                                       // NEW: Metadata Row (Region & Product)
@@ -873,7 +938,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           ],
                                         ],
                                       ),
-                                      const SizedBox(height: 12),
+                                      const SizedBox(height: 10),
                                       
                                       // Call & Quick Actions Bar
                                       Row(
@@ -896,7 +961,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           _buildQuickAction(Icons.message_rounded, Colors.blue, () => LauncherUtils.sendSMS(c.customerPhone ?? '')),
                                         ],
                                       ),
-                                      const SizedBox(height: 12),
+                                      const SizedBox(height: 10),
 
                                       if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty)
                                         Container(
@@ -916,7 +981,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           ),
                                         ),
                                       
-                                      const SizedBox(height: 16),
+                                      const SizedBox(height: 12),
 
                                       // Bottom Row: Assignee and Status/Stage
                                       Row(
@@ -947,7 +1012,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(width: 12),
+                                          const SizedBox(width: 8),
                                           // Stage Badge
                                           if (c.callStage != null && c.callStage!.isNotEmpty)
                                             _buildPill(
@@ -976,7 +1041,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           );
   }
 
-  Widget _buildQuickAction(IconData icon, Color color, VoidCallback onTap, {Color iconColor = Colors.white}) {
+  Widget _buildQuickAction(IconData icon, Color color, VoidCallback onTap) {
     return Container(
       width: 44,
       height: 44,

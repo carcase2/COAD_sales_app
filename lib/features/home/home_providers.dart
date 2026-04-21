@@ -33,8 +33,35 @@ final todayStatsProvider = FutureProvider<TodayStats>((ref) async {
   return repo.fetchTodayStats();
 });
 
-/// 오늘 `next_scheduled_date`(다음 예정일)가 오늘인 미종료 팔로우 건수.
-final todayFollowCountProvider = FutureProvider<int>((ref) async {
+/// 담당자별 건수 한 줄 (팔로우·미통화 등 공통)
+typedef AssigneeCountRow = ({String assignee, int count});
+
+class AssigneeOverview {
+  const AssigneeOverview({required this.total, required this.byAssignee});
+
+  final int total;
+  final List<AssigneeCountRow> byAssignee;
+}
+
+List<AssigneeCountRow> _groupByAssignee(List<SalesCall> rows) {
+  final Map<String, int> counts = {};
+  for (final c in rows) {
+    final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+    counts[a] = (counts[a] ?? 0) + 1;
+  }
+  final list = counts.entries.map((e) => (assignee: e.key, count: e.value)).toList();
+  list.sort((a, b) {
+    if (a.assignee == '미지정') return 1;
+    if (b.assignee == '미지정') return -1;
+    final c = b.count.compareTo(a.count);
+    if (c != 0) return c;
+    return a.assignee.compareTo(b.assignee);
+  });
+  return list;
+}
+
+/// 오늘 `next_scheduled_date`(다음 예정일)가 오늘인 미종료 팔로우 — 총건 + 담당자별 건수(동일 API 1회).
+final todayFollowOverviewProvider = FutureProvider<AssigneeOverview>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
   final rows = await repo.fetchCalls(
     followDate: todayYmdSeoul(),
@@ -43,7 +70,19 @@ final todayFollowCountProvider = FutureProvider<int>((ref) async {
     limit: 1000,
     includeCallHistory: false,
   );
-  return rows.length;
+  return AssigneeOverview(total: rows.length, byAssignee: _groupByAssignee(rows));
+});
+
+/// 금일 미통화(uncalled) — `SalesCallListScreen`(incomplete·오늘)과 동일 fetch 조건, 담당자별 건수.
+final todayIncompleteOverviewProvider = FutureProvider<AssigneeOverview>((ref) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  final rows = await repo.fetchCalls(
+    date: todayYmdSeoul(),
+    uncalledOnly: true,
+    limit: 1000,
+    includeCallHistory: true,
+  );
+  return AssigneeOverview(total: rows.length, byAssignee: _groupByAssignee(rows));
 });
 
 final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
