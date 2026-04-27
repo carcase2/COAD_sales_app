@@ -12,14 +12,18 @@ class IssuanceRequestScreen extends ConsumerStatefulWidget {
   ConsumerState<IssuanceRequestScreen> createState() => _IssuanceRequestScreenState();
 }
 
+enum _IssuanceStatusFilter { all, pending, completed }
+
 class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   IssuanceDomain _domain = IssuanceDomain.taxInvoice;
   String _selectedAssignee = '전체';
+  _IssuanceStatusFilter _statusFilter = _IssuanceStatusFilter.pending;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final rowsAsync = ref.watch(issuanceRequestRowsProvider(_domain));
+    final pendingRowsAsync = ref.watch(issuanceRequestRowsProvider(_domain));
+    final completedRowsAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
     final taxRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
     final bondRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
     final taxCount = taxRowsAsync.valueOrNull?.length;
@@ -76,12 +80,13 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         ),
                         onPressed: () {
                           ref.invalidate(issuanceRequestRowsProvider(_domain));
+                          ref.invalidate(issuanceCompletedRowsProvider(_domain));
                           ref.invalidate(issuanceRequestBadgeCountProvider);
                         },
                         icon: const Icon(Icons.refresh_rounded, size: 18),
                       ),
                       const SizedBox(width: 6),
-                      rowsAsync.when(
+                      pendingRowsAsync.when(
                         data: (rows) => Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
@@ -89,7 +94,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Text(
-                            '${rows.length}건',
+                            '${rows.length + (completedRowsAsync.valueOrNull?.length ?? 0)}건',
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
                           ),
                         ),
@@ -112,7 +117,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                           count: taxCount,
                           selected: _domain == IssuanceDomain.taxInvoice,
                           accent: accent,
-                          onTap: () => setState(() => _domain = IssuanceDomain.taxInvoice),
+                          onTap: () => setState(() {
+                            _domain = IssuanceDomain.taxInvoice;
+                            _selectedAssignee = '전체';
+                          }),
                         ),
                         const SizedBox(width: 6),
                         _buildDomainTabButton(
@@ -120,7 +128,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                           count: bondCount,
                           selected: _domain == IssuanceDomain.performanceBond,
                           accent: accent,
-                          onTap: () => setState(() => _domain = IssuanceDomain.performanceBond),
+                          onTap: () => setState(() {
+                            _domain = IssuanceDomain.performanceBond;
+                            _selectedAssignee = '전체';
+                          }),
                         ),
                       ],
                     ),
@@ -146,7 +157,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               ),
             ),
           ),
-          Expanded(child: _buildBody(scheme, rowsAsync)),
+          Expanded(child: _buildBody(scheme, pendingRowsAsync, completedRowsAsync)),
         ],
       ),
     );
@@ -163,12 +174,18 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       setState(() => _domain = selected);
       ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
       ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
+      ref.invalidate(issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice));
+      ref.invalidate(issuanceCompletedRowsProvider(IssuanceDomain.performanceBond));
       ref.invalidate(issuanceRequestBadgeCountProvider);
     }
   }
 
-  Widget _buildBody(ColorScheme scheme, AsyncValue<List<IssuanceRequestRow>> rowsAsync) {
-    return rowsAsync.when(
+  Widget _buildBody(
+    ColorScheme scheme,
+    AsyncValue<List<IssuanceRequestRow>> pendingRowsAsync,
+    AsyncValue<List<IssuanceRequestRow>> completedRowsAsync,
+  ) {
+    return pendingRowsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(
         child: Padding(
@@ -187,7 +204,14 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
           ),
         ),
       ),
-      data: (rows) {
+      data: (pendingRows) {
+        final completedRows = completedRowsAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+        final rows = switch (_statusFilter) {
+          _IssuanceStatusFilter.pending => pendingRows,
+          _IssuanceStatusFilter.completed => completedRows,
+          _IssuanceStatusFilter.all => [...pendingRows, ...completedRows]..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
+        };
+        final allCount = pendingRows.length + completedRows.length;
         final userName = ref.watch(authControllerProvider)?.name?.trim();
         final counts = <String, int>{'전체': rows.length};
         for (final row in rows) {
@@ -219,7 +243,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             return a.compareTo(b);
           });
 
-        if (rows.isEmpty) {
+        if (allCount == 0) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(28),
@@ -233,7 +257,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    '현재 발급요청 대기 건이 없습니다.',
+                    '현재 발급요청 건이 없습니다.',
                     style: TextStyle(
                       color: scheme.onSurfaceVariant,
                       fontWeight: FontWeight.w700,
@@ -253,8 +277,51 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             ),
           );
         }
+        final statusTabs = [
+          (_IssuanceStatusFilter.pending, '발급대기', pendingRows.length),
+          (_IssuanceStatusFilter.completed, '발급완료', completedRows.length),
+          (_IssuanceStatusFilter.all, '전체', allCount),
+        ];
+
         return Column(
           children: [
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: statusTabs.map((entry) {
+                  final isSelected = _statusFilter == entry.$1;
+                  return Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _statusFilter = entry.$1),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? scheme.primary.withValues(alpha: 0.14) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${entry.$2}(${entry.$3})',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
             Container(
               height: 42,
               margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -322,7 +389,8 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   }
 
   void _showRequestDetail(IssuanceRequestRow row) {
-    String statusLabel(String raw) {
+    String statusLabel(String raw, {required bool isCompleted}) {
+      if (isCompleted) return '완료';
       switch (raw.trim().toLowerCase()) {
         case 'pending':
           return '대기';
@@ -349,6 +417,24 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       final source = from ?? master;
       final value = (source[key] ?? '').toString().trim();
       return value.isEmpty ? '-' : value;
+    }
+
+    String formatWon(String raw) {
+      final normalized = raw.trim();
+      if (normalized.isEmpty || normalized == '-') return '-';
+      final digitsOnly = normalized.replaceAll(RegExp(r'[^0-9\.\-]'), '');
+      if (digitsOnly.isEmpty) return '-';
+      final parsed = num.tryParse(digitsOnly);
+      if (parsed == null) return raw.isEmpty ? '-' : raw;
+      final amount = parsed.round();
+      final s = amount.toString();
+      final chars = <String>[];
+      for (int i = 0; i < s.length; i++) {
+        final idx = s.length - i;
+        chars.add(s[i]);
+        if (idx > 1 && idx % 3 == 1) chars.add(',');
+      }
+      return '${chars.join()}원';
     }
 
     Widget kv(String label, String value) {
@@ -385,19 +471,19 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
     final details = <Widget>[
       kv('요청 구분', isTax ? '세금계산서' : '이행증권'),
-      kv('상태', statusLabel(textOf('status'))),
+      kv('상태', statusLabel(textOf('status'), isCompleted: row.isCompleted)),
       kv('요청일', row.createdAtText),
       kv('요청자', textOf('requester')),
       if (isTax) ...[
         kv('고객명', textOf('customer_name')),
         kv('품목명', textOf('item_name')),
-        kv('총액', textOf('total_amount')),
+        kv('총액', formatWon(textOf('total_amount'))),
         kv('발행 퍼센트', '${textOf('percentage')}%'),
         kv('지사', textOf('branch')),
       ] else ...[
         kv('업체명', textOf('company_name')),
         kv('증권 종류', textOf('bond_type')),
-        kv('계약금액', textOf('contract_amount')),
+        kv('계약금액', formatWon(textOf('contract_amount'))),
         kv('보증금율', '${textOf('guarantee_rate')}%'),
         kv('보증기간', '${textOf('guarantee_period')}년'),
       ],
@@ -525,7 +611,8 @@ class _IssuanceRequestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     String textOf(String key) => (row.master[key] ?? '').toString().trim();
-    String statusLabel(String raw) {
+    String statusLabel(String raw, {required bool isCompleted}) {
+      if (isCompleted) return '완료';
       switch (raw.trim().toLowerCase()) {
         case 'pending':
           return '대기';
@@ -543,9 +630,14 @@ class _IssuanceRequestCard extends StatelessWidget {
     }
 
     String formatWon(String raw) {
-      final num = int.tryParse(raw.replaceAll(',', ''));
-      if (num == null) return raw.isEmpty ? '-' : raw;
-      final s = num.toString();
+      final normalized = raw.trim();
+      if (normalized.isEmpty || normalized == '-') return '-';
+      final digitsOnly = normalized.replaceAll(RegExp(r'[^0-9\.\-]'), '');
+      if (digitsOnly.isEmpty) return '-';
+      final parsed = num.tryParse(digitsOnly);
+      if (parsed == null) return raw.isEmpty ? '-' : raw;
+      final amount = parsed.round();
+      final s = amount.toString();
       final chars = <String>[];
       for (int i = 0; i < s.length; i++) {
         final idx = s.length - i;
@@ -575,11 +667,13 @@ class _IssuanceRequestCard extends StatelessWidget {
         : (textOf('company_name').isEmpty ? row.title : textOf('company_name'));
     final displayTitle = compactTitle(title);
     final assignee = (textOf('requester').isEmpty ? textOf('created_by') : textOf('requester'));
-    final status = statusLabel(textOf('status'));
+    final status = statusLabel(textOf('status'), isCompleted: row.isCompleted);
     final extra = isTax
         ? '품목: ${textOf('item_name').isEmpty ? '-' : textOf('item_name')} · 총액: ${formatWon(textOf('total_amount'))}'
         : '종류: ${textOf('bond_type').isEmpty ? '-' : textOf('bond_type')} · 계약금액: ${formatWon(textOf('contract_amount'))}';
-    final requestStepText = row.issue == null ? '요청 접수' : '요청 진행';
+    final requestStepText = row.isCompleted
+        ? '발급 완료'
+        : (row.issue == null ? '요청 접수' : '요청 진행');
     final isUrgent = (row.issue?['is_urgent'] ?? false) == true;
 
     Color statusColor(String status) {
@@ -735,7 +829,7 @@ class _IssuanceRequestCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (row.issue == null) ...[
+              if (!row.isCompleted && row.issue == null) ...[
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

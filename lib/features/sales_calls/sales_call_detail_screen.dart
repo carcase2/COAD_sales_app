@@ -839,8 +839,81 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
-  Widget _buildHistoryCard(Map<String, dynamic> h, ColorScheme scheme) {
+  String? _firstNonEmptyDate(dynamic value) {
+    final s = (value ?? '').toString().trim();
+    if (s.isEmpty || s == 'null' || s == '-') return null;
+    return s;
+  }
+
+  String? _scheduledDateFromMap(Map<String, dynamic> h) {
+    return _firstNonEmptyDate(h['scheduled_date']) ??
+        _firstNonEmptyDate(h['next_scheduled_date']) ??
+        _firstNonEmptyDate(h['expected_date']) ??
+        _firstNonEmptyDate(h['planned_date']) ??
+        _firstNonEmptyDate(h['target_date']);
+  }
+
+  String? _resolveScheduledDateForHistory(List<Map<String, dynamic>> history, int index) {
+    // 각 차수 카드에서 "다음 차수 예정일"을 표시하기 위해 현재 이력의 예정일 값을 사용.
+    return _scheduledDateFromMap(history[index]);
+  }
+
+  int? _stageNumber(Map<String, dynamic> h) {
+    final raw = (h['call_stage'] ?? h['stage'] ?? '').toString();
+    final m = RegExp(r'(\d+)').firstMatch(raw);
+    if (m == null) return null;
+    return int.tryParse(m.group(1)!);
+  }
+
+  String? _resolveScheduledDateForStage(List<Map<String, dynamic>> history, int stage) {
+    if (stage <= 1) return null;
+    final prevStage = stage - 1;
+    for (final item in history) {
+      if (_stageNumber(item) != prevStage) continue;
+      final scheduled = _scheduledDateFromMap(item);
+      if (scheduled != null) return scheduled;
+    }
+    return null;
+  }
+
+  int? _diffDaysBetween(String? scheduledRaw, String? actualRaw) {
+    if (scheduledRaw == null || actualRaw == null) return null;
+    DateTime? parseYmdOnly(String raw) {
+      final src = raw.trim();
+      if (src.isEmpty) return null;
+      final m = RegExp(r'(\d{4})-(\d{2})-(\d{2})').firstMatch(src);
+      if (m == null) return null;
+      final y = int.tryParse(m.group(1)!);
+      final mo = int.tryParse(m.group(2)!);
+      final d = int.tryParse(m.group(3)!);
+      if (y == null || mo == null || d == null) return null;
+      return DateTime(y, mo, d);
+    }
+
+    final scheduled = parseYmdOnly(scheduledRaw);
+    final actual = parseYmdOnly(actualRaw);
+    if (scheduled == null || actual == null) return null;
+    return actual.difference(scheduled).inDays;
+  }
+
+  Widget _buildHistoryCard(
+    List<Map<String, dynamic>> history,
+    int index,
+    ColorScheme scheme,
+  ) {
+    final h = history[index];
     final content = (h['consultation_content'] ?? h['consultation_result'] ?? h['content'] ?? h['note'] ?? h['memo'] ?? '').toString();
+    final actualRaw = _firstNonEmptyDate(h['call_date']) ?? _firstNonEmptyDate(h['created_at']);
+    final actualDate = formatSeoulDate(actualRaw);
+    final scheduledRaw = _resolveScheduledDateForHistory(history, index);
+    final scheduledDate = scheduledRaw == null ? '없음' : formatSeoulDate(scheduledRaw);
+    final stageNum = int.tryParse((h['call_stage'] ?? '').toString());
+    final scheduledForCurrentStage = stageNum == null ? null : _resolveScheduledDateForStage(history, stageNum);
+    final diffDays = _diffDaysBetween(scheduledForCurrentStage, actualRaw);
+    final currentStageLabel = stageNum == null ? ((h['stage'] ?? '기록').toString()) : '${stageNum}차';
+    final scheduledStageLabel = stageNum == null ? '다음차수 예정일' : '${stageNum + 1}차 예정일';
+    final showScheduledLine = scheduledRaw != null;
+    final showDiffLine = stageNum != null && stageNum > 1 && diffDays != null;
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -856,6 +929,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
@@ -872,9 +946,53 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                     ),
                   ],
                 ),
-                Text(
-                  formatSeoulDate(h['call_date'] ?? h['created_at']),
-                  style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (showScheduledLine) ...[
+                        Text(
+                          '$scheduledStageLabel: $scheduledDate',
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                      Text(
+                        '$currentStageLabel 통화일: $actualDate',
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (showDiffLine) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '${stageNum}차 예정일 대비 ${diffDays! >= 0 ? '+' : ''}$diffDays일',
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: diffDays == 0
+                                ? scheme.primary
+                                : (diffDays > 0 ? scheme.error : Colors.teal.shade700),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -948,7 +1066,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             itemBuilder: (context, index) {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: _buildHistoryCard(history[index], scheme),
+                child: _buildHistoryCard(history, index, scheme),
               );
             },
           ),

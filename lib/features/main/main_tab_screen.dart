@@ -53,6 +53,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   final ScrollController _quickActionsScrollCtrl = ScrollController();
   bool _quickHasMoreAbove = false;
   bool _quickHasMoreBelow = false;
+  Timer? _issuanceCompletionWatchTimer;
 
   @override
   void initState() {
@@ -68,6 +69,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       unawaited(ref.read(rankingCallsProvider.future));
     });
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startIssuanceCompletionWatcher();
+    });
+
     // 2. Sync FCM token with Supabase for the current user
     final user = ref.read(authControllerProvider);
     if (user != null) {
@@ -78,8 +83,68 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
   @override
   void dispose() {
+    _issuanceCompletionWatchTimer?.cancel();
     _quickActionsScrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _startIssuanceCompletionWatcher() {
+    _issuanceCompletionWatchTimer?.cancel();
+    unawaited(_checkIssuanceCompletionAndNotify());
+    _issuanceCompletionWatchTimer = Timer.periodic(
+      const Duration(seconds: 70),
+      (_) => unawaited(_checkIssuanceCompletionAndNotify()),
+    );
+  }
+
+  Future<void> _checkIssuanceCompletionAndNotify() async {
+    try {
+      final prefs = ref.read(appDependenciesProvider).prefs;
+      const initKey = 'issuance_completion_watch_initialized_v1';
+      const seenKey = 'issuance_completion_seen_keys_v1';
+
+      final taxCompleted = await ref.read(issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice).future);
+      final bondCompleted = await ref.read(issuanceCompletedRowsProvider(IssuanceDomain.performanceBond).future);
+      final allCompleted = [...taxCompleted, ...bondCompleted];
+
+      String rowKey(IssuanceRequestRow row) {
+        final masterId = (row.master['id'] ?? '').toString();
+        final issueId = (row.issue?['id'] ?? '').toString();
+        return '${row.domain.name}:$masterId:$issueId';
+      }
+
+      final currentKeys = allCompleted.map(rowKey).toSet();
+      final seenKeys = (prefs.getStringList(seenKey) ?? const <String>[]).toSet();
+      final initialized = prefs.getBool(initKey) ?? false;
+
+      if (!initialized) {
+        await prefs.setBool(initKey, true);
+        await prefs.setStringList(seenKey, currentKeys.toList());
+        return;
+      }
+
+      final newKeys = currentKeys.difference(seenKeys);
+      if (newKeys.isEmpty) return;
+
+      for (final row in allCompleted) {
+        final key = rowKey(row);
+        if (!newKeys.contains(key)) continue;
+        final isTax = row.domain == IssuanceDomain.taxInvoice;
+        final title = isTax ? '세금계산서 발급 완료' : '이행증권 발급 완료';
+        final name = isTax
+            ? (row.master['customer_name'] ?? row.master['company_name'] ?? '요청 건').toString()
+            : (row.master['company_name'] ?? row.master['site_name'] ?? '요청 건').toString();
+        await NotificationService.showIssuanceCompletedAlert(
+          title: title,
+          body: '$name 건이 발급 완료되었습니다.',
+        );
+      }
+
+      final merged = seenKeys.union(currentKeys).toList();
+      await prefs.setStringList(seenKey, merged);
+    } catch (_) {
+      // 감시 실패 시 UI 영향 없이 다음 주기에 재시도
+    }
   }
 
   void _onTabSelected(int index) {

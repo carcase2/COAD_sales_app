@@ -23,6 +23,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+  static const String _androidChannelId = 'high_importance_channel';
+  static const String _androidChannelName = 'High Importance Notifications';
+  static const String _androidChannelDescription = 'This channel is used for important notifications.';
 
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -80,9 +83,9 @@ class NotificationService {
 
     // 5. Create Notification Channel for Android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'high_importance_channel',
-      'High Importance Notifications',
-      description: 'This channel is used for important notifications.',
+      _androidChannelId,
+      _androidChannelName,
+      description: _androidChannelDescription,
       importance: Importance.max,
     );
 
@@ -359,5 +362,25 @@ class NotificationService {
         }
       }
     });
+  }
+
+  static Future<void> showIssuanceCompletedAlert({
+    required String title,
+    required String body,
+  }) async {
+    await _localNotifications.show(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _androidChannelId,
+          _androidChannelName,
+          channelDescription: _androidChannelDescription,
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+    );
   }
 }

@@ -8,11 +8,13 @@ class IssuanceRequestRow {
     required this.master,
     required this.issue,
     required this.domain,
+    required this.isCompleted,
   });
 
   final Map<String, dynamic> master;
   final Map<String, dynamic>? issue;
   final IssuanceDomain domain;
+  final bool isCompleted;
 
   DateTime get createdAt {
     final raw = issue?['created_at'] ?? master['created_at'];
@@ -62,13 +64,16 @@ class IssuanceRequestRow {
 class IssuanceRequestService {
   SupabaseClient get _client => Supabase.instance.client;
 
-  Future<List<IssuanceRequestRow>> fetchRows(IssuanceDomain domain) async {
+  Future<List<IssuanceRequestRow>> fetchRows(
+    IssuanceDomain domain, {
+    bool completedOnly = false,
+  }) async {
     return domain == IssuanceDomain.taxInvoice
-        ? _fetchTaxInvoiceRequests()
-        : _fetchPerformanceBondRequests();
+        ? _fetchTaxInvoiceRequests(completedOnly: completedOnly)
+        : _fetchPerformanceBondRequests(completedOnly: completedOnly);
   }
 
-  Future<List<IssuanceRequestRow>> _fetchTaxInvoiceRequests() async {
+  Future<List<IssuanceRequestRow>> _fetchTaxInvoiceRequests({required bool completedOnly}) async {
     final invoicesRes = await _client.from('tax_invoices').select();
     final invoices = List<Map<String, dynamic>>.from(invoicesRes);
     if (invoices.isEmpty) return [];
@@ -90,21 +95,54 @@ class IssuanceRequestService {
     for (final invoice in invoices) {
       final invoiceIssues = issuesByInvoiceId[invoice['id']] ?? const <Map<String, dynamic>>[];
       final hasIssuedIssue = invoiceIssues.any((e) => _hasText(e['invoice_image_url']));
-      if (hasIssuedIssue) continue;
+      final issuedIssues = invoiceIssues.where((e) => _hasText(e['invoice_image_url'])).toList();
 
       final unissuedIssues = invoiceIssues.where((e) => !_hasText(e['invoice_image_url'])).toList();
+      final percentage = _toNum(invoice['percentage']);
+      final legacyCompleted = _hasText(invoice['invoice_image_url']) && percentage >= 100;
+      final statusRaw = (invoice['status'] ?? '').toString().toLowerCase();
+      final completedByStatus = statusRaw == 'completed' || statusRaw == 'complete';
+      final isCompleted = hasIssuedIssue || legacyCompleted || completedByStatus;
+
+      if (completedOnly) {
+        if (!isCompleted) continue;
+        issuedIssues.sort((a, b) => _toDateTime(b['created_at']).compareTo(_toDateTime(a['created_at'])));
+        final latestIssued = issuedIssues.isNotEmpty ? issuedIssues.first : null;
+        rows.add(
+          IssuanceRequestRow(
+            master: invoice,
+            issue: latestIssued,
+            domain: IssuanceDomain.taxInvoice,
+            isCompleted: true,
+          ),
+        );
+        continue;
+      }
+
+      if (isCompleted) continue;
       if (unissuedIssues.isNotEmpty) {
         for (final issue in unissuedIssues) {
-          rows.add(IssuanceRequestRow(master: invoice, issue: issue, domain: IssuanceDomain.taxInvoice));
+          rows.add(
+            IssuanceRequestRow(
+              master: invoice,
+              issue: issue,
+              domain: IssuanceDomain.taxInvoice,
+              isCompleted: false,
+            ),
+          );
         }
         continue;
       }
 
-      final percentage = _toNum(invoice['percentage']);
-      final legacyCompleted = _hasText(invoice['invoice_image_url']) && percentage >= 100;
-      if (legacyCompleted) continue;
       if ((invoice['status'] ?? '').toString() == 'pending') {
-        rows.add(IssuanceRequestRow(master: invoice, issue: null, domain: IssuanceDomain.taxInvoice));
+        rows.add(
+          IssuanceRequestRow(
+            master: invoice,
+            issue: null,
+            domain: IssuanceDomain.taxInvoice,
+            isCompleted: false,
+          ),
+        );
       }
     }
 
@@ -112,8 +150,8 @@ class IssuanceRequestService {
     return rows;
   }
 
-  Future<List<IssuanceRequestRow>> _fetchPerformanceBondRequests() async {
-    final bondsRes = await _client.from('performance_bonds').select().inFilter('status', ['pending', 'draft']);
+  Future<List<IssuanceRequestRow>> _fetchPerformanceBondRequests({required bool completedOnly}) async {
+    final bondsRes = await _client.from('performance_bonds').select();
     final bonds = List<Map<String, dynamic>>.from(bondsRes);
     if (bonds.isEmpty) return [];
 
@@ -134,15 +172,48 @@ class IssuanceRequestService {
     for (final bond in bonds) {
       final bondIssues = issuesByBondId[bond['id']] ?? const <Map<String, dynamic>>[];
       final hasIssuedIssue = bondIssues.any((e) => _hasText(e['bond_image_url']));
+      final issuedIssues = bondIssues.where((e) => _hasText(e['bond_image_url'])).toList();
       final issuedAtMaster = _hasText(bond['bond_image_url']);
-      if (hasIssuedIssue || issuedAtMaster) continue;
+      final statusRaw = (bond['status'] ?? '').toString().toLowerCase();
+      final completedByStatus = statusRaw == 'completed' || statusRaw == 'complete';
+      final isCompleted = hasIssuedIssue || issuedAtMaster || completedByStatus;
 
       final unissuedIssues = bondIssues.where((e) => !_hasText(e['bond_image_url'])).toList();
+      if (completedOnly) {
+        if (!isCompleted) continue;
+        issuedIssues.sort((a, b) => _toDateTime(b['created_at']).compareTo(_toDateTime(a['created_at'])));
+        final latestIssued = issuedIssues.isNotEmpty ? issuedIssues.first : null;
+        rows.add(
+          IssuanceRequestRow(
+            master: bond,
+            issue: latestIssued,
+            domain: IssuanceDomain.performanceBond,
+            isCompleted: true,
+          ),
+        );
+        continue;
+      }
+
+      if (isCompleted) continue;
       if (unissuedIssues.isEmpty) {
-        rows.add(IssuanceRequestRow(master: bond, issue: null, domain: IssuanceDomain.performanceBond));
+        rows.add(
+          IssuanceRequestRow(
+            master: bond,
+            issue: null,
+            domain: IssuanceDomain.performanceBond,
+            isCompleted: false,
+          ),
+        );
       } else {
         for (final issue in unissuedIssues) {
-          rows.add(IssuanceRequestRow(master: bond, issue: issue, domain: IssuanceDomain.performanceBond));
+          rows.add(
+            IssuanceRequestRow(
+              master: bond,
+              issue: issue,
+              domain: IssuanceDomain.performanceBond,
+              isCompleted: false,
+            ),
+          );
         }
       }
     }
@@ -157,6 +228,10 @@ class IssuanceRequestService {
     if (value is num) return value;
     return num.tryParse((value ?? '').toString()) ?? 0;
   }
+
+  DateTime _toDateTime(dynamic value) {
+    return DateTime.tryParse((value ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
 }
 
 final issuanceRequestServiceProvider = Provider<IssuanceRequestService>((ref) {
@@ -164,7 +239,11 @@ final issuanceRequestServiceProvider = Provider<IssuanceRequestService>((ref) {
 });
 
 final issuanceRequestRowsProvider = FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((ref, domain) async {
-  return ref.read(issuanceRequestServiceProvider).fetchRows(domain);
+  return ref.read(issuanceRequestServiceProvider).fetchRows(domain, completedOnly: false);
+});
+
+final issuanceCompletedRowsProvider = FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((ref, domain) async {
+  return ref.read(issuanceRequestServiceProvider).fetchRows(domain, completedOnly: true);
 });
 
 // 배지 기준 통일: 탭(all-scan 필터) 결과 개수 합계를 그대로 사용
