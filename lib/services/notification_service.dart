@@ -30,6 +30,10 @@ class NotificationService {
   /// Cold start payload cache. [MainTabScreen] calls [handleInitialMessage] after login.
   static Map<String, dynamic>? _pendingMessageData;
 
+  static void _queuePendingData(Map<String, dynamic> data) {
+    _pendingMessageData = data;
+  }
+
   static Future<void> init() async {
     // 1. Initialize Firebase Messaging
     await FirebaseMessaging.instance.requestPermission(
@@ -64,6 +68,15 @@ class NotificationService {
         }
       },
     );
+
+    // 앱이 "로컬 알림 탭"으로 시작된 경우(종료 상태)도 누락 없이 처리.
+    final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
+    final launchPayload = launchDetails?.notificationResponse?.payload;
+    if (launchDetails?.didNotificationLaunchApp == true &&
+        launchPayload != null &&
+        launchPayload.isNotEmpty) {
+      _handleNotificationClick(launchPayload);
+    }
 
     // 5. Create Notification Channel for Android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -151,6 +164,23 @@ class NotificationService {
         if (n != null) return n;
       }
     }
+    // 일부 전송 경로는 data가 JSON 문자열로 한 단계 더 감싸질 수 있음.
+    final rawNested = data['data'];
+    if (rawNested is String && rawNested.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawNested);
+        if (decoded is Map<String, dynamic>) {
+          return _extractCallIdFromData(decoded);
+        }
+        if (decoded is Map) {
+          return _extractCallIdFromData(
+            decoded.map((key, value) => MapEntry('$key', value)),
+          );
+        }
+      } catch (_) {
+        // ignore malformed nested data
+      }
+    }
     return null;
   }
 
@@ -204,17 +234,17 @@ class NotificationService {
   static Future<void> _openUpdateFlow(Map<String, dynamic> data) async {
     final ctx = navigatorKey.currentContext;
     if (ctx == null) {
-      _pendingMessageData = data;
+      _queuePendingData(data);
       return;
     }
     try {
       final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
       if (user == null) {
-        _pendingMessageData = data;
+        _queuePendingData(data);
         return;
       }
     } catch (_) {
-      _pendingMessageData = data;
+      _queuePendingData(data);
       return;
     }
     final storeUrl = (data['store_url'] ?? '').toString().trim();
@@ -232,11 +262,11 @@ class NotificationService {
       try {
         final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
         if (user == null) {
-          _pendingMessageData = {'type': 'sales_call', 'call_id': id};
+          _queuePendingData({'type': 'sales_call', 'call_id': id});
           return;
         }
       } catch (_) {
-        _pendingMessageData = {'type': 'sales_call', 'call_id': id};
+        _queuePendingData({'type': 'sales_call', 'call_id': id});
         return;
       }
     }
@@ -276,9 +306,11 @@ class NotificationService {
     if (attempt < 30) {
       final ms = 30 + attempt * 25;
       Future<void>.delayed(Duration(milliseconds: ms), () => _pushDetailRoute(id, attempt: attempt + 1));
-    } else if (kDebugMode) {
-      print('[FCM] NavigatorState still null after retries; keeping pending payload');
-      _pendingMessageData = {'type': 'sales_call', 'call_id': id};
+    } else {
+      if (kDebugMode) {
+        print('[FCM] NavigatorState still null after retries; keeping pending payload');
+      }
+      _queuePendingData({'type': 'sales_call', 'call_id': id});
     }
   }
 

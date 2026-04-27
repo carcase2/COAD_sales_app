@@ -17,20 +17,31 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   late ScrollController _scrollController;
   bool _isBottomBarVisible = true;
+  static const int _followPickerFetchLimit = 1000;
 
   Future<void> _openTodayFollowPicker() async {
     final repo = ref.read(salesCallsRepositoryProvider);
-    final rows = await repo.fetchCalls(
-      followDate: todayYmdSeoul(),
-      incompleteOnly: true,
-      excludeSimpleInquiries: true,
-      limit: 1000,
-      includeCallHistory: false,
-    );
+    List<dynamic> rows;
+    try {
+      rows = await repo.fetchCalls(
+        followDate: todayYmdSeoul(),
+        incompleteOnly: true,
+        excludeSimpleInquiries: true,
+        limit: _followPickerFetchLimit,
+        includeCallHistory: false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('팔로우 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')),
+      );
+      return;
+    }
 
     if (!mounted) return;
 
     final Map<String, int> counts = {'전체': rows.length};
+    final isTruncated = rows.length >= _followPickerFetchLimit;
     for (final row in rows) {
       final assignee = (row.assignedTo == null || row.assignedTo!.isEmpty) ? '미지정' : row.assignedTo!;
       counts[assignee] = (counts[assignee] ?? 0) + 1;
@@ -79,6 +90,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+                if (isTruncated) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '상위 $_followPickerFetchLimit건 기준으로 집계됩니다.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.error.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
@@ -328,6 +350,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           )
         else
           Container(
+            padding: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
               color: scheme.surface,
               borderRadius: BorderRadius.circular(14),
@@ -390,6 +413,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 10),
               ],
             ),
           ),
@@ -522,6 +546,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             _openTodayFollowPicker();
                           },
                         ),
+                        const SizedBox(height: 24),
                         _buildTwinAssigneeColumns(
                           scheme: scheme,
                           incompleteAsync: incompleteOverviewAsync,
@@ -605,7 +630,7 @@ class _MiniStatsWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
       decoration: BoxDecoration(
         color: scheme.primaryContainer.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
