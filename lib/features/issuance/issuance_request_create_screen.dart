@@ -387,6 +387,10 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
   @override
   Widget build(BuildContext context) {
     final isTax = _domain == IssuanceDomain.taxInvoice;
+    final taxRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
+    final bondRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
+    final taxCount = taxRowsAsync.valueOrNull?.length;
+    final bondCount = bondRowsAsync.valueOrNull?.length;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
     final scheme = Theme.of(context).colorScheme;
     final safeBottom = MediaQuery.paddingOf(context).bottom;
@@ -537,9 +541,21 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: SegmentedButton<IssuanceDomain>(
-                    segments: const [
-                      ButtonSegment(value: IssuanceDomain.taxInvoice, label: Text('세금계산서')),
-                      ButtonSegment(value: IssuanceDomain.performanceBond, label: Text('이행증권')),
+                    segments: [
+                      ButtonSegment(
+                        value: IssuanceDomain.taxInvoice,
+                        label: _buildDomainSegmentLabel(
+                          title: '세금계산서',
+                          count: taxCount,
+                        ),
+                      ),
+                      ButtonSegment(
+                        value: IssuanceDomain.performanceBond,
+                        label: _buildDomainSegmentLabel(
+                          title: '이행증권',
+                          count: bondCount,
+                        ),
+                      ),
                     ],
                     selected: {_domain},
                     onSelectionChanged: (v) => setState(() => _domain = v.first),
@@ -1089,6 +1105,34 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
         color: selected ? selectedFg : Colors.black87,
       ),
       onSelected: (_) => onTap(),
+    );
+  }
+
+  Widget _buildDomainSegmentLabel({
+    required String title,
+    required int? count,
+  }) {
+    final countText = count == null ? '…' : '$count';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            countText,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

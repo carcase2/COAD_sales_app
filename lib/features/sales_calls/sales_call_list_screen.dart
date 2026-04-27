@@ -3,7 +3,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
@@ -292,8 +292,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           setState(() => _quickActionsOpen = false);
           _refreshQuickHints();
           await Navigator.of(context).push(
-            MaterialPageRoute<bool>(
-              builder: (_) => const IssuanceRequestCreateScreen(initialDomain: IssuanceDomain.taxInvoice),
+            MaterialPageRoute<void>(
+              builder: (_) => const IssuanceRequestScreen(),
             ),
           );
         },

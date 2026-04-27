@@ -630,7 +630,7 @@ class _MiniStatsWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
       decoration: BoxDecoration(
         color: scheme.primaryContainer.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
@@ -643,7 +643,7 @@ class _MiniStatsWidget extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               onTap: onTapToday,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 2),
                 child: _StatItem(label: '금일 접수', value: today.toString(), color: scheme.primary),
               ),
             ),
@@ -654,7 +654,7 @@ class _MiniStatsWidget extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               onTap: onTapIncomplete,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 2),
                 child: _StatItem(label: '금일 미통화', value: incomplete.toString(), color: scheme.error),
               ),
             ),
@@ -665,7 +665,7 @@ class _MiniStatsWidget extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               onTap: onTapTodayFollow,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 2),
                 child: _StatItem(label: '달력 오늘 팔로우', value: todayFollow.toString(), color: Colors.deepPurple),
               ),
             ),
@@ -688,12 +688,12 @@ class _StatItem extends StatelessWidget {
       children: [
         Text(
           value,
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: color, letterSpacing: -1),
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color, letterSpacing: -1),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           label,
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color.withValues(alpha: 0.6)),
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: color.withValues(alpha: 0.6)),
         ),
       ],
     );

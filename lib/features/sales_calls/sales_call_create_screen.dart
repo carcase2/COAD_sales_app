@@ -5,7 +5,7 @@ import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
@@ -507,10 +507,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                       color: Colors.indigo.shade600,
                       onTap: () async {
                         await Navigator.of(context).push(
-                          MaterialPageRoute<bool>(
-                            builder: (_) => const IssuanceRequestCreateScreen(
-                              initialDomain: IssuanceDomain.taxInvoice,
-                            ),
+                          MaterialPageRoute<void>(
+                            builder: (_) => const IssuanceRequestScreen(),
                           ),
                         );
                       },

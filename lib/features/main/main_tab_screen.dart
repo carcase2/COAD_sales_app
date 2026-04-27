@@ -184,13 +184,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           setState(() => _quickActionsOpen = false);
           _refreshQuickHints();
           _onTabSelected(3);
-          await Navigator.of(context).push(
-            MaterialPageRoute<bool>(
-              builder: (_) => const IssuanceRequestCreateScreen(
-                initialDomain: IssuanceDomain.taxInvoice,
-              ),
-            ),
-          );
         },
       ),
       _QuickActionItem(

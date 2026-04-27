@@ -5,7 +5,7 @@ import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/data/shutter_repository.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
@@ -470,10 +470,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         icon: Icons.receipt_long_rounded,
         onTap: () async {
           await Navigator.of(context).push(
-            MaterialPageRoute<bool>(
-              builder: (_) => const IssuanceRequestCreateScreen(
-                initialDomain: IssuanceDomain.taxInvoice,
-              ),
+            MaterialPageRoute<void>(
+              builder: (_) => const IssuanceRequestScreen(),
             ),
           );
         },
