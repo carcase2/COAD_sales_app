@@ -165,6 +165,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       ref.invalidate(todayFollowOverviewProvider);
       ref.invalidate(todayIncompleteOverviewProvider);
       ref.invalidate(rankingCallsProvider);
+      ref.invalidate(calendarFollowCallsProvider);
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(

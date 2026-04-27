@@ -91,6 +91,18 @@ final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   return repo.fetchCalls(limit: 1000, includeCallHistory: false);
 });
 
+/// 달력 탭 전용 원본 데이터.
+/// 홈/목록의 날짜 팔로우 기준과 맞추기 위해 `미종료 + 단순문의 제외`를 동일 적용한다.
+/// (기존 `rankingCallsProvider`는 최근 1000건이라 월/주 집계에서 누락이 발생할 수 있음)
+final calendarFollowCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  return repo.fetchCalls(
+    incompleteOnly: true,
+    excludeSimpleInquiries: true,
+    includeCallHistory: false,
+  );
+});
+
 final bottomBarVisibilityProvider = StateProvider<bool>((ref) => true);
 
 /// 메인 화면의 Scaffold를 제어하기 위한 Key (드로어 열기 등)

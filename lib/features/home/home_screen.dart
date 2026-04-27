@@ -1076,7 +1076,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
   @override
   Widget build(BuildContext context) {
-    final asyncCalls = ref.watch(rankingCallsProvider);
+    final asyncCalls = ref.watch(calendarFollowCallsProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return asyncCalls.when(
@@ -1193,8 +1193,8 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
         return RefreshIndicator(
           onRefresh: () async {
-            ref.invalidate(rankingCallsProvider);
-            await ref.read(rankingCallsProvider.future);
+            ref.invalidate(calendarFollowCallsProvider);
+            await ref.read(calendarFollowCallsProvider.future);
           },
           child: ListView(
             controller: widget.scrollController,

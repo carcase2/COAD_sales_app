@@ -285,6 +285,7 @@ class NotificationService {
       container.invalidate(todayFollowOverviewProvider);
       container.invalidate(todayIncompleteOverviewProvider);
       container.invalidate(rankingCallsProvider);
+      container.invalidate(calendarFollowCallsProvider);
     } catch (_) {
       // ProviderScope 미연결(테스트 등) 시 무시
     }
