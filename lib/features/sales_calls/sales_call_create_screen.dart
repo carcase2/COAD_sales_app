@@ -15,6 +15,7 @@ import 'package:coad_customer_calls/features/sales_calls/master_data_provider.da
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
+import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
@@ -23,6 +24,7 @@ import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // -- New Global State for Selections --
 // We keep them in the state class
@@ -158,6 +160,33 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       }
 
       final created = await ref.read(salesCallsRepositoryProvider).createCall(body);
+      await NotificationService.showSalesCallRegisteredAlert(
+        customerName: created.customerName ?? '',
+        phone: created.customerPhone ?? '',
+      );
+      // 백엔드 트리거가 누락된 환경에서도 새 통화 푸시가 가도록 Edge Function을 직접 호출
+      try {
+        final res = await Supabase.instance.client.functions.invoke(
+          'notify-new-call',
+          body: {
+            'type': 'INSERT',
+            'record': {
+              'id': created.id,
+              'customer_name': created.customerName,
+              'customer_phone': created.customerPhone,
+              'inquiry_content': created.inquiryContent,
+              'product_category_id': created.productCategoryId,
+              'region_sido': created.regionSido,
+              'region_name': created.regionName,
+              'assigned_to': created.assignedTo,
+            },
+          },
+        );
+        debugPrint('[notify-new-call] success status=${res.status} data=${res.data}');
+      } catch (_) {
+        debugPrint('[notify-new-call] failed (function invoke error)');
+        // 푸시 실패가 접수 저장 흐름을 막지 않도록 무시
+      }
       
       // 홈 화면 데이터 무기본화(새로고침 예약)
       ref.invalidate(todayStatsProvider);

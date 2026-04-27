@@ -383,4 +383,26 @@ class NotificationService {
       ),
     );
   }
+
+  static Future<void> showSalesCallRegisteredAlert({
+    required String customerName,
+    required String phone,
+  }) async {
+    final name = customerName.trim().isEmpty ? '고객' : customerName.trim();
+    final phoneText = phone.trim().isEmpty ? '' : ' ($phone)';
+    await _localNotifications.show(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      title: '새 통화 등록 완료',
+      body: '$name$phoneText 접수가 등록되었습니다.',
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _androidChannelId,
+          _androidChannelName,
+          channelDescription: _androidChannelDescription,
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  }
 }
