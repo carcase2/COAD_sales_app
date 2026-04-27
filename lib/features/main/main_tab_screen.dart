@@ -5,7 +5,6 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
@@ -148,6 +147,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
+    final todayStats = ref.watch(todayStatsProvider).valueOrNull;
+    final todayFollow = ref.watch(todayFollowOverviewProvider).valueOrNull;
+    final issuanceBadgeCount = ref.watch(issuanceRequestBadgeCountProvider).valueOrNull;
+    final incompleteCountText = '${todayStats?.incompleteCount ?? 0}건';
+    final followCountText = '${todayFollow?.total ?? 0}건';
+    final issuanceCountText = issuanceBadgeCount == null ? '...' : '${issuanceBadgeCount}건';
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final actionsBottom = 12.0 + safeBottom;
     final quickActions = <_QuickActionItem>[
@@ -178,7 +183,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       _QuickActionItem(
         heroTag: 'global_issuance_create',
         color: Colors.indigo.shade600,
-        tooltip: '발행요청',
+        tooltip: '발행요청($issuanceCountText)',
         icon: Icons.receipt_long_rounded,
         onTap: () async {
           setState(() => _quickActionsOpen = false);
@@ -200,7 +205,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       _QuickActionItem(
         heroTag: 'global_incomplete_open',
         color: Colors.orange.shade700,
-        tooltip: '미통화',
+        tooltip: '미통화($incompleteCountText)',
         icon: Icons.pending_actions_rounded,
         onTap: () async {
           setState(() => _quickActionsOpen = false);
@@ -218,7 +223,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       _QuickActionItem(
         heroTag: 'global_today_follow_open',
         color: Colors.deepPurple.shade600,
-        tooltip: '금일팔로우',
+        tooltip: '금일팔로우($followCountText)',
         icon: Icons.event_note_rounded,
         onTap: () async {
           setState(() => _quickActionsOpen = false);
