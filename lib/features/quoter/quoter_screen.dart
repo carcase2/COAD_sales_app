@@ -114,7 +114,47 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         _result != null;
   }
 
+  bool get _isOutOfTableSizeRange {
+    final w = double.tryParse(_widthController.text.replaceAll(',', '')) ?? 0;
+    final h = double.tryParse(_heightController.text.replaceAll(',', '')) ?? 0;
+    if (w <= 0 || h <= 0) return false;
+    return w < ShutterCalculator.minBucket ||
+        w > ShutterCalculator.maxBucket ||
+        h < ShutterCalculator.minBucket ||
+        h > ShutterCalculator.maxBucket;
+  }
+
   Color _quoterStepAccent(int step) => kQuoterStepAccents[step - 1];
+
+  Widget _buildOutOfTableSizeWarning(ColorScheme scheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.6), width: 1.3),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.priority_high_rounded, size: 18, color: scheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '테이블 사이즈를 벗어났습니다. 별도로 문의하세요.',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w900,
+                color: scheme.onErrorContainer,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -1127,6 +1167,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           _buildSizeField(label: '폭 (W)', controller: _widthController, scheme: scheme, hint: '3000'),
           const SizedBox(height: 12),
           _buildSizeField(label: '높이 (H)', controller: _heightController, scheme: scheme, hint: '3000'),
+          if (_isOutOfTableSizeRange) ...[
+            const SizedBox(height: 12),
+            _buildOutOfTableSizeWarning(scheme),
+          ],
         ],
       ),
     );
@@ -1597,6 +1641,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     ),
                   ],
                 ),
+                if (_isOutOfTableSizeRange) ...[
+                  const SizedBox(height: 10),
+                  _buildOutOfTableSizeWarning(scheme),
+                ],
                 const SizedBox(height: 4),
                 FittedBox(
                   fit: BoxFit.scaleDown,
