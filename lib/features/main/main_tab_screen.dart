@@ -7,7 +7,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -103,8 +103,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       const initKey = 'issuance_completion_watch_initialized_v1';
       const seenKey = 'issuance_completion_seen_keys_v1';
 
-      final taxCompleted = await ref.read(issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice).future);
-      final bondCompleted = await ref.read(issuanceCompletedRowsProvider(IssuanceDomain.performanceBond).future);
+      final taxCompleted = await ref.read(
+        issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice).future,
+      );
+      final bondCompleted = await ref.read(
+        issuanceCompletedRowsProvider(IssuanceDomain.performanceBond).future,
+      );
       final allCompleted = [...taxCompleted, ...bondCompleted];
 
       String rowKey(IssuanceRequestRow row) {
@@ -114,7 +118,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       }
 
       final currentKeys = allCompleted.map(rowKey).toSet();
-      final seenKeys = (prefs.getStringList(seenKey) ?? const <String>[]).toSet();
+      final seenKeys = (prefs.getStringList(seenKey) ?? const <String>[])
+          .toSet();
       final initialized = prefs.getBool(initKey) ?? false;
 
       if (!initialized) {
@@ -132,8 +137,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         final isTax = row.domain == IssuanceDomain.taxInvoice;
         final title = isTax ? '세금계산서 발급 완료' : '이행증권 발급 완료';
         final name = isTax
-            ? (row.master['customer_name'] ?? row.master['company_name'] ?? '요청 건').toString()
-            : (row.master['company_name'] ?? row.master['site_name'] ?? '요청 건').toString();
+            ? (row.master['customer_name'] ??
+                      row.master['company_name'] ??
+                      '요청 건')
+                  .toString()
+            : (row.master['company_name'] ?? row.master['site_name'] ?? '요청 건')
+                  .toString();
         await NotificationService.showIssuanceCompletedAlert(
           title: title,
           body: '$name 건이 발급 완료되었습니다.',
@@ -149,7 +158,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
   void _onTabSelected(int index) {
     if (_currentIndex == index) return;
-    
+
     setState(() {
       _quickActionsOpen = false;
       _currentIndex = index;
@@ -193,9 +202,15 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   List<Widget> _buildScreens() {
     return [
       const HomeHubScreen(),
-      _loadedIndices.contains(1) ? const ConsultationStatusScreen() : const SizedBox.shrink(),
-      _loadedIndices.contains(2) ? const QuoterScreen(showQuickActions: false) : const SizedBox.shrink(),
-      _loadedIndices.contains(3) ? const IssuanceRequestScreen() : const SizedBox.shrink(),
+      _loadedIndices.contains(1)
+          ? const ConsultationStatusScreen()
+          : const SizedBox.shrink(),
+      _loadedIndices.contains(2)
+          ? const QuoterHubScreen()
+          : const SizedBox.shrink(),
+      _loadedIndices.contains(3)
+          ? const IssuanceRequestScreen()
+          : const SizedBox.shrink(),
     ];
   }
 
@@ -214,10 +229,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final todayStats = ref.watch(todayStatsProvider).valueOrNull;
     final todayFollow = ref.watch(todayFollowOverviewProvider).valueOrNull;
-    final issuanceBadgeCount = ref.watch(issuanceRequestBadgeCountProvider).valueOrNull;
+    final issuanceBadgeCount = ref
+        .watch(issuanceRequestBadgeCountProvider)
+        .valueOrNull;
     final incompleteCountText = '${todayStats?.incompleteCount ?? 0}건';
     final followCountText = '${todayFollow?.total ?? 0}건';
-    final issuanceCountText = issuanceBadgeCount == null ? '...' : '${issuanceBadgeCount}건';
+    final issuanceCountText = issuanceBadgeCount == null
+        ? '...'
+        : '${issuanceBadgeCount}건';
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final actionsBottom = 12.0 + safeBottom;
     final quickActions = <_QuickActionItem>[
@@ -241,7 +260,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           setState(() => _quickActionsOpen = false);
           _refreshQuickHints();
           await Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+            MaterialPageRoute<void>(
+              builder: (_) => const SalesCallCreateScreen(),
+            ),
           );
         },
       ),
@@ -346,7 +367,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
         final now = DateTime.now();
         const exitWindow = Duration(seconds: 2);
-        if (_lastBackExitHintAt != null && now.difference(_lastBackExitHintAt!) < exitWindow) {
+        if (_lastBackExitHintAt != null &&
+            now.difference(_lastBackExitHintAt!) < exitWindow) {
           SystemNavigator.pop();
           return;
         }
@@ -362,202 +384,254 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         );
       },
       child: Scaffold(
-      key: scaffoldKey,
-      drawer: _buildDrawer(context, user, scheme),
-      appBar: AppBar(
-        title: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => _onTabSelected(0),
-          child: _currentIndex == 0
-              ? _buildBrandTitle()
-              : Text(
-                  _currentIndex == 1 ? '상담현황' : (_currentIndex == 2 ? '견적기' : '발급요청'),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
-                    color: Colors.white,
-                  ),
-                ),
-        ),
-        centerTitle: true,
-        backgroundColor: scheme.primary,
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.menu_rounded),
-          onPressed: () => scaffoldKey.currentState?.openDrawer(),
-          tooltip: '메뉴 열기',
-        ),
-        actions: [
-          if (_currentIndex == 2)
-            IconButton(
-              icon: const Icon(Icons.home_rounded),
-              onPressed: () => _onTabSelected(0),
-              tooltip: '홈으로 이동',
-            ),
-          Center(
-            child: Text(
-              'v$kAppVersion',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.white.withValues(alpha: 0.7),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.search_rounded),
-            onPressed: () {
-              final repository = ref.read(salesCallsRepositoryProvider);
-              final calls = ref.read(todayCallsContentProvider).value ?? [];
-              showSearch(
-                context: context,
-                delegate: SalesCallSearchDelegate(
-                  initialItems: calls,
-                  repository: repository,
-                ),
-              );
-            },
-            tooltip: '통합 검색',
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: Stack(
-        children: [
-          IndexedStack(
-            index: _currentIndex,
-            children: _buildScreens(),
-          ),
-          if (_quickActionsOpen)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => setState(() => _quickActionsOpen = false),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          Positioned(
-            right: 16,
-            bottom: actionsBottom,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (_quickActionsOpen)
-                  Container(
-                    key: const ValueKey('quick_actions_scroll_panel'),
-                    width: 182,
-                    constraints: const BoxConstraints(maxHeight: 320),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      color: scheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.12),
-                          blurRadius: 14,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
+        key: scaffoldKey,
+        drawer: _buildDrawer(context, user, scheme),
+        appBar: AppBar(
+          title: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _onTabSelected(0),
+            child: _currentIndex == 0
+                ? _buildBrandTitle()
+                : Text(
+                    _currentIndex == 1
+                        ? '상담현황'
+                        : (_currentIndex == 2 ? '견적기' : '발급요청'),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                      color: Colors.white,
                     ),
-                    child: Column(
-                      children: [
-                        if (_quickHasMoreAbove)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2, bottom: 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.keyboard_arrow_up_rounded, size: 16, color: scheme.onSurfaceVariant),
-                                const SizedBox(width: 2),
-                                Text('위에 메뉴 더 있음', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
-                              ],
-                            ),
+                  ),
+          ),
+          centerTitle: true,
+          backgroundColor: scheme.primary,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: () => scaffoldKey.currentState?.openDrawer(),
+            tooltip: '메뉴 열기',
+          ),
+          actions: [
+            if (_currentIndex == 2)
+              IconButton(
+                icon: const Icon(Icons.home_rounded),
+                onPressed: () => _onTabSelected(0),
+                tooltip: '홈으로 이동',
+              ),
+            Center(
+              child: Text(
+                'v$kAppVersion',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.search_rounded),
+              onPressed: () {
+                final repository = ref.read(salesCallsRepositoryProvider);
+                final calls = ref.read(todayCallsContentProvider).value ?? [];
+                showSearch(
+                  context: context,
+                  delegate: SalesCallSearchDelegate(
+                    initialItems: calls,
+                    repository: repository,
+                  ),
+                );
+              },
+              tooltip: '통합 검색',
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+        body: Stack(
+          children: [
+            IndexedStack(index: _currentIndex, children: _buildScreens()),
+            if (_quickActionsOpen)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => setState(() => _quickActionsOpen = false),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            Positioned(
+              right: 16,
+              bottom: actionsBottom,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (_quickActionsOpen)
+                    Container(
+                      key: const ValueKey('quick_actions_scroll_panel'),
+                      width: 182,
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: scheme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: scheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
                           ),
-                        Expanded(
-                          child: NotificationListener<ScrollNotification>(
-                            onNotification: (n) {
-                              _refreshQuickHints();
-                              return false;
-                            },
-                            child: SingleChildScrollView(
-                              controller: _quickActionsScrollCtrl,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              child: Column(
-                                children: quickActions
-                                    .map(
-                                      (item) => Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 3),
-                                        child: Material(
-                                          color: item.color.withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(12),
-                                          child: InkWell(
-                                            borderRadius: BorderRadius.circular(12),
-                                            onTap: item.onTap,
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                              child: Row(
-                                                children: [
-                                                  Icon(item.icon, size: 18, color: item.color),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Text(
-                                                      item.tooltip,
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w700,
-                                                        color: scheme.onSurface,
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          if (_quickHasMoreAbove)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2, bottom: 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.keyboard_arrow_up_rounded,
+                                    size: 16,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '위에 메뉴 더 있음',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Expanded(
+                            child: NotificationListener<ScrollNotification>(
+                              onNotification: (n) {
+                                _refreshQuickHints();
+                                return false;
+                              },
+                              child: SingleChildScrollView(
+                                controller: _quickActionsScrollCtrl,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Column(
+                                  children: quickActions
+                                      .map(
+                                        (item) => Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 3,
+                                          ),
+                                          child: Material(
+                                            color: item.color.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            child: InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              onTap: item.onTap,
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 10,
+                                                    ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      item.icon,
+                                                      size: 18,
+                                                      color: item.color,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        item.tooltip,
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color:
+                                                              scheme.onSurface,
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
-                                                ],
+                                                    Icon(
+                                                      Icons
+                                                          .chevron_right_rounded,
+                                                      size: 18,
+                                                      color: scheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    )
-                                    .toList(),
+                                      )
+                                      .toList(),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        if (_quickHasMoreBelow)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4, bottom: 2),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: scheme.onSurfaceVariant),
-                                const SizedBox(width: 2),
-                                Text('아래 메뉴 더 있음', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
-                              ],
+                          if (_quickHasMoreBelow)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4, bottom: 2),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    size: 16,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '아래 메뉴 더 있음',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
+                    ),
+                  FloatingActionButton(
+                    heroTag: 'global_actions_toggle',
+                    backgroundColor: scheme.primary,
+                    foregroundColor: Colors.white,
+                    mini: true,
+                    onPressed: () {
+                      setState(() => _quickActionsOpen = !_quickActionsOpen);
+                      WidgetsBinding.instance.addPostFrameCallback(
+                        (_) => _refreshQuickHints(),
+                      );
+                    },
+                    tooltip: _quickActionsOpen ? '닫기' : '열기',
+                    child: Icon(
+                      _quickActionsOpen
+                          ? Icons.close_rounded
+                          : Icons.menu_open_rounded,
                     ),
                   ),
-                FloatingActionButton(
-                  heroTag: 'global_actions_toggle',
-                  backgroundColor: scheme.primary,
-                  foregroundColor: Colors.white,
-                  mini: true,
-                  onPressed: () {
-                    setState(() => _quickActionsOpen = !_quickActionsOpen);
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshQuickHints());
-                  },
-                  tooltip: _quickActionsOpen ? '닫기' : '열기',
-                  child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -569,14 +643,26 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           UserAccountsDrawerHeader(
             currentAccountPicture: CircleAvatar(
               backgroundColor: scheme.primaryContainer,
-              child: Icon(Icons.person, size: 40, color: scheme.onPrimaryContainer),
+              child: Icon(
+                Icons.person,
+                size: 40,
+                color: scheme.onPrimaryContainer,
+              ),
             ),
-            accountName: Text('${user?.name ?? '사용자'} 님', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            accountEmail: Text('사번/ID: ${user?.id ?? '-'}', style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8))),
+            accountName: Text(
+              '${user?.name ?? '사용자'} 님',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            accountEmail: Text(
+              '사번/ID: ${user?.id ?? '-'}',
+              style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8)),
+            ),
             decoration: BoxDecoration(
               color: scheme.primary,
               image: const DecorationImage(
-                image: NetworkImage('https://www.transparenttextures.com/patterns/cubes.png'),
+                image: NetworkImage(
+                  'https://www.transparenttextures.com/patterns/cubes.png',
+                ),
                 repeat: ImageRepeat.repeat,
                 opacity: 0.05,
               ),
@@ -644,8 +730,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
                   title: const Text('로그아웃'),
                   content: const Text('정말 로그아웃 하시겠습니까?'),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('취소'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('로그아웃'),
+                    ),
                   ],
                 ),
               );
@@ -659,7 +751,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
             padding: const EdgeInsets.fromLTRB(24, 10, 24, 24),
             child: Text(
               'COAD Sales App v$kAppVersion',
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
+              style: TextStyle(
+                fontSize: 11,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
             ),
           ),
         ],
@@ -679,7 +774,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
           ),
-          child: const Icon(Icons.door_front_door_rounded, size: 14, color: Colors.white),
+          child: const Icon(
+            Icons.door_front_door_rounded,
+            size: 14,
+            color: Colors.white,
+          ),
         ),
         const SizedBox(width: 8),
         RichText(
@@ -722,7 +821,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         ),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 18),
+      child: const Icon(
+        Icons.receipt_long_rounded,
+        color: Colors.white,
+        size: 18,
+      ),
     );
   }
 
@@ -764,5 +867,4 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 24),
     );
   }
-
 }

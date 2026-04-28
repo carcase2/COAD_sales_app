@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/data/b2_upload_repository.dart';
+import 'package:coad_customer_calls/data/estimate_document_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/ai_extractor_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -29,3 +30,9 @@ final aiExtractorServiceProvider = Provider<AiExtractorService>((ref) {
   final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
   return AiExtractorService(apiKey: apiKey);
 });
+
+final estimateDocumentRepositoryProvider = Provider<EstimateDocumentRepository>(
+  (ref) {
+    return EstimateDocumentRepository();
+  },
+);
