@@ -644,6 +644,7 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
         icon: const Icon(Icons.add),
         label: const Text('견적서 작성'),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
     );
   }
 }
