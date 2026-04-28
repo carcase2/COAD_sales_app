@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/models/estimate_document.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -88,6 +91,72 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
     return DateFormat('yyyy-MM-dd HH:mm').format(value);
   }
 
+  Widget _signaturePreview(String base64Data, ColorScheme scheme) {
+    if (base64Data.trim().isEmpty) {
+      return Container(
+        height: 72,
+        decoration: BoxDecoration(
+          border: Border.all(color: scheme.outlineVariant),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            '서명 없음',
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+    try {
+      final bytes = base64Decode(base64Data);
+      return Container(
+        height: 72,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          border: Border.all(color: scheme.outlineVariant),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(bytes, fit: BoxFit.contain),
+        ),
+      );
+    } catch (_) {
+      return Container(
+        height: 72,
+        decoration: BoxDecoration(
+          border: Border.all(color: scheme.error),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            '서명 데이터 오류',
+            style: TextStyle(
+              color: scheme.error,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<String?> _openSignatureDialog({
+    required String title,
+    String? initialBase64,
+  }) {
+    return showDialog<String>(
+      context: context,
+      builder: (context) =>
+          _SignaturePadDialog(title: title, initialBase64: initialBase64),
+    );
+  }
+
   Future<String> _resolveCurrentUserPhone() async {
     final loginUser = ref.read(authControllerProvider);
     if (loginUser == null || loginUser.id.trim().isEmpty) return '';
@@ -151,6 +220,13 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
     final loginUser = ref.read(authControllerProvider);
     final defaultRegistrantName = loginUser?.name ?? '';
     final defaultRegistrantPhone = await _resolveCurrentUserPhone();
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    final loginUserId = loginUser?.id.trim() ?? '';
+    final staffSignatureKey = 'estimate_staff_signature_$loginUserId';
+    String siteManagerSignature = customFields['현장담당자 서명'] ?? '';
+    String staffSignature =
+        customFields['등록자 담당자 서명'] ??
+        (loginUserId.isEmpty ? '' : (prefs.getString(staffSignatureKey) ?? ''));
 
     customFields.putIfAbsent('기본 받는 사람', () => '귀하');
     customFields.putIfAbsent('고상명', () => '');
@@ -381,6 +457,131 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                             }),
                             const SizedBox(height: 12),
                             const Text(
+                              '서명',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    '현장담당자 서명',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _signaturePreview(
+                                    siteManagerSignature,
+                                    Theme.of(context).colorScheme,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      OutlinedButton(
+                                        onPressed: () async {
+                                          final value =
+                                              await _openSignatureDialog(
+                                                title: '현장담당자 서명',
+                                                initialBase64:
+                                                    siteManagerSignature,
+                                              );
+                                          if (value == null) return;
+                                          setModalState(() {
+                                            siteManagerSignature = value;
+                                          });
+                                        },
+                                        child: Text(
+                                          siteManagerSignature.isEmpty
+                                              ? '서명 입력'
+                                              : '다시 서명',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      TextButton(
+                                        onPressed: () => setModalState(() {
+                                          siteManagerSignature = '';
+                                        }),
+                                        child: const Text('지우기'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    '등록자 담당자 서명',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _signaturePreview(
+                                    staffSignature,
+                                    Theme.of(context).colorScheme,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      OutlinedButton(
+                                        onPressed: () async {
+                                          final value =
+                                              await _openSignatureDialog(
+                                                title: '등록자 담당자 서명',
+                                                initialBase64: staffSignature,
+                                              );
+                                          if (value == null) return;
+                                          setModalState(() {
+                                            staffSignature = value;
+                                          });
+                                        },
+                                        child: Text(
+                                          staffSignature.isEmpty
+                                              ? '서명 입력'
+                                              : '다시 서명',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      TextButton(
+                                        onPressed: () => setModalState(() {
+                                          staffSignature = '';
+                                        }),
+                                        child: const Text('지우기'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
                               '모델별 추가 입력',
                               style: TextStyle(
                                 fontSize: 14,
@@ -596,6 +797,8 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                                   return;
                                 }
                                 final now = DateTime.now();
+                                customFields['현장담당자 서명'] = siteManagerSignature;
+                                customFields['등록자 담당자 서명'] = staffSignature;
                                 final doc = EstimateDocument(
                                   id: existing?.id ?? _genId(),
                                   category: category,
@@ -624,6 +827,13 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                                 await ref
                                     .read(estimateDocumentRepositoryProvider)
                                     .upsert(doc);
+                                if (loginUserId.isNotEmpty &&
+                                    staffSignature.trim().isNotEmpty) {
+                                  await prefs.setString(
+                                    staffSignatureKey,
+                                    staffSignature,
+                                  );
+                                }
                                 if (!context.mounted) return;
                                 Navigator.of(context).pop();
                                 if (mounted) {
@@ -776,5 +986,134 @@ class _ThousandsFormatter extends TextInputFormatter {
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
     );
+  }
+}
+
+class _SignaturePadDialog extends StatefulWidget {
+  const _SignaturePadDialog({required this.title, this.initialBase64});
+
+  final String title;
+  final String? initialBase64;
+
+  @override
+  State<_SignaturePadDialog> createState() => _SignaturePadDialogState();
+}
+
+class _SignaturePadDialogState extends State<_SignaturePadDialog> {
+  final List<Offset?> _points = <Offset?>[];
+  final GlobalKey _padKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    final availableHeight = MediaQuery.of(context).size.height;
+    final padHeight = min(180.0, max(120.0, availableHeight * 0.28));
+
+    return AlertDialog(
+      title: Text(widget.title),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      content: SizedBox(
+        width: 340,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              height: padHeight,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade400),
+              ),
+              child: RepaintBoundary(
+                key: _padKey,
+                child: GestureDetector(
+                  onPanStart: (details) {
+                    setState(() {
+                      _points.add(details.localPosition);
+                    });
+                  },
+                  onPanUpdate: (details) {
+                    setState(() {
+                      _points.add(details.localPosition);
+                    });
+                  },
+                  onPanEnd: (_) {
+                    setState(() {
+                      _points.add(null);
+                    });
+                  },
+                  child: CustomPaint(
+                    painter: _SignaturePainter(points: _points),
+                    size: Size(double.infinity, padHeight),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                TextButton(
+                  onPressed: () => setState(() => _points.clear()),
+                  child: const Text('지우기'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('취소'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final data = await _exportBase64();
+                    if (!context.mounted) return;
+                    Navigator.of(context).pop(data);
+                  },
+                  child: const Text('서명 적용'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String> _exportBase64() async {
+    final boundary =
+        _padKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) return '';
+    final image = await boundary.toImage(pixelRatio: 2.0);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final bytes = byteData?.buffer.asUint8List() ?? Uint8List(0);
+    return base64Encode(bytes);
+  }
+}
+
+class _SignaturePainter extends CustomPainter {
+  const _SignaturePainter({required this.points});
+
+  final List<Offset?> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 2.8
+      ..style = PaintingStyle.stroke;
+    for (int i = 0; i < points.length - 1; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      if (p1 != null && p2 != null) {
+        canvas.drawLine(p1, p2, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SignaturePainter oldDelegate) {
+    // 드로잉 중 프레임마다 즉시 반영되도록 항상 재페인트한다.
+    return true;
   }
 }
