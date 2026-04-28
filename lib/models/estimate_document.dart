@@ -5,6 +5,9 @@ class EstimateDocument {
     required this.modelName,
     required this.customerName,
     required this.siteName,
+    required this.widthMm,
+    required this.heightMm,
+    required this.quantity,
     required this.baseAmount,
     required this.extraItems,
     required this.customFields,
@@ -18,6 +21,9 @@ class EstimateDocument {
   final String modelName;
   final String customerName;
   final String siteName;
+  final int widthMm;
+  final int heightMm;
+  final int quantity;
   final int baseAmount;
   final List<EstimateExtraItem> extraItems;
   final Map<String, String> customFields;
@@ -38,6 +44,9 @@ class EstimateDocument {
     String? modelName,
     String? customerName,
     String? siteName,
+    int? widthMm,
+    int? heightMm,
+    int? quantity,
     int? baseAmount,
     List<EstimateExtraItem>? extraItems,
     Map<String, String>? customFields,
@@ -51,6 +60,9 @@ class EstimateDocument {
       modelName: modelName ?? this.modelName,
       customerName: customerName ?? this.customerName,
       siteName: siteName ?? this.siteName,
+      widthMm: widthMm ?? this.widthMm,
+      heightMm: heightMm ?? this.heightMm,
+      quantity: quantity ?? this.quantity,
       baseAmount: baseAmount ?? this.baseAmount,
       extraItems: extraItems ?? this.extraItems,
       customFields: customFields ?? this.customFields,
@@ -67,6 +79,9 @@ class EstimateDocument {
       'modelName': modelName,
       'customerName': customerName,
       'siteName': siteName,
+      'widthMm': widthMm,
+      'heightMm': heightMm,
+      'quantity': quantity,
       'baseAmount': baseAmount,
       'extraItems': extraItems.map((e) => e.toJson()).toList(),
       'customFields': customFields,
@@ -83,6 +98,9 @@ class EstimateDocument {
       modelName: (json['modelName'] ?? '').toString(),
       customerName: (json['customerName'] ?? '').toString(),
       siteName: (json['siteName'] ?? '').toString(),
+      widthMm: (json['widthMm'] as num?)?.toInt() ?? 0,
+      heightMm: (json['heightMm'] as num?)?.toInt() ?? 0,
+      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       baseAmount: (json['baseAmount'] as num?)?.toInt() ?? 0,
       extraItems: ((json['extraItems'] as List?) ?? const [])
           .map(

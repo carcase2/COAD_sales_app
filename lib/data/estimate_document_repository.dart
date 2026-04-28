@@ -10,6 +10,7 @@ class EstimateDocumentRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
   Future<List<EstimateDocument>> list({String? query}) async {
+    final localDocs = await _listLocal(query: query);
     try {
       final q = query?.trim() ?? '';
       PostgrestFilterBuilder<List<Map<String, dynamic>>> request = _client
@@ -22,12 +23,12 @@ class EstimateDocumentRepository {
         );
       }
       final rows = await request.order('updated_at', ascending: false);
-      final docs = rows.map(_fromRemoteRow).toList();
-      await _saveLocalBatch(docs);
-      return docs;
+      final remoteDocs = rows.map(_fromRemoteRow).toList();
+      await _saveLocalBatch(remoteDocs);
+      return _mergeByLatest(remoteDocs, localDocs);
     } catch (_) {
       // 네트워크/테이블 오류 시 로컬 캐시로 fallback
-      return _listLocal(query: query);
+      return localDocs;
     }
   }
 
@@ -57,6 +58,9 @@ class EstimateDocumentRepository {
         'model_name': doc.modelName,
         'customer_name': doc.customerName,
         'site_name': doc.siteName,
+        'width_mm': doc.widthMm,
+        'height_mm': doc.heightMm,
+        'quantity': doc.quantity,
         'base_amount': doc.baseAmount,
         'extra_items': doc.extraItems.map((e) => e.toJson()).toList(),
         'custom_fields': doc.customFields,
@@ -104,6 +108,9 @@ class EstimateDocumentRepository {
       doc.modelName,
       doc.customerName,
       doc.siteName,
+      '${doc.widthMm}',
+      '${doc.heightMm}',
+      '${doc.quantity}',
       doc.memo,
       ...doc.customFields.values,
     ].join(' ').toLowerCase();
@@ -116,6 +123,9 @@ class EstimateDocumentRepository {
       modelName: (row['model_name'] ?? '').toString(),
       customerName: (row['customer_name'] ?? '').toString(),
       siteName: (row['site_name'] ?? '').toString(),
+      widthMm: (row['width_mm'] as num?)?.toInt() ?? 0,
+      heightMm: (row['height_mm'] as num?)?.toInt() ?? 0,
+      quantity: (row['quantity'] as num?)?.toInt() ?? 1,
       baseAmount: (row['base_amount'] as num?)?.toInt() ?? 0,
       extraItems: ((row['extra_items'] as List?) ?? const [])
           .map(
@@ -140,5 +150,21 @@ class EstimateDocumentRepository {
     for (final doc in docs) {
       await _upsertLocal(doc);
     }
+  }
+
+  List<EstimateDocument> _mergeByLatest(
+    List<EstimateDocument> remote,
+    List<EstimateDocument> local,
+  ) {
+    final map = <String, EstimateDocument>{};
+    for (final doc in [...local, ...remote]) {
+      final existing = map[doc.id];
+      if (existing == null || doc.updatedAt.isAfter(existing.updatedAt)) {
+        map[doc.id] = doc;
+      }
+    }
+    final merged = map.values.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return merged;
   }
 }

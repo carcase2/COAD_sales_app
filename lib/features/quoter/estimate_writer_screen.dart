@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EstimateWriterScreen extends ConsumerStatefulWidget {
   const EstimateWriterScreen({super.key});
@@ -73,6 +74,44 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
     return const ['추가 사양 1', '추가 사양 2'];
   }
 
+  String _generateQuoteNumber() {
+    final now = DateTime.now();
+    final stamp =
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-'
+        '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+    return 'EST-$stamp';
+  }
+
+  Future<String> _resolveCurrentUserPhone() async {
+    final loginUser = ref.read(authControllerProvider);
+    if (loginUser == null || loginUser.id.trim().isEmpty) return '';
+    try {
+      final row = await Supabase.instance.client
+          .from('users')
+          .select()
+          .eq('id', loginUser.id)
+          .maybeSingle();
+      if (row == null) return '';
+      final keys = [
+        'phone',
+        'mobile_phone',
+        'cell_phone',
+        'tel',
+        'telephone',
+        'contact_phone',
+      ];
+      for (final key in keys) {
+        final raw = row[key];
+        if (raw != null && raw.toString().trim().isNotEmpty) {
+          return raw.toString().trim();
+        }
+      }
+      return '';
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _openForm([EstimateDocument? existing]) async {
     final customerController = TextEditingController(
       text: existing?.customerName ?? '',
@@ -89,12 +128,43 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
     final baseAmountController = TextEditingController(
       text: existing == null ? '' : existing.baseAmount.toString(),
     );
+    final widthController = TextEditingController(
+      text: existing == null ? '' : existing.widthMm.toString(),
+    );
+    final heightController = TextEditingController(
+      text: existing == null ? '' : existing.heightMm.toString(),
+    );
+    final quantityController = TextEditingController(
+      text: existing == null ? '1' : existing.quantity.toString(),
+    );
     final memoController = TextEditingController(text: existing?.memo ?? '');
     final extras = [...(existing?.extraItems ?? const <EstimateExtraItem>[])];
     final customFields = Map<String, String>.from(
       existing?.customFields ?? const {},
     );
+    final loginUser = ref.read(authControllerProvider);
+    final defaultRegistrantName = loginUser?.name ?? '';
+    final defaultRegistrantPhone = await _resolveCurrentUserPhone();
 
+    customFields.putIfAbsent('기본 받는 사람', () => '귀하');
+    customFields.putIfAbsent('고상명', () => '');
+    customFields.putIfAbsent('담당자', () => '');
+    customFields.putIfAbsent('담당자 전화번호', () => '');
+    customFields.putIfAbsent('휴대폰번호', () => '');
+    customFields.putIfAbsent('팩스 번호', () => '');
+    customFields.putIfAbsent('e-mail', () => '');
+    customFields.putIfAbsent('견적번호', _generateQuoteNumber);
+    customFields.putIfAbsent('납기', () => '발주 후 15일');
+    customFields.putIfAbsent('유효기간', () => '견적 후 10일 이내');
+    customFields.putIfAbsent('등록자 지사주소', () => '');
+    customFields.putIfAbsent('등록자 전화번호', () => '');
+    customFields.putIfAbsent('등록자 팩스번호', () => '');
+    customFields.putIfAbsent('등록자 홈페이지 주소', () => '');
+    customFields.putIfAbsent('등록자 e-mail주소', () => '');
+    customFields.putIfAbsent('등록자 담당자이름', () => defaultRegistrantName);
+    customFields.putIfAbsent('등록자 담당자 전화번호', () => defaultRegistrantPhone);
+
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -160,6 +230,16 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                       TextField(
                         controller: customerController,
                         decoration: const InputDecoration(labelText: '고객명'),
+                        onChanged: (v) {
+                          final current = (customFields['기본 받는 사람'] ?? '')
+                              .trim();
+                          if (current.isEmpty || current == '귀하') {
+                            customFields['기본 받는 사람'] = v.trim().isEmpty
+                                ? '귀하'
+                                : '${v.trim()} 귀하';
+                            setModalState(() {});
+                          }
+                        },
                       ),
                       TextField(
                         controller: siteController,
@@ -173,6 +253,100 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                         ],
                         decoration: const InputDecoration(labelText: '기본 금액'),
                       ),
+                      TextField(
+                        controller: widthController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(labelText: '폭 (mm)'),
+                      ),
+                      TextField(
+                        controller: heightController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(labelText: '높이 (mm)'),
+                      ),
+                      TextField(
+                        controller: quantityController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(labelText: '수량'),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '기본 견적 정보',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...[
+                        '기본 받는 사람',
+                        '고상명',
+                        '담당자',
+                        '담당자 전화번호',
+                        '휴대폰번호',
+                        '팩스 번호',
+                        'e-mail',
+                        '견적번호',
+                        '납기',
+                        '유효기간',
+                      ].map((key) {
+                        final controller = TextEditingController(
+                          text: customFields[key] ?? '',
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: TextField(
+                            controller: controller,
+                            readOnly: key == '견적번호',
+                            decoration: InputDecoration(labelText: key),
+                            onChanged: (v) => customFields[key] = v,
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '등록자 정보',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...[
+                        '등록자 지사주소',
+                        '등록자 전화번호',
+                        '등록자 팩스번호',
+                        '등록자 홈페이지 주소',
+                        '등록자 e-mail주소',
+                        '등록자 담당자이름',
+                        '등록자 담당자 전화번호',
+                      ].map((key) {
+                        final controller = TextEditingController(
+                          text: customFields[key] ?? '',
+                        );
+                        final readonly =
+                            key == '등록자 담당자이름' || key == '등록자 담당자 전화번호';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: TextField(
+                            controller: controller,
+                            readOnly: readonly,
+                            decoration: InputDecoration(
+                              labelText: key,
+                              helperText: readonly ? '로그인 정보 자동입력' : null,
+                            ),
+                            onChanged: (v) => customFields[key] = v,
+                          ),
+                        );
+                      }),
                       const SizedBox(height: 12),
                       const Text(
                         '모델별 추가 입력',
@@ -320,12 +494,20 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                           final category = categoryController.text.trim();
                           final model = modelController.text.trim();
                           final customer = customerController.text.trim();
+                          final width = int.tryParse(widthController.text) ?? 0;
+                          final height =
+                              int.tryParse(heightController.text) ?? 0;
+                          final quantity =
+                              int.tryParse(quantityController.text) ?? 0;
                           if (category.isEmpty ||
                               model.isEmpty ||
-                              customer.isEmpty) {
+                              customer.isEmpty ||
+                              width <= 0 ||
+                              height <= 0 ||
+                              quantity <= 0) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('카테고리/모델명/고객명은 필수입니다.'),
+                                content: Text('카테고리/모델명/고객명/폭/높이/수량은 필수입니다.'),
                               ),
                             );
                             return;
@@ -337,6 +519,9 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                             modelName: model,
                             customerName: customer,
                             siteName: siteController.text.trim(),
+                            widthMm: width,
+                            heightMm: height,
+                            quantity: quantity,
                             baseAmount:
                                 int.tryParse(baseAmountController.text) ?? 0,
                             extraItems: extras,
@@ -353,6 +538,16 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                           if (!context.mounted) return;
                           Navigator.of(context).pop();
                           await _load();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                existing == null
+                                    ? '견적서를 저장했습니다.'
+                                    : '견적서를 수정했습니다.',
+                              ),
+                            ),
+                          );
                         },
                         child: Text(existing == null ? '견적서 저장' : '수정 저장'),
                       ),
@@ -417,7 +612,8 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           subtitle: Text(
-                            '${item.customerName} / ${item.siteName}\n${_krw.format(item.totalAmount)}',
+                            '${item.customerName} / ${item.siteName}\n'
+                            '${item.widthMm}×${item.heightMm}mm · ${item.quantity}개 · ${_krw.format(item.totalAmount)}',
                           ),
                           isThreeLine: true,
                           trailing: PopupMenuButton<String>(
