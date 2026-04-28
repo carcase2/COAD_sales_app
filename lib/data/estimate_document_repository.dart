@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -51,24 +52,32 @@ class EstimateDocumentRepository {
 
   Future<void> upsert(EstimateDocument doc) async {
     await _upsertLocal(doc);
+    // 저장 UX를 막지 않기 위해 원격 동기화는 백그라운드로 처리한다.
+    unawaited(_upsertRemote(doc));
+  }
+
+  Future<void> _upsertRemote(EstimateDocument doc) async {
     try {
-      await _client.from('estimate_documents').upsert({
-        'id': doc.id,
-        'category': doc.category,
-        'model_name': doc.modelName,
-        'customer_name': doc.customerName,
-        'site_name': doc.siteName,
-        'width_mm': doc.widthMm,
-        'height_mm': doc.heightMm,
-        'quantity': doc.quantity,
-        'base_amount': doc.baseAmount,
-        'extra_items': doc.extraItems.map((e) => e.toJson()).toList(),
-        'custom_fields': doc.customFields,
-        'memo': doc.memo,
-        'search_text': _buildSearchText(doc),
-        'created_at': doc.createdAt.toIso8601String(),
-        'updated_at': doc.updatedAt.toIso8601String(),
-      });
+      await _client
+          .from('estimate_documents')
+          .upsert({
+            'id': doc.id,
+            'category': doc.category,
+            'model_name': doc.modelName,
+            'customer_name': doc.customerName,
+            'site_name': doc.siteName,
+            'width_mm': doc.widthMm,
+            'height_mm': doc.heightMm,
+            'quantity': doc.quantity,
+            'base_amount': doc.baseAmount,
+            'extra_items': doc.extraItems.map((e) => e.toJson()).toList(),
+            'custom_fields': doc.customFields,
+            'memo': doc.memo,
+            'search_text': _buildSearchText(doc),
+            'created_at': doc.createdAt.toIso8601String(),
+            'updated_at': doc.updatedAt.toIso8601String(),
+          })
+          .timeout(const Duration(seconds: 8));
     } on SocketException {
       // 오프라인에서는 로컬 저장만 유지
     } catch (_) {

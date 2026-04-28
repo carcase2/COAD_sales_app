@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math';
 
+import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/models/estimate_document.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -80,6 +82,10 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
         '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-'
         '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
     return 'EST-$stamp';
+  }
+
+  String _formatCreatedAt(DateTime value) {
+    return DateFormat('yyyy-MM-dd HH:mm').format(value);
   }
 
   Future<String> _resolveCurrentUserPhone() async {
@@ -165,6 +171,7 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
     customFields.putIfAbsent('등록자 담당자 전화번호', () => defaultRegistrantPhone);
 
     if (!mounted) return;
+    bool isSaving = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -187,372 +194,472 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                   16,
                   16 + MediaQuery.of(context).viewInsets.bottom,
                 ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        existing == null ? '견적서 작성' : '견적서 수정',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _defaultCategories
-                            .map(
-                              (cat) => ChoiceChip(
-                                label: Text(cat),
-                                selected: categoryController.text == cat,
-                                onSelected: (_) => setModalState(
-                                  () => categoryController.text = cat,
-                                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              existing == null ? '견적서 작성' : '견적서 수정',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
                               ),
-                            )
-                            .toList(),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: categoryController,
-                        decoration: const InputDecoration(
-                          labelText: '카테고리(직접 입력/수정 가능)',
-                        ),
-                        onChanged: (_) => setModalState(() {}),
-                      ),
-                      TextField(
-                        controller: modelController,
-                        decoration: const InputDecoration(labelText: '모델명'),
-                        onChanged: (_) => setModalState(() {}),
-                      ),
-                      TextField(
-                        controller: customerController,
-                        decoration: const InputDecoration(labelText: '고객명'),
-                        onChanged: (v) {
-                          final current = (customFields['기본 받는 사람'] ?? '')
-                              .trim();
-                          if (current.isEmpty || current == '귀하') {
-                            customFields['기본 받는 사람'] = v.trim().isEmpty
-                                ? '귀하'
-                                : '${v.trim()} 귀하';
-                            setModalState(() {});
-                          }
-                        },
-                      ),
-                      TextField(
-                        controller: siteController,
-                        decoration: const InputDecoration(labelText: '현장명'),
-                      ),
-                      TextField(
-                        controller: baseAmountController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(labelText: '기본 금액'),
-                      ),
-                      TextField(
-                        controller: widthController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(labelText: '폭 (mm)'),
-                      ),
-                      TextField(
-                        controller: heightController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(labelText: '높이 (mm)'),
-                      ),
-                      TextField(
-                        controller: quantityController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(labelText: '수량'),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '기본 견적 정보',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...[
-                        '기본 받는 사람',
-                        '고상명',
-                        '담당자',
-                        '담당자 전화번호',
-                        '휴대폰번호',
-                        '팩스 번호',
-                        'e-mail',
-                        '견적번호',
-                        '납기',
-                        '유효기간',
-                      ].map((key) {
-                        final controller = TextEditingController(
-                          text: customFields[key] ?? '',
-                        );
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: TextField(
-                            controller: controller,
-                            readOnly: key == '견적번호',
-                            decoration: InputDecoration(labelText: key),
-                            onChanged: (v) => customFields[key] = v,
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '등록자 정보',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...[
-                        '등록자 지사주소',
-                        '등록자 전화번호',
-                        '등록자 팩스번호',
-                        '등록자 홈페이지 주소',
-                        '등록자 e-mail주소',
-                        '등록자 담당자이름',
-                        '등록자 담당자 전화번호',
-                      ].map((key) {
-                        final controller = TextEditingController(
-                          text: customFields[key] ?? '',
-                        );
-                        final readonly =
-                            key == '등록자 담당자이름' || key == '등록자 담당자 전화번호';
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: TextField(
-                            controller: controller,
-                            readOnly: readonly,
-                            decoration: InputDecoration(
-                              labelText: key,
-                              helperText: readonly ? '로그인 정보 자동입력' : null,
                             ),
-                            onChanged: (v) => customFields[key] = v,
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '모델별 추가 입력',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...fields.map((key) {
-                        final controller = TextEditingController(
-                          text: customFields[key] ?? '',
-                        );
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: TextField(
-                            controller: controller,
-                            decoration: InputDecoration(labelText: key),
-                            onChanged: (v) => customFields[key] = v,
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          const Text(
-                            '추가 항목',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _defaultCategories
+                                  .map(
+                                    (cat) => ChoiceChip(
+                                      label: Text(cat),
+                                      selected: categoryController.text == cat,
+                                      onSelected: (_) => setModalState(
+                                        () => categoryController.text = cat,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                             ),
-                          ),
-                          const Spacer(),
-                          TextButton.icon(
-                            onPressed: () => setModalState(() {
-                              extras.add(
-                                EstimateExtraItem(
-                                  name: '추가 항목',
-                                  amount: 0,
-                                  quantity: 1,
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: categoryController,
+                              decoration: const InputDecoration(
+                                labelText: '카테고리(직접 입력/수정 가능)',
+                              ),
+                              onChanged: (_) => setModalState(() {}),
+                            ),
+                            TextField(
+                              controller: modelController,
+                              decoration: const InputDecoration(
+                                labelText: '모델명',
+                              ),
+                              onChanged: (_) => setModalState(() {}),
+                            ),
+                            TextField(
+                              controller: customerController,
+                              decoration: const InputDecoration(
+                                labelText: '고객명',
+                              ),
+                              onChanged: (v) {
+                                final current = (customFields['기본 받는 사람'] ?? '')
+                                    .trim();
+                                if (current.isEmpty || current == '귀하') {
+                                  customFields['기본 받는 사람'] = v.trim().isEmpty
+                                      ? '귀하'
+                                      : '${v.trim()} 귀하';
+                                  setModalState(() {});
+                                }
+                              },
+                            ),
+                            TextField(
+                              controller: siteController,
+                              decoration: const InputDecoration(
+                                labelText: '현장명 *',
+                              ),
+                            ),
+                            TextField(
+                              controller: baseAmountController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                _ThousandsFormatter(),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: '기본 금액',
+                              ),
+                            ),
+                            TextField(
+                              controller: widthController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: '폭 (mm) *',
+                              ),
+                            ),
+                            TextField(
+                              controller: heightController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: '높이 (mm) *',
+                              ),
+                            ),
+                            TextField(
+                              controller: quantityController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: '수량 *',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              '기본 견적 정보',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ...[
+                              '기본 받는 사람',
+                              '고상명',
+                              '담당자',
+                              '담당자 전화번호',
+                              '휴대폰번호',
+                              '팩스 번호',
+                              'e-mail',
+                              '견적번호',
+                              '작성일자',
+                              '납기',
+                              '유효기간',
+                            ].map((key) {
+                              if (key == '작성일자') {
+                                customFields[key] = _formatCreatedAt(
+                                  existing?.createdAt ?? DateTime.now(),
+                                );
+                              }
+                              final controller = TextEditingController(
+                                text: customFields[key] ?? '',
+                              );
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: TextField(
+                                  controller: controller,
+                                  readOnly: key == '견적번호' || key == '작성일자',
+                                  decoration: InputDecoration(labelText: key),
+                                  onChanged: (v) => customFields[key] = v,
                                 ),
                               );
                             }),
-                            icon: const Icon(Icons.add),
-                            label: const Text('항목 추가'),
-                          ),
-                        ],
-                      ),
-                      ...extras.asMap().entries.map((entry) {
-                        final idx = entry.key;
-                        final item = entry.value;
-                        final nameController = TextEditingController(
-                          text: item.name,
-                        );
-                        final amountController = TextEditingController(
-                          text: item.amount.toString(),
-                        );
-                        final qtyController = TextEditingController(
-                          text: item.quantity.toString(),
-                        );
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Column(
+                            const SizedBox(height: 12),
+                            const Text(
+                              '등록자 정보',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ...[
+                              '등록자 지사주소',
+                              '등록자 전화번호',
+                              '등록자 팩스번호',
+                              '등록자 홈페이지 주소',
+                              '등록자 e-mail주소',
+                              '등록자 담당자이름',
+                              '등록자 담당자 전화번호',
+                            ].map((key) {
+                              final controller = TextEditingController(
+                                text: customFields[key] ?? '',
+                              );
+                              final readonly =
+                                  key == '등록자 담당자이름' || key == '등록자 담당자 전화번호';
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: TextField(
+                                  controller: controller,
+                                  readOnly: readonly,
+                                  decoration: InputDecoration(
+                                    labelText: key,
+                                    helperText: readonly ? '로그인 정보 자동입력' : null,
+                                  ),
+                                  onChanged: (v) => customFields[key] = v,
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 12),
+                            const Text(
+                              '모델별 추가 입력',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ...fields.map((key) {
+                              final controller = TextEditingController(
+                                text: customFields[key] ?? '',
+                              );
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: TextField(
+                                  controller: controller,
+                                  decoration: InputDecoration(labelText: key),
+                                  onChanged: (v) => customFields[key] = v,
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 12),
+                            Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      '추가 #${idx + 1}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    IconButton(
-                                      onPressed: () => setModalState(
-                                        () => extras.removeAt(idx),
-                                      ),
-                                      icon: const Icon(Icons.delete_outline),
-                                    ),
-                                  ],
-                                ),
-                                TextField(
-                                  controller: nameController,
-                                  decoration: const InputDecoration(
-                                    labelText: '항목명',
+                                const Text(
+                                  '추가 항목',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
                                   ),
-                                  onChanged: (v) =>
-                                      extras[idx] = EstimateExtraItem(
-                                        name: v,
-                                        amount: extras[idx].amount,
-                                        quantity: extras[idx].quantity,
-                                      ),
                                 ),
-                                TextField(
-                                  controller: amountController,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                  ],
-                                  decoration: const InputDecoration(
-                                    labelText: '금액',
-                                  ),
-                                  onChanged: (v) =>
-                                      extras[idx] = EstimateExtraItem(
-                                        name: extras[idx].name,
-                                        amount: int.tryParse(v) ?? 0,
-                                        quantity: extras[idx].quantity,
+                                const Spacer(),
+                                TextButton.icon(
+                                  onPressed: () => setModalState(() {
+                                    extras.add(
+                                      EstimateExtraItem(
+                                        name: '추가 항목',
+                                        amount: 0,
+                                        quantity: 1,
                                       ),
-                                ),
-                                TextField(
-                                  controller: qtyController,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                  ],
-                                  decoration: const InputDecoration(
-                                    labelText: '수량',
-                                  ),
-                                  onChanged: (v) =>
-                                      extras[idx] = EstimateExtraItem(
-                                        name: extras[idx].name,
-                                        amount: extras[idx].amount,
-                                        quantity: (int.tryParse(v) ?? 1).clamp(
-                                          1,
-                                          99,
-                                        ),
-                                      ),
+                                    );
+                                  }),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('항목 추가'),
                                 ),
                               ],
                             ),
-                          ),
-                        );
-                      }),
-                      TextField(
-                        controller: memoController,
-                        minLines: 2,
-                        maxLines: 4,
-                        decoration: const InputDecoration(labelText: '메모'),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: () async {
-                          final category = categoryController.text.trim();
-                          final model = modelController.text.trim();
-                          final customer = customerController.text.trim();
-                          final width = int.tryParse(widthController.text) ?? 0;
-                          final height =
-                              int.tryParse(heightController.text) ?? 0;
-                          final quantity =
-                              int.tryParse(quantityController.text) ?? 0;
-                          if (category.isEmpty ||
-                              model.isEmpty ||
-                              customer.isEmpty ||
-                              width <= 0 ||
-                              height <= 0 ||
-                              quantity <= 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('카테고리/모델명/고객명/폭/높이/수량은 필수입니다.'),
+                            ...extras.asMap().entries.map((entry) {
+                              final idx = entry.key;
+                              final item = entry.value;
+                              final nameController = TextEditingController(
+                                text: item.name,
+                              );
+                              final amountController = TextEditingController(
+                                text: item.amount.toString(),
+                              );
+                              final qtyController = TextEditingController(
+                                text: item.quantity.toString(),
+                              );
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(
+                                            '추가 #${idx + 1}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          IconButton(
+                                            onPressed: () => setModalState(
+                                              () => extras.removeAt(idx),
+                                            ),
+                                            icon: const Icon(
+                                              Icons.delete_outline,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      TextField(
+                                        controller: nameController,
+                                        decoration: const InputDecoration(
+                                          labelText: '항목명',
+                                        ),
+                                        onChanged: (v) =>
+                                            extras[idx] = EstimateExtraItem(
+                                              name: v,
+                                              amount: extras[idx].amount,
+                                              quantity: extras[idx].quantity,
+                                            ),
+                                      ),
+                                      TextField(
+                                        controller: amountController,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
+                                          _ThousandsFormatter(),
+                                        ],
+                                        decoration: const InputDecoration(
+                                          labelText: '금액',
+                                        ),
+                                        onChanged: (v) =>
+                                            extras[idx] = EstimateExtraItem(
+                                              name: extras[idx].name,
+                                              amount:
+                                                  int.tryParse(
+                                                    v.replaceAll(',', ''),
+                                                  ) ??
+                                                  0,
+                                              quantity: extras[idx].quantity,
+                                            ),
+                                      ),
+                                      TextField(
+                                        controller: qtyController,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
+                                        ],
+                                        decoration: const InputDecoration(
+                                          labelText: '수량',
+                                        ),
+                                        onChanged: (v) =>
+                                            extras[idx] = EstimateExtraItem(
+                                              name: extras[idx].name,
+                                              amount: extras[idx].amount,
+                                              quantity: (int.tryParse(v) ?? 1)
+                                                  .clamp(1, 99),
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                            TextField(
+                              controller: memoController,
+                              minLines: 2,
+                              maxLines: 4,
+                              decoration: const InputDecoration(
+                                labelText: '메모',
                               ),
-                            );
-                            return;
-                          }
-                          final now = DateTime.now();
-                          final doc = EstimateDocument(
-                            id: existing?.id ?? _genId(),
-                            category: category,
-                            modelName: model,
-                            customerName: customer,
-                            siteName: siteController.text.trim(),
-                            widthMm: width,
-                            heightMm: height,
-                            quantity: quantity,
-                            baseAmount:
-                                int.tryParse(baseAmountController.text) ?? 0,
-                            extraItems: extras,
-                            customFields: customFields.map(
-                              (key, value) => MapEntry(key, value.trim()),
                             ),
-                            memo: memoController.text.trim(),
-                            createdAt: existing?.createdAt ?? now,
-                            updatedAt: now,
-                          );
-                          await ref
-                              .read(estimateDocumentRepositoryProvider)
-                              .upsert(doc);
-                          if (!context.mounted) return;
-                          Navigator.of(context).pop();
-                          await _load();
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(this.context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                existing == null
-                                    ? '견적서를 저장했습니다.'
-                                    : '견적서를 수정했습니다.',
-                              ),
-                            ),
-                          );
-                        },
-                        child: Text(existing == null ? '견적서 저장' : '수정 저장'),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              setModalState(() => isSaving = true);
+                              try {
+                                FocusScope.of(context).unfocus();
+                                ScaffoldMessenger.of(this.context)
+                                  ..clearSnackBars()
+                                  ..showSnackBar(
+                                    const SnackBar(
+                                      content: Text('저장 중...'),
+                                      duration: Duration(seconds: 10),
+                                    ),
+                                  );
+                                final category =
+                                    categoryController.text.trim().isEmpty
+                                    ? '기타'
+                                    : categoryController.text.trim();
+                                final model =
+                                    modelController.text.trim().isEmpty
+                                    ? '기본모델'
+                                    : modelController.text.trim();
+                                final customer =
+                                    customerController.text.trim().isEmpty
+                                    ? '고객'
+                                    : customerController.text.trim();
+                                final site = siteController.text.trim();
+                                final width =
+                                    int.tryParse(widthController.text) ?? 0;
+                                final height =
+                                    int.tryParse(heightController.text) ?? 0;
+                                final quantity =
+                                    int.tryParse(quantityController.text) ?? 0;
+                                final missing = <String>[
+                                  if (site.isEmpty) '현장명',
+                                  if (width <= 0) '폭(mm)',
+                                  if (height <= 0) '높이(mm)',
+                                  if (quantity <= 0) '수량',
+                                ];
+                                if (missing.isNotEmpty) {
+                                  await showDialog<void>(
+                                    context: context,
+                                    builder: (dialogContext) => AlertDialog(
+                                      title: const Text('필수 항목 누락'),
+                                      content: Text(
+                                        '* 필수 항목이 누락되었습니다.\n\n- ${missing.join('\n- ')}',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(dialogContext).pop(),
+                                          child: const Text('확인'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  setModalState(() => isSaving = false);
+                                  return;
+                                }
+                                final now = DateTime.now();
+                                final doc = EstimateDocument(
+                                  id: existing?.id ?? _genId(),
+                                  category: category,
+                                  modelName: model,
+                                  customerName: customer,
+                                  siteName: site,
+                                  widthMm: width,
+                                  heightMm: height,
+                                  quantity: quantity,
+                                  baseAmount:
+                                      int.tryParse(
+                                        baseAmountController.text.replaceAll(
+                                          ',',
+                                          '',
+                                        ),
+                                      ) ??
+                                      0,
+                                  extraItems: extras,
+                                  customFields: customFields.map(
+                                    (key, value) => MapEntry(key, value.trim()),
+                                  ),
+                                  memo: memoController.text.trim(),
+                                  createdAt: existing?.createdAt ?? now,
+                                  updatedAt: now,
+                                );
+                                await ref
+                                    .read(estimateDocumentRepositoryProvider)
+                                    .upsert(doc);
+                                if (!context.mounted) return;
+                                Navigator.of(context).pop();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        existing == null
+                                            ? '견적서를 저장했습니다.'
+                                            : '견적서를 수정했습니다.',
+                                      ),
+                                    ),
+                                  );
+                                  unawaited(_load());
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    SnackBar(content: Text('저장 중 오류: $e')),
+                                  );
+                                }
+                                setModalState(() => isSaving = false);
+                              }
+                            },
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(existing == null ? '견적서 저장' : '수정 저장'),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -599,6 +706,7 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                   : ListView.separated(
                       itemBuilder: (context, index) {
                         final item = _items[index];
+                        final q = _searchController.text.trim();
                         return ListTile(
                           tileColor: Theme.of(context)
                               .colorScheme
@@ -607,13 +715,18 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          title: Text(
-                            '${item.category} · ${item.modelName}',
+                          title: SearchHighlightText(
+                            text: '${item.category} · ${item.modelName}',
+                            query: q,
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
-                          subtitle: Text(
-                            '${item.customerName} / ${item.siteName}\n'
-                            '${item.widthMm}×${item.heightMm}mm · ${item.quantity}개 · ${_krw.format(item.totalAmount)}',
+                          subtitle: SearchHighlightText(
+                            text:
+                                '${item.customerName} / ${item.siteName}\n'
+                                '${item.widthMm}×${item.heightMm}mm · ${item.quantity}개 · ${_krw.format(item.totalAmount)}'
+                                ' · 작성 ${_formatCreatedAt(item.createdAt)}',
+                            query: q,
+                            maxLines: 3,
                           ),
                           isThreeLine: true,
                           trailing: PopupMenuButton<String>(
@@ -645,6 +758,23 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
         label: const Text('견적서 작성'),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+    );
+  }
+}
+
+class _ThousandsFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final intValue = int.tryParse(newValue.text.replaceAll(',', ''));
+    if (intValue == null) return oldValue;
+    final formatted = NumberFormat('#,###').format(intValue);
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }
