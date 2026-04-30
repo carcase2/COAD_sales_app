@@ -17,18 +17,17 @@ import 'package:mime/mime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class IssuanceRequestCreateScreen extends ConsumerStatefulWidget {
-  const IssuanceRequestCreateScreen({
-    super.key,
-    required this.initialDomain,
-  });
+  const IssuanceRequestCreateScreen({super.key, required this.initialDomain});
 
   final IssuanceDomain initialDomain;
 
   @override
-  ConsumerState<IssuanceRequestCreateScreen> createState() => _IssuanceRequestCreateScreenState();
+  ConsumerState<IssuanceRequestCreateScreen> createState() =>
+      _IssuanceRequestCreateScreenState();
 }
 
-class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCreateScreen> {
+class _IssuanceRequestCreateScreenState
+    extends ConsumerState<IssuanceRequestCreateScreen> {
   final _taxFormKey = GlobalKey<FormState>();
   final _bondFormKey = GlobalKey<FormState>();
   final _rand = Random();
@@ -118,7 +117,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
     return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
   }
 
-  String _safe(String input) => input.trim().replaceAll(RegExp(r'[^a-zA-Z0-9가-힣._-]'), '_');
+  String _safe(String input) =>
+      input.trim().replaceAll(RegExp(r'[^a-zA-Z0-9가-힣._-]'), '_');
 
   Future<List<PlatformFile>> _pickFiles({required bool imageOnly}) async {
     final result = await FilePicker.pickFiles(
@@ -126,7 +126,17 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       type: FileType.custom,
       allowedExtensions: imageOnly
           ? const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif']
-          : const ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif', 'pdf'],
+          : const [
+              'jpg',
+              'jpeg',
+              'png',
+              'gif',
+              'webp',
+              'bmp',
+              'heic',
+              'heif',
+              'pdf',
+            ],
     );
     if (result == null) return [];
     return result.files.where((f) {
@@ -135,7 +145,9 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       if (!sizeOk) return false;
       final mime = lookupMimeType(f.path!);
       if (mime == null) return false;
-      return imageOnly ? mime.startsWith('image/') : (mime.startsWith('image/') || mime == 'application/pdf');
+      return imageOnly
+          ? mime.startsWith('image/')
+          : (mime.startsWith('image/') || mime == 'application/pdf');
     }).toList();
   }
 
@@ -154,7 +166,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       final original = _safe(f.name);
       final stamp = DateTime.now().millisecondsSinceEpoch;
       final rand = _rand.nextInt(999999).toString().padLeft(6, '0');
-      final objectPath = '$rootPath/$safeOwner/$date/${stamp}_${rand}_$original';
+      final objectPath =
+          '$rootPath/$safeOwner/$date/${stamp}_${rand}_$original';
       final mime = lookupMimeType(p);
       await _storage.uploadBinary(
         objectPath,
@@ -166,16 +179,42 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
     return urls;
   }
 
-  int _parseMoney(String raw) => (double.tryParse(raw.replaceAll(',', '').trim()) ?? 0).round();
+  int _parseMoney(String raw) =>
+      (double.tryParse(raw.replaceAll(',', '').trim()) ?? 0).round();
 
-  Future<String> _generateNumber({required String table, required String prefix}) async {
+  double _parseGuaranteePeriodYears(String raw) {
+    final text = raw.trim().toLowerCase().replaceAll(' ', '');
+    if (text.isEmpty) return 0;
+    if (text.endsWith('개월')) {
+      final n = double.tryParse(text.replaceAll('개월', '')) ?? 0;
+      return n / 12.0;
+    }
+    if (text.endsWith('달')) {
+      final n = double.tryParse(text.replaceAll('달', '')) ?? 0;
+      return n / 12.0;
+    }
+    if (text.endsWith('년')) {
+      return double.tryParse(text.replaceAll('년', '')) ?? 0;
+    }
+    // 기본 입력 단위는 달입니다. (예: 1 -> 1달)
+    final months = double.tryParse(text) ?? 0;
+    return months / 12.0;
+  }
+
+  Future<String> _generateNumber({
+    required String table,
+    required String prefix,
+  }) async {
     final now = DateTime.now();
     final ym = '${now.year}${now.month.toString().padLeft(2, '0')}';
     final fullPrefix = '$prefix-$ym-';
     final rows = await _client
         .from(table)
         .select(table == 'tax_invoices' ? 'invoice_number' : 'bond_number')
-        .like(table == 'tax_invoices' ? 'invoice_number' : 'bond_number', '$fullPrefix%')
+        .like(
+          table == 'tax_invoices' ? 'invoice_number' : 'bond_number',
+          '$fullPrefix%',
+        )
         .order('created_at', ascending: false)
         .limit(1);
     int next = 1;
@@ -188,7 +227,10 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
     return '$fullPrefix${next.toString().padLeft(4, '0')}';
   }
 
-  Future<void> _pickDate(TextEditingController ctrl, {DateTime? firstDate}) async {
+  Future<void> _pickDate(
+    TextEditingController ctrl, {
+    DateTime? firstDate,
+  }) async {
     final now = DateTime.now();
     final date = await showDatePicker(
       context: context,
@@ -197,7 +239,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       lastDate: DateTime(now.year + 10),
     );
     if (date != null) {
-      ctrl.text = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      ctrl.text =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
       setState(() {});
     }
   }
@@ -206,7 +249,9 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
     if (_saving) return;
     final user = ref.read(authControllerProvider);
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('로그인 정보가 필요합니다.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그인 정보가 필요합니다.')));
       return;
     }
 
@@ -219,13 +264,19 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       }
       if (!mounted) return;
       ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
+      ref.invalidate(
+        issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+      );
       ref.invalidate(issuanceRequestBadgeCountProvider);
       Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('발행요청이 등록되었습니다.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('발행요청이 등록되었습니다.')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('등록 실패: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('등록 실패: $e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -236,13 +287,18 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       throw Exception('필수 입력값을 확인해주세요.');
     }
     if (_taxBizFiles.isEmpty) throw Exception('사업자등록증 이미지를 1개 이상 첨부해주세요.');
-    if (_taxBranch == null || _taxBranch!.trim().isEmpty) throw Exception('지사를 선택해주세요.');
+    if (_taxBranch == null || _taxBranch!.trim().isEmpty) {
+      throw Exception('지사를 선택해주세요.');
+    }
 
     final totalAmount = _parseMoney(_taxTotalAmount.text);
     if (totalAmount <= 0) throw Exception('총액을 올바르게 입력해주세요.');
     final taxAmount = totalAmount ~/ 11;
     final supplyAmount = totalAmount - taxAmount;
-    final invoiceNumber = await _generateNumber(table: 'tax_invoices', prefix: 'TAX');
+    final invoiceNumber = await _generateNumber(
+      table: 'tax_invoices',
+      prefix: 'TAX',
+    );
     final urls = await _uploadFiles(
       files: _taxBizFiles,
       rootPath: 'business_registration',
@@ -308,17 +364,30 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
 
     final contractAmount = _parseMoney(_bondContractAmount.text);
     final guaranteeRate = double.tryParse(_bondGuaranteeRate.text.trim()) ?? 0;
-    final guaranteePeriod = int.tryParse(_bondGuaranteePeriod.text.trim()) ?? 0;
+    final guaranteePeriod = _parseGuaranteePeriodYears(
+      _bondGuaranteePeriod.text.trim(),
+    );
     if (contractAmount <= 0) throw Exception('계약금액을 올바르게 입력해주세요.');
-    if (guaranteeRate <= 0 || guaranteeRate > 100) throw Exception('보증금율은 0~100 사이여야 합니다.');
-    if (guaranteePeriod <= 0) throw Exception('보증기간은 1년 이상이어야 합니다.');
+    if (guaranteeRate <= 0 || guaranteeRate > 100) {
+      throw Exception('보증금율은 0~100 사이여야 합니다.');
+    }
+    if (guaranteePeriod <= 0) {
+      throw Exception('보증기간을 올바르게 입력해주세요. (예: 1, 6, 12달)');
+    }
 
     final contractDate = DateTime.tryParse(_bondContractDate.text.trim());
     final endDate = DateTime.tryParse(_bondConstructionEndDate.text.trim());
-    if (contractDate == null || endDate == null) throw Exception('시공 시작일/종료일을 입력해주세요.');
-    if (endDate.isBefore(contractDate)) throw Exception('시공 종료일은 시작일 이후여야 합니다.');
+    if (contractDate == null || endDate == null) {
+      throw Exception('시공 시작일/종료일을 입력해주세요.');
+    }
+    if (endDate.isBefore(contractDate)) {
+      throw Exception('시공 종료일은 시작일 이후여야 합니다.');
+    }
 
-    final bondNumber = await _generateNumber(table: 'performance_bonds', prefix: 'BOND');
+    final bondNumber = await _generateNumber(
+      table: 'performance_bonds',
+      prefix: 'BOND',
+    );
     final businessUrls = await _uploadFiles(
       files: _bondBizFiles,
       rootPath: 'bond',
@@ -340,12 +409,14 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
           'guarantee_rate': guaranteeRate,
           'guarantee_period': guaranteePeriod,
           'contract_date': _bondContractDate.text.trim(),
-          if (_bondRequestDeadline.text.trim().isNotEmpty) 'request_deadline': _bondRequestDeadline.text.trim(),
+          if (_bondRequestDeadline.text.trim().isNotEmpty)
+            'request_deadline': _bondRequestDeadline.text.trim(),
           'status': 'pending',
           'created_by': userName,
           'requester': userName,
           'requester_date': DateTime.now().toIso8601String(),
-          if (_bondEmail.text.trim().isNotEmpty) 'email': _bondEmail.text.trim(),
+          if (_bondEmail.text.trim().isNotEmpty)
+            'email': _bondEmail.text.trim(),
           'bond_image_url': null,
         })
         .select('id')
@@ -387,8 +458,12 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
   @override
   Widget build(BuildContext context) {
     final isTax = _domain == IssuanceDomain.taxInvoice;
-    final taxRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-    final bondRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
+    final taxRowsAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondRowsAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+    );
     final taxCount = taxRowsAsync.valueOrNull?.length;
     final bondCount = bondRowsAsync.valueOrNull?.length;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
@@ -412,7 +487,9 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
         onTap: () async {
           setState(() => _quickActionsOpen = false);
           await Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+            MaterialPageRoute<void>(
+              builder: (_) => const SalesCallCreateScreen(),
+            ),
           );
         },
       ),
@@ -444,7 +521,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
           setState(() => _quickActionsOpen = false);
           await Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(mode: ListQueryMode.incomplete),
+              builder: (_) =>
+                  SalesCallListScreen(mode: ListQueryMode.incomplete),
             ),
           );
         },
@@ -478,28 +556,31 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       ),
     ];
     final inputTheme = Theme.of(context).inputDecorationTheme.copyWith(
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300, width: 1.2),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: accent, width: 1.8),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.red.shade400, width: 1.4),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.red.shade600, width: 1.8),
-          ),
-          labelStyle: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
-          floatingLabelStyle: TextStyle(color: accent, fontWeight: FontWeight.w700),
-        );
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade300, width: 1.2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: accent, width: 1.8),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.red.shade400, width: 1.4),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.red.shade600, width: 1.8),
+      ),
+      labelStyle: TextStyle(
+        color: Colors.grey.shade700,
+        fontWeight: FontWeight.w600,
+      ),
+      floatingLabelStyle: TextStyle(color: accent, fontWeight: FontWeight.w700),
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('발행요청 등록'),
@@ -519,7 +600,10 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
               children: [
                 Container(
                   margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.09),
                     borderRadius: BorderRadius.circular(12),
@@ -527,12 +611,20 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                   ),
                   child: Row(
                     children: [
-                      Icon(isTax ? Icons.receipt_long_rounded : Icons.gavel_rounded, color: accent),
+                      Icon(
+                        isTax
+                            ? Icons.receipt_long_rounded
+                            : Icons.gavel_rounded,
+                        color: accent,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           isTax ? '세금계산서 발행요청 작성' : '이행증권 발행요청 작성',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: accent),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: accent,
+                          ),
                         ),
                       ),
                     ],
@@ -558,14 +650,18 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                       ),
                     ],
                     selected: {_domain},
-                    onSelectionChanged: (v) => setState(() => _domain = v.first),
+                    onSelectionChanged: (v) =>
+                        setState(() => _domain = v.first),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                   child: Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
@@ -577,7 +673,11 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                         const SizedBox(width: 6),
                         Text(
                           '아래 입력칸을 눌러 작성하세요',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accent),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: accent,
+                          ),
                         ),
                       ],
                     ),
@@ -585,10 +685,14 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 ),
                 Expanded(
                   child: Theme(
-                    data: Theme.of(context).copyWith(inputDecorationTheme: inputTheme),
+                    data: Theme.of(
+                      context,
+                    ).copyWith(inputDecorationTheme: inputTheme),
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-                      child: _domain == IssuanceDomain.taxInvoice ? _buildTaxForm() : _buildBondForm(),
+                      child: _domain == IssuanceDomain.taxInvoice
+                          ? _buildTaxForm()
+                          : _buildBondForm(),
                     ),
                   ),
                 ),
@@ -619,7 +723,9 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                     decoration: BoxDecoration(
                       color: scheme.surface,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.5),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.12),
@@ -634,7 +740,9 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                         children: quickActions
                             .map(
                               (item) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 3,
+                                ),
                                 child: Material(
                                   color: item.color.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(12),
@@ -642,10 +750,17 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                                     borderRadius: BorderRadius.circular(12),
                                     onTap: item.onTap,
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 10,
+                                      ),
                                       child: Row(
                                         children: [
-                                          Icon(item.icon, size: 18, color: item.color),
+                                          Icon(
+                                            item.icon,
+                                            size: 18,
+                                            color: item.color,
+                                          ),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
@@ -657,7 +772,11 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                                               ),
                                             ),
                                           ),
-                                          Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
+                                          Icon(
+                                            Icons.chevron_right_rounded,
+                                            size: 18,
+                                            color: scheme.onSurfaceVariant,
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -677,9 +796,15 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                       mini: true,
                       backgroundColor: scheme.primary,
                       foregroundColor: Colors.white,
-                      onPressed: () => setState(() => _quickActionsOpen = !_quickActionsOpen),
+                      onPressed: () => setState(
+                        () => _quickActionsOpen = !_quickActionsOpen,
+                      ),
                       tooltip: _quickActionsOpen ? '닫기' : '열기',
-                      child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
+                      child: Icon(
+                        _quickActionsOpen
+                            ? Icons.close_rounded
+                            : Icons.menu_open_rounded,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     FloatingActionButton.extended(
@@ -690,7 +815,10 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
                           : const Icon(Icons.save_rounded),
                       label: Text(_saving ? '저장 중...' : '저장'),
@@ -718,12 +846,16 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 TextFormField(
                   controller: _taxCustomerName,
                   decoration: const InputDecoration(labelText: '고객명(현장명) *'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '고객명을 입력하세요.' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '고객명을 입력하세요.' : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _taxRegistrationNumber,
-                  decoration: const InputDecoration(labelText: '종사업자번호', hintText: '000-00-00000'),
+                  decoration: const InputDecoration(
+                    labelText: '종사업자번호',
+                    hintText: '000-00-00000',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -731,18 +863,22 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                   readOnly: true,
                   decoration: const InputDecoration(labelText: '발행요청일 *'),
                   onTap: () => _pickDate(_taxIssueDate),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '발행요청일을 선택하세요.' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '발행요청일을 선택하세요.' : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _taxTotalAmount,
-                  decoration: const InputDecoration(labelText: '부가세 포함 총액(원) *'),
+                  decoration: const InputDecoration(
+                    labelText: '부가세 포함 총액(원) *',
+                  ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     const _ThousandsFormatter(),
                   ],
-                  validator: (v) => _parseMoney(v ?? '') <= 0 ? '총액을 입력하세요.' : null,
+                  validator: (v) =>
+                      _parseMoney(v ?? '') <= 0 ? '총액을 입력하세요.' : null,
                 ),
               ],
             ),
@@ -762,7 +898,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                         max: 100,
                         divisions: 99,
                         label: '$_taxPercentage%',
-                        onChanged: (v) => setState(() => _taxPercentage = v.round()),
+                        onChanged: (v) =>
+                            setState(() => _taxPercentage = v.round()),
                       ),
                     ),
                     Text('$_taxPercentage%'),
@@ -771,7 +908,10 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 const SizedBox(height: 10),
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('항목 구분 *', style: TextStyle(fontWeight: FontWeight.w700)),
+                  child: Text(
+                    '항목 구분 *',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -804,8 +944,12 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _taxItemName,
-                  decoration: const InputDecoration(labelText: '품목명 *', hintText: '스피드도어/오버헤드도어/차고문/셔터/기타'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '품목명을 입력하세요.' : null,
+                  decoration: const InputDecoration(
+                    labelText: '품목명 *',
+                    hintText: '스피드도어/오버헤드도어/차고문/셔터/기타',
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '품목명을 입력하세요.' : null,
                 ),
               ],
             ),
@@ -818,11 +962,15 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 DropdownButtonFormField<String>(
                   initialValue: _taxBranch,
                   items: _branchOptions
-                      .map((e) => DropdownMenuItem<String>(value: e, child: Text(e)))
+                      .map(
+                        (e) =>
+                            DropdownMenuItem<String>(value: e, child: Text(e)),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _taxBranch = v),
                   decoration: const InputDecoration(labelText: '지사 *'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '지사를 선택하세요.' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '지사를 선택하세요.' : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -856,11 +1004,17 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                   spacing: 8,
                   runSpacing: 8,
                   children: _taxBizFiles
-                      .map((f) => Chip(
-                            backgroundColor: Colors.indigo.withValues(alpha: 0.08),
-                            side: BorderSide(color: Colors.indigo.withValues(alpha: 0.25)),
-                            label: Text(f.name, overflow: TextOverflow.ellipsis),
-                          ))
+                      .map(
+                        (f) => Chip(
+                          backgroundColor: Colors.indigo.withValues(
+                            alpha: 0.08,
+                          ),
+                          side: BorderSide(
+                            color: Colors.indigo.withValues(alpha: 0.25),
+                          ),
+                          label: Text(f.name, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
                       .toList(),
                 ),
                 const SizedBox(height: 8),
@@ -911,7 +1065,11 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                   selected: selected,
                   showCheckmark: false,
                   selectedColor: selectedBg,
-                  side: BorderSide(color: selected ? selectedFg.withValues(alpha: 0.35) : Colors.grey.shade300),
+                  side: BorderSide(
+                    color: selected
+                        ? selectedFg.withValues(alpha: 0.35)
+                        : Colors.grey.shade300,
+                  ),
                   labelStyle: TextStyle(
                     fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                     color: selected ? selectedFg : Colors.black87,
@@ -934,7 +1092,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 TextFormField(
                   controller: _bondCompanyName,
                   decoration: const InputDecoration(labelText: '업체명 *'),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '업체명을 입력하세요.' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '업체명을 입력하세요.' : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -945,13 +1104,16 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _bondContractAmount,
-                  decoration: const InputDecoration(labelText: '계약금액(부가세 포함) *'),
+                  decoration: const InputDecoration(
+                    labelText: '계약금액(부가세 포함) *',
+                  ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     const _ThousandsFormatter(),
                   ],
-                  validator: (v) => _parseMoney(v ?? '') <= 0 ? '계약금액을 입력하세요.' : null,
+                  validator: (v) =>
+                      _parseMoney(v ?? '') <= 0 ? '계약금액을 입력하세요.' : null,
                 ),
               ],
             ),
@@ -964,7 +1126,9 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 TextFormField(
                   controller: _bondGuaranteeRate,
                   decoration: const InputDecoration(labelText: '보증금율(%) *'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   validator: (v) {
                     final n = double.tryParse((v ?? '').trim()) ?? 0;
                     return (n <= 0 || n > 100) ? '0~100 범위로 입력하세요.' : null;
@@ -973,9 +1137,21 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _bondGuaranteePeriod,
-                  decoration: const InputDecoration(labelText: '보증기간(년) *'),
-                  keyboardType: TextInputType.number,
-                  validator: (v) => (int.tryParse((v ?? '').trim()) ?? 0) <= 0 ? '1년 이상 입력하세요.' : null,
+                  decoration: const InputDecoration(
+                    labelText: '보증기간(달) *',
+                    hintText: '예: 1, 6, 12',
+                  ),
+                  onTap: () {
+                    if (_bondGuaranteePeriod.text.trim() == '1') {
+                      _bondGuaranteePeriod.clear();
+                    }
+                  },
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  validator: (v) => _parseGuaranteePeriodYears(v ?? '') <= 0
+                      ? '보증기간(달)을 입력하세요. (예: 1)'
+                      : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -983,7 +1159,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                   readOnly: true,
                   decoration: const InputDecoration(labelText: '시공 시작일 *'),
                   onTap: () => _pickDate(_bondContractDate),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '시공 시작일을 선택하세요.' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '시공 시작일을 선택하세요.' : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -994,7 +1171,8 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                     _bondConstructionEndDate,
                     firstDate: DateTime.tryParse(_bondContractDate.text.trim()),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '시공 종료일을 선택하세요.' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '시공 종료일을 선택하세요.' : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -1016,11 +1194,17 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                   spacing: 8,
                   runSpacing: 8,
                   children: _bondBizFiles
-                      .map((f) => Chip(
-                            backgroundColor: Colors.deepOrange.withValues(alpha: 0.08),
-                            side: BorderSide(color: Colors.deepOrange.withValues(alpha: 0.25)),
-                            label: Text(f.name, overflow: TextOverflow.ellipsis),
-                          ))
+                      .map(
+                        (f) => Chip(
+                          backgroundColor: Colors.deepOrange.withValues(
+                            alpha: 0.08,
+                          ),
+                          side: BorderSide(
+                            color: Colors.deepOrange.withValues(alpha: 0.25),
+                          ),
+                          label: Text(f.name, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
                       .toList(),
                 ),
                 OutlinedButton.icon(
@@ -1037,11 +1221,17 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
                   spacing: 8,
                   runSpacing: 8,
                   children: _bondContractFiles
-                      .map((f) => Chip(
-                            backgroundColor: Colors.deepOrange.withValues(alpha: 0.08),
-                            side: BorderSide(color: Colors.deepOrange.withValues(alpha: 0.25)),
-                            label: Text(f.name, overflow: TextOverflow.ellipsis),
-                          ))
+                      .map(
+                        (f) => Chip(
+                          backgroundColor: Colors.deepOrange.withValues(
+                            alpha: 0.08,
+                          ),
+                          side: BorderSide(
+                            color: Colors.deepOrange.withValues(alpha: 0.25),
+                          ),
+                          label: Text(f.name, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
                       .toList(),
                 ),
                 OutlinedButton.icon(
@@ -1068,7 +1258,11 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        border: Border.all(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1099,7 +1293,11 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
       selected: selected,
       showCheckmark: false,
       selectedColor: selectedBg,
-      side: BorderSide(color: selected ? selectedFg.withValues(alpha: 0.35) : Colors.grey.shade300),
+      side: BorderSide(
+        color: selected
+            ? selectedFg.withValues(alpha: 0.35)
+            : Colors.grey.shade300,
+      ),
       labelStyle: TextStyle(
         fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
         color: selected ? selectedFg : Colors.black87,
@@ -1126,10 +1324,7 @@ class _IssuanceRequestCreateScreenState extends ConsumerState<IssuanceRequestCre
           ),
           child: Text(
             countText,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
           ),
         ),
       ],
@@ -1155,7 +1350,10 @@ class _ThousandsFormatter extends TextInputFormatter {
   const _ThousandsFormatter();
 
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     final digits = newValue.text.replaceAll(',', '');
     if (digits.isEmpty) return const TextEditingValue(text: '');
     final number = int.tryParse(digits);

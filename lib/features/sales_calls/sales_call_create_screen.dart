@@ -163,6 +163,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       await NotificationService.showSalesCallRegisteredAlert(
         customerName: created.customerName ?? '',
         phone: created.customerPhone ?? '',
+        assigneeName: user?.name,
       );
       // 백엔드 트리거가 누락된 환경에서도 새 통화 푸시가 가도록 Edge Function을 직접 호출
       try {
@@ -178,6 +179,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               'product_category_id': created.productCategoryId,
               'region_sido': created.regionSido,
               'region_name': created.regionName,
+              'region_manager': (body['region_manager'] ?? created.assignedTo),
               'assigned_to': created.assignedTo,
             },
           },

@@ -9,7 +9,8 @@ class IssuanceRequestScreen extends ConsumerStatefulWidget {
   const IssuanceRequestScreen({super.key});
 
   @override
-  ConsumerState<IssuanceRequestScreen> createState() => _IssuanceRequestScreenState();
+  ConsumerState<IssuanceRequestScreen> createState() =>
+      _IssuanceRequestScreenState();
 }
 
 enum _IssuanceStatusFilter { all, pending, completed }
@@ -18,14 +19,46 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   IssuanceDomain _domain = IssuanceDomain.taxInvoice;
   String _selectedAssignee = '전체';
   _IssuanceStatusFilter _statusFilter = _IssuanceStatusFilter.pending;
+  bool _isListeningLaunch = false;
+
+  void _consumePendingLaunch() {
+    final next = ref.read(pendingIssuanceLaunchProvider);
+    if (next == null) return;
+    setState(() {
+      _domain = next.domain;
+      _statusFilter = next.showCompleted
+          ? _IssuanceStatusFilter.completed
+          : _IssuanceStatusFilter.pending;
+      _selectedAssignee = '전체';
+    });
+    ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isListeningLaunch) {
+      _isListeningLaunch = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _consumePendingLaunch();
+      });
+      ref.listen<IssuanceLaunchTarget?>(pendingIssuanceLaunchProvider, (_, __) {
+        if (!mounted) return;
+        _consumePendingLaunch();
+      });
+    }
+
     final scheme = Theme.of(context).colorScheme;
     final pendingRowsAsync = ref.watch(issuanceRequestRowsProvider(_domain));
-    final completedRowsAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
-    final taxRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-    final bondRowsAsync = ref.watch(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
+    final completedRowsAsync = ref.watch(
+      issuanceCompletedRowsProvider(_domain),
+    );
+    final taxRowsAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondRowsAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+    );
     final taxCount = taxRowsAsync.valueOrNull?.length;
     final bondCount = bondRowsAsync.valueOrNull?.length;
     final isTax = _domain == IssuanceDomain.taxInvoice;
@@ -40,7 +73,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [accent.withValues(alpha: 0.92), accent.withValues(alpha: 0.72)],
+                  colors: [
+                    accent.withValues(alpha: 0.92),
+                    accent.withValues(alpha: 0.72),
+                  ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -58,7 +94,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.receipt_long_rounded, color: Colors.white),
+                      const Icon(
+                        Icons.receipt_long_rounded,
+                        color: Colors.white,
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
@@ -80,7 +119,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         ),
                         onPressed: () {
                           ref.invalidate(issuanceRequestRowsProvider(_domain));
-                          ref.invalidate(issuanceCompletedRowsProvider(_domain));
+                          ref.invalidate(
+                            issuanceCompletedRowsProvider(_domain),
+                          );
                           ref.invalidate(issuanceRequestBadgeCountProvider);
                         },
                         icon: const Icon(Icons.refresh_rounded, size: 18),
@@ -88,14 +129,21 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                       const SizedBox(width: 6),
                       pendingRowsAsync.when(
                         data: (rows) => Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Text(
                             '${rows.length + (completedRowsAsync.valueOrNull?.length ?? 0)}건',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         loading: () => const SizedBox.shrink(),
@@ -157,7 +205,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               ),
             ),
           ),
-          Expanded(child: _buildBody(scheme, pendingRowsAsync, completedRowsAsync)),
+          Expanded(
+            child: _buildBody(scheme, pendingRowsAsync, completedRowsAsync),
+          ),
         ],
       ),
     );
@@ -173,9 +223,13 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     if (created == true && mounted) {
       setState(() => _domain = selected);
       ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
+      ref.invalidate(
+        issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+      );
       ref.invalidate(issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceCompletedRowsProvider(IssuanceDomain.performanceBond));
+      ref.invalidate(
+        issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
+      );
       ref.invalidate(issuanceRequestBadgeCountProvider);
     }
   }
@@ -205,11 +259,15 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
         ),
       ),
       data: (pendingRows) {
-        final completedRows = completedRowsAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+        final completedRows =
+            completedRowsAsync.valueOrNull ?? const <IssuanceRequestRow>[];
         final rows = switch (_statusFilter) {
           _IssuanceStatusFilter.pending => pendingRows,
           _IssuanceStatusFilter.completed => completedRows,
-          _IssuanceStatusFilter.all => [...pendingRows, ...completedRows]..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
+          _IssuanceStatusFilter.all => [
+            ...pendingRows,
+            ...completedRows,
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
         };
         final allCount = pendingRows.length + completedRows.length;
         final userName = ref.watch(authControllerProvider)?.name?.trim();
@@ -219,7 +277,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
           counts[assignee] = (counts[assignee] ?? 0) + 1;
         }
 
-        if (_selectedAssignee == '전체' && userName != null && userName.isNotEmpty && counts.containsKey(userName)) {
+        if (_selectedAssignee == '전체' &&
+            userName != null &&
+            userName.isNotEmpty &&
+            counts.containsKey(userName)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _selectedAssignee == '전체') {
               setState(() => _selectedAssignee = userName);
@@ -229,7 +290,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
         final filteredRows = rows
             .where(
-              (row) => _selectedAssignee == '전체' || _assigneeText(row) == _selectedAssignee,
+              (row) =>
+                  _selectedAssignee == '전체' ||
+                  _assigneeText(row) == _selectedAssignee,
             )
             .toList();
 
@@ -291,7 +354,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               decoration: BoxDecoration(
                 color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: statusTabs.map((entry) {
@@ -304,7 +369,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         duration: const Duration(milliseconds: 160),
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         decoration: BoxDecoration(
-                          color: isSelected ? scheme.primary.withValues(alpha: 0.14) : Colors.transparent,
+                          color: isSelected
+                              ? scheme.primary.withValues(alpha: 0.14)
+                              : Colors.transparent,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -312,8 +379,12 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                            color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                            fontWeight: isSelected
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            color: isSelected
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -338,9 +409,11 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                       label: Text('$name  $count'),
                       selected: selected,
                       showCheckmark: false,
-                      onSelected: (_) => setState(() => _selectedAssignee = name),
+                      onSelected: (_) =>
+                          setState(() => _selectedAssignee = name),
                       selectedColor: scheme.primary.withValues(alpha: 0.14),
-                      backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                      backgroundColor: scheme.surfaceContainerHighest
+                          .withValues(alpha: 0.45),
                       side: BorderSide(
                         color: selected
                             ? scheme.primary.withValues(alpha: 0.4)
@@ -349,8 +422,12 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       labelStyle: TextStyle(
-                        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                        color: selected ? scheme.primary : scheme.onSurfaceVariant,
+                        fontWeight: selected
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: selected
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
@@ -384,7 +461,13 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
   String _assigneeText(IssuanceRequestRow row) {
     final master = row.master;
-    final assignee = (master['requester'] ?? master['created_by_name'] ?? master['created_by'] ?? '').toString().trim();
+    final assignee =
+        (master['requester'] ??
+                master['created_by_name'] ??
+                master['created_by'] ??
+                '')
+            .toString()
+            .trim();
     return assignee.isEmpty ? '미지정' : assignee;
   }
 
@@ -469,6 +552,17 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       );
     }
 
+    String formatBondPeriod(String raw) {
+      final v = double.tryParse(raw.trim());
+      if (v == null || v <= 0) return raw;
+      final months = v * 12.0;
+      final roundedMonths = months.roundToDouble();
+      if ((months - roundedMonths).abs() < 0.001) {
+        return '${roundedMonths.toInt()}달';
+      }
+      return '${months.toStringAsFixed(1)}달';
+    }
+
     final details = <Widget>[
       kv('요청 구분', isTax ? '세금계산서' : '이행증권'),
       kv('상태', statusLabel(textOf('status'), isCompleted: row.isCompleted)),
@@ -485,7 +579,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
         kv('증권 종류', textOf('bond_type')),
         kv('계약금액', formatWon(textOf('contract_amount'))),
         kv('보증금율', '${textOf('guarantee_rate')}%'),
-        kv('보증기간', '${textOf('guarantee_period')}년'),
+        kv('보증기간', formatBondPeriod(textOf('guarantee_period'))),
       ],
     ];
 
@@ -504,7 +598,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   Row(
                     children: [
                       Icon(
-                        isTax ? Icons.receipt_long_rounded : Icons.gavel_rounded,
+                        isTax
+                            ? Icons.receipt_long_rounded
+                            : Icons.gavel_rounded,
                         size: 18,
                         color: accent,
                       ),
@@ -524,15 +620,20 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.32),
+                      color: scheme.surfaceContainerHighest.withValues(
+                        alpha: 0.32,
+                      ),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.4),
+                      ),
                     ),
-                    child: Column(
-                      children: details,
-                    ),
+                    child: Column(children: details),
                   ),
                 ],
               ),
@@ -570,7 +671,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                 label,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: selected ? accent : Colors.white.withValues(alpha: 0.92),
+                  color: selected
+                      ? accent
+                      : Colors.white.withValues(alpha: 0.92),
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
@@ -578,7 +681,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
                 decoration: BoxDecoration(
-                  color: selected ? accent.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.18),
+                  color: selected
+                      ? accent.withValues(alpha: 0.14)
+                      : Colors.white.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -599,10 +704,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 }
 
 class _IssuanceRequestCard extends StatelessWidget {
-  const _IssuanceRequestCard({
-    required this.row,
-    required this.onTap,
-  });
+  const _IssuanceRequestCard({required this.row, required this.onTap});
 
   final IssuanceRequestRow row;
   final VoidCallback onTap;
@@ -663,10 +765,14 @@ class _IssuanceRequestCard extends StatelessWidget {
     }
 
     final title = isTax
-        ? (textOf('customer_name').isEmpty ? row.title : textOf('customer_name'))
+        ? (textOf('customer_name').isEmpty
+              ? row.title
+              : textOf('customer_name'))
         : (textOf('company_name').isEmpty ? row.title : textOf('company_name'));
     final displayTitle = compactTitle(title);
-    final assignee = (textOf('requester').isEmpty ? textOf('created_by') : textOf('requester'));
+    final assignee = (textOf('requester').isEmpty
+        ? textOf('created_by')
+        : textOf('requester'));
     final status = statusLabel(textOf('status'), isCompleted: row.isCompleted);
     final extra = isTax
         ? '품목: ${textOf('item_name').isEmpty ? '-' : textOf('item_name')} · 총액: ${formatWon(textOf('total_amount'))}'
@@ -701,10 +807,7 @@ class _IssuanceRequestCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                bg,
-                Colors.white,
-              ],
+              colors: [bg, Colors.white],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -724,7 +827,10 @@ class _IssuanceRequestCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
                       color: accent.withValues(alpha: 0.14),
@@ -732,11 +838,18 @@ class _IssuanceRequestCard extends StatelessWidget {
                     ),
                     child: Text(
                       isTax ? '세금' : '이행',
-                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: accent),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                      ),
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
                       color: statusAccent.withValues(alpha: 0.12),
@@ -765,7 +878,10 @@ class _IssuanceRequestCard extends StatelessWidget {
                   ),
                   if (isUrgent)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       margin: const EdgeInsets.only(right: 6),
                       decoration: BoxDecoration(
                         color: Colors.red.shade600,
@@ -780,7 +896,11 @@ class _IssuanceRequestCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                  Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -802,7 +922,11 @@ class _IssuanceRequestCard extends StatelessWidget {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(Icons.schedule_rounded, size: 13, color: accent.withValues(alpha: 0.7)),
+                  Icon(
+                    Icons.schedule_rounded,
+                    size: 13,
+                    color: accent.withValues(alpha: 0.7),
+                  ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
@@ -832,7 +956,10 @@ class _IssuanceRequestCard extends StatelessWidget {
               if (!row.isCompleted && row.issue == null) ...[
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),

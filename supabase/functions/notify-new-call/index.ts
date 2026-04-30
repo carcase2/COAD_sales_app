@@ -81,7 +81,7 @@ serve(async (req) => {
       ? `${activeRecord.region_sido} ${activeRecord.region_name}`
       : (activeRecord ? (activeRecord.region_display || activeRecord.region_name || '지역 미상') : '지역 미상')
 
-    let assigneeName = '미지정'
+    let assigneeName = (activeRecord?.region_manager || '').toString().trim()
     try {
       if (activeRecord && activeRecord.assigned_to) {
         const { data: userData } = await supabaseAdmin
@@ -89,19 +89,22 @@ serve(async (req) => {
           .select('name')
           .eq('id', activeRecord.assigned_to)
           .maybeSingle()
-        if (userData) assigneeName = userData.name
+        if (userData?.name && userData.name.toString().trim().isNotEmpty) {
+          assigneeName = userData.name.toString().trim()
+        }
       }
     } catch (e) {
       console.error('Error fetching assignee:', e)
     }
+    if (!assigneeName) assigneeName = '미지정'
 
     // 5. Build Notification Content
     const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'
     const phone = (activeRecord && activeRecord.customer_phone) || ''
     const content = activeRecord ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음') : '내용 없음'
     
-    // Title with Assignee
-    const title = `[새 접수] ${customerName} (담당: ${assigneeName})`
+    // Title format: [담당자이름]
+    const title = `[${assigneeName}] ${customerName}`
     const body = `📦 모델: ${categoryName}\n📍 지역: ${regionText}\n📞 연락처: ${phone}\n📝 상세: ${content}`
 
     console.log(`Sending reception notification for: ${customerName}, assigned to: ${assigneeName}`)

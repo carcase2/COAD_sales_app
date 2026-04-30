@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/models/estimate_document.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EstimateWriterScreen extends ConsumerStatefulWidget {
@@ -89,6 +93,266 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
 
   String _formatCreatedAt(DateTime value) {
     return DateFormat('yyyy-MM-dd HH:mm').format(value);
+  }
+
+  String _safeFileName(String value) {
+    return value.replaceAll(RegExp(r'[\\/:*?"<>| ]+'), '_');
+  }
+
+  Widget _buildEstimateExportPaper(EstimateDocument item) {
+    final fields = item.customFields;
+    final extrasTotal = item.extraItems.fold<int>(
+      0,
+      (sum, e) => sum + (e.amount * e.quantity),
+    );
+    final siteManagerSign = fields['현장담당자 서명'] ?? '';
+    final staffSign = fields['등록자 담당자 서명'] ?? '';
+    Uint8List? decodeSign(String raw) {
+      final text = raw.trim();
+      if (text.isEmpty) return null;
+      try {
+        return base64Decode(text);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final siteSignBytes = decodeSign(siteManagerSign);
+    final staffSignBytes = decodeSign(staffSign);
+    Widget signBox(String label, Uint8List? bytes) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Container(
+            height: 56,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade400),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: bytes == null
+                ? const Center(
+                    child: Text('서명 없음', style: TextStyle(fontSize: 12)),
+                  )
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  ),
+          ),
+        ],
+      );
+    }
+
+    Widget line(String label, String value) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 100,
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            Expanded(child: Text(value, style: const TextStyle(fontSize: 12))),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: 380,
+      color: Colors.white,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Center(
+            child: Text(
+              '견 적 서',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(height: 10),
+          line('견적번호', fields['견적번호'] ?? item.id),
+          line('작성일자', fields['작성일자'] ?? _formatCreatedAt(item.createdAt)),
+          line('받는사람', fields['기본 받는 사람'] ?? item.customerName),
+          line('현장명', item.siteName),
+          line('카테고리/모델', '${item.category} / ${item.modelName}'),
+          line(
+            '규격',
+            '${item.widthMm} x ${item.heightMm} mm / ${item.quantity}개',
+          ),
+          const Divider(height: 16),
+          line('기본 금액', _krw.format(item.baseAmount)),
+          ...item.extraItems.map(
+            (e) => line(
+              '${e.name} (${e.quantity}개)',
+              _krw.format(e.amount * e.quantity),
+            ),
+          ),
+          const Divider(height: 16),
+          line('총 금액', _krw.format(item.baseAmount + extrasTotal)),
+          const SizedBox(height: 8),
+          if (item.memo.trim().isNotEmpty) line('메모', item.memo.trim()),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: signBox('현장담당자 서명', siteSignBytes)),
+              const SizedBox(width: 8),
+              Expanded(child: signBox('등록자 담당자 서명', staffSignBytes)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<Uint8List?> _captureBoundary(GlobalKey key) async {
+    final boundary =
+        key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) return null;
+    final image = await boundary.toImage(pixelRatio: 2.5);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
+  }
+
+  Future<void> _saveEstimateImage(
+    Uint8List bytes,
+    EstimateDocument item,
+  ) async {
+    final filename =
+        '견적서_${_safeFileName(item.siteName)}_${DateTime.now().millisecondsSinceEpoch}';
+    await FileSaver.instance.saveFile(
+      name: filename,
+      bytes: bytes,
+      fileExtension: 'png',
+      mimeType: MimeType.png,
+    );
+  }
+
+  Future<void> _shareEstimateImage(
+    Uint8List bytes,
+    EstimateDocument item,
+  ) async {
+    final tempDir = await getTemporaryDirectory();
+    final path =
+        '${tempDir.path}/estimate_${item.id}_${DateTime.now().millisecondsSinceEpoch}.png';
+    final file = File(path);
+    await file.writeAsBytes(bytes, flush: true);
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(path)], text: '[견적서] ${item.siteName}'),
+    );
+  }
+
+  Future<void> _openExportSheet(EstimateDocument item) async {
+    final imageKey = GlobalKey();
+    bool busy = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> runAction(
+              Future<void> Function(Uint8List bytes) action,
+            ) async {
+              setModalState(() => busy = true);
+              try {
+                await Future<void>.delayed(const Duration(milliseconds: 30));
+                final bytes = await _captureBoundary(imageKey);
+                if (bytes == null || bytes.isEmpty) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(content: Text('이미지 생성에 실패했습니다.')),
+                  );
+                  return;
+                }
+                await action(bytes);
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    this.context,
+                  ).showSnackBar(SnackBar(content: Text('처리 중 오류: $e')));
+                }
+              } finally {
+                if (context.mounted) setModalState(() => busy = false);
+              }
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '견적서 이미지',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: RepaintBoundary(
+                          key: imageKey,
+                          child: _buildEstimateExportPaper(item),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: busy
+                                ? null
+                                : () => runAction(
+                                    (bytes) => _saveEstimateImage(bytes, item),
+                                  ),
+                            icon: const Icon(Icons.download_rounded),
+                            label: const Text('이미지 저장'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: busy
+                                ? null
+                                : () => runAction(
+                                    (bytes) => _shareEstimateImage(bytes, item),
+                                  ),
+                            icon: busy
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.share_rounded),
+                            label: Text(busy ? '처리 중...' : '공유하기'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _signaturePreview(String base64Data, ColorScheme scheme) {
@@ -943,12 +1207,18 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                             onSelected: (v) async {
                               if (v == 'edit') {
                                 await _openForm(item);
+                              } else if (v == 'export') {
+                                await _openExportSheet(item);
                               } else if (v == 'delete') {
                                 await _delete(item.id);
                               }
                             },
                             itemBuilder: (context) => const [
                               PopupMenuItem(value: 'edit', child: Text('수정')),
+                              PopupMenuItem(
+                                value: 'export',
+                                child: Text('이미지 저장/공유'),
+                              ),
                               PopupMenuItem(value: 'delete', child: Text('삭제')),
                             ],
                           ),

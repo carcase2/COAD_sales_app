@@ -146,6 +146,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         await NotificationService.showIssuanceCompletedAlert(
           title: title,
           body: '$name 건이 발급 완료되었습니다.',
+          domain: row.domain,
+          masterId: (row.master['id'] ?? '').toString(),
+          issueId: (row.issue?['id'] ?? '').toString(),
         );
       }
 
@@ -221,6 +224,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       setState(() {
         _currentIndex = 1;
         _loadedIndices.add(1);
+      });
+    });
+    ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
+      if (next == null) return;
+      setState(() {
+        _currentIndex = 3;
+        _loadedIndices.add(3);
       });
     });
 
