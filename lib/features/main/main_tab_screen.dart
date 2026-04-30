@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MainTabScreen extends ConsumerStatefulWidget {
   const MainTabScreen({super.key});
@@ -53,7 +54,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   final ScrollController _quickActionsScrollCtrl = ScrollController();
   bool _quickHasMoreAbove = false;
   bool _quickHasMoreBelow = false;
-  Timer? _issuanceCompletionWatchTimer;
+  RealtimeChannel? _issuanceCompletionWatchChannel;
+  Timer? _issuanceCompletionDebounce;
 
   @override
   void initState() {
@@ -83,18 +85,56 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
   @override
   void dispose() {
-    _issuanceCompletionWatchTimer?.cancel();
+    _issuanceCompletionDebounce?.cancel();
+    final channel = _issuanceCompletionWatchChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+      _issuanceCompletionWatchChannel = null;
+    }
     _quickActionsScrollCtrl.dispose();
     super.dispose();
   }
 
   void _startIssuanceCompletionWatcher() {
-    _issuanceCompletionWatchTimer?.cancel();
     unawaited(_checkIssuanceCompletionAndNotify());
-    _issuanceCompletionWatchTimer = Timer.periodic(
-      const Duration(seconds: 70),
-      (_) => unawaited(_checkIssuanceCompletionAndNotify()),
-    );
+    _issuanceCompletionWatchChannel?.unsubscribe();
+    _issuanceCompletionWatchChannel = Supabase.instance.client
+        .channel('issuance-completion-watch')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'tax_invoice_issues',
+          callback: (_) => _scheduleIssuanceCompletionCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'tax_invoice_issues',
+          callback: (_) => _scheduleIssuanceCompletionCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'performance_bond_issues',
+          callback: (_) => _scheduleIssuanceCompletionCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'performance_bond_issues',
+          callback: (_) => _scheduleIssuanceCompletionCheck(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleIssuanceCompletionCheck() {
+    _issuanceCompletionDebounce?.cancel();
+    _issuanceCompletionDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+      unawaited(_checkIssuanceCompletionAndNotify());
+    });
   }
 
   Future<void> _checkIssuanceCompletionAndNotify() async {

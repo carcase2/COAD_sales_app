@@ -14,6 +14,10 @@ class SalesCallsRepository {
 
   final SupabaseClient _client = Supabase.instance.client;
   final DatabaseHelper _db = DatabaseHelper.instance;
+  static const String _regionSelect =
+      'id,sido,region,manager,branch_type';
+  static const String _callHistorySelect =
+      'id,sales_call_id,call_stage,consultation_content,created_at,created_by';
 
   Future<MasterDataBundle> fetchMasterData() async {
     // 1. 로컬 캐시 확인
@@ -89,11 +93,11 @@ class SalesCallsRepository {
         product_categories(name),
         inquiry_methods(name),
         call_statuses(name),
-        regions(*)
+        regions($_regionSelect)
       ''';
       
       if (includeCallHistory) {
-        selectStr += ', call_history(*)';
+        selectStr += ', call_history($_callHistorySelect)';
       }
 
       PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr);
@@ -165,8 +169,8 @@ class SalesCallsRepository {
         product_categories(name),
         inquiry_methods(name),
         call_statuses(name),
-        regions(*),
-        call_history(*)
+        regions($_regionSelect),
+        call_history($_callHistorySelect)
       ''').eq('id', id).maybeSingle();
 
       if (res == null) {
@@ -285,7 +289,7 @@ class SalesCallsRepository {
         product_categories(name),
         inquiry_methods(name),
         call_statuses(name),
-        regions(*)
+        regions($_regionSelect)
       ''').or('customer_name.ilike.$q,customer_phone.ilike.$q,inquiry_content.ilike.$q,region_sido.ilike.$q,region_name.ilike.$q')
       .order('created_at', ascending: false)
       .limit(limit);

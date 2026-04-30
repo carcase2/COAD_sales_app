@@ -118,10 +118,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                           foregroundColor: Colors.white,
                         ),
                         onPressed: () {
-                          ref.invalidate(issuanceRequestRowsProvider(_domain));
-                          ref.invalidate(
-                            issuanceCompletedRowsProvider(_domain),
-                          );
+                          ref.invalidate(issuanceAllRowsProvider(_domain));
                           ref.invalidate(issuanceRequestBadgeCountProvider);
                         },
                         icon: const Icon(Icons.refresh_rounded, size: 18),
@@ -222,14 +219,8 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     );
     if (created == true && mounted) {
       setState(() => _domain = selected);
-      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(
-        issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
-      );
-      ref.invalidate(issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(
-        issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
-      );
+      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
       ref.invalidate(issuanceRequestBadgeCountProvider);
     }
   }

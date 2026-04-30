@@ -263,10 +263,8 @@ class _IssuanceRequestCreateScreenState
         await _submitBond(user.name);
       }
       if (!mounted) return;
-      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(
-        issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
-      );
+      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
       ref.invalidate(issuanceRequestBadgeCountProvider);
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(
