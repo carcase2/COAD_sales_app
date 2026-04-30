@@ -34,6 +34,7 @@ class _QuickActionItem {
     required this.heroTag,
     required this.color,
     required this.tooltip,
+    required this.subtitle,
     required this.icon,
     required this.onTap,
   });
@@ -41,6 +42,7 @@ class _QuickActionItem {
   final String heroTag;
   final Color color;
   final String tooltip;
+  final String subtitle;
   final IconData icon;
   final VoidCallback onTap;
 }
@@ -288,12 +290,15 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         ? '...'
         : '${issuanceBadgeCount}건';
     final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final actionsBottom = 12.0 + safeBottom;
+    final quickMenuWidth = (screenWidth * 0.64).clamp(220.0, 300.0);
     final quickActions = <_QuickActionItem>[
       _QuickActionItem(
         heroTag: 'global_home_open',
         color: Colors.blueGrey.shade700,
         tooltip: '홈',
+        subtitle: '메인 요약 화면으로 이동',
         icon: Icons.home_rounded,
         onTap: () {
           setState(() => _quickActionsOpen = false);
@@ -305,6 +310,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         heroTag: 'global_call_create',
         color: scheme.tertiary,
         tooltip: '접수',
+        subtitle: '새 고객 전화 접수 등록',
         icon: Icons.add_ic_call_rounded,
         onTap: () async {
           setState(() => _quickActionsOpen = false);
@@ -320,6 +326,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         heroTag: 'global_issuance_create',
         color: Colors.indigo.shade600,
         tooltip: '발행요청($issuanceCountText)',
+        subtitle: '세금/이행 발급요청 확인',
         icon: Icons.receipt_long_rounded,
         onTap: () async {
           setState(() => _quickActionsOpen = false);
@@ -331,6 +338,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         heroTag: 'global_quoter_open',
         color: Colors.teal.shade600,
         tooltip: '견적기',
+        subtitle: '견적서 작성 화면 열기',
         icon: Icons.calculate_rounded,
         onTap: () {
           setState(() => _quickActionsOpen = false);
@@ -342,6 +350,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         heroTag: 'global_incomplete_open',
         color: Colors.orange.shade700,
         tooltip: '미통화($incompleteCountText)',
+        subtitle: '금일 미통화 목록 보기',
         icon: Icons.pending_actions_rounded,
         onTap: () async {
           setState(() => _quickActionsOpen = false);
@@ -360,6 +369,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         heroTag: 'global_today_follow_open',
         color: Colors.deepPurple.shade600,
         tooltip: '금일팔로우($followCountText)',
+        subtitle: '날짜 팔로우 목록 열기',
         icon: Icons.event_note_rounded,
         onTap: () async {
           setState(() => _quickActionsOpen = false);
@@ -379,6 +389,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         heroTag: 'global_consultation_calendar_week',
         color: Colors.green.shade700,
         tooltip: '달력',
+        subtitle: '상담현황 주간 달력 이동',
         icon: Icons.calendar_view_week_rounded,
         onTap: () {
           setState(() => _quickActionsOpen = false);
@@ -469,17 +480,28 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
                 tooltip: '홈으로 이동',
               ),
             Center(
-              child: Text(
-                'v$kAppVersion',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.7),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'v$kAppVersion',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
                 ),
               ),
             ),
             IconButton(
               icon: const Icon(Icons.search_rounded),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.14),
+                foregroundColor: Colors.white,
+              ),
               onPressed: () {
                 final repository = ref.read(salesCallsRepositoryProvider);
                 final calls = ref.read(todayCallsContentProvider).value ?? [];
@@ -517,7 +539,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
                   if (_quickActionsOpen)
                     Container(
                       key: const ValueKey('quick_actions_scroll_panel'),
-                      width: 182,
+                      width: quickMenuWidth,
                       constraints: const BoxConstraints(maxHeight: 320),
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -603,15 +625,49 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
                                                     ),
                                                     const SizedBox(width: 8),
                                                     Expanded(
-                                                      child: Text(
-                                                        item.tooltip,
-                                                        style: TextStyle(
-                                                          fontSize: 13,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                          color:
-                                                              scheme.onSurface,
-                                                        ),
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            item.tooltip,
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            softWrap: false,
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w800,
+                                                              color: scheme
+                                                                  .onSurface,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 2,
+                                                          ),
+                                                          Text(
+                                                            item.subtitle,
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            softWrap: false,
+                                                            style: TextStyle(
+                                                              fontSize: 10.5,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              color: scheme
+                                                                  .onSurfaceVariant,
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
                                                     ),
                                                     Icon(

@@ -31,8 +31,12 @@ class CoadCustomerCallsApp extends ConsumerWidget {
       theme: AppTheme.light(),
       builder: (context, child) {
         final media = MediaQuery.of(context);
+        final clampedScale = media.textScaler.clamp(
+          minScaleFactor: 0.95,
+          maxScaleFactor: 1.15,
+        );
         return MediaQuery(
-          data: media.copyWith(textScaler: const TextScaler.linear(0.8)),
+          data: media.copyWith(textScaler: clampedScale),
           child: child ?? const SizedBox.shrink(),
         );
       },

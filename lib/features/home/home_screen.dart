@@ -140,12 +140,20 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
     final scheme = Theme.of(context).colorScheme;
 
     final currentIndex = _tabController.index;
-    final bgToday = scheme.surface; 
-    final bgIncomplete = const Color(0xFFFFF9F2); // 옅은 오렌지빛 (Sand 느낌)
-    final bgCalendar = const Color(0xFFF1F8E9); 
+    final bgToday = scheme.surface;
+    final bgIncomplete = Color.alphaBlend(
+      scheme.tertiaryContainer.withValues(alpha: 0.22),
+      scheme.surface,
+    );
+    final bgCalendar = Color.alphaBlend(
+      scheme.secondaryContainer.withValues(alpha: 0.22),
+      scheme.surface,
+    );
     
     final currentBg = currentIndex == 0 ? bgToday : (currentIndex == 1 ? bgIncomplete : bgCalendar);
-    final barBg = currentIndex == 0 ? scheme.primary : (currentIndex == 1 ? const Color(0xFFEF6C00) : const Color(0xFF2E7D32));
+    final barBg = currentIndex == 0
+        ? scheme.primary
+        : (currentIndex == 1 ? scheme.tertiary : scheme.secondary);
     final onBar = Colors.white;
 
     return Scaffold(
@@ -158,15 +166,27 @@ class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScr
                   controller: _tabController,
                   tabs: [
                     Tab(
-                      icon: Icon(Icons.dashboard_rounded, size: 20, color: Colors.amberAccent.shade100),
+                      icon: Icon(
+                        Icons.dashboard_rounded,
+                        size: 20,
+                        color: onBar.withValues(alpha: 0.9),
+                      ),
                       text: '요약',
                     ),
                     Tab(
-                      icon: Icon(Icons.pending_actions_rounded, size: 20, color: Colors.orangeAccent.shade100),
+                      icon: Icon(
+                        Icons.pending_actions_rounded,
+                        size: 20,
+                        color: onBar.withValues(alpha: 0.9),
+                      ),
                       text: '미통화',
                     ),
                     Tab(
-                      icon: Icon(Icons.calendar_month_rounded, size: 20, color: Colors.greenAccent.shade100),
+                      icon: Icon(
+                        Icons.calendar_month_rounded,
+                        size: 20,
+                        color: onBar.withValues(alpha: 0.9),
+                      ),
                       text: '달력',
                     ),
                   ],
@@ -400,7 +420,7 @@ class _StatCardItemState extends State<_StatCardItem> {
         duration: const Duration(milliseconds: 100),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: scheme.surfaceContainerLowest,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -600,7 +620,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             Padding(
               padding: const EdgeInsets.only(bottom: 20),
               child: Container(
-                height: 48,
+                height: 54,
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
@@ -629,7 +649,9 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                           duration: const Duration(milliseconds: 250),
                           curve: Curves.easeOutCubic,
                           decoration: BoxDecoration(
-                            color: isSelected ? Colors.white : Colors.transparent,
+                            color: isSelected
+                                ? scheme.surfaceContainerLowest
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: isSelected ? [
                               BoxShadow(
@@ -708,7 +730,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                                 width: 32,
                                 height: 32,
                                 decoration: BoxDecoration(
-                                  color: rankColor.withValues(alpha: 0.1),
+                              color: rankColor.withValues(alpha: 0.12),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Center(
@@ -736,7 +758,9 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                                     style: TextStyle(
                                       fontSize: 17,
                                       fontWeight: FontWeight.w900,
-                                      color: incomplete > 0 ? scheme.error : Colors.teal,
+                                      color: incomplete > 0
+                                          ? scheme.error
+                                          : scheme.secondary,
                                     ),
                                   ),
                                   Text(
@@ -1203,7 +1227,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           children: [
             // ─── 상단 담당자 필터 바 (캘린더용) ───
             Container(
-              height: 44,
+              height: 52,
               width: double.infinity,
               margin: const EdgeInsets.only(bottom: 10),
               child: ListView.builder(
@@ -1225,7 +1249,10 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: isSelected

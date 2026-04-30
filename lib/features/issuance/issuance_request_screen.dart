@@ -366,7 +366,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '${entry.$2}(${entry.$3})',
+                          '${entry.$2} ${entry.$3}',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 12,
@@ -385,7 +385,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               ),
             ),
             Container(
-              height: 42,
+              height: 48,
               margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
@@ -410,8 +410,12 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                             ? scheme.primary.withValues(alpha: 0.4)
                             : scheme.outlineVariant.withValues(alpha: 0.35),
                       ),
-                      visualDensity: VisualDensity.compact,
+                      visualDensity: VisualDensity.standard,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       labelStyle: TextStyle(
                         fontWeight: selected
                             ? FontWeight.w800
@@ -429,9 +433,30 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             Expanded(
               child: filteredRows.isEmpty
                   ? Center(
-                      child: Text(
-                        '선택한 담당자의 발급요청이 없습니다.',
-                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 24),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest.withValues(
+                            alpha: 0.35,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: scheme.outlineVariant.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Text(
+                          '선택한 담당자 조건에 맞는 요청이 없습니다.\n상단 필터를 변경해 다른 요청을 확인해 보세요.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
                       ),
                     )
                   : ListView.separated(

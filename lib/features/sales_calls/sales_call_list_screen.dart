@@ -214,14 +214,32 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   }
 
   Color _colorForAssignee(String assignee, ColorScheme scheme) {
-    if (assignee == '미지정') return scheme.surfaceContainerHighest;
+    if (assignee == '미지정') return scheme.outlineVariant;
     final colors = [
-      Colors.blue.shade100,
-      Colors.red.shade100,
-      Colors.green.shade100,
-      Colors.orange.shade100,
-      Colors.purple.shade100,
-      Colors.teal.shade100,
+      Color.alphaBlend(
+        scheme.primary.withValues(alpha: 0.22),
+        scheme.surfaceContainerLowest,
+      ),
+      Color.alphaBlend(
+        scheme.secondary.withValues(alpha: 0.22),
+        scheme.surfaceContainerLowest,
+      ),
+      Color.alphaBlend(
+        scheme.tertiary.withValues(alpha: 0.22),
+        scheme.surfaceContainerLowest,
+      ),
+      Color.alphaBlend(
+        scheme.error.withValues(alpha: 0.18),
+        scheme.surfaceContainerLowest,
+      ),
+      Color.alphaBlend(
+        scheme.primaryContainer.withValues(alpha: 0.35),
+        scheme.surfaceContainerLowest,
+      ),
+      Color.alphaBlend(
+        scheme.secondaryContainer.withValues(alpha: 0.35),
+        scheme.surfaceContainerLowest,
+      ),
     ];
     return colors[assignee.hashCode.abs() % colors.length];
   }
@@ -260,10 +278,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final actionsBottom = 12.0 + safeBottom;
+    final quickMenuWidth = (screenWidth * 0.64).clamp(220.0, 300.0);
     final quickActions = <_QuickActionItem>[
       _QuickActionItem(
         label: '홈',
+        subtitle: '메인 요약 화면으로 이동',
         color: Colors.blueGrey.shade700,
         icon: Icons.home_rounded,
         onTap: () {
@@ -274,6 +295,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
       _QuickActionItem(
         label: '접수',
+        subtitle: '새 고객 전화 접수 등록',
         color: scheme.tertiary,
         icon: Icons.add_ic_call_rounded,
         onTap: () async {
@@ -286,6 +308,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
       _QuickActionItem(
         label: '발행요청',
+        subtitle: '세금/이행 발급요청 확인',
         color: Colors.indigo.shade600,
         icon: Icons.receipt_long_rounded,
         onTap: () async {
@@ -300,6 +323,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
       _QuickActionItem(
         label: '견적기',
+        subtitle: '견적서 작성 화면 열기',
         color: Colors.teal.shade600,
         icon: Icons.calculate_rounded,
         onTap: () async {
@@ -317,6 +341,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
       _QuickActionItem(
         label: '금일팔로우',
+        subtitle: '날짜 팔로우 목록 열기',
         color: Colors.deepPurple.shade600,
         icon: Icons.event_note_rounded,
         onTap: () async {
@@ -335,6 +360,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
       _QuickActionItem(
         label: '달력',
+        subtitle: '상담현황 주간 달력 이동',
         color: Colors.green.shade700,
         icon: Icons.calendar_view_week_rounded,
         onTap: () {
@@ -411,7 +437,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               children: [
                 if (_quickActionsOpen)
                   Container(
-                    width: 182,
+                    width: quickMenuWidth,
                     constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -468,13 +494,46 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                                   Icon(item.icon, size: 18, color: item.color),
                                                   const SizedBox(width: 8),
                                                   Expanded(
-                                                    child: Text(
-                                                      item.label,
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w700,
-                                                        color: scheme.onSurface,
-                                                      ),
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          item.label,
+                                                          maxLines: 1,
+                                                          overflow:
+                                                              TextOverflow
+                                                                  .ellipsis,
+                                                          softWrap: false,
+                                                          style: TextStyle(
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color:
+                                                                scheme.onSurface,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 2,
+                                                        ),
+                                                        Text(
+                                                          item.subtitle,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          softWrap: false,
+                                                          style: TextStyle(
+                                                            fontSize: 10.5,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: scheme
+                                                                .onSurfaceVariant,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   ),
                                                   Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
@@ -662,7 +721,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           return Column(
             children: [
               Container(
-                height: 50,
+                height: 58,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
@@ -675,7 +734,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 child: ListView.builder(
                   controller: _scrollController,
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   itemCount: sortedAssignees.length,
                   itemBuilder: (context, idx) {
                     final assignee = sortedAssignees[idx];
@@ -692,7 +751,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 9,
+                          ),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: isSelected ? color : color.withOpacity(0.15),
@@ -725,7 +787,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? Colors.white.withOpacity(0.5) : color.withOpacity(0.2),
+                                  color: isSelected
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerLowest
+                                          .withOpacity(0.7)
+                                      : color.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
@@ -799,17 +866,17 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             return Container(
                               margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
-                                color: assignColor.withValues(alpha: 0.12),
+                                color: scheme.surfaceContainerLowest,
                                 borderRadius: BorderRadius.circular(18),
                                 border: Border.all(
-                                  color: assignColor.withValues(alpha: 0.35),
+                                  color: assignColor.withValues(alpha: 0.45),
                                   width: 1,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: assignColor.withValues(alpha: 0.14),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 3),
+                                    color: scheme.shadow.withValues(alpha: 0.06),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
                                   ),
                                 ],
                               ),
@@ -956,9 +1023,21 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           ),
                                           const SizedBox(width: 8),
                                           // Quick Actions
-                                          _buildQuickAction(Icons.call, Colors.green, () => LauncherUtils.makePhoneCall(c.customerPhone ?? '')),
+                                          _buildQuickAction(
+                                            Icons.call,
+                                            scheme.secondary,
+                                            () => LauncherUtils.makePhoneCall(
+                                              c.customerPhone ?? '',
+                                            ),
+                                          ),
                                           const SizedBox(width: 8),
-                                          _buildQuickAction(Icons.message_rounded, Colors.blue, () => LauncherUtils.sendSMS(c.customerPhone ?? '')),
+                                          _buildQuickAction(
+                                            Icons.message_rounded,
+                                            scheme.primary,
+                                            () => LauncherUtils.sendSMS(
+                                              c.customerPhone ?? '',
+                                            ),
+                                          ),
                                         ],
                                       ),
                                       const SizedBox(height: 10),
@@ -1082,12 +1161,14 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 class _QuickActionItem {
   const _QuickActionItem({
     required this.label,
+    required this.subtitle,
     required this.color,
     required this.icon,
     required this.onTap,
   });
 
   final String label;
+  final String subtitle;
   final Color color;
   final IconData icon;
   final VoidCallback onTap;
