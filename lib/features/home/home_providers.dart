@@ -43,6 +43,38 @@ class AssigneeOverview {
   final List<AssigneeCountRow> byAssignee;
 }
 
+class AssigneeQualityMetric {
+  const AssigneeQualityMetric({
+    required this.assignee,
+    required this.total,
+    required this.uncalled,
+    required this.uncalledRate,
+    required this.avgFirstResponseMinutes,
+  });
+
+  final String assignee;
+  final int total;
+  final int uncalled;
+  final double uncalledRate;
+  final double? avgFirstResponseMinutes;
+}
+
+class CallQualityOverview {
+  const CallQualityOverview({
+    required this.total,
+    required this.uncalled,
+    required this.uncalledRate,
+    required this.avgFirstResponseMinutes,
+    required this.byAssignee,
+  });
+
+  final int total;
+  final int uncalled;
+  final double uncalledRate;
+  final double? avgFirstResponseMinutes;
+  final List<AssigneeQualityMetric> byAssignee;
+}
+
 List<AssigneeCountRow> _groupByAssignee(List<SalesCall> rows) {
   final Map<String, int> counts = {};
   for (final c in rows) {
@@ -58,6 +90,75 @@ List<AssigneeCountRow> _groupByAssignee(List<SalesCall> rows) {
     return a.assignee.compareTo(b.assignee);
   });
   return list;
+}
+
+DateTime? _toLocalDateTime(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final dt = DateTime.tryParse(raw.trim());
+  return dt?.toLocal();
+}
+
+double? _firstResponseMinutes(SalesCall c) {
+  final created = _toLocalDateTime(c.createdAt);
+  if (created == null || c.callHistory.isEmpty) return null;
+  DateTime? firstHistoryAt;
+  for (final h in c.callHistory) {
+    final at = _toLocalDateTime(h['created_at']?.toString());
+    if (at == null) continue;
+    if (firstHistoryAt == null || at.isBefore(firstHistoryAt)) {
+      firstHistoryAt = at;
+    }
+  }
+  if (firstHistoryAt == null) return null;
+  final diff = firstHistoryAt.difference(created).inMinutes.toDouble();
+  if (diff.isNegative) return null;
+  return diff;
+}
+
+CallQualityOverview _buildCallQualityOverview(List<SalesCall> rows) {
+  final Map<String, List<SalesCall>> byAssignee = {};
+  for (final c in rows) {
+    final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+    byAssignee.putIfAbsent(a, () => []).add(c);
+  }
+
+  AssigneeQualityMetric metricFor(String assignee, List<SalesCall> calls) {
+    final total = calls.length;
+    final uncalled = calls.where((c) => c.isMissed).length;
+    final respondedMinutes = <double>[];
+    for (final c in calls) {
+      final minutes = _firstResponseMinutes(c);
+      if (minutes != null) respondedMinutes.add(minutes);
+    }
+    final avg = respondedMinutes.isEmpty
+        ? null
+        : respondedMinutes.reduce((a, b) => a + b) / respondedMinutes.length;
+    return AssigneeQualityMetric(
+      assignee: assignee,
+      total: total,
+      uncalled: uncalled,
+      uncalledRate: total == 0 ? 0 : uncalled / total,
+      avgFirstResponseMinutes: avg,
+    );
+  }
+
+  final totalMetric = metricFor('전체', rows);
+  final assigneeRows = byAssignee.entries
+      .map((e) => metricFor(e.key, e.value))
+      .toList()
+    ..sort((a, b) {
+      final c = b.total.compareTo(a.total);
+      if (c != 0) return c;
+      return a.assignee.compareTo(b.assignee);
+    });
+
+  return CallQualityOverview(
+    total: totalMetric.total,
+    uncalled: totalMetric.uncalled,
+    uncalledRate: totalMetric.uncalledRate,
+    avgFirstResponseMinutes: totalMetric.avgFirstResponseMinutes,
+    byAssignee: assigneeRows,
+  );
 }
 
 /// 오늘 `next_scheduled_date`(다음 예정일)가 오늘인 미종료 팔로우 — 총건 + 담당자별 건수(동일 API 1회).
@@ -83,6 +184,19 @@ final todayIncompleteOverviewProvider = FutureProvider<AssigneeOverview>((ref) a
     includeCallHistory: true,
   );
   return AssigneeOverview(total: rows.length, byAssignee: _groupByAssignee(rows));
+});
+
+/// 금일 접수 기준 품질 지표:
+/// - 미통화 비율(미통화/총 접수)
+/// - 접수 후 첫 상담까지 평균 소요 시간(분)
+final todayCallQualityOverviewProvider = FutureProvider<CallQualityOverview>((ref) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  final rows = await repo.fetchCalls(
+    date: todayYmdSeoul(),
+    limit: 1000,
+    includeCallHistory: true,
+  );
+  return _buildCallQualityOverview(rows);
 });
 
 final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
