@@ -3,6 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 enum IssuanceDomain { taxInvoice, performanceBond }
 
+typedef IssuanceLaunchTarget = ({IssuanceDomain domain, bool showCompleted});
+final pendingIssuanceLaunchProvider = StateProvider<IssuanceLaunchTarget?>((ref) => null);
+
 class IssuanceRequestRow {
   IssuanceRequestRow({
     required this.master,

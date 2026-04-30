@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:coad_customer_calls/services/app_update_service.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -222,9 +223,68 @@ class NotificationService {
       _openUpdateFlow(data);
       return;
     }
+    if (_isIssuanceCompletedNotification(data)) {
+      _openIssuanceCompleted(data);
+      return;
+    }
     final id = _extractCallIdFromData(data);
     if (id != null) {
       _navigateToCallDetail(id);
+    }
+  }
+
+  static bool _isIssuanceCompletedNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'issuance_completed' || action == 'open_issuance_completed';
+  }
+
+  static IssuanceDomain _parseIssuanceDomain(Object? raw) {
+    final value = (raw ?? '').toString().trim().toLowerCase();
+    if (value == 'performancebond' ||
+        value == 'performance_bond' ||
+        value == 'performance-bond' ||
+        value == 'bond') {
+      return IssuanceDomain.performanceBond;
+    }
+    return IssuanceDomain.taxInvoice;
+  }
+
+  static void _openIssuanceCompleted(Map<String, dynamic> data) {
+    final domain = _parseIssuanceDomain(data['issuance_domain'] ?? data['domain']);
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) {
+      _queuePendingData({
+        'type': 'issuance_completed',
+        'issuance_domain': domain.name,
+        'show_completed': true,
+      });
+      return;
+    }
+    try {
+      final container = ProviderScope.containerOf(ctx);
+      final user = container.read(authControllerProvider);
+      if (user == null) {
+        _queuePendingData({
+          'type': 'issuance_completed',
+          'issuance_domain': domain.name,
+          'show_completed': true,
+        });
+        return;
+      }
+      container.read(pendingIssuanceLaunchProvider.notifier).state = (
+        domain: domain,
+        showCompleted: true,
+      );
+    } catch (_) {
+      _queuePendingData({
+        'type': 'issuance_completed',
+        'issuance_domain': domain.name,
+        'show_completed': true,
+      });
     }
   }
 
@@ -367,11 +427,22 @@ class NotificationService {
   static Future<void> showIssuanceCompletedAlert({
     required String title,
     required String body,
+    required IssuanceDomain domain,
+    String? masterId,
+    String? issueId,
   }) async {
+    final payload = jsonEncode({
+      'type': 'issuance_completed',
+      'issuance_domain': domain.name,
+      'show_completed': true,
+      'master_id': masterId,
+      'issue_id': issueId,
+    });
     await _localNotifications.show(
       id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
       title: title,
       body: body,
+      payload: payload,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           _androidChannelId,
@@ -387,12 +458,15 @@ class NotificationService {
   static Future<void> showSalesCallRegisteredAlert({
     required String customerName,
     required String phone,
+    String? assigneeName,
   }) async {
     final name = customerName.trim().isEmpty ? '고객' : customerName.trim();
     final phoneText = phone.trim().isEmpty ? '' : ' ($phone)';
+    final rawAssignee = (assigneeName ?? '').trim();
+    final assignee = rawAssignee.isEmpty ? '미지정' : rawAssignee;
     await _localNotifications.show(
       id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
-      title: '새 통화 등록 완료',
+      title: '[$assignee] 새 통화 등록 완료',
       body: '$name$phoneText 접수가 등록되었습니다.',
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(

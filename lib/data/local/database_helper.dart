@@ -20,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -33,6 +33,21 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           data TEXT,
           created_at TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE estimate_documents (
+          id TEXT PRIMARY KEY,
+          category TEXT,
+          model_name TEXT,
+          customer_name TEXT,
+          site_name TEXT,
+          search_text TEXT,
+          data TEXT,
+          created_at TEXT,
+          updated_at TEXT
         )
       ''');
     }
@@ -66,6 +81,20 @@ class DatabaseHelper {
         created_at TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE estimate_documents (
+        id TEXT PRIMARY KEY,
+        category TEXT,
+        model_name TEXT,
+        customer_name TEXT,
+        site_name TEXT,
+        search_text TEXT,
+        data TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    ''');
   }
 
   // --- Sales Call Operations ---
@@ -75,17 +104,13 @@ class DatabaseHelper {
     final batch = db.batch();
 
     for (var call in calls) {
-      batch.insert(
-        'sales_calls',
-        {
-          'id': call['id'],
-          'data': jsonEncode(call),
-          'status_id': call['status_id'],
-          'call_date': call['call_date'],
-          'created_at': call['created_at'],
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      batch.insert('sales_calls', {
+        'id': call['id'],
+        'data': jsonEncode(call),
+        'status_id': call['status_id'],
+        'call_date': call['call_date'],
+        'created_at': call['created_at'],
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
   }
@@ -118,18 +143,19 @@ class DatabaseHelper {
       limit: limit,
     );
 
-    return res.map((row) => jsonDecode(row['data'] as String) as Map<String, dynamic>).toList();
+    return res
+        .map((row) => jsonDecode(row['data'] as String) as Map<String, dynamic>)
+        .toList();
   }
 
   // --- Master Data Operations ---
 
   Future<void> saveMasterData(String key, Map<String, dynamic> data) async {
     final db = await instance.database;
-    await db.insert(
-      'master_data',
-      {'key': key, 'data': jsonEncode(data)},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('master_data', {
+      'key': key,
+      'data': jsonEncode(data),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<Map<String, dynamic>?> getMasterData(String key) async {
@@ -151,6 +177,7 @@ class DatabaseHelper {
     await db.delete('sales_calls');
     await db.delete('master_data');
     await db.delete('pending_calls');
+    await db.delete('estimate_documents');
   }
 
   // --- Pending Calls Operations ---
@@ -168,10 +195,7 @@ class DatabaseHelper {
     final res = await db.query('pending_calls', orderBy: 'created_at ASC');
     return res.map((row) {
       final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
-      return {
-        'id': row['id'], 
-        'data': data,
-      };
+      return {'id': row['id'], 'data': data};
     }).toList();
   }
 
