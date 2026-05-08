@@ -11,7 +11,11 @@ class ShutterCalculator {
     return ((widthMm + 100) / 1000.0) * ((heightMm + 500) / 1000.0);
   }
 
-  static double calculateWeight(double widthMm, double heightMm, ShutterType type) {
+  static double calculateWeight(
+    double widthMm,
+    double heightMm,
+    ShutterType type,
+  ) {
     final area = calculateArea(widthMm, heightMm);
     final weightPerM2 = type.toString().contains('Insulated') ? 15.0 : 10.0;
     return area * weightPerM2;
@@ -38,11 +42,12 @@ class ShutterCalculator {
     required ShutterEstimateInput input,
     required List<Map<String, dynamic>> gridPrices,
     required List<Map<String, dynamic>> unitPrices,
+    Map<String, int>? unitPriceOverrideMap,
   }) {
     final area = calculateArea(input.widthMm, input.heightMm);
     final weightKg = calculateWeight(input.widthMm, input.heightMm, input.type);
     final motorModel = selectMotorModel(weightKg);
-    
+
     final breakdown = <ShutterBreakdownItem>[];
     int total = 0;
     int bodyPriceValue = 0; // 본체가 저장용
@@ -57,7 +62,11 @@ class ShutterCalculator {
     final wBucket = toGridBucket(input.widthMm);
     final hBucket = toGridBucket(input.heightMm);
     final gridEntry = gridPrices.firstWhere(
-      (e) => e['category'] == category && (isFire || e['model_type'] == modelType) && e['width_mm'] == wBucket && e['height_mm'] == hBucket,
+      (e) =>
+          e['category'] == category &&
+          (isFire || e['model_type'] == modelType) &&
+          e['width_mm'] == wBucket &&
+          e['height_mm'] == hBucket,
       orElse: () => {},
     );
     final gridPrice = (gridEntry['price'] as num?)?.toInt();
@@ -66,39 +75,54 @@ class ShutterCalculator {
       // [A] 철제방화 / 스크린방화: 격자값 1개가 총액 (슬라트 계산 안함)
       final finalPrice = gridPrice ?? 0;
       total += finalPrice;
-      breakdown.add(ShutterBreakdownItem(
-        name: '기본 견적 (격자: ${wBucket}x${hBucket})', 
-        amount: finalPrice,
-        note: '방화 모델은 격자 시공비가 총액으로 적용됩니다.',
-      ));
+      breakdown.add(
+        ShutterBreakdownItem(
+          name: '기본 견적 (격자: ${wBucket}x$hBucket)',
+          amount: finalPrice,
+          note: '방화 모델은 격자 시공비가 총액으로 적용됩니다.',
+        ),
+      );
     } else {
       // [B] 방범 4종: 슬라트(공식) + 시공비(격자 or 600k) + 부대비용
-      
+
       // 1. 슬라트 금액 계산
       final unitEntry = unitPrices.firstWhere(
         (e) => e['category'] == category && e['model_type'] == modelType,
         orElse: () => {},
       );
       int unitPriceValue = (unitEntry['unit_price'] as num?)?.toInt() ?? 0;
+      final overrideUnitPrice = modelType == null
+          ? null
+          : unitPriceOverrideMap?[modelType];
+      if ((overrideUnitPrice ?? 0) > 0) {
+        unitPriceValue = overrideUnitPrice!;
+      }
       if (unitPriceValue == 0) {
         unitPriceValue = (modelType?.contains('단열') ?? false) ? 144000 : 81000;
       }
       bodyPriceValue = (area * unitPriceValue).round();
       total += bodyPriceValue;
-      breakdown.add(ShutterBreakdownItem(
-        name: '스라트 (본체)', 
-        amount: bodyPriceValue,
-        note: '${area.toStringAsFixed(2)}㎡ × ${NumberFormat('#,###').format(unitPriceValue)}원',
-      ));
+      breakdown.add(
+        ShutterBreakdownItem(
+          name: '스라트 (본체)',
+          amount: bodyPriceValue,
+          note:
+              '${area.toStringAsFixed(2)}㎡ × ${NumberFormat('#,###').format(unitPriceValue)}원',
+        ),
+      );
 
       // 2. 시공비 (격자 있으면 격자값, 없으면 600,000원)
       final installCost = gridPrice ?? 600000;
       total += installCost;
-      breakdown.add(ShutterBreakdownItem(
-        name: '시공 예상 비용', 
-        amount: installCost,
-        note: gridPrice != null ? '격자 단가 적용 (${wBucket}x${hBucket})' : '기본 시공비 적용',
-      ));
+      breakdown.add(
+        ShutterBreakdownItem(
+          name: '시공 예상 비용',
+          amount: installCost,
+          note: gridPrice != null
+              ? '격자 단가 적용 (${wBucket}x$hBucket)'
+              : '기본 시공비 적용',
+        ),
+      );
 
       // 3. 기타 고정 부대비용
       final motorCost = input.overrideMotorCost ?? 400000;
@@ -112,14 +136,21 @@ class ShutterCalculator {
       // 4. 내풍압 특화 비용
       if (modelType?.contains('내풍압') ?? false) {
         // 윈드락: ceil((height+400)/72/10) * 2
-        final windlockQty = (((input.heightMm + 400) / 72 / 10).ceil() * 2).toInt();
+        final windlockQty = (((input.heightMm + 400) / 72 / 10).ceil() * 2)
+            .toInt();
         final windlockUnitCost = modelType!.contains('단열') ? 10000 : 8000;
         final windlockTotal = windlockQty * windlockUnitCost;
         total += windlockTotal;
-        breakdown.add(ShutterBreakdownItem(name: '윈드락 ($windlockQty 개)', amount: windlockTotal));
+        breakdown.add(
+          ShutterBreakdownItem(
+            name: '윈드락 ($windlockQty 개)',
+            amount: windlockTotal,
+          ),
+        );
 
         // 프레임: ((height+200)*2/1000) * 70000
-        final framePrice = (((input.heightMm + 200) * 2 / 1000.0) * 70000).round();
+        final framePrice = (((input.heightMm + 200) * 2 / 1000.0) * 70000)
+            .round();
         total += framePrice;
         breakdown.add(ShutterBreakdownItem(name: '프레임비', amount: framePrice));
       }
@@ -136,7 +167,12 @@ class ShutterCalculator {
     for (final item in input.extraItems) {
       final itemTotal = item.price * item.quantity;
       total += itemTotal;
-      breakdown.add(ShutterBreakdownItem(name: '${item.name} (${item.quantity}개)', amount: itemTotal));
+      breakdown.add(
+        ShutterBreakdownItem(
+          name: '${item.name} (${item.quantity}개)',
+          amount: itemTotal,
+        ),
+      );
     }
 
     return ShutterEstimateResult(
@@ -149,19 +185,80 @@ class ShutterCalculator {
       powerSpec: '500W',
       boxSize: '700*555',
       bracketType: '주문형 브라켓',
-      slatPriceNote: !isFire ? '${area.toStringAsFixed(2)}㎡ × ${NumberFormat('#,###').format((bodyPriceValue / area).round())}원' : null,
+      slatPriceNote: !isFire
+          ? '${area.toStringAsFixed(2)}㎡ × ${NumberFormat('#,###').format((bodyPriceValue / area).round())}원'
+          : null,
       calculatedAt: DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
     );
   }
 
   static Map<String, String?> getDbInfo(ShutterType type) {
     switch (type) {
-      case ShutterType.doubleExtrusion: return {'category': '방범', 'model_type': '이중압출'};
-      case ShutterType.doubleExtrusionInsulated: return {'category': '방범', 'model_type': '이중압출단열'};
-      case ShutterType.windproof: return {'category': '방범', 'model_type': '내풍압'};
-      case ShutterType.windproofInsulated: return {'category': '방범', 'model_type': '내풍압단열'};
-      case ShutterType.fireSteel: return {'category': '철제방화', 'model_type': null};
-      case ShutterType.fireScreen: return {'category': '방화스크린', 'model_type': null};
+      case ShutterType.doubleExtrusion:
+        return {'category': '방범', 'model_type': '이중압출'};
+      case ShutterType.doubleExtrusionInsulated:
+        return {'category': '방범', 'model_type': '이중압출단열'};
+      case ShutterType.windproof:
+        return {'category': '방범', 'model_type': '내풍압'};
+      case ShutterType.windproofInsulated:
+        return {'category': '방범', 'model_type': '내풍압단열'};
+      case ShutterType.fireSteel:
+        return {'category': '철제방화', 'model_type': null};
+      case ShutterType.fireScreen:
+        return {'category': '방화스크린', 'model_type': null};
     }
+  }
+
+  static bool isSecurityType(ShutterType type) {
+    final info = getDbInfo(type);
+    return info['category'] == '방범';
+  }
+
+  static Map<String, int> buildSecurityFallbackUnitPriceMap(
+    List<Map<String, dynamic>> unitPrices,
+  ) {
+    int pick(String modelType, int fallback) {
+      final row = unitPrices.firstWhere(
+        (e) => e['category'] == '방범' && e['model_type'] == modelType,
+        orElse: () => <String, dynamic>{},
+      );
+      final parsed = (row['unit_price'] as num?)?.toInt() ?? 0;
+      return parsed > 0 ? parsed : fallback;
+    }
+
+    final general = pick('이중압출', 81000);
+    final insulated = pick('이중압출단열', 144000);
+    return <String, int>{
+      '이중압출': general,
+      '내풍압': general,
+      '이중압출단열': insulated,
+      '내풍압단열': insulated,
+    };
+  }
+
+  static Map<String, int> unitPriceMapFromCompany(
+    Map<String, dynamic> companyRow,
+    Map<String, int> fallbackMap,
+  ) {
+    final result = Map<String, int>.from(fallbackMap);
+    final general = (companyRow['unit_price_general'] as num?)?.toInt() ?? 0;
+    final insulated =
+        (companyRow['unit_price_insulated'] as num?)?.toInt() ?? 0;
+
+    if (general > 0) {
+      result['이중압출'] = general;
+      result['내풍압'] = general;
+    }
+    if (insulated > 0) {
+      result['이중압출단열'] = insulated;
+      result['내풍압단열'] = insulated;
+    }
+    return result;
+  }
+
+  static int extractSlatPrice(ShutterEstimateResult result) {
+    return result.breakdown
+        .where((item) => item.name.contains('스라트'))
+        .fold<int>(0, (sum, item) => sum + item.amount);
   }
 }
