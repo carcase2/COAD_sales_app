@@ -202,7 +202,15 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   }
 
   void _onTabSelected(int index) {
-    if (_currentIndex == index) return;
+    if (index == 0) {
+      ref.read(homeHubFlowResetTickProvider.notifier).state++;
+    }
+    if (_currentIndex == index) {
+      if (index == 0) {
+        setState(() => _quickActionsOpen = false);
+      }
+      return;
+    }
 
     setState(() {
       _quickActionsOpen = false;
@@ -325,7 +333,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       _QuickActionItem(
         heroTag: 'global_issuance_create',
         color: Colors.indigo.shade600,
-        tooltip: '발행요청($issuanceCountText)',
+        tooltip: '발행요청 (테스트중)($issuanceCountText)',
         subtitle: '세금/이행 발급요청 확인',
         icon: Icons.receipt_long_rounded,
         onTap: () async {
@@ -337,7 +345,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       _QuickActionItem(
         heroTag: 'global_quoter_open',
         color: Colors.teal.shade600,
-        tooltip: '견적기',
+        tooltip: '견적기 (테스트중)',
         subtitle: '견적서 작성 화면 열기',
         icon: Icons.calculate_rounded,
         onTap: () {
@@ -416,6 +424,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         }
 
         if (_currentIndex != 0) {
+          ref.read(homeHubFlowResetTickProvider.notifier).state++;
           setState(() => _currentIndex = 0);
           return;
         }
@@ -456,7 +465,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
                 : Text(
                     _currentIndex == 1
                         ? '상담현황'
-                        : (_currentIndex == 2 ? '견적기' : '발급요청'),
+                        : (_currentIndex == 2
+                            ? '견적기 (테스트중)'
+                            : '발급요청 (테스트중)'),
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.5,
@@ -796,6 +807,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           _buildDrawerItem(
             icon: Icons.calculate_rounded,
             title: '견적기',
+            menuBadge: '(테스트중)',
             onTap: () {
               Navigator.pop(context);
               _onTabSelected(2);
@@ -805,6 +817,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           _buildDrawerItem(
             icon: Icons.receipt_long_rounded,
             title: '발급요청',
+            menuBadge: '(테스트중)',
             onTap: () {
               Navigator.pop(context);
               _onTabSelected(3);
@@ -956,6 +969,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     required VoidCallback onTap,
     required ColorScheme scheme,
     Color? color,
+    String? menuBadge,
   }) {
     return ListTile(
       leading: Icon(icon, color: color ?? scheme.onSecondaryContainer),
@@ -967,6 +981,16 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           color: color ?? scheme.onSurface,
         ),
       ),
+      trailing: menuBadge == null
+          ? null
+          : Text(
+              menuBadge,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: scheme.primary,
+              ),
+            ),
       onTap: onTap,
       dense: true,
       visualDensity: VisualDensity.compact,

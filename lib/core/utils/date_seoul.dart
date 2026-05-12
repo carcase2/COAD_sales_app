@@ -26,3 +26,125 @@ String formatSeoulDate(String? ymd) {
     return ymd;
   }
 }
+
+/// `yyyy-MM-dd`에 [deltaDays]일을 더한 날짜(달력 기준, 로컬).
+String addDaysToYmd(String ymd, int deltaDays) {
+  final parts = ymd.split('-');
+  if (parts.length != 3) return ymd;
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final d = int.tryParse(parts[2]);
+  if (y == null || m == null || d == null) return ymd;
+  final next = DateTime(y, m, d).add(Duration(days: deltaDays));
+  return '${next.year}-${next.month.toString().padLeft(2, '0')}-${next.day.toString().padLeft(2, '0')}';
+}
+
+/// [anyYmd]가 속한 주의 **월요일~일요일**(포함) 구간. `weekday`는 `DateTime` 규약(월=1).
+(String mondayYmd, String sundayYmd) seoulWeekRangeContaining(String anyYmd) {
+  final parts = anyYmd.split('-');
+  if (parts.length != 3) return (anyYmd, anyYmd);
+  final y = int.tryParse(parts[0]) ?? 0;
+  final m = int.tryParse(parts[1]) ?? 1;
+  final d = int.tryParse(parts[2]) ?? 1;
+  final day = DateTime(y, m, d);
+  final fromMon = day.weekday - DateTime.monday;
+  final monday = day.subtract(Duration(days: fromMon));
+  final sunday = monday.add(const Duration(days: 6));
+  String fmt(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  return (fmt(monday), fmt(sunday));
+}
+
+/// 홈 상단 인사 — `오늘은 5월12일(화) 입니다.` (서울 당일 기준).
+String formatTodayGreetingSentenceKo() {
+  final ymd = todayYmdSeoul();
+  final parts = ymd.split('-');
+  if (parts.length != 3) return '오늘 날짜를 표시할 수 없습니다.';
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final d = int.tryParse(parts[2]);
+  if (y == null || m == null || d == null) {
+    return '오늘 날짜를 표시할 수 없습니다.';
+  }
+  final day = DateTime(y, m, d);
+  const shortWeekdays = ['월', '화', '수', '목', '금', '토', '일'];
+  final wd = shortWeekdays[day.weekday - 1];
+  return '오늘은 $m월$d일($wd) 입니다.';
+}
+
+/// 홈 흐름 요약용 — `5월 12일 (월)` 형태.
+String formatYmdFlowLabelKo(String ymd) {
+  final parts = ymd.split('-');
+  if (parts.length != 3) return ymd;
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final d = int.tryParse(parts[2]);
+  if (y == null || m == null || d == null) return ymd;
+  final day = DateTime(y, m, d);
+  return DateFormat('M월 d일 (E)', 'ko_KR').format(day);
+}
+
+/// `4/7 ~ 4/13` 형태(연도 생략).
+String formatWeekRangeFlowLabel(String monYmd, String sunYmd) {
+  String short(String ymd) {
+    final p = ymd.split('-');
+    if (p.length != 3) return ymd;
+    final m = int.tryParse(p[1]) ?? 0;
+    final d = int.tryParse(p[2]) ?? 0;
+    return '$m/$d';
+  }
+
+  return '${short(monYmd)} ~ ${short(sunYmd)}';
+}
+
+/// 해당 월의 1일 `yyyy-MM-dd`.
+String firstDayOfMonthYmd(String ymd) {
+  final parts = ymd.split('-');
+  if (parts.length != 3) return ymd;
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  if (y == null || m == null) return ymd;
+  return '${y}-${m.toString().padLeft(2, '0')}-01';
+}
+
+/// [ymd]가 속한 달의 **첫날·마지막날**(포함, `yyyy-MM-dd`).
+(String firstYmd, String lastYmd) seoulMonthRangeContaining(String ymd) {
+  final parts = ymd.split('-');
+  if (parts.length != 3) return (ymd, ymd);
+  final y = int.tryParse(parts[0]) ?? 0;
+  final m = int.tryParse(parts[1]) ?? 1;
+  final first = DateTime(y, m, 1);
+  final last = DateTime(y, m + 1, 0);
+  String fmt(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  return (fmt(first), fmt(last));
+}
+
+/// 달력 기준으로 [delta]개월 이동한 달의 **1일**.
+String addCalendarMonthsFirstOfMonth(String ymd, int delta) {
+  final first = firstDayOfMonthYmd(ymd);
+  final parts = first.split('-');
+  var y = int.parse(parts[0]);
+  var m = int.parse(parts[1]) + delta;
+  while (m > 12) {
+    m -= 12;
+    y++;
+  }
+  while (m < 1) {
+    m += 12;
+    y--;
+  }
+  return '${y}-${m.toString().padLeft(2, '0')}-01';
+}
+
+/// `2026년 5월` 형태.
+String formatYearMonthLabelKo(String ymd) {
+  final parts = ymd.split('-');
+  if (parts.length != 3) return ymd;
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final d = int.tryParse(parts[2]);
+  if (y == null || m == null || d == null) return ymd;
+  final day = DateTime(y, m, d);
+  return DateFormat('y년 M월', 'ko_KR').format(day);
+}

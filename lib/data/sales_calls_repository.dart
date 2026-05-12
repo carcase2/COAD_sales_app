@@ -73,10 +73,16 @@ class SalesCallsRepository {
   }
 
   /// [followDate] `yyyy-MM-dd` — `next_scheduled_date`가 해당 날짜인 건만 (날짜 팔로우).
+  /// [followRangeStart]·[followRangeEndInclusive] — 팔로우 날짜 **구간**(양끝 포함, `next_scheduled_date` 기준).
+  /// [dateRangeStart]·[dateRangeEndInclusive] — 접수일 `call_date` **구간**(양끝 포함).
   /// [date]가 함께 넘어오면 [followDate]가 우선이며, 접수일(`call_date`) 필터는 적용하지 않음.
   Future<List<SalesCall>> fetchCalls({
     String? date,
     String? followDate,
+    String? followRangeStart,
+    String? followRangeEndInclusive,
+    String? dateRangeStart,
+    String? dateRangeEndInclusive,
     String? fromDate,
     int? limit,
     int? offset,
@@ -107,10 +113,19 @@ class SalesCallsRepository {
         queryBuilder = queryBuilder
             .gte('next_scheduled_date', followDate)
             .lt('next_scheduled_date', endExclusive);
+      } else if (followRangeStart != null && followRangeEndInclusive != null) {
+        final endExclusive = _ymdPlusOneDay(followRangeEndInclusive);
+        queryBuilder = queryBuilder
+            .gte('next_scheduled_date', followRangeStart)
+            .lt('next_scheduled_date', endExclusive);
       } else if (date != null) {
         queryBuilder = queryBuilder
             .gte('call_date', '$date 00:00:00')
             .lte('call_date', '$date 23:59:59');
+      } else if (dateRangeStart != null && dateRangeEndInclusive != null) {
+        queryBuilder = queryBuilder
+            .gte('call_date', '$dateRangeStart 00:00:00')
+            .lte('call_date', '$dateRangeEndInclusive 23:59:59');
       }
       if (fromDate != null) {
         queryBuilder = queryBuilder.gte('call_date', '$fromDate 00:00:00');
@@ -246,33 +261,48 @@ class SalesCallsRepository {
     }
   }
 
-  Future<TodayStats> fetchTodayStats() async {
+  TodayStats _todayStatsFromRows(List<Map<String, dynamic>> res) {
+    final total = res.length;
+    final incomplete = res.where((row) {
+      final stage = row['call_stage']?.toString().trim();
+      final isInitial =
+          stage == null || stage == '' || stage == '0' || stage == '접수';
+      final isNotSimple = row['status_id'] != 4;
+      return isInitial && isNotSimple;
+    }).length;
+    final completed = total - incomplete;
+    return TodayStats.fromJson({
+      'today_count': total,
+      'incomplete_count': incomplete,
+      'completed_today': completed,
+    });
+  }
+
+  Future<TodayStats> fetchTodayStats() => fetchStatsForDate(todayYmdSeoul());
+
+  Future<TodayStats> fetchStatsForDate(String ymdSeoul) async {
     try {
-      final todayStr = todayYmdSeoul();
-      
       final res = await _client
           .from('sales_calls')
           .select('id, status_id, call_stage')
-          .eq('call_date', todayStr);
+          .eq('call_date', ymdSeoul);
+      return _todayStatsFromRows(res);
+    } catch (e) {
+      throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
+    }
+  }
 
-      final total = res.length;
-      
-      // 기획 기준 미통화: (단계가 0/null/접수) && (상황이 단순문의(4) 아님)
-      final incomplete = res.where((row) {
-        final stage = row['call_stage']?.toString().trim();
-        final isInitial = stage == null || stage == '' || stage == '0' || stage == '접수';
-        final isNotSimple = row['status_id'] != 4;
-        return isInitial && isNotSimple;
-      }).length;
-      
-      // 완료: 전체 - 미통화 (또는 명시적으로 단계가 존재하거나 단순문의인 건)
-      final completed = total - incomplete;
-      
-      return TodayStats.fromJson({
-        'today_count': total,
-        'incomplete_count': incomplete,
-        'completed_today': completed,
-      });
+  Future<TodayStats> fetchStatsForDateRange(
+    String fromYmd,
+    String toYmdInclusive,
+  ) async {
+    try {
+      final res = await _client
+          .from('sales_calls')
+          .select('id, status_id, call_stage')
+          .gte('call_date', '$fromYmd 00:00:00')
+          .lte('call_date', '$toYmdInclusive 23:59:59');
+      return _todayStatsFromRows(res);
     } catch (e) {
       throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
     }

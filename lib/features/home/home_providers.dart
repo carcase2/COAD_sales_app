@@ -13,6 +13,9 @@ typedef ConsultationLaunchTarget = ({int tabIndex, CalendarFormat calendarFormat
 
 final pendingConsultationLaunchProvider = StateProvider<ConsultationLaunchTarget?>((ref) => null);
 
+/// [MainTabScreen]이 홈(탭 0)으로 이동할 때마다 증가. [HomeHubScreen]이 업무 흐름을 **일·금일**로 맞춤.
+final homeHubFlowResetTickProvider = StateProvider<int>((ref) => 0);
+
 /// 열기 메뉴 등: 상담현황의 **달력** 탭, **주간 달력** 형식으로 이동.
 /// [`rankingCallsProvider`]를 먼저 시작해 탭 전환 후 로딩 대기 시간을 줄임.
 void requestConsultationCalendarWeekNavigation(WidgetRef ref) {
@@ -197,6 +200,105 @@ final todayCallQualityOverviewProvider = FutureProvider<CallQualityOverview>((re
     includeCallHistory: true,
   );
   return _buildCallQualityOverview(rows);
+});
+
+/// 홈 허브 흐름 카드 구간 — 하루 / 금주 / 금월.
+enum HubPeriod { day, week, month }
+
+typedef HubPeriodKey = ({HubPeriod period, String anchorYmd});
+
+final hubPeriodStatsProvider =
+    FutureProvider.family<TodayStats, HubPeriodKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  switch (key.period) {
+    case HubPeriod.day:
+      return repo.fetchStatsForDate(key.anchorYmd);
+    case HubPeriod.week:
+      final range = seoulWeekRangeContaining(key.anchorYmd);
+      return repo.fetchStatsForDateRange(range.$1, range.$2);
+    case HubPeriod.month:
+      final range = seoulMonthRangeContaining(key.anchorYmd);
+      return repo.fetchStatsForDateRange(range.$1, range.$2);
+  }
+});
+
+final hubPeriodFollowOverviewProvider =
+    FutureProvider.family<AssigneeOverview, HubPeriodKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  switch (key.period) {
+    case HubPeriod.day:
+      final rows = await repo.fetchCalls(
+        followDate: key.anchorYmd,
+        incompleteOnly: true,
+        excludeSimpleInquiries: true,
+        limit: 1000,
+        includeCallHistory: false,
+      );
+      return AssigneeOverview(
+        total: rows.length,
+        byAssignee: _groupByAssignee(rows),
+      );
+    case HubPeriod.week:
+      final range = seoulWeekRangeContaining(key.anchorYmd);
+      final rows = await repo.fetchCalls(
+        followRangeStart: range.$1,
+        followRangeEndInclusive: range.$2,
+        incompleteOnly: true,
+        excludeSimpleInquiries: true,
+        limit: 1000,
+        includeCallHistory: false,
+      );
+      return AssigneeOverview(
+        total: rows.length,
+        byAssignee: _groupByAssignee(rows),
+      );
+    case HubPeriod.month:
+      final range = seoulMonthRangeContaining(key.anchorYmd);
+      final rows = await repo.fetchCalls(
+        followRangeStart: range.$1,
+        followRangeEndInclusive: range.$2,
+        incompleteOnly: true,
+        excludeSimpleInquiries: true,
+        limit: 1000,
+        includeCallHistory: false,
+      );
+      return AssigneeOverview(
+        total: rows.length,
+        byAssignee: _groupByAssignee(rows),
+      );
+  }
+});
+
+final hubPeriodQualityOverviewProvider =
+    FutureProvider.family<CallQualityOverview, HubPeriodKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  switch (key.period) {
+    case HubPeriod.day:
+      final rows = await repo.fetchCalls(
+        date: key.anchorYmd,
+        limit: 1000,
+        includeCallHistory: true,
+      );
+      return _buildCallQualityOverview(rows);
+    case HubPeriod.week:
+      final range = seoulWeekRangeContaining(key.anchorYmd);
+      final rows = await repo.fetchCalls(
+        dateRangeStart: range.$1,
+        dateRangeEndInclusive: range.$2,
+        limit: 1000,
+        includeCallHistory: true,
+      );
+      return _buildCallQualityOverview(rows);
+    case HubPeriod.month:
+      final range = seoulMonthRangeContaining(key.anchorYmd);
+      final rows = await repo.fetchCalls(
+        dateRangeStart: range.$1,
+        dateRangeEndInclusive: range.$2,
+        limit: 1000,
+        includeCallHistory: true,
+      );
+      return _buildCallQualityOverview(rows);
+  }
 });
 
 final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {

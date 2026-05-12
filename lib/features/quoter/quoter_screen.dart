@@ -217,6 +217,17 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   void _invalidateCalculatedResult() {
     if (_result == null || _isCalculating) return;
+    final editingDimensionNow =
+        _currentStep == 2 &&
+        (_widthFocusNode.hasFocus || _heightFocusNode.hasFocus);
+    if (editingDimensionNow) {
+      // Avoid immediate rebuild while IME is composing text. Rebuild can
+      // momentarily hide composing characters on some Android keyboards.
+      _result = null;
+      _similarLookupInput = null;
+      _companyComparisons = const [];
+      return;
+    }
     setState(() {
       _result = null;
       _similarLookupInput = null;
@@ -745,7 +756,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         },
       ),
       _QuoterQuickActionItem(
-        label: '발행요청',
+        label: '발행요청 (테스트중)',
         color: Colors.indigo.shade600,
         icon: Icons.receipt_long_rounded,
         onTap: () async {
@@ -1634,9 +1645,16 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   color: Colors.black,
+                  height: 1.25,
+                ),
+                strutStyle: const StrutStyle(
+                  fontSize: 22,
+                  height: 1.25,
+                  forceStrutHeight: true,
                 ),
                 cursorColor: scheme.primary,
                 textAlign: TextAlign.left,
+                textAlignVertical: TextAlignVertical.center,
                 maxLines: 1,
                 decoration: InputDecoration(
                   filled: true,
@@ -1661,7 +1679,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,
-                    vertical: 16,
+                    vertical: 18,
                   ),
                 ),
               ),

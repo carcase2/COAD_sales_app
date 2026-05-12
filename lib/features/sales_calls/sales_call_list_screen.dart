@@ -4,8 +4,7 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -16,13 +15,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum ListQueryMode { today, incomplete, recent, completedToday, incompleteByDate }
+enum ListQueryMode {
+  today,
+  incomplete,
+  recent,
+  completedToday,
+  incompleteByDate,
+  /// 접수일 `call_date` 구간 (양끝 포함). [date]·[dateEndInclusive] 필수.
+  dateRange,
+  /// `next_scheduled_date` 팔로우 구간 (양끝 포함). [date]·[dateEndInclusive] 필수.
+  followRange,
+}
 
 class SalesCallListScreen extends ConsumerStatefulWidget {
-  const SalesCallListScreen({super.key, required this.mode, this.date, this.initialAssignee});
+  const SalesCallListScreen({
+    super.key,
+    required this.mode,
+    this.date,
+    this.dateEndInclusive,
+    this.initialAssignee,
+  });
 
   final ListQueryMode mode;
   final String? date;
+  /// [ListQueryMode.dateRange]·[ListQueryMode.followRange]에서 사용.
+  final String? dateEndInclusive;
   final String? initialAssignee;
 
   @override
@@ -90,7 +107,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     
     // 1. 로컬 캐시 먼저 로드 (즉시 응답)
     // 날짜 팔로우는 next_scheduled_date 기준이라 call_date 캐시와 맞지 않아 사용하지 않음.
-    if (widget.mode != ListQueryMode.incompleteByDate) {
+    if (widget.mode != ListQueryMode.incompleteByDate &&
+        widget.mode != ListQueryMode.dateRange &&
+        widget.mode != ListQueryMode.followRange) {
       try {
         final cacheDate = switch (widget.mode) {
           ListQueryMode.today => widget.date ?? todayYmdSeoul(),
@@ -98,6 +117,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           ListQueryMode.incomplete => widget.date,
           ListQueryMode.recent => null,
           ListQueryMode.incompleteByDate => null,
+          ListQueryMode.dateRange => null,
+          ListQueryMode.followRange => null,
         };
         final cacheIncompleteOnly = widget.mode == ListQueryMode.incomplete;
 
@@ -156,11 +177,20 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     switch (widget.mode) {
       case ListQueryMode.today:
         return repo.fetchCalls(
-          date: todayYmdSeoul(),
+          date: widget.date ?? todayYmdSeoul(),
           limit: 100,
           includeCallHistory: true,
         );
       case ListQueryMode.incomplete:
+        if (widget.date != null && widget.dateEndInclusive != null) {
+          return repo.fetchCalls(
+            dateRangeStart: widget.date!,
+            dateRangeEndInclusive: widget.dateEndInclusive!,
+            uncalledOnly: true,
+            limit: 1000,
+            includeCallHistory: true,
+          );
+        }
         return repo.fetchCalls(
           date: widget.date, // 날짜가 전달된 경우 해당 날짜만 (오늘 요약 클릭 시), 없으면 전체 (전체 랭킹 등)
           uncalledOnly: true,
@@ -175,7 +205,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         );
       case ListQueryMode.completedToday:
         return repo.fetchCalls(
-          date: todayYmdSeoul(),
+          date: widget.date ?? todayYmdSeoul(),
           completedOnly: true,
           limit: 100,
           includeCallHistory: true,
@@ -189,6 +219,22 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           // `todayFollowOverviewProvider`·홈 바텀시트와 동일 조건 (call_history 포함 시 일부 행 누락 가능)
           includeCallHistory: false,
         );
+      case ListQueryMode.dateRange:
+        return repo.fetchCalls(
+          dateRangeStart: widget.date!,
+          dateRangeEndInclusive: widget.dateEndInclusive!,
+          limit: 1000,
+          includeCallHistory: true,
+        );
+      case ListQueryMode.followRange:
+        return repo.fetchCalls(
+          followRangeStart: widget.date!,
+          followRangeEndInclusive: widget.dateEndInclusive!,
+          incompleteOnly: true,
+          excludeSimpleInquiries: true,
+          limit: 1000,
+          includeCallHistory: false,
+        );
     }
   }
 
@@ -197,6 +243,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       case ListQueryMode.today:
         return '오늘 통화';
       case ListQueryMode.incomplete:
+        if (widget.date != null && widget.dateEndInclusive != null) {
+          return '미통화 ${widget.date} ~ ${widget.dateEndInclusive}';
+        }
         if (widget.date == todayYmdSeoul()) {
           return '금일 미통화';
         }
@@ -210,6 +259,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           return '오늘 날짜 팔로우';
         }
         return '${widget.date?.substring(5) ?? ''} 날짜 팔로우';
+      case ListQueryMode.dateRange:
+        return '접수 ${widget.date ?? ''} ~ ${widget.dateEndInclusive ?? ''}';
+      case ListQueryMode.followRange:
+        return '팔로우 ${widget.date ?? ''} ~ ${widget.dateEndInclusive ?? ''}';
     }
   }
 
@@ -242,6 +295,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
     ];
     return colors[assignee.hashCode.abs() % colors.length];
+  }
+
+  String _assigneeForMode(SalesCall c) {
+    if (widget.mode == ListQueryMode.incompleteByDate ||
+        widget.mode == ListQueryMode.followRange) {
+      final manager = (c.regionManager ?? '').trim();
+      if (manager.isNotEmpty) return manager;
+      return '미지정';
+    }
+    final assigned = (c.assignedTo ?? '').trim();
+    if (assigned.isNotEmpty) return assigned;
+    return '미지정';
   }
 
   DateTime? _parseCreatedLocal(SalesCall c) {
@@ -337,7 +402,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         },
       ),
       _QuickActionItem(
-        label: '발행요청',
+        label: '발행요청 (테스트중)',
         subtitle: '세금/이행 발급요청 확인',
         color: Colors.indigo.shade600,
         icon: Icons.receipt_long_rounded,
@@ -352,7 +417,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         },
       ),
       _QuickActionItem(
-        label: '견적기',
+        label: '견적기 (테스트중)',
         subtitle: '견적서 작성 화면 열기',
         color: Colors.teal.shade600,
         icon: Icons.calculate_rounded,
@@ -362,8 +427,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           await Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => Scaffold(
-                appBar: AppBar(title: const Text('견적기')),
-                body: const QuoterScreen(),
+                appBar: AppBar(title: const Text('견적기 (테스트중)')),
+                body: const QuoterHubScreen(),
               ),
             ),
           );
@@ -676,7 +741,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           final Map<String, int> counts = {'전체': items.length};
           for (var c in items) {
-            final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+            final a = _assigneeForMode(c);
             counts[a] = (counts[a] ?? 0) + 1;
           }
 
@@ -705,6 +770,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           final userName = user?.name;
           // 날짜 팔로우: 로그인명 자동 선택 시 전체 건수와 칩 필터가 어긋나 0건으로 보일 수 있음 → 비활성화
           if (widget.mode != ListQueryMode.incompleteByDate &&
+              widget.mode != ListQueryMode.followRange &&
               widget.initialAssignee == null &&
               _selectedAssignee == '전체' &&
               userName != null &&
@@ -734,7 +800,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           }
 
           final filteredItems = items.where((c) {
-            final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+            final a = _assigneeForMode(c);
             bool matchesAssignee = _selectedAssignee == '전체' || a == _selectedAssignee;
             
             bool matchesSearch = true;
@@ -900,10 +966,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final showElapsed = c.isMissed && elapsedLabel.isNotEmpty;
                             final stageLabel = _stageLabelForCard(c);
                             final firstCallLocal = _firstCallAtLocal(c);
-                            final showTodayTimeline = widget.mode == ListQueryMode.today;
+                            final showTodayTimeline =
+                                widget.mode == ListQueryMode.today ||
+                                widget.mode == ListQueryMode.dateRange;
 
                             final scheme = Theme.of(context).colorScheme;
-                            final assignColor = _colorForAssignee(c.assignedTo ?? '미지정', scheme);
+                            final displayAssignee = _assigneeForMode(c);
+                            final assignColor = _colorForAssignee(displayAssignee, scheme);
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 10),
@@ -1192,7 +1261,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                                   const SizedBox(width: 8),
                                                   Flexible(
                                                     child: Text(
-                                                      (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!,
+                                                      displayAssignee,
                                                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurface),
                                                       overflow: TextOverflow.ellipsis,
                                                       maxLines: 1,

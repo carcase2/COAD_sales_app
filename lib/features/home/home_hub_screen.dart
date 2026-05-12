@@ -1,11 +1,15 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
+import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// 상단 ◀▶ 이동 단위 (일 / 주 / 월).
+enum HubNavStep { day, week, month }
 
 class HomeHubScreen extends ConsumerStatefulWidget {
   const HomeHubScreen({super.key});
@@ -16,9 +20,240 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   late ScrollController _scrollController;
+  late String _hubFlowAnchorYmd;
+  HubNavStep _hubNavStep = HubNavStep.day;
   bool _isBottomBarVisible = true;
   static const int _followPickerFetchLimit = 1000;
   static const int _incompletePickerFetchLimit = 1000;
+
+  HubPeriodKey get _dayKey =>
+      (period: HubPeriod.day, anchorYmd: _hubFlowAnchorYmd);
+
+  HubPeriodKey get _weekKey =>
+      (period: HubPeriod.week, anchorYmd: _hubFlowAnchorYmd);
+
+  HubPeriodKey get _monthKey =>
+      (period: HubPeriod.month, anchorYmd: _hubFlowAnchorYmd);
+
+  /// 현재 탭 기준으로 앵커를 이동: 일→오늘, 주→이번 주(월요일), 월→이번 달 1일. 탭은 유지한다.
+  void _resetHubFlowAnchorToCurrent() {
+    final today = todayYmdSeoul();
+    setState(() {
+      _hubFlowAnchorYmd = switch (_hubNavStep) {
+        HubNavStep.day => today,
+        HubNavStep.week => seoulWeekRangeContaining(today).$1,
+        HubNavStep.month => firstDayOfMonthYmd(today),
+      };
+    });
+  }
+
+  bool _isHubFlowOnCurrentPeriod() {
+    final today = todayYmdSeoul();
+    switch (_hubNavStep) {
+      case HubNavStep.day:
+        return _hubFlowAnchorYmd == today;
+      case HubNavStep.week:
+        final curMon = seoulWeekRangeContaining(_hubFlowAnchorYmd).$1;
+        final thisMon = seoulWeekRangeContaining(today).$1;
+        return curMon == thisMon;
+      case HubNavStep.month:
+        return firstDayOfMonthYmd(_hubFlowAnchorYmd) ==
+            firstDayOfMonthYmd(today);
+    }
+  }
+
+  String _hubResetShortcutLabel() {
+    return switch (_hubNavStep) {
+      HubNavStep.day => '오늘로',
+      HubNavStep.week => '금주로',
+      HubNavStep.month => '금월로',
+    };
+  }
+
+  void _shiftHubNav(int dir) {
+    final today = todayYmdSeoul();
+    switch (_hubNavStep) {
+      case HubNavStep.day:
+        final next = addDaysToYmd(_hubFlowAnchorYmd, dir);
+        if (next.compareTo(today) > 0) return;
+        setState(() => _hubFlowAnchorYmd = next);
+        return;
+      case HubNavStep.week:
+        final mon = seoulWeekRangeContaining(_hubFlowAnchorYmd).$1;
+        final nextMon = addDaysToYmd(mon, 7 * dir);
+        if (nextMon.compareTo(today) > 0) return;
+        setState(() => _hubFlowAnchorYmd = nextMon);
+        return;
+      case HubNavStep.month:
+        final curFirst = firstDayOfMonthYmd(_hubFlowAnchorYmd);
+        final nextFirst = addCalendarMonthsFirstOfMonth(curFirst, dir);
+        if (nextFirst.compareTo(firstDayOfMonthYmd(today)) > 0) return;
+        setState(() => _hubFlowAnchorYmd = nextFirst);
+        return;
+    }
+  }
+
+  bool _canShiftHubNavNewer() {
+    final today = todayYmdSeoul();
+    switch (_hubNavStep) {
+      case HubNavStep.day:
+        return _hubFlowAnchorYmd.compareTo(today) < 0;
+      case HubNavStep.week:
+        final mon = seoulWeekRangeContaining(_hubFlowAnchorYmd).$1;
+        final nextMon = addDaysToYmd(mon, 7);
+        return nextMon.compareTo(today) <= 0;
+      case HubNavStep.month:
+        final nextFirst = addCalendarMonthsFirstOfMonth(_hubFlowAnchorYmd, 1);
+        return nextFirst.compareTo(firstDayOfMonthYmd(today)) <= 0;
+    }
+  }
+
+  String _hubNavCenterLabel() {
+    switch (_hubNavStep) {
+      case HubNavStep.day:
+        return formatYmdFlowLabelKo(_hubFlowAnchorYmd);
+      case HubNavStep.week:
+        final w = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+        return '금주 · ${formatWeekRangeFlowLabel(w.$1, w.$2)}';
+      case HubNavStep.month:
+        return '금월 · ${formatYearMonthLabelKo(_hubFlowAnchorYmd)}';
+    }
+  }
+
+  Widget _buildHubFlowDateBar(ColorScheme scheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<HubNavStep>(
+          segments: const [
+            ButtonSegment(
+              value: HubNavStep.day,
+              label: Text('일'),
+              icon: Icon(Icons.calendar_today_rounded, size: 16),
+            ),
+            ButtonSegment(
+              value: HubNavStep.week,
+              label: Text('주'),
+              icon: Icon(Icons.date_range_rounded, size: 16),
+            ),
+            ButtonSegment(
+              value: HubNavStep.month,
+              label: Text('월'),
+              icon: Icon(Icons.calendar_month_rounded, size: 16),
+            ),
+          ],
+          selected: {_hubNavStep},
+          onSelectionChanged: (s) {
+            if (s.isEmpty) return;
+            final next = s.first;
+            setState(() {
+              _hubNavStep = next;
+              final today = todayYmdSeoul();
+              _hubFlowAnchorYmd = switch (next) {
+                HubNavStep.day => today,
+                HubNavStep.week => seoulWeekRangeContaining(today).$1,
+                HubNavStep.month => firstDayOfMonthYmd(today),
+              };
+            });
+          },
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            foregroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return scheme.onSecondaryContainer;
+              }
+              return scheme.onSurfaceVariant;
+            }),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            IconButton.filledTonal(
+              onPressed: () => _shiftHubNav(-1),
+              icon: const Icon(Icons.chevron_left_rounded),
+              tooltip: switch (_hubNavStep) {
+                HubNavStep.day => '이전 날',
+                HubNavStep.week => '이전 주',
+                HubNavStep.month => '이전 달',
+              },
+            ),
+            Expanded(
+              child: Text(
+                _hubNavCenterLabel(),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                  height: 1.25,
+                ),
+              ),
+            ),
+            IconButton.filledTonal(
+              onPressed: _canShiftHubNavNewer()
+                  ? () => _shiftHubNav(1)
+                  : null,
+              icon: const Icon(Icons.chevron_right_rounded),
+              tooltip: switch (_hubNavStep) {
+                HubNavStep.day => '다음 날',
+                HubNavStep.week => '다음 주',
+                HubNavStep.month => '다음 달',
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHubFlowResetButton(ColorScheme scheme) {
+    final enabled = !_isHubFlowOnCurrentPeriod();
+    final label = _hubResetShortcutLabel();
+    final icon = switch (_hubNavStep) {
+      HubNavStep.day => Icons.today_rounded,
+      HubNavStep.week => Icons.view_week_rounded,
+      HubNavStep.month => Icons.calendar_view_month_rounded,
+    };
+    final tip = switch (_hubNavStep) {
+      HubNavStep.day => '기준 날짜를 오늘로 맞춥니다',
+      HubNavStep.week => '이번 주(금주)로 이동합니다',
+      HubNavStep.month => '이번 달(금월)로 이동합니다',
+    };
+
+    return Tooltip(
+      message: tip,
+      child: FilledButton.tonalIcon(
+        onPressed: enabled ? _resetHubFlowAnchorToCurrent : null,
+        icon: Icon(icon, size: 18),
+        label: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
+          ),
+        ),
+        style: FilledButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          foregroundColor: enabled
+              ? scheme.onSecondaryContainer
+              : scheme.onSurfaceVariant.withValues(alpha: 0.45),
+          backgroundColor: enabled
+              ? scheme.secondaryContainer.withValues(alpha: 0.85)
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.65),
+        ),
+      ),
+    );
+  }
 
   String _formatMinutes(double? minutes) {
     if (minutes == null) return '-';
@@ -27,20 +262,49 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final h = (minutes ~/ 60);
     final m = (minutes % 60).round();
     if (m == 0) return '${h}시간';
-    return '${h}시간 ${m}분';
+    return '${h}시간${m}분';
   }
 
-  Future<void> _openTodayFollowPicker() async {
+  String _regionAssigneeOf(dynamic row) {
+    final manager = (row.regionManager ?? '').toString().trim();
+    if (manager.isNotEmpty) return manager;
+    return '미지정';
+  }
+
+  Future<void> _openFollowPicker(HubPeriod scope) async {
     final repo = ref.read(salesCallsRepositoryProvider);
     List<dynamic> rows;
     try {
-      rows = await repo.fetchCalls(
-        followDate: todayYmdSeoul(),
-        incompleteOnly: true,
-        excludeSimpleInquiries: true,
-        limit: _followPickerFetchLimit,
-        includeCallHistory: false,
-      );
+      switch (scope) {
+        case HubPeriod.day:
+          rows = await repo.fetchCalls(
+            followDate: _hubFlowAnchorYmd,
+            incompleteOnly: true,
+            excludeSimpleInquiries: true,
+            limit: _followPickerFetchLimit,
+            includeCallHistory: false,
+          );
+        case HubPeriod.week:
+          final w = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+          rows = await repo.fetchCalls(
+            followRangeStart: w.$1,
+            followRangeEndInclusive: w.$2,
+            incompleteOnly: true,
+            excludeSimpleInquiries: true,
+            limit: _followPickerFetchLimit,
+            includeCallHistory: false,
+          );
+        case HubPeriod.month:
+          final m = seoulMonthRangeContaining(_hubFlowAnchorYmd);
+          rows = await repo.fetchCalls(
+            followRangeStart: m.$1,
+            followRangeEndInclusive: m.$2,
+            incompleteOnly: true,
+            excludeSimpleInquiries: true,
+            limit: _followPickerFetchLimit,
+            includeCallHistory: false,
+          );
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -54,7 +318,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final Map<String, int> counts = {'전체': rows.length};
     final isTruncated = rows.length >= _followPickerFetchLimit;
     for (final row in rows) {
-      final assignee = (row.assignedTo == null || row.assignedTo!.isEmpty) ? '미지정' : row.assignedTo!;
+      final assignee = _regionAssigneeOf(row);
       counts[assignee] = (counts[assignee] ?? 0) + 1;
     }
     final loginName = ref.read(authControllerProvider)?.name;
@@ -71,6 +335,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         if (countA != countB) return countB.compareTo(countA);
         return a.compareTo(b);
       });
+
+    final weekR = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+    final monthR = seoulMonthRangeContaining(_hubFlowAnchorYmd);
 
     final selected = await showModalBottomSheet<String>(
       context: context,
@@ -95,7 +362,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${todayYmdSeoul()} 기준',
+                  switch (scope) {
+                    HubPeriod.day => '${_hubFlowAnchorYmd} 기준',
+                    HubPeriod.week =>
+                      '${formatWeekRangeFlowLabel(weekR.$1, weekR.$2)} 주간 기준',
+                    HubPeriod.month =>
+                      '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} 팔로우 기준',
+                  },
                   style: TextStyle(
                     fontSize: 12,
                     color: scheme.onSurfaceVariant,
@@ -179,27 +452,73 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
     if (!mounted || selected == null) return;
 
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SalesCallListScreen(
-          mode: ListQueryMode.incompleteByDate,
-          date: todayYmdSeoul(),
-          initialAssignee: selected,
-        ),
-      ),
-    );
+    switch (scope) {
+      case HubPeriod.day:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.incompleteByDate,
+              date: _hubFlowAnchorYmd,
+              initialAssignee: selected,
+            ),
+          ),
+        );
+      case HubPeriod.week:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.followRange,
+              date: weekR.$1,
+              dateEndInclusive: weekR.$2,
+              initialAssignee: selected,
+            ),
+          ),
+        );
+      case HubPeriod.month:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.followRange,
+              date: monthR.$1,
+              dateEndInclusive: monthR.$2,
+              initialAssignee: selected,
+            ),
+          ),
+        );
+    }
   }
 
-  Future<void> _openTodayIncompletePicker() async {
+  Future<void> _openIncompletePicker(HubPeriod scope) async {
     final repo = ref.read(salesCallsRepositoryProvider);
     List<dynamic> rows;
     try {
-      rows = await repo.fetchCalls(
-        date: todayYmdSeoul(),
-        uncalledOnly: true,
-        limit: _incompletePickerFetchLimit,
-        includeCallHistory: false,
-      );
+      switch (scope) {
+        case HubPeriod.day:
+          rows = await repo.fetchCalls(
+            date: _hubFlowAnchorYmd,
+            uncalledOnly: true,
+            limit: _incompletePickerFetchLimit,
+            includeCallHistory: false,
+          );
+        case HubPeriod.week:
+          final w = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+          rows = await repo.fetchCalls(
+            dateRangeStart: w.$1,
+            dateRangeEndInclusive: w.$2,
+            uncalledOnly: true,
+            limit: _incompletePickerFetchLimit,
+            includeCallHistory: false,
+          );
+        case HubPeriod.month:
+          final m = seoulMonthRangeContaining(_hubFlowAnchorYmd);
+          rows = await repo.fetchCalls(
+            dateRangeStart: m.$1,
+            dateRangeEndInclusive: m.$2,
+            uncalledOnly: true,
+            limit: _incompletePickerFetchLimit,
+            includeCallHistory: false,
+          );
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -234,12 +553,52 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         return a.compareTo(b);
       });
 
-    final selected = await showModalBottomSheet<String>(
+    final weekRi = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+    final monthRi = seoulMonthRangeContaining(_hubFlowAnchorYmd);
+
+    await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) {
-        final scheme = Theme.of(context).colorScheme;
+      builder: (sheetContext) {
+        void pushIncompleteList(String assignee) {
+          switch (scope) {
+            case HubPeriod.day:
+              Navigator.of(sheetContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SalesCallListScreen(
+                    mode: ListQueryMode.incomplete,
+                    date: _hubFlowAnchorYmd,
+                    initialAssignee: assignee,
+                  ),
+                ),
+              );
+            case HubPeriod.week:
+              Navigator.of(sheetContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SalesCallListScreen(
+                    mode: ListQueryMode.incomplete,
+                    date: weekRi.$1,
+                    dateEndInclusive: weekRi.$2,
+                    initialAssignee: assignee,
+                  ),
+                ),
+              );
+            case HubPeriod.month:
+              Navigator.of(sheetContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SalesCallListScreen(
+                    mode: ListQueryMode.incomplete,
+                    date: monthRi.$1,
+                    dateEndInclusive: monthRi.$2,
+                    initialAssignee: assignee,
+                  ),
+                ),
+              );
+          }
+        }
+
+        final scheme = Theme.of(sheetContext).colorScheme;
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -248,7 +607,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '오늘 미통화 담당자 선택',
+                  '미통화 담당자 선택',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
@@ -257,7 +616,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${todayYmdSeoul()} 기준',
+                  switch (scope) {
+                    HubPeriod.day => '${_hubFlowAnchorYmd} 기준',
+                    HubPeriod.week =>
+                      '${formatWeekRangeFlowLabel(weekRi.$1, weekRi.$2)} 주간 기준',
+                    HubPeriod.month =>
+                      '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} 기준',
+                  },
                   style: TextStyle(
                     fontSize: 12,
                     color: scheme.onSurfaceVariant,
@@ -278,7 +643,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
-                    onPressed: () => Navigator.of(context).pop(defaultAssignee),
+                    onPressed: () => pushIncompleteList(defaultAssignee),
                     icon: const Icon(Icons.check_circle_rounded),
                     label: Text('기본 선택: $defaultAssignee'),
                   ),
@@ -297,7 +662,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                       final count = counts[assignee] ?? 0;
                       final isDefault = assignee == defaultAssignee;
                       return ListTile(
-                        onTap: () => Navigator.of(context).pop(assignee),
+                        onTap: () => pushIncompleteList(assignee),
                         leading: Icon(
                           assignee == '전체'
                               ? Icons.people_alt_rounded
@@ -346,23 +711,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         );
       },
     );
-
-    if (!mounted || selected == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SalesCallListScreen(
-          mode: ListQueryMode.incomplete,
-          date: todayYmdSeoul(),
-          initialAssignee: selected,
-        ),
-      ),
-    );
   }
 
-  Future<void> _openTodayQualityPicker({required bool forUncalledRate}) async {
+  Future<void> _openQualityPicker({
+    required bool forUncalledRate,
+    required HubPeriod scope,
+  }) async {
+    final periodKey = (period: scope, anchorYmd: _hubFlowAnchorYmd);
     CallQualityOverview overview;
     try {
-      overview = await ref.read(todayCallQualityOverviewProvider.future);
+      overview =
+          await ref.read(hubPeriodQualityOverviewProvider(periodKey).future);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -398,6 +757,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         return a.compareTo(b);
       });
 
+    final weekRq = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+    final monthRq = seoulMonthRangeContaining(_hubFlowAnchorYmd);
+
     final selected = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -412,7 +774,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  forUncalledRate ? '금일 미통화 비율' : '금일 초기응답 평균시간',
+                  switch ((forUncalledRate, scope)) {
+                    (true, HubPeriod.day) => '미통화 비율',
+                    (true, HubPeriod.week) => '주간 미통화 비율',
+                    (true, HubPeriod.month) => '월간 미통화 비율',
+                    (false, HubPeriod.day) => '초기응답 평균시간',
+                    (false, HubPeriod.week) => '주간 초기응답 평균시간',
+                    (false, HubPeriod.month) => '월간 초기응답 평균시간',
+                  },
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
@@ -421,7 +790,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${todayYmdSeoul()} 기준',
+                  switch (scope) {
+                    HubPeriod.day => '${_hubFlowAnchorYmd} 기준',
+                    HubPeriod.week =>
+                      '${formatWeekRangeFlowLabel(weekRq.$1, weekRq.$2)} 주간 기준',
+                    HubPeriod.month =>
+                      '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} 기준',
+                  },
                   style: TextStyle(
                     fontSize: 12,
                     color: scheme.onSurfaceVariant,
@@ -491,21 +866,53 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
 
     if (!mounted || selected == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SalesCallListScreen(
-          mode: forUncalledRate ? ListQueryMode.incomplete : ListQueryMode.today,
-          date: todayYmdSeoul(),
-          initialAssignee: selected,
-        ),
-      ),
-    );
+    switch (scope) {
+      case HubPeriod.day:
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: forUncalledRate
+                  ? ListQueryMode.incomplete
+                  : ListQueryMode.today,
+              date: _hubFlowAnchorYmd,
+              initialAssignee: selected,
+            ),
+          ),
+        );
+      case HubPeriod.week:
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: forUncalledRate
+                  ? ListQueryMode.incomplete
+                  : ListQueryMode.dateRange,
+              date: weekRq.$1,
+              dateEndInclusive: weekRq.$2,
+              initialAssignee: selected,
+            ),
+          ),
+        );
+      case HubPeriod.month:
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: forUncalledRate
+                  ? ListQueryMode.incomplete
+                  : ListQueryMode.dateRange,
+              date: monthRq.$1,
+              dateEndInclusive: monthRq.$2,
+              initialAssignee: selected,
+            ),
+          ),
+        );
+    }
   }
 
 
   @override
   void initState() {
     super.initState();
+    _hubFlowAnchorYmd = todayYmdSeoul();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
     // 탭 진입 시 바가 보이도록 초기화
@@ -537,23 +944,161 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   Future<void> _onRefresh() async {
+    final d = _dayKey;
+    final w = _weekKey;
+    final m = _monthKey;
+    for (final k in [d, w, m]) {
+      ref.invalidate(hubPeriodStatsProvider(k));
+      ref.invalidate(hubPeriodFollowOverviewProvider(k));
+      ref.invalidate(hubPeriodQualityOverviewProvider(k));
+    }
     ref.invalidate(todayStatsProvider);
     ref.invalidate(todayFollowOverviewProvider);
     ref.invalidate(todayCallQualityOverviewProvider);
     await Future.wait([
-      ref.read(todayStatsProvider.future),
-      ref.read(todayFollowOverviewProvider.future),
-      ref.read(todayCallQualityOverviewProvider.future),
+      ref.read(hubPeriodStatsProvider(d).future),
+      ref.read(hubPeriodFollowOverviewProvider(d).future),
+      ref.read(hubPeriodQualityOverviewProvider(d).future),
+      ref.read(hubPeriodStatsProvider(w).future),
+      ref.read(hubPeriodFollowOverviewProvider(w).future),
+      ref.read(hubPeriodQualityOverviewProvider(w).future),
+      ref.read(hubPeriodStatsProvider(m).future),
+      ref.read(hubPeriodFollowOverviewProvider(m).future),
+      ref.read(hubPeriodQualityOverviewProvider(m).future),
     ]);
+  }
+
+  void _openReceptionList(AppUser? user, HubPeriod scope) {
+    final loginAssignee = user?.name.trim();
+    final ia = (loginAssignee == null || loginAssignee.isEmpty)
+        ? null
+        : loginAssignee;
+    switch (scope) {
+      case HubPeriod.day:
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.today,
+              date: _hubFlowAnchorYmd,
+              initialAssignee: ia,
+            ),
+          ),
+        );
+      case HubPeriod.week:
+        final r = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.dateRange,
+              date: r.$1,
+              dateEndInclusive: r.$2,
+              initialAssignee: ia,
+            ),
+          ),
+        );
+      case HubPeriod.month:
+        final r = seoulMonthRangeContaining(_hubFlowAnchorYmd);
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.dateRange,
+              date: r.$1,
+              dateEndInclusive: r.$2,
+              initialAssignee: ia,
+            ),
+          ),
+        );
+    }
+  }
+
+  Widget _buildPeriodFlowBlock({
+    required AppUser? user,
+    required ColorScheme scheme,
+    required String title,
+    required String subtitle,
+    required HubPeriodKey periodKey,
+    required String receptionLabel,
+    required String incompleteLabel,
+    required String followLabel,
+  }) {
+    final statsAsync = ref.watch(hubPeriodStatsProvider(periodKey));
+    final followOverviewAsync =
+        ref.watch(hubPeriodFollowOverviewProvider(periodKey));
+    final qualityAsync =
+        ref.watch(hubPeriodQualityOverviewProvider(periodKey));
+    final scope = periodKey.period;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 10),
+        statsAsync.when(
+          data: (s) {
+            final followCount = followOverviewAsync.valueOrNull?.total ?? 0;
+            final quality = qualityAsync.valueOrNull;
+            return _MiniStatsWidget(
+              receptionLabel: receptionLabel,
+              incompleteLabel: incompleteLabel,
+              followLabel: followLabel,
+              today: s.todayCount ?? 0,
+              incomplete: s.incompleteCount ?? 0,
+              todayFollow: followCount,
+              uncalledRateText: quality == null
+                  ? '-'
+                  : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
+              avgFirstResponseText: quality == null
+                  ? '-'
+                  : _formatMinutes(quality.avgFirstResponseMinutes),
+              onTapToday: () => _openReceptionList(user, scope),
+              onTapIncomplete: () => _openIncompletePicker(scope),
+              onTapTodayFollow: () => _openFollowPicker(scope),
+              onTapUncalledRate: () => _openQualityPicker(
+                    forUncalledRate: true,
+                    scope: scope,
+                  ),
+              onTapFirstResponse: () => _openQualityPicker(
+                    forUncalledRate: false,
+                    scope: scope,
+                  ),
+            );
+          },
+          loading: () => const LinearProgressIndicator(),
+          error: (e, _) => const SizedBox.shrink(),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(homeHubFlowResetTickProvider, (previous, _) {
+      if (!mounted) return;
+      setState(() {
+        _hubNavStep = HubNavStep.day;
+        _hubFlowAnchorYmd = todayYmdSeoul();
+      });
+    });
+
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
-    final statsAsync = ref.watch(todayStatsProvider);
-    final followOverviewAsync = ref.watch(todayFollowOverviewProvider);
-    final qualityAsync = ref.watch(todayCallQualityOverviewProvider);
+    final wk = seoulWeekRangeContaining(_hubFlowAnchorYmd);
 
     return RefreshIndicator(
       onRefresh: _onRefresh,
@@ -563,10 +1108,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           parent: BouncingScrollPhysics(),
         ),
         slivers: [
-        // ─── 상단 배경 헤더 (Global AppBar가 있으므로 배경 역할만 수행) ───
+        // ─── 상단 배경 헤더 + 오늘 날짜 ───
         SliverToBoxAdapter(
           child: Container(
-            height: 60,
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [scheme.primary, scheme.primary.withValues(alpha: 0.8)],
@@ -576,6 +1122,18 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(32),
                 bottomRight: Radius.circular(32),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              formatTodayGreetingSentenceKo(),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w800,
+                color: scheme.onPrimary,
+                height: 1.35,
+                letterSpacing: -0.2,
               ),
             ),
           ),
@@ -588,69 +1146,60 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildWelcomeHeader(user?.name, scheme),
-                const SizedBox(height: 20),
-
                 // ─── 미니 대시보드 (현황 요약) ───
-                Text(
-                  '오늘의 흐름',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '업무 흐름',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                    _buildHubFlowResetButton(scheme),
+                  ],
                 ),
                 const SizedBox(height: 12),
-                statsAsync.when(
-                  data: (s) {
-                    final todayFollowCount = followOverviewAsync.valueOrNull?.total ?? 0;
-                    final quality = qualityAsync.valueOrNull;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _MiniStatsWidget(
-                          today: s.todayCount ?? 0,
-                          incomplete: s.incompleteCount ?? 0,
-                          todayFollow: todayFollowCount,
-                          uncalledRateText: quality == null
-                              ? '-'
-                              : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
-                          avgFirstResponseText: quality == null
-                              ? '-'
-                              : _formatMinutes(quality.avgFirstResponseMinutes),
-                          onTapToday: () {
-                            final loginAssignee = user?.name?.trim();
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => SalesCallListScreen(
-                                  mode: ListQueryMode.today,
-                                  initialAssignee: (loginAssignee == null ||
-                                          loginAssignee.isEmpty)
-                                      ? null
-                                      : loginAssignee,
-                                ),
-                              ),
-                            );
-                          },
-                          onTapIncomplete: () {
-                            _openTodayIncompletePicker();
-                          },
-                          onTapTodayFollow: () {
-                            _openTodayFollowPicker();
-                          },
-                          onTapUncalledRate: () {
-                            _openTodayQualityPicker(forUncalledRate: true);
-                          },
-                          onTapFirstResponse: () {
-                            _openTodayQualityPicker(forUncalledRate: false);
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                  loading: () => const LinearProgressIndicator(),
-                  error: (e, _) => const SizedBox.shrink(),
-                ),
+                _buildHubFlowDateBar(scheme),
+                const SizedBox(height: 18),
+                switch (_hubNavStep) {
+                  HubNavStep.day => _buildPeriodFlowBlock(
+                      user: user,
+                      scheme: scheme,
+                      title: '오늘의 흐름',
+                      subtitle: formatYmdFlowLabelKo(_hubFlowAnchorYmd),
+                      periodKey: _dayKey,
+                      receptionLabel: '금일 접수',
+                      incompleteLabel: '금일 미통화',
+                      followLabel: '오늘 팔로우',
+                    ),
+                  HubNavStep.week => _buildPeriodFlowBlock(
+                      user: user,
+                      scheme: scheme,
+                      title: '금주 흐름',
+                      subtitle:
+                          '${formatWeekRangeFlowLabel(wk.$1, wk.$2)} · 월~일 합산',
+                      periodKey: _weekKey,
+                      receptionLabel: '금주 접수',
+                      incompleteLabel: '금주 미통화',
+                      followLabel: '금주 팔로우',
+                    ),
+                  HubNavStep.month => _buildPeriodFlowBlock(
+                      user: user,
+                      scheme: scheme,
+                      title: '금월 흐름',
+                      subtitle:
+                          '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} · 월 합산',
+                      periodKey: _monthKey,
+                      receptionLabel: '금월 접수',
+                      incompleteLabel: '금월 미통화',
+                      followLabel: '금월 팔로우',
+                    ),
+                },
               ],
             ),
           ),
@@ -659,64 +1208,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       ),
     );
   }
-
-  Widget _buildWelcomeHeader(String? name, ColorScheme scheme) {
-    final today = todayYmdSeoul();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${name ?? '사용자'}님, 오늘 현황입니다',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: scheme.onSurface,
-                  letterSpacing: -0.6,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: scheme.outlineVariant.withValues(alpha: 0.35),
-                ),
-              ),
-              child: Text(
-                today,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '핵심 지표를 먼저 확인하고 바로 실행하세요.',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _MiniStatsWidget extends StatelessWidget {
   const _MiniStatsWidget({
+    required this.receptionLabel,
+    required this.incompleteLabel,
+    required this.followLabel,
     required this.today,
     required this.incomplete,
     required this.todayFollow,
@@ -729,6 +1227,9 @@ class _MiniStatsWidget extends StatelessWidget {
     required this.onTapFirstResponse,
   });
 
+  final String receptionLabel;
+  final String incompleteLabel;
+  final String followLabel;
   final int today;
   final int incomplete;
   final int todayFollow;
@@ -761,61 +1262,64 @@ class _MiniStatsWidget extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: onTapToday,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: _StatItem(
-                      label: '금일 접수',
-                      value: today.toString(),
-                      color: scheme.primary,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: onTapToday,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _StatItem(
+                        label: receptionLabel,
+                        value: today.toString(),
+                        color: scheme.primary,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: scheme.primary.withValues(alpha: 0.1),
-              ),
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: onTapIncomplete,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: _StatItem(
-                      label: '금일 미통화',
-                      value: incomplete.toString(),
-                      color: scheme.error,
+                Container(
+                  width: 1,
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  color: scheme.primary.withValues(alpha: 0.12),
+                ),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: onTapIncomplete,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _StatItem(
+                        label: incompleteLabel,
+                        value: incomplete.toString(),
+                        color: scheme.error,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: scheme.primary.withValues(alpha: 0.1),
-              ),
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: onTapTodayFollow,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: _StatItem(
-                      label: '오늘 팔로우',
-                      value: todayFollow.toString(),
-                      color: scheme.tertiary,
+                Container(
+                  width: 1,
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  color: scheme.primary.withValues(alpha: 0.12),
+                ),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: onTapTodayFollow,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _StatItem(
+                        label: followLabel,
+                        value: todayFollow.toString(),
+                        color: scheme.tertiary,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           Row(
@@ -864,33 +1368,42 @@ class _InsightItem extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: color.withValues(alpha: 0.9),
-                ),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.25,
+                fontWeight: FontWeight.w800,
+                color: color.withValues(alpha: 0.95),
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                color: color,
+            const SizedBox(height: 8),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Text(
+                value,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 17,
+                  height: 1.15,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                  letterSpacing: -0.3,
+                ),
               ),
             ),
           ],
@@ -908,10 +1421,13 @@ class _StatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,
+          textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w900,
@@ -920,15 +1436,20 @@ class _StatItem extends StatelessWidget {
             height: 1.0,
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         Text(
           label,
-          maxLines: 1,
+          textAlign: TextAlign.center,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 11.5,
+            fontSize: 12,
+            height: 1.2,
             fontWeight: FontWeight.w800,
-            color: color.withValues(alpha: 0.78),
+            color: Color.alphaBlend(
+              color.withValues(alpha: 0.88),
+              scheme.surfaceContainerLowest,
+            ),
           ),
         ),
       ],

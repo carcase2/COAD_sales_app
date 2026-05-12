@@ -13,7 +13,7 @@ class QuoterHubScreen extends StatelessWidget {
         children: [
           const TabBar(
             tabs: [
-              Tab(text: '셔터 견적기'),
+              Tab(text: '셔터 견적기 (테스트중)'),
               Tab(text: '견적서 작성'),
             ],
           ),

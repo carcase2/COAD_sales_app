@@ -1098,6 +1098,12 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
     return colors[assignee.hashCode.abs() % colors.length];
   }
 
+  String _calendarAssignee(SalesCall c) {
+    final manager = (c.regionManager ?? '').trim();
+    if (manager.isNotEmpty) return manager;
+    return '미지정';
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncCalls = ref.watch(calendarFollowCallsProvider);
@@ -1132,7 +1138,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
 
         final Map<String, int> counts = {'전체': visibleCallsInPeriod.length};
         for (var c in visibleCallsInPeriod) {
-          final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+          final a = _calendarAssignee(c);
           counts[a] = (counts[a] ?? 0) + 1;
         }
 
@@ -1190,7 +1196,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
         // 3. Prepare calendar markers (group by date) filtered by selected assignee
         final Map<String, int> dateMarkers = {};
         for (final c in followCalls) {
-          final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+          final a = _calendarAssignee(c);
           if (_selectedAssignee != '전체' && a != _selectedAssignee) continue;
 
           final fk = c.followCalendarDateKey;
@@ -1210,7 +1216,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
           final dateKey = fk.substring(0, 10);
           final bucket = weekAssigneeCounts[dateKey];
           if (bucket == null) continue;
-          final assignee = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+          final assignee = _calendarAssignee(c);
           if (_selectedAssignee != '전체' && assignee != _selectedAssignee) continue;
           bucket[assignee] = (bucket[assignee] ?? 0) + 1;
         }

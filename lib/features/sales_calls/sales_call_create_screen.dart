@@ -8,7 +8,7 @@ import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -519,14 +519,14 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                     ),
                     _quickActionTile(
                       icon: Icons.calculate_rounded,
-                      label: '견적기',
+                      label: '견적기 (테스트중)',
                       color: Colors.teal.shade600,
                       onTap: () async {
                         await Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: (_) => Scaffold(
-                              appBar: AppBar(title: const Text('견적기')),
-                              body: const QuoterScreen(),
+                              appBar: AppBar(title: const Text('견적기 (테스트중)')),
+                              body: const QuoterHubScreen(),
                             ),
                           ),
                         );
@@ -534,7 +534,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                     ),
                     _quickActionTile(
                       icon: Icons.receipt_long_rounded,
-                      label: '발행요청',
+                      label: '발행요청 (테스트중)',
                       color: Colors.indigo.shade600,
                       onTap: () async {
                         await Navigator.of(context).push(

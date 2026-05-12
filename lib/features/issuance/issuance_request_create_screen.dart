@@ -5,7 +5,7 @@ import 'dart:math';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -492,7 +492,7 @@ class _IssuanceRequestCreateScreenState
         },
       ),
       _CreateQuickActionItem(
-        label: '견적기',
+        label: '견적기 (테스트중)',
         color: Colors.teal.shade600,
         icon: Icons.calculate_rounded,
         onTap: () async {
@@ -501,11 +501,11 @@ class _IssuanceRequestCreateScreenState
             MaterialPageRoute<void>(
               builder: (_) => Scaffold(
                 appBar: AppBar(
-                  title: const Text('견적기'),
+                  title: const Text('견적기 (테스트중)'),
                   backgroundColor: scheme.primary,
                   foregroundColor: Colors.white,
                 ),
-                body: const QuoterScreen(),
+                body: const QuoterHubScreen(),
               ),
             ),
           );
