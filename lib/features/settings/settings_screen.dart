@@ -30,7 +30,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.system_update_alt_rounded, color: scheme.primary),
             title: const Text('업데이트 확인'),
-            subtitle: const Text('최신 버전 여부를 확인합니다.'),
+            subtitle: const Text('Supabase 정책 및 Play 스토어를 확인합니다.'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () async {
               await AppUpdateService.checkAndUpdateIfNeeded(

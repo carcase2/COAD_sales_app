@@ -16,6 +16,10 @@ class AppUpdateService {
     String? preferredStoreUrl,
   }) async {
     if ((!forceRecheck && _alreadyChecked) || kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    if (forceRecheck) {
+      // 설정 > 업데이트 확인: 시작 시 '나중에'로 닫았어도 Supabase 정책 다이얼로그를 다시 띄움
+      _optionalDialogShown = false;
+    }
     _alreadyChecked = true;
 
     try {
