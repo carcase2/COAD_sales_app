@@ -317,36 +317,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     return dt.toLocal();
   }
 
-  DateTime? _firstCallAtLocal(SalesCall c) {
-    if (c.callHistory.isEmpty) return null;
-    DateTime? first;
-    for (final h in c.callHistory) {
-      final raw = h['created_at']?.toString();
-      if (raw == null || raw.trim().isEmpty) continue;
-      final at = DateTime.tryParse(raw)?.toLocal();
-      if (at == null) continue;
-      if (first == null || at.isBefore(first)) first = at;
-    }
-    return first;
-  }
-
-  String _formatHm(DateTime? dt) {
-    if (dt == null) return '-';
-    return '${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _formatGap(DateTime? start, DateTime? end) {
-    if (start == null || end == null) return '-';
-    final diff = end.difference(start);
-    if (diff.isNegative) return '-';
-    if (diff.inMinutes < 1) return '1분 미만';
-    if (diff.inHours < 1) return '${diff.inMinutes}분';
-    final h = diff.inHours;
-    final m = diff.inMinutes % 60;
-    if (m == 0) return '${h}시간';
-    return '${h}시간 ${m}분';
-  }
-
   String _elapsedLabelSince(DateTime? createdLocal) {
     if (createdLocal == null) return '';
     final diff = DateTime.now().difference(createdLocal);
@@ -965,11 +935,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final elapsedLabel = _elapsedLabelSince(createdLocal);
                             final showElapsed = c.isMissed && elapsedLabel.isNotEmpty;
                             final stageLabel = _stageLabelForCard(c);
-                            final firstCallLocal = _firstCallAtLocal(c);
-                            final showTodayTimeline =
-                                widget.mode == ListQueryMode.today ||
-                                widget.mode == ListQueryMode.dateRange;
-
                             final scheme = Theme.of(context).colorScheme;
                             final displayAssignee = _assigneeForMode(c);
                             final assignColor = _colorForAssignee(displayAssignee, scheme);
@@ -1033,76 +998,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           ),
                                         ],
                                       ),
-                                      if (showTodayTimeline) ...[
-                                        const SizedBox(height: 6),
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: scheme.secondaryContainer
-                                                .withOpacity(0.55),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                          ),
-                                          child: RichText(
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            text: TextSpan(
-                                              style: TextStyle(
-                                                fontSize: 11.5,
-                                                fontWeight: FontWeight.w700,
-                                                color: scheme.onSecondaryContainer,
-                                              ),
-                                              children: [
-                                                TextSpan(
-                                                  text:
-                                                      '접수 ${_formatHm(createdLocal)}',
-                                                  style: TextStyle(
-                                                    color: scheme.primary,
-                                                  ),
-                                                ),
-                                                TextSpan(
-                                                  text: '  |  ',
-                                                  style: TextStyle(
-                                                    color: scheme
-                                                        .onSecondaryContainer
-                                                        .withOpacity(0.55),
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                TextSpan(
-                                                  text:
-                                                      '1차 ${_formatHm(firstCallLocal)}',
-                                                  style: TextStyle(
-                                                    color: scheme.tertiary,
-                                                  ),
-                                                ),
-                                                TextSpan(
-                                                  text: '  |  ',
-                                                  style: TextStyle(
-                                                    color: scheme
-                                                        .onSecondaryContainer
-                                                        .withOpacity(0.55),
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                TextSpan(
-                                                  text:
-                                                      '시간차 ${_formatGap(createdLocal, firstCallLocal)}',
-                                                  style: TextStyle(
-                                                    color: scheme
-                                                        .onSecondaryContainer,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
                                       if (showElapsed) ...[
                                         const SizedBox(height: 4),
                                         Row(

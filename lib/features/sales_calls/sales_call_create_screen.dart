@@ -160,11 +160,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       }
 
       final created = await ref.read(salesCallsRepositoryProvider).createCall(body);
-      await NotificationService.showSalesCallRegisteredAlert(
-        customerName: created.customerName ?? '',
-        phone: created.customerPhone ?? '',
-        assigneeName: user?.name,
-      );
+      // 로컬 알림 표시 실패가 접수 저장 성공을 덮어쓰지 않도록 분리한다.
+      try {
+        await NotificationService.showSalesCallRegisteredAlert(
+          customerName: created.customerName ?? '',
+          phone: created.customerPhone ?? '',
+          assigneeName: user?.name,
+        );
+      } catch (e) {
+        debugPrint('[local-registered-alert] failed: $e');
+      }
       // 백엔드 트리거가 누락된 환경에서도 새 통화 푸시가 가도록 Edge Function을 직접 호출
       try {
         final res = await Supabase.instance.client.functions.invoke(
@@ -215,6 +220,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         ),
       );
     } catch (e) {
+      debugPrint('[SalesCallCreateScreen._submit] failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(koreanErrorMessage(e))),
