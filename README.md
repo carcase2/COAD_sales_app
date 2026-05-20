@@ -74,3 +74,4 @@ flutter build apk --release \
 ## 웹 코드와 필드 맞추기
 
 COAD_home 쪽 `src/types/salesCalls.ts`, `src/app/api/sales-calls/*`, `src/app/api/auth/login/route.ts`의 JSON 키와 맞추려면 `lib/models/*.dart`와 `sales_calls_repository.dart`의 쿼리/바디만 조정하면 됩니다.
+# COAD_sales_app
