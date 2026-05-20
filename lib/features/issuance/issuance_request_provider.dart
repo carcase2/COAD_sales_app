@@ -81,7 +81,6 @@ class IssuanceRequestService {
       percentage,
       invoice_image_url,
       customer_name,
-      company_name,
       item_name,
       total_amount,
       branch,
