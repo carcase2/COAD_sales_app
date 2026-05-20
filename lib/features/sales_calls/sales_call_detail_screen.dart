@@ -160,7 +160,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       final e = regionRow.extra;
       if (e['sido'] != null) body['region_sido'] = e['sido'];
       if (e['region'] != null) body['region_name'] = e['region'];
-      if (e['manager'] != null) body['region_manager'] = e['manager'];
+      // 상세 수정은 원본 지역 마스터 담당자를 유지한다.
+      // (등록 화면의 임시 오버라이드 규칙과 분리)
+      final originalManager =
+          e['original_manager'] ?? e['manager'] ?? e['region_manager'];
+      if (originalManager != null) body['region_manager'] = originalManager;
       if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
     } else {
       final m = _model;

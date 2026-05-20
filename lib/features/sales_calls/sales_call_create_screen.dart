@@ -20,6 +20,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
+import 'package:coad_customer_calls/models/sales_call_draft.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -151,7 +152,27 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         final e = regionRow.extra;
         if (e['sido'] != null) body['region_sido'] = e['sido'];
         if (e['region'] != null) body['region_name'] = e['region'];
-        if (e['manager'] != null) body['region_manager'] = e['manager'];
+        final effectiveManager = (e['effective_manager'] ?? e['manager'] ?? '')
+            .toString()
+            .trim();
+        final originalManager = (e['original_manager'] ?? e['manager'] ?? '')
+            .toString()
+            .trim();
+        if (effectiveManager.isNotEmpty) {
+          body['region_manager'] = effectiveManager;
+          body['assigned_to'] = effectiveManager;
+        }
+        if (originalManager.isNotEmpty) {
+          body['original_region_manager'] = originalManager;
+        }
+        final isOverridden = e['is_overridden'] == 'true';
+        if (isOverridden && originalManager.isNotEmpty) {
+          final currentInquiry = (body['inquiry_content'] ?? '').toString().trim();
+          final overrideNote = '임시변경(기존담당: $originalManager)';
+          if (currentInquiry.isNotEmpty && !currentInquiry.contains(overrideNote)) {
+            body['inquiry_content'] = '$currentInquiry\n$overrideNote';
+          }
+        }
         if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
       }
 
@@ -159,7 +180,25 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         body['images'] = List<String>.from(_uploadedImageUrls);
       }
 
-      final created = await ref.read(salesCallsRepositoryProvider).createCall(body);
+      final draft = SalesCallDraft(
+        customerName: (body['customer_name'] ?? '').toString(),
+        customerPhone: (body['customer_phone'] ?? '').toString(),
+        inquiryContent: (body['inquiry_content'] ?? '').toString(),
+        regionId: (body['region_id'] ?? '').toString(),
+        regionSido: (body['region_sido'] ?? '').toString(),
+        regionName: (body['region_name'] ?? '').toString(),
+        regionManager: (body['region_manager'] ?? '').toString(),
+        assignedTo: (body['assigned_to'] ?? '').toString(),
+        originalRegionManager: body['original_region_manager']?.toString(),
+        productCategoryId: body['product_category_id']?.toString(),
+        inquiryMethodId: body['inquiry_method_id']?.toString(),
+        statusId: targetStatusId,
+        createdBy: body['created_by']?.toString(),
+        callStage: body['call_stage']?.toString(),
+        images: _uploadedImageUrls,
+      );
+
+      final created = await ref.read(salesCallsRepositoryProvider).createSalesCall(draft);
       // 로컬 알림 표시 실패가 접수 저장 성공을 덮어쓰지 않도록 분리한다.
       try {
         await NotificationService.showSalesCallRegisteredAlert(
@@ -386,7 +425,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final masterAsync = ref.watch(masterDataProvider);
+    final masterAsync = ref.watch(salesCallCreateMasterDataProvider);
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
     final safeBottom = MediaQuery.paddingOf(context).bottom;
@@ -937,7 +976,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                           final selectedRegion = master.regions.firstWhere((r) => r.id == _regionId);
                           final sido = selectedRegion.extra['sido']?.trim() ?? '-';
                           final region = selectedRegion.extra['region']?.trim() ?? '-';
-                          final manager = selectedRegion.extra['manager']?.trim() ?? '미지정';
+                          final effectiveManager =
+                              selectedRegion.extra['effective_manager']?.trim() ??
+                                  selectedRegion.extra['manager']?.trim() ??
+                                  '미지정';
+                          final originalManager =
+                              selectedRegion.extra['original_manager']?.trim() ??
+                                  selectedRegion.extra['manager']?.trim() ??
+                                  '미지정';
+                          final isOverridden =
+                              selectedRegion.extra['is_overridden'] == 'true';
                           
                           return Container(
                             padding: const EdgeInsets.all(16),
@@ -951,7 +999,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                               children: [
                                 Expanded(child: _buildDetailItem('선택 시/도', sido, scheme)),
                                 Expanded(child: _buildDetailItem('상세 지역', region, scheme)),
-                                Expanded(child: _buildDetailItem('담당 관리자', manager, scheme, isHighlight: true)),
+                                Expanded(
+                                  child: _buildDetailItem(
+                                    isOverridden ? '임시 담당자' : '담당 관리자',
+                                    isOverridden
+                                        ? '$effectiveManager (원:$originalManager)'
+                                        : effectiveManager,
+                                    scheme,
+                                    isHighlight: true,
+                                  ),
+                                ),
                               ],
                             ),
                           );

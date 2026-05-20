@@ -7,6 +7,15 @@ String todayYmdSeoul() {
   return DateFormat('yyyy-MM-dd').format(now);
 }
 
+/// 어떤 DateTime이 들어와도 서울 기준 `yyyy-MM-dd`로 정규화한다.
+String ymdSeoulFromDateTime(DateTime input) {
+  // 테스트/순수 함수 경로에서는 timezone 초기화가 안 되어 있을 수 있어
+  // tz.local 대신 UTC+9 오프셋으로 고정 계산한다.
+  final utc = input.isUtc ? input : input.toUtc();
+  final seoul = utc.add(const Duration(hours: 9));
+  return DateFormat('yyyy-MM-dd').format(seoul);
+}
+
 /// 표시용 — 앱 시작 시 `Asia/Seoul` 로컬이 설정되어 있다고 가정.
 String formatSeoulDateTime(DateTime? utcOrNull) {
   if (utcOrNull == null) return '—';
@@ -135,6 +144,39 @@ String addCalendarMonthsFirstOfMonth(String ymd, int delta) {
     y--;
   }
   return '${y}-${m.toString().padLeft(2, '0')}-01';
+}
+
+/// `yyyy-MM-dd` 문자열 비교. 유효하지 않으면 문자열 사전순 비교로 폴백.
+int compareYmd(String a, String b) {
+  DateTime? parse(String v) {
+    final p = v.split('-');
+    if (p.length != 3) return null;
+    final y = int.tryParse(p[0]);
+    final m = int.tryParse(p[1]);
+    final d = int.tryParse(p[2]);
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
+  }
+
+  final da = parse(a);
+  final db = parse(b);
+  if (da == null || db == null) return a.compareTo(b);
+  return da.compareTo(db);
+}
+
+/// KST `targetYmd`가 [startYmd, endYmd] 포함 구간인지 검사.
+bool isYmdWithinInclusiveRange(
+  String targetYmd, {
+  String? startYmd,
+  String? endYmd,
+}) {
+  if (startYmd != null && startYmd.isNotEmpty) {
+    if (compareYmd(targetYmd, startYmd) < 0) return false;
+  }
+  if (endYmd != null && endYmd.isNotEmpty) {
+    if (compareYmd(targetYmd, endYmd) > 0) return false;
+  }
+  return true;
 }
 
 /// `2026년 5월` 형태.

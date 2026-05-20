@@ -564,11 +564,13 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             final Map<String, int> incompleteCounts = {};
             final Map<String, int> totalCounts = {};
             
-            // Extract managers from regions (마스터 로딩 중에는 통화만으로 목록 구성)
+            // Extract managers from regions.
+            // 홈 요약은 원본 지역 마스터 담당자 기준 목록을 사용한다.
             if (master != null) {
               for (final r in master.regions) {
-                final manager = r.extra['region_manager'];
-                if (manager != null && manager.isNotEmpty) {
+                final manager =
+                    r.extra['original_manager'] ?? r.extra['manager'] ?? '';
+                if (manager.isNotEmpty) {
                   incompleteCounts[manager] = 0;
                   totalCounts[manager] = 0;
                 }
@@ -609,7 +611,7 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                       Icon(Icons.people_outline, size: 18, color: scheme.primary),
                       const SizedBox(width: 8),
                       Text(
-                        '담당자별 미통화 현황',
+                        '담당자별 미통화 현황 (원본 기준)',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ],

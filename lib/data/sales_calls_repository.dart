@@ -4,7 +4,10 @@ import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/local/database_helper.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
+import 'package:coad_customer_calls/models/region.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
+import 'package:coad_customer_calls/models/sales_call_draft.dart';
+import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -20,10 +23,8 @@ class SalesCallsRepository {
       'id,sales_call_id,call_stage,consultation_content,created_at,created_by';
 
   Future<MasterDataBundle> fetchMasterData() async {
-    // 1. 로컬 캐시 확인
     final cached = await _db.getMasterData('master_bundle');
     if (cached != null) {
-      // 캐시가 있으면 즉시 반환하고 백그라운드에서 갱신 시도 (옵션)
       _syncMasterDataInBackground();
       return MasterDataBundle.fromJson(cached);
     }
@@ -40,7 +41,8 @@ class SalesCallsRepository {
   Future<Map<String, dynamic>> _fetchMasterDataFromRemote() async {
     final pc = await _client.from('product_categories').select();
     final im = await _client.from('inquiry_methods').select();
-    final regions = await _client.from('regions').select();
+    final regionsRaw = await fetchRegions();
+    final regions = regionsRaw.map((e) => e.toMasterRowJson()).toList();
 
     return {
       'product_categories': pc,
@@ -54,6 +56,71 @@ class SalesCallsRepository {
       final data = await _fetchMasterDataFromRemote();
       await _db.saveMasterData('master_bundle', data);
     } catch (_) {}
+  }
+
+  Future<List<Region>> fetchRegions() async {
+    final res = await _client
+        .from('regions')
+        .select('id,sido,region,manager,branch_type,user_id');
+    return res
+        .whereType<Map>()
+        .map((e) => Region.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<List<TempManagerOverride>> fetchTempOverrides() async {
+    final res = await _client
+        .from('temp_manager_overrides')
+        .select(
+          'id,region_name,original_manager,temp_manager,start_date,end_date,memo,is_active,created_at,updated_at',
+        )
+        .order('updated_at', ascending: false);
+    return res
+        .whereType<Map>()
+        .map((e) => TempManagerOverride.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  static List<Region> buildEffectiveRegions(
+    List<Region> regions,
+    List<TempManagerOverride> overrides,
+    DateTime nowKst,
+  ) {
+    final todayYmd = ymdSeoulFromDateTime(nowKst);
+
+    bool isOverrideActive(TempManagerOverride o) {
+      if (!o.isActive) return false;
+      return isYmdWithinInclusiveRange(
+        todayYmd,
+        startYmd: o.startDate,
+        endYmd: o.endDate,
+      );
+    }
+
+    return regions.map((r) {
+      final original = r.manager.trim();
+      final regionName = r.region.trim();
+      TempManagerOverride? matched;
+      for (final o in overrides) {
+        if (!isOverrideActive(o)) continue;
+        if (o.regionName != regionName) continue;
+        if (o.originalManager != original) continue;
+        matched = o;
+        break;
+      }
+      if (matched == null) {
+        return r.copyWith(
+          originalManager: original,
+          effectiveManager: original,
+          isManagerOverridden: false,
+        );
+      }
+      return r.copyWith(
+        originalManager: original,
+        effectiveManager: matched.tempManager,
+        isManagerOverridden: true,
+      );
+    }).toList();
   }
 
   /// 로컬 DB에서 캐시된 목록 조회
@@ -213,6 +280,10 @@ class SalesCallsRepository {
       }
       throw ApiException('등록에 실패했습니다: $e');
     }
+  }
+
+  Future<SalesCall> createSalesCall(SalesCallDraft draft) {
+    return createCall(draft.toInsertJson());
   }
 
   /// 오프라인 중 등록된 상담 내역을 서버로 동기화
