@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/data/temp_manager_logic.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -10,6 +12,15 @@ import 'package:table_calendar/table_calendar.dart';
 
 /// 홈 통합 화면의 [흐름 | 미통화 | 달력] 구역 — `HomeHubScreen`이 소비.
 enum HomeHubSection { flow, incomplete, calendar }
+
+/// 흐름 탭 상단 일/주/월 — 미통화·달력과 공유.
+enum HubNavStep { day, week, month }
+
+final homeHubNavStepProvider =
+    StateProvider<HubNavStep>((ref) => HubNavStep.day);
+
+final homeHubFlowAnchorYmdProvider =
+    StateProvider<String>((ref) => todayYmdSeoul());
 
 typedef ConsultationLaunchTarget = ({
   HomeHubSection section,
@@ -188,11 +199,10 @@ CallQualityOverview _buildCallQualityOverview(List<SalesCall> rows) {
 /// 오늘 `next_scheduled_date`(다음 예정일)가 오늘인 미종료 팔로우 — 총건 + 담당자별 건수(동일 API 1회).
 final todayFollowOverviewProvider = FutureProvider<AssigneeOverview>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  final rows = await repo.fetchCalls(
+  final rows = await repo.fetchCallsAllPages(
     followDate: todayYmdSeoul(),
     incompleteOnly: true,
     excludeSimpleInquiries: true,
-    limit: 1000,
     includeCallHistory: false,
   );
   return AssigneeOverview(total: rows.length, byAssignee: _groupByAssignee(rows));
@@ -201,10 +211,9 @@ final todayFollowOverviewProvider = FutureProvider<AssigneeOverview>((ref) async
 /// 금일 미통화(uncalled) — `SalesCallListScreen`(incomplete·오늘)과 동일 fetch 조건, 담당자별 건수.
 final todayIncompleteOverviewProvider = FutureProvider<AssigneeOverview>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  final rows = await repo.fetchCalls(
+  final rows = await repo.fetchCallsAllPages(
     date: todayYmdSeoul(),
     uncalledOnly: true,
-    limit: 1000,
     includeCallHistory: true,
   );
   return AssigneeOverview(total: rows.length, byAssignee: _groupByAssignee(rows));
@@ -215,9 +224,8 @@ final todayIncompleteOverviewProvider = FutureProvider<AssigneeOverview>((ref) a
 /// - 접수 후 첫 상담까지 평균 소요 시간(분)
 final todayCallQualityOverviewProvider = FutureProvider<CallQualityOverview>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  final rows = await repo.fetchCalls(
+  final rows = await repo.fetchCallsAllPages(
     date: todayYmdSeoul(),
-    limit: 1000,
     includeCallHistory: true,
   );
   return _buildCallQualityOverview(rows);
@@ -248,11 +256,10 @@ final hubPeriodFollowOverviewProvider =
   final repo = ref.watch(salesCallsRepositoryProvider);
   switch (key.period) {
     case HubPeriod.day:
-      final rows = await repo.fetchCalls(
+      final rows = await repo.fetchCallsAllPages(
         followDate: key.anchorYmd,
         incompleteOnly: true,
         excludeSimpleInquiries: true,
-        limit: 1000,
         includeCallHistory: false,
       );
       return AssigneeOverview(
@@ -261,12 +268,11 @@ final hubPeriodFollowOverviewProvider =
       );
     case HubPeriod.week:
       final range = seoulWeekRangeContaining(key.anchorYmd);
-      final rows = await repo.fetchCalls(
+      final rows = await repo.fetchCallsAllPages(
         followRangeStart: range.$1,
         followRangeEndInclusive: range.$2,
         incompleteOnly: true,
         excludeSimpleInquiries: true,
-        limit: 1000,
         includeCallHistory: false,
       );
       return AssigneeOverview(
@@ -275,12 +281,11 @@ final hubPeriodFollowOverviewProvider =
       );
     case HubPeriod.month:
       final range = seoulMonthRangeContaining(key.anchorYmd);
-      final rows = await repo.fetchCalls(
+      final rows = await repo.fetchCallsAllPages(
         followRangeStart: range.$1,
         followRangeEndInclusive: range.$2,
         incompleteOnly: true,
         excludeSimpleInquiries: true,
-        limit: 1000,
         includeCallHistory: false,
       );
       return AssigneeOverview(
@@ -295,27 +300,24 @@ final hubPeriodQualityOverviewProvider =
   final repo = ref.watch(salesCallsRepositoryProvider);
   switch (key.period) {
     case HubPeriod.day:
-      final rows = await repo.fetchCalls(
+      final rows = await repo.fetchCallsAllPages(
         date: key.anchorYmd,
-        limit: 1000,
         includeCallHistory: true,
       );
       return _buildCallQualityOverview(rows);
     case HubPeriod.week:
       final range = seoulWeekRangeContaining(key.anchorYmd);
-      final rows = await repo.fetchCalls(
+      final rows = await repo.fetchCallsAllPages(
         dateRangeStart: range.$1,
         dateRangeEndInclusive: range.$2,
-        limit: 1000,
         includeCallHistory: true,
       );
       return _buildCallQualityOverview(rows);
     case HubPeriod.month:
       final range = seoulMonthRangeContaining(key.anchorYmd);
-      final rows = await repo.fetchCalls(
+      final rows = await repo.fetchCallsAllPages(
         dateRangeStart: range.$1,
         dateRangeEndInclusive: range.$2,
-        limit: 1000,
         includeCallHistory: true,
       );
       return _buildCallQualityOverview(rows);
@@ -325,7 +327,7 @@ final hubPeriodQualityOverviewProvider =
 final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
   // 미통화·달력 집계에는 상담 이력 불필요. embed 제거로 페이로드·타임아웃(연결 끊김) 방지
-  return repo.fetchCalls(limit: 1000, includeCallHistory: false);
+  return repo.fetchCallsAllPages(includeCallHistory: false);
 });
 
 /// 달력에 표시 중인 주·월 구간 (`next_scheduled_date` 기준, 목록 `followDate`/`followRange`와 동일).
@@ -335,14 +337,84 @@ typedef CalendarFollowRangeKey = ({String startYmd, String endYmd});
 final calendarFollowRangeProvider =
     FutureProvider.family<List<SalesCall>, CalendarFollowRangeKey>((ref, key) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCalls(
+  return repo.fetchCallsAllPages(
     followRangeStart: key.startYmd,
     followRangeEndInclusive: key.endYmd,
     incompleteOnly: true,
     excludeSimpleInquiries: true,
     includeCallHistory: false,
-    limit: 2000,
   );
+});
+
+/// 세그먼트 배지: 로그인 담당자 건수, 없으면 전체.
+int segmentBadgeCountForUser(AssigneeOverview overview, String? loginName) {
+  final name = loginName?.trim();
+  if (name == null || name.isEmpty) return overview.total;
+  for (final row in overview.byAssignee) {
+    if (row.assignee == name) return row.count;
+  }
+  return overview.total;
+}
+
+List<String> weekYmdKeysContaining(String anchorYmd) {
+  final w = seoulWeekRangeContaining(anchorYmd);
+  final keys = <String>[w.$1];
+  var cur = w.$1;
+  for (var i = 0; i < 6; i++) {
+    cur = addDaysToYmd(cur, 1);
+    keys.add(cur);
+  }
+  return keys;
+}
+
+/// 홈 [미통화] 탭 배지 — 금일 미통화, 로그인 담당자 우선.
+final hubSegmentIncompleteBadgeProvider = FutureProvider<int>((ref) async {
+  final overview = await ref.watch(todayIncompleteOverviewProvider.future);
+  final loginName = ref.watch(authControllerProvider)?.name;
+  return segmentBadgeCountForUser(overview, loginName);
+});
+
+/// 홈 [달력] 탭 배지 — 흐름 앵커 기준 주/월 구간 팔로우 건수, 로그인 담당자 우선.
+final hubSegmentCalendarBadgeProvider = FutureProvider<int>((ref) async {
+  final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
+  final navStep = ref.watch(homeHubNavStepProvider);
+  final loginName = ref.watch(authControllerProvider)?.name.trim();
+
+  final range = switch (navStep) {
+    HubNavStep.month => seoulMonthRangeContaining(anchor),
+    _ => seoulWeekRangeContaining(anchor),
+  };
+  final calls = await ref.watch(
+    calendarFollowRangeProvider((startYmd: range.$1, endYmd: range.$2)).future,
+  );
+  final overrides = await ref.watch(tempManagerOverridesProvider.future);
+
+  final isMonth = navStep == HubNavStep.month;
+  final monthPrefix = isMonth ? anchor.substring(0, 7) : null;
+  final weekDays = isMonth ? null : weekYmdKeysContaining(anchor).toSet();
+
+  var totalInPeriod = 0;
+  var userInPeriod = 0;
+
+  for (final c in calls) {
+    final fk = c.followCalendarDateKey;
+    if (fk == null || fk.length < 10) continue;
+    final dateKey = fk.substring(0, 10);
+    if (isMonth) {
+      if (!dateKey.startsWith(monthPrefix!)) continue;
+    } else {
+      if (!weekDays!.contains(dateKey)) continue;
+    }
+    totalInPeriod++;
+    if (loginName != null && loginName.isNotEmpty) {
+      final assignee = displayAssigneeForCall(c, overrides, DateTime.now());
+      if (assignee == loginName) userInPeriod++;
+    }
+  }
+
+  if (loginName == null || loginName.isEmpty) return totalInPeriod;
+  if (userInPeriod > 0) return userInPeriod;
+  return totalInPeriod;
 });
 
 final bottomBarVisibilityProvider = StateProvider<bool>((ref) => true);

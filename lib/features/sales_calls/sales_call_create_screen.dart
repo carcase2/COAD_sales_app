@@ -5,9 +5,6 @@ import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -77,24 +74,24 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   int _uploadTotal = 0;
   int _uploadCurrent = 0;
   
-  int _currentStep = 0;
   bool _aiBusy = false;
-  bool _quickActionsOpen = false;
 
-  void _nextStep() {
-    if (_currentStep == 1) {
-      if (!_formKey.currentState!.validate()) return;
+  void _ensureDefaultClassification(MasterDataBundle master) {
+    if (_productId == null && master.productCategories.isNotEmpty) {
+      _productId = master.productCategories
+          .firstWhere(
+            (e) => e.name.contains('스피드도어'),
+            orElse: () => master.productCategories.first,
+          )
+          .id;
     }
-    if (_currentStep < 2) {
-      HapticFeedback.selectionClick();
-      setState(() => _currentStep++);
-    }
-  }
-
-  void _prevStep() {
-    if (_currentStep > 0) {
-      HapticFeedback.selectionClick();
-      setState(() => _currentStep--);
+    if (_methodId == null && master.inquiryMethods.isNotEmpty) {
+      _methodId = master.inquiryMethods
+          .firstWhere(
+            (e) => e.name.contains('유선'),
+            orElse: () => master.inquiryMethods.first,
+          )
+          .id;
     }
   }
 
@@ -108,13 +105,16 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Future<void> _submit(MasterDataBundle master) async {
-    // 3단계에서는 _formKey가 화면에 없으므로(1~2단계 폼) 수동 검증
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('필수 항목을 확인해 주세요.')),
+      );
+      return;
+    }
     if (_regionId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('배정될 지역을 선택해주세요.')),
       );
-      // 2단계로 돌려보내서 선택하게 유도
-      setState(() => _currentStep = 1);
       return;
     }
     if (_inquiryCtrl.text.trim().isEmpty) {
@@ -409,22 +409,23 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     final masterAsync = ref.watch(salesCallCreateMasterDataProvider);
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final actionsBottom = 12.0 + safeBottom;
-
     return Scaffold(
       backgroundColor: scheme.surface,
       appBar: AppBar(
-        title: const Text('새 통화 등록', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('새 통화 등록', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+            Text(
+              '한 화면에서 입력 · 아래로 스크롤',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
         centerTitle: true,
         backgroundColor: scheme.primary,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w800,
-          fontSize: 18,
-        ),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.pop(context),
@@ -432,29 +433,17 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.home_rounded),
-            onPressed: () {
-              navigateToHomeAndRefresh(context, ref);
-            },
+            onPressed: () => navigateToHomeAndRefresh(context, ref),
             tooltip: '홈으로 이동',
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(40),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-            child: _buildStepIndicator(scheme),
-          ),
-        ),
       ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
               child: masterAsync.when(
-                data: (master) => AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: _buildStepContent(master, user?.name ?? '작성자'),
-                ),
+                data: (master) => _buildUnifiedForm(master, user?.name ?? '작성자'),
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
               ),
@@ -466,589 +455,336 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           ],
         ),
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
+    );
+  }
+
+  Widget _buildUnifiedForm(MasterDataBundle master, String authorName) {
+    final scheme = Theme.of(context).colorScheme;
+    _ensureDefaultClassification(master);
+
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
-          if (_quickActionsOpen)
-            Container(
-              width: 182,
-              constraints: const BoxConstraints(maxHeight: 240),
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: scheme.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Column(
+          _buildSectionHeader('분류', Icons.dashboard_customize_outlined, scheme),
+          const SizedBox(height: 12),
+          _buildStepSubsectionTitle('제품군', scheme),
+          const SizedBox(height: 8),
+          _buildChoiceChipGroup(
+            items: master.productCategories,
+            selectedValue: _productId,
+            onSelected: (id) => setState(() => _productId = id),
+            selectedColor: const Color(0xFF10B981),
+          ),
+          const SizedBox(height: 16),
+          _buildStepSubsectionTitle('문의 경로', scheme),
+          const SizedBox(height: 8),
+          _buildChoiceChipGroup(
+            items: master.inquiryMethods,
+            selectedValue: _methodId,
+            onSelected: (id) => setState(() => _methodId = id),
+            selectedColor: const Color(0xFF0EA5E9),
+          ),
+          const SizedBox(height: 20),
+          _buildSectionDivider(scheme),
+          _buildSectionHeader('고객', Icons.contact_mail_outlined, scheme),
+          const SizedBox(height: 12),
+          _buildCard(
+            scheme: scheme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
                   children: [
-                    _quickActionTile(
-                      icon: Icons.home_rounded,
-                      label: '홈',
-                      color: Colors.blueGrey.shade700,
-                      onTap: () async {
-                        openHomeHub(context, ref);
-                      },
+                    const Expanded(
+                      child: Text(
+                        '연락처 · 고객명',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                      ),
                     ),
-                    _quickActionTile(
-                      icon: Icons.calculate_rounded,
-                      label: '견적기 (테스트중)',
-                      color: Colors.teal.shade600,
-                      onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => Scaffold(
-                              appBar: AppBar(title: const Text('견적기 (테스트중)')),
-                              body: const QuoterHubScreen(),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    _quickActionTile(
-                      icon: Icons.receipt_long_rounded,
-                      label: '발행요청 (테스트중)',
-                      color: Colors.indigo.shade600,
-                      onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const IssuanceRequestScreen(),
-                          ),
-                        );
-                      },
+                    TextButton.icon(
+                      onPressed: _aiBusy || _uploadBusy
+                          ? null
+                          : () => _scanBusinessCard(master),
+                      icon: _aiBusy
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.contact_page_outlined, size: 16),
+                      label: const Text('명함', style: TextStyle(fontSize: 12)),
                     ),
                   ],
                 ),
-              ),
-            ),
-          Padding(
-            padding: EdgeInsets.only(bottom: actionsBottom),
-            child: FloatingActionButton(
-              heroTag: 'call_create_open_menu',
-              mini: true,
-              backgroundColor: scheme.primary,
-              foregroundColor: Colors.white,
-              tooltip: _quickActionsOpen ? '닫기' : '열기',
-              onPressed: () => setState(() => _quickActionsOpen = !_quickActionsOpen),
-              child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
+                const SizedBox(height: 8),
+                _buildTextField(
+                  label: '연락처 *',
+                  controller: _phoneCtrl,
+                  hint: '010-0000-0000',
+                  keyboardType: TextInputType.phone,
+                  onChanged: _onPhoneChanged,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '번호를 입력해주세요' : null,
+                ),
+                const SizedBox(height: 12),
+                _buildTextField(
+                  label: '고객명/상호명',
+                  controller: _nameCtrl,
+                  hint: '고객성함 또는 회사명',
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 12),
+          _buildCard(
+            scheme: scheme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '지역 배정 *',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+                const SizedBox(height: 10),
+                SearchableRegionPicker(
+                  regions: master.regions,
+                  value: _regionId,
+                  decoration: _inputDecoration('지역 검색 · 선택').copyWith(
+                    fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                  ),
+                  onChanged: (v) => setState(() => _regionId = v),
+                  validator: (v) => v == null ? '지역을 선택해주세요' : null,
+                ),
+                if (_regionId != null) ...[
+                  const SizedBox(height: 10),
+                  _buildRegionSummary(master, scheme),
+                ],
+                const SizedBox(height: 12),
+                _buildTextField(
+                  label: '등록 담당자',
+                  initialValue: authorName,
+                  readOnly: true,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          _buildSectionDivider(scheme),
+          _buildSectionHeader('문의', Icons.edit_note_rounded, scheme),
+          const SizedBox(height: 12),
+          _buildTextField(
+            label: '문의 내용 *',
+            controller: _inquiryCtrl,
+            maxLines: 5,
+            hint: '고객 요청·문의 내용을 입력하세요',
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
+          ),
+          const SizedBox(height: 12),
+          _buildCard(
+            scheme: scheme,
+            child: SalesCallAttachmentsStrip(
+              urls: _uploadedImageUrls,
+              editable: true,
+              uploadBusy: _uploadBusy,
+              progressLabel:
+                  _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
+              onAdd: () => _pickAndUpload(master),
+              onRemoveAt: (i) => setState(() => _uploadedImageUrls.removeAt(i)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildSimpleInquiryToggle(scheme),
+          const SizedBox(height: 88),
         ],
       ),
     );
   }
 
-  Widget _quickActionTile({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required Future<void> Function() onTap,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget _buildSectionDivider(ColorScheme scheme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Material(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Divider(color: scheme.outlineVariant.withValues(alpha: 0.35)),
+    );
+  }
+
+  Widget _buildCard({required ColorScheme scheme, required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.25)),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildRegionSummary(MasterDataBundle master, ColorScheme scheme) {
+    try {
+      final selectedRegion = master.regions.firstWhere((r) => r.id == _regionId);
+      final sido = selectedRegion.extra['sido']?.trim() ?? '-';
+      final region = selectedRegion.extra['region']?.trim() ?? '-';
+      final effectiveManager =
+          selectedRegion.extra['effective_manager']?.trim() ??
+              selectedRegion.extra['manager']?.trim() ??
+              '미지정';
+      final originalManager =
+          selectedRegion.extra['original_manager']?.trim() ??
+              selectedRegion.extra['manager']?.trim() ??
+              '미지정';
+      final isOverridden = selectedRegion.extra['is_overridden'] == 'true';
+
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(12),
-          onTap: () async {
-            setState(() => _quickActionsOpen = false);
-            await onTap();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: color),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                ),
-                Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
-              ],
+          border: Border.all(color: scheme.primary.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            Expanded(child: _buildDetailItem('시/도', sido, scheme)),
+            Expanded(child: _buildDetailItem('지역', region, scheme)),
+            Expanded(
+              child: _buildDetailItem(
+                isOverridden ? '임시 담당' : '담당',
+                isOverridden ? '$effectiveManager\n(원:$originalManager)' : effectiveManager,
+                scheme,
+                isHighlight: true,
+              ),
             ),
+          ],
+        ),
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildSimpleInquiryToggle(ColorScheme scheme) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => _isSimpleInquiry = !_isSimpleInquiry),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: _isSimpleInquiry
+              ? scheme.primaryContainer.withValues(alpha: 0.4)
+              : scheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _isSimpleInquiry ? scheme.primary : scheme.outlineVariant,
           ),
+        ),
+        child: Row(
+          children: [
+            Checkbox(
+              value: _isSimpleInquiry,
+              onChanged: (v) => setState(() => _isSimpleInquiry = v ?? false),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('단순 문의 즉시 종료', style: TextStyle(fontWeight: FontWeight.w800)),
+                  Text(
+                    '배정 없이 리드 단계에서 바로 종결',
+                    style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  void _goToStep(int targetIndex) {
-    // 자유롭게 이동 가능하게 하되, 이동 시 키보드를 내림 (UX 개선)
-    FocusScope.of(context).unfocus();
-    setState(() => _currentStep = targetIndex);
-  }
-
-  bool _isStepCompleted(int index) {
-    if (index == 0) return true; // 기본 분류는 보통 초기값이 있음
-    if (index == 1) return _phoneCtrl.text.trim().isNotEmpty && _regionId != null;
-    if (index == 2) return _inquiryCtrl.text.trim().isNotEmpty;
-    return false;
-  }
-
-  Widget _buildStepIndicator(ColorScheme scheme) {
-    final stepNames = ['분류', '정보', '내용'];
-    // 각 스텝별 고유 색상 배정: 0(분류) - 에메랄드, 1(정보) - 스카이블루, 2(내용) - 프라이머리
-    final colors = [
-      const Color(0xFF10B981),
-      const Color(0xFF0EA5E9),
-      scheme.primary,
-    ];
-
-    return Row(
-      children: List.generate(3, (index) {
-        final isActive = _currentStep == index;
-        final isCompleted = _isStepCompleted(index);
-        final baseColor = colors[index];
-
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => _goToStep(index),
-            behavior: HitTestBehavior.opaque,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  height: isActive ? 6 : 4,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: isActive 
-                        ? baseColor 
-                        : (isCompleted ? baseColor.withOpacity(0.5) : scheme.outlineVariant.withOpacity(0.2)),
-                    borderRadius: BorderRadius.circular(4),
-                    boxShadow: isActive ? [
-                      BoxShadow(color: baseColor.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))
-                    ] : null,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (isCompleted && !isActive) ...[
-                      Icon(Icons.check_circle_rounded, size: 12, color: baseColor),
-                      const SizedBox(width: 4),
-                    ],
-                    Text(
-                      stepNames[index],
-                      style: TextStyle(
-                        fontSize: isActive ? 12 : 11,
-                        fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-                        color: isActive 
-                            ? baseColor 
-                            : (isCompleted ? baseColor : scheme.onSurfaceVariant.withOpacity(0.5)),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+  Widget _buildChoiceChipGroup({
+    required List<NamedMasterRow> items,
+    required String? selectedValue,
+    required ValueChanged<String> onSelected,
+    required Color selectedColor,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: items.map((item) {
+        final selected = selectedValue == item.id;
+        return FilterChip(
+          label: Text(
+            item.name,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
+          selected: selected,
+          showCheckmark: true,
+          checkmarkColor: selectedColor,
+          selectedColor: selectedColor.withValues(alpha: 0.18),
+          side: BorderSide(
+            color: selected
+                ? selectedColor
+                : scheme.outlineVariant.withValues(alpha: 0.6),
+          ),
+          onSelected: (_) {
+            HapticFeedback.selectionClick();
+            onSelected(item.id);
+          },
         );
-      }),
+      }).toList(),
     );
-  }
-
-  Widget _buildStepContent(MasterDataBundle master, String authorName) {
-    switch (_currentStep) {
-      case 0: return _buildClassificationStep(master);
-      case 1: return _buildCustomerStep(master, authorName);
-      case 2: return _buildConsultationStep(master);
-      default: return const SizedBox.shrink();
-    }
   }
 
   Widget _buildFixedFooter(MasterDataBundle master) {
     final scheme = Theme.of(context).colorScheme;
-    final isLastStep = _currentStep == 2;
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          if (_currentStep > 0) ...[
-            Expanded(
-              flex: 1,
-              child: OutlinedButton(
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  _prevStep();
-                },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('이전'),
-              ),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
             ),
-            const SizedBox(width: 12),
           ],
-          Expanded(
-            flex: 2,
-            child: FilledButton(
-              onPressed: isLastStep 
-                ? (_submitting
-                    ? null
-                    : () {
-                        HapticFeedback.mediumImpact();
-                        _submit(master);
-                      })
-                : () {
-                    HapticFeedback.lightImpact();
-                    _nextStep();
-                  },
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: isLastStep ? scheme.primary : scheme.secondary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _submitting
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : Text(isLastStep ? '접수 등록' : '다음 단계', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            ),
-          ),
-        ],
-      ),
-    ));
-  }
-
-  // ─── Step 1: 분류 ───
-  Widget _buildClassificationStep(MasterDataBundle master) {
-    final scheme = Theme.of(context).colorScheme;
-    
-    // 기본값 설정
-    if (_productId == null && master.productCategories.isNotEmpty) {
-      final speedDoor = master.productCategories.firstWhere((e) => e.name.contains('스피드도어'), orElse: () => master.productCategories.first);
-      _productId = speedDoor.id;
-    }
-    if (_methodId == null && master.inquiryMethods.isNotEmpty) {
-      final yuseon = master.inquiryMethods.firstWhere((e) => e.name.contains('유선'), orElse: () => master.inquiryMethods.first);
-      _methodId = yuseon.id;
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        _buildSectionHeader('기본 분류 선택', Icons.dashboard_customize_outlined, scheme),
-        const SizedBox(height: 24),
-        
-        // 제품군
-        _buildStepSubsectionTitle('제품군 카테고리', scheme),
-        const SizedBox(height: 12),
-        _buildGrid(
-          context: context,
-          items: master.productCategories,
-          selectedValue: _productId,
-          onSelected: (id) => setState(() => _productId = id),
-          selectedColor: const Color(0xFF10B981), // Emerald
-          crossAxisCount: 3, // 3열로 더 촘촘하게 표시
-          childAspectRatio: 2.35,
         ),
-        
-        const SizedBox(height: 40),
-        
-        // 문의 경로
-        _buildStepSubsectionTitle('문의 유입 경로', scheme),
-        const SizedBox(height: 12),
-        _buildGrid(
-          context: context,
-          items: master.inquiryMethods,
-          selectedValue: _methodId,
-          onSelected: (id) => setState(() => _methodId = id),
-          selectedColor: const Color(0xFF0EA5E9), // Sky Blue
-          crossAxisCount: 3, // 3열로 더 촘촘하게 표시
-          childAspectRatio: 2.35,
-        ),
-        
-        const SizedBox(height: 40),
-        Text(
-          '💡 제품군과 문의 경로를 선택하면 고객 정보를 입력할 수 있습니다.',
-          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withOpacity(0.7)),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-
-  // ─── Step 2: 고객 정보 ───
-  Widget _buildCustomerStep(MasterDataBundle master, String authorName) {
-    final scheme = Theme.of(context).colorScheme;
-    return Form(
-      key: _formKey,
-      child: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          _buildSectionHeader('고객 및 지역 정보', Icons.contact_mail_outlined, scheme),
-          const SizedBox(height: 24),
-          
-          Container(
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.person_pin_outlined, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '상세 고객 정보',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: scheme.onSurface),
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: _aiBusy || _uploadBusy ? null : () => _scanBusinessCard(master),
-                        icon: _aiBusy 
-                          ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.contact_page_outlined, size: 16),
-                        label: const Text('명함 스캔', style: TextStyle(fontSize: 12)),
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: scheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  
-                  _buildTextField(
-                    label: '고객명/상호명',
-                    controller: _nameCtrl,
-                    hint: '고객성함 또는 회사명 입력',
-                  ),
-                  const SizedBox(height: 20),
-                  _buildTextField(
-                    label: '연락처 *',
-                    controller: _phoneCtrl,
-                    hint: '010-0000-0000',
-                    keyboardType: TextInputType.phone,
-                    onChanged: _onPhoneChanged,
-                    validator: (v) => (v == null || v.trim().isEmpty) ? '번호를 입력해주세요' : null,
-                  ),
-                ],
-              ),
-            ),
+        child: FilledButton(
+          onPressed: _submitting
+              ? null
+              : () {
+                  HapticFeedback.mediumImpact();
+                  _submit(master);
+                },
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(50),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          
-          const SizedBox(height: 24),
-          
-          Container(
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.location_on_outlined, size: 20),
-                      const SizedBox(width: 8),
-                      Text('지역 및 배정 정보', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ],
+          child: _submitting
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
                   ),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  
-                  SearchableRegionPicker(
-                    regions: master.regions,
-                    value: _regionId,
-                    decoration: _inputDecoration('배정될 지역 검색 및 선택 *').copyWith(
-                      fillColor: scheme.surfaceContainerHighest.withOpacity(0.3),
-                    ),
-                    onChanged: (v) => setState(() => _regionId = v),
-                    validator: (v) => v == null ? '지역을 선택해주세요' : null,
-                  ),
-                  if (_regionId != null) ...[
-                    const SizedBox(height: 16),
-                    Builder(
-                      builder: (ctx) {
-                        try {
-                          final selectedRegion = master.regions.firstWhere((r) => r.id == _regionId);
-                          final sido = selectedRegion.extra['sido']?.trim() ?? '-';
-                          final region = selectedRegion.extra['region']?.trim() ?? '-';
-                          final effectiveManager =
-                              selectedRegion.extra['effective_manager']?.trim() ??
-                                  selectedRegion.extra['manager']?.trim() ??
-                                  '미지정';
-                          final originalManager =
-                              selectedRegion.extra['original_manager']?.trim() ??
-                                  selectedRegion.extra['manager']?.trim() ??
-                                  '미지정';
-                          final isOverridden =
-                              selectedRegion.extra['is_overridden'] == 'true';
-                          
-                          return Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: scheme.primaryContainer.withOpacity(0.3),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: scheme.primary.withOpacity(0.3)),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: [
-                                Expanded(child: _buildDetailItem('선택 시/도', sido, scheme)),
-                                Expanded(child: _buildDetailItem('상세 지역', region, scheme)),
-                                Expanded(
-                                  child: _buildDetailItem(
-                                    isOverridden ? '임시 담당자' : '담당 관리자',
-                                    isOverridden
-                                        ? '$effectiveManager (원:$originalManager)'
-                                        : effectiveManager,
-                                    scheme,
-                                    isHighlight: true,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        } catch (_) {
-                          return const SizedBox.shrink();
-                        }
-                      },
-                    ),
-                  ],
-                  
-                  const SizedBox(height: 24),
-                  
-                  _buildTextField(
-                    label: '등록 담당자',
-                    initialValue: authorName,
-                    readOnly: true,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── Step 3: 상담 상세 ───
-  Widget _buildConsultationStep(MasterDataBundle master) {
-    final scheme = Theme.of(context).colorScheme;
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        _buildSectionHeader('문의내용 및 자료', Icons.edit_note_rounded, scheme),
-        const SizedBox(height: 24),
-        
-        _buildStepSubsectionTitle('문의 내용 본문 *', scheme),
-        const SizedBox(height: 12),
-        _buildTextField(
-          label: '',
-          controller: _inquiryCtrl,
-          maxLines: 8,
-          hint: '고객의 구체적인 요청 사항이나 문의내용을 기록하세요...',
-          validator: (v) => (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
-        ),
-        
-        const SizedBox(height: 32),
-        
-        _buildStepSubsectionTitle('첨부 서류 및 현장 사진', scheme),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
-            ],
-          ),
-          child: SalesCallAttachmentsStrip(
-            urls: _uploadedImageUrls,
-            editable: true,
-            uploadBusy: _uploadBusy,
-            progressLabel: _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
-            onAdd: () => _pickAndUpload(master),
-            onRemoveAt: (i) => setState(() => _uploadedImageUrls.removeAt(i)),
-          ),
-        ),
-        
-        const SizedBox(height: 32),
-        
-        // 하단 체크박스
-        GestureDetector(
-          onTap: () => setState(() => _isSimpleInquiry = !_isSimpleInquiry),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _isSimpleInquiry ? scheme.primaryContainer.withOpacity(0.3) : scheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _isSimpleInquiry ? scheme.primary : scheme.outlineVariant),
-            ),
-            child: Row(
-              children: [
-                Checkbox(
-                  value: _isSimpleInquiry,
-                  onChanged: (v) => setState(() => _isSimpleInquiry = v ?? false),
+                )
+              : const Text(
+                  '접수 등록',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                 ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('단순 문의로 상담 즉시 종료', style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text('배정 없이 이 기록을 리드 단계에서 즉시 종결 처리합니다.', style: TextStyle(fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
-        const SizedBox(height: 48),
-      ],
+      ),
     );
   }
 
@@ -1100,60 +836,6 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         title,
         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant),
       ),
-    );
-  }
-
-  Widget _buildGrid({
-    required BuildContext context,
-    required List<NamedMasterRow> items,
-    required String? selectedValue,
-    required Function(String) onSelected,
-    required Color selectedColor,
-    required int crossAxisCount,
-    double childAspectRatio = 2.5,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        childAspectRatio: childAspectRatio,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-      ),
-      itemCount: items.length,
-      itemBuilder: (ctx, idx) {
-        final item = items[idx];
-        final isSelected = selectedValue == item.id;
-        return InkWell(
-          onTap: () => onSelected(item.id),
-          child: Container(
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: isSelected ? selectedColor : scheme.surface,
-              border: Border.all(
-                color: isSelected ? selectedColor : scheme.outlineVariant.withValues(alpha: 0.65),
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              child: Text(
-                item.name,
-                textAlign: TextAlign.center,
-                maxLines: 1, // 다시 1줄로 시도 (칸이 넓어졌으므로)
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? Colors.white : scheme.onSurface,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 

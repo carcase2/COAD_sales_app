@@ -28,34 +28,84 @@ class HomeIncompleteBreakdown extends ConsumerStatefulWidget {
 enum _SummaryFilter { today, week, month, total }
 
 class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdown> {
+  static const double _incompleteGridTileH = 52.0;
+  static const double _incompleteGridGap = 8.0;
+
   _SummaryFilter _currentFilter = _SummaryFilter.today;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncFilterFromHub());
+  }
+
+  _SummaryFilter _filterForHubStep(HubNavStep step) => switch (step) {
+        HubNavStep.day => _SummaryFilter.today,
+        HubNavStep.week => _SummaryFilter.week,
+        HubNavStep.month => _SummaryFilter.month,
+      };
+
+  void _syncFilterFromHub() {
+    if (!mounted) return;
+    final next = _filterForHubStep(ref.read(homeHubNavStepProvider));
+    if (_currentFilter == next) return;
+    setState(() => _currentFilter = next);
+  }
+
+  void _publishFilterToHub(_SummaryFilter filter) {
+    final today = todayYmdSeoul();
+    switch (filter) {
+      case _SummaryFilter.today:
+        ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.day;
+        ref.read(homeHubFlowAnchorYmdProvider.notifier).state = today;
+      case _SummaryFilter.week:
+        ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.week;
+        ref.read(homeHubFlowAnchorYmdProvider.notifier).state =
+            seoulWeekRangeContaining(today).$1;
+      case _SummaryFilter.month:
+        ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.month;
+        ref.read(homeHubFlowAnchorYmdProvider.notifier).state =
+            firstDayOfMonthYmd(today);
+      case _SummaryFilter.total:
+        break;
+    }
+  }
+
+  bool _callMatchesFilter(SalesCall c, _SummaryFilter filter, String anchorYmd) {
+    if (filter == _SummaryFilter.total) return true;
+    if (c.callDate == null || c.callDate!.length < 10) return false;
+    final dateKey = c.callDate!.substring(0, 10);
+    return switch (filter) {
+      _SummaryFilter.today => dateKey == anchorYmd,
+      _SummaryFilter.week => () {
+        final w = seoulWeekRangeContaining(anchorYmd);
+        return dateKey.compareTo(w.$1) >= 0 && dateKey.compareTo(w.$2) <= 0;
+      }(),
+      _SummaryFilter.month => () {
+        final m = seoulMonthRangeContaining(anchorYmd);
+        return dateKey.compareTo(m.$1) >= 0 && dateKey.compareTo(m.$2) <= 0;
+      }(),
+      _SummaryFilter.total => true,
+    };
+  }
+
+  @override
   Widget build(BuildContext context) {
+    ref.listen(homeHubNavStepProvider, (_, __) => _syncFilterFromHub());
+    ref.listen(homeHubFlowAnchorYmdProvider, (_, __) => _syncFilterFromHub());
+
     final asyncCalls = ref.watch(rankingCallsProvider);
     final masterAsync = ref.watch(masterDataProvider);
     final scheme = Theme.of(context).colorScheme;
+    final anchorYmd = ref.watch(homeHubFlowAnchorYmdProvider);
 
     return asyncCalls.when(
       data: (calls) {
         Widget buildWithMaster(MasterDataBundle? master) {
-            final todayStr = todayYmdSeoul();
-            final now = DateTime.now();
-            final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
-            final startOfMonth = DateTime(now.year, now.month, 1);
-
-            // 1. Filter calls
-            final filteredCalls = calls.where((c) {
-              if (c.callDate == null || c.callDate!.length < 10) return _currentFilter == _SummaryFilter.total;
-              final callDt = DateTime.tryParse(c.callDate!.substring(0, 10));
-              if (callDt == null) return _currentFilter == _SummaryFilter.total;
-              switch (_currentFilter) {
-                case _SummaryFilter.today: return c.callDate!.startsWith(todayStr);
-                case _SummaryFilter.week: return callDt.isAfter(startOfWeek.subtract(const Duration(seconds: 1))) && callDt.isBefore(now.add(const Duration(days: 1)));
-                case _SummaryFilter.month: return callDt.isAfter(startOfMonth.subtract(const Duration(seconds: 1)));
-                case _SummaryFilter.total: return true;
-              }
-            }).toList();
+            // 1. Filter calls (흐름 탭 일/주/월 앵커와 동일 기간)
+            final filteredCalls = calls
+                .where((c) => _callMatchesFilter(c, _currentFilter, anchorYmd))
+                .toList();
 
             if (filteredCalls.isEmpty && _currentFilter != _SummaryFilter.total) {
               if (widget.fitSingleScreen) {
@@ -306,7 +356,9 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
                           builder: (_) => SalesCallListScreen(
                             mode: ListQueryMode.incomplete,
                             initialAssignee: name,
-                            date: _currentFilter == _SummaryFilter.today ? todayYmdSeoul() : null,
+                            date: _currentFilter == _SummaryFilter.today
+              ? ref.read(homeHubFlowAnchorYmdProvider)
+              : null,
                           ),
                         ),
                       );
@@ -461,12 +513,10 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
           totalCalls: totalCalls,
           completePct: completePct,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, listConstraints) {
-              if (sorted.isEmpty) {
-                return Center(
+          child: sorted.isEmpty
+              ? Center(
                   child: Text(
                     '미통화 담당자가 없습니다',
                     style: TextStyle(
@@ -475,99 +525,86 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-                );
-              }
-
-              const cols = 2;
-              const tileH = 36.0;
-              const gap = 4.0;
-              const outerPad = 26.0; // 하단·카드 패딩
-              const moreBlock = 34.0;
-
-              final maxColumnH = listConstraints.maxHeight - outerPad;
-              final reserveMore =
-                  sorted.length > cols * 2 ? moreBlock : 0.0;
-              final gridUsable = (maxColumnH - reserveMore).clamp(tileH, maxColumnH);
-              final maxRows =
-                  ((gridUsable + gap) / (tileH + gap)).floor().clamp(1, 16);
-              final maxVisible = (maxRows * cols).clamp(1, sorted.length);
-              final visible = sorted.take(maxVisible).toList();
-              final hidden = sorted.length - visible.length;
-              final showMore = hidden > 0;
-              final gridH =
-                  maxRows * tileH + (maxRows - 1) * gap;
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: scheme.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: scheme.outlineVariant.withValues(alpha: 0.28),
-                    ),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(
-                        height: gridH,
-                        child: GridView.builder(
-                          physics: const NeverScrollableScrollPhysics(),
-                          padding: EdgeInsets.zero,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: cols,
-                            crossAxisSpacing: gap,
-                            mainAxisSpacing: gap,
-                            mainAxisExtent: tileH,
-                          ),
-                          itemCount: visible.length,
-                          itemBuilder: (context, i) {
-                            final name = visible[i];
-                            return _buildIncompleteManagerTile(
-                              scheme: scheme,
-                              name: name,
-                              rank: i + 1,
-                              incomplete: incompleteCounts[name] ?? 0,
-                              total: totalCounts[name] ?? 0,
-                              compact: true,
-                            );
-                          },
-                        ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.28),
                       ),
-                      if (showMore) ...[
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          height: 28,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => const SalesCallListScreen(
-                                    mode: ListQueryMode.incomplete,
-                                  ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(left: 2, bottom: 6),
+                          child: Row(
+                            children: [
+                              Text(
+                                '담당자별 (${sorted.length}명)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: scheme.onSurfaceVariant,
+                                  letterSpacing: -0.2,
                                 ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '미통화',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: scheme.onSurfaceVariant,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(width: 28),
+                              Text(
+                                '완료율',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: scheme.onSurfaceVariant,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: GridView.builder(
+                            physics: const ClampingScrollPhysics(),
+                            padding: EdgeInsets.zero,
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: _incompleteGridGap,
+                              mainAxisSpacing: _incompleteGridGap,
+                              mainAxisExtent: _incompleteGridTileH,
+                            ),
+                            itemCount: sorted.length,
+                            itemBuilder: (context, i) {
+                              final name = sorted[i];
+                              return _buildIncompleteManagerTile(
+                                scheme: scheme,
+                                name: name,
+                                rank: i + 1,
+                                incomplete: incompleteCounts[name] ?? 0,
+                                total: totalCounts[name] ?? 0,
+                                compact: true,
                               );
                             },
-                            icon: const Icon(Icons.groups_rounded, size: 14),
-                            label: Text('+$hidden명 더보기'),
-                            style: OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                            ),
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
@@ -579,12 +616,15 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
     required int totalCalls,
     required int completePct,
   }) {
+    final cleared = (totalCalls - totalIncomplete).clamp(0, totalCalls);
+    final progress = totalCalls > 0 ? cleared / totalCalls : 1.0;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.28)),
         boxShadow: [
           BoxShadow(
             color: scheme.shadow.withValues(alpha: 0.05),
@@ -598,47 +638,129 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: totalIncomplete > 0
-                      ? scheme.errorContainer.withValues(alpha: 0.65)
-                      : scheme.secondaryContainer.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(10),
+                      ? scheme.errorContainer.withValues(alpha: 0.55)
+                      : scheme.tertiaryContainer.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  '$totalIncomplete',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: totalIncomplete > 0
-                        ? scheme.error
-                        : scheme.secondary,
-                    height: 1,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$totalIncomplete',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: totalIncomplete > 0
+                            ? scheme.error
+                            : scheme.tertiary,
+                        height: 1,
+                      ),
+                    ),
+                    Text(
+                      '미통화',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  '미통화 ${_filterLabel(_currentFilter)} · 접수 $totalCalls건 · 완료 $completePct%',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurface,
-                    height: 1.2,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_filterLabel(_currentFilter)} 요약',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurface,
+                        height: 1.25,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '접수 $totalCalls건 · 처리 $cleared건',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurfaceVariant,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$completePct%',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: scheme.onSurface,
+                  height: 1,
+                  letterSpacing: -0.5,
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOutCubic,
+              tween: Tween(begin: 0, end: progress),
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: value,
+                minHeight: 6,
+                backgroundColor:
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.65),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  value >= 1.0
+                      ? scheme.tertiary
+                      : (value < 0.5 ? scheme.error : scheme.primary),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '전체 완료율',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
+              ),
+              Text(
+                '미통화 $totalIncomplete건',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: totalIncomplete > 0
+                      ? scheme.error
+                      : scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
           _buildIncompletePeriodFilter(scheme),
         ],
       ),
@@ -666,6 +788,7 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
               onTap: () {
                 HapticFeedback.selectionClick();
                 setState(() => _currentFilter = filter);
+                _publishFilterToHub(filter);
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
@@ -712,6 +835,15 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
     };
   }
 
+  Color _incompleteProgressColor(
+    double percent,
+    ColorScheme scheme,
+  ) {
+    if (percent >= 1.0) return scheme.tertiary;
+    if (percent < 0.5) return scheme.error;
+    return scheme.primary;
+  }
+
   Widget _buildIncompleteManagerTile({
     required ColorScheme scheme,
     required String name,
@@ -720,123 +852,317 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
     required int total,
     bool compact = false,
   }) {
+    if (compact) {
+      return _buildIncompleteManagerTileCompact(
+        scheme: scheme,
+        name: name,
+        rank: rank,
+        incomplete: incomplete,
+        total: total,
+      );
+    }
+
     final percent = total > 0 ? (total - incomplete) / total : 1.0;
+    final pctLabel = (percent * 100).round();
     final accent = _incompleteRankAccent(rank, scheme);
     final initial = name.isNotEmpty ? name[0] : '?';
     final hasIssue = incomplete > 0;
-    final progressColor = percent >= 1.0
-        ? Colors.teal
-        : (percent < 0.5 ? scheme.error : scheme.primary);
+    final progressColor = _incompleteProgressColor(percent, scheme);
 
-    final avatarR = compact ? 9.0 : 10.0;
-    final fontSize = compact ? 10.0 : 11.0;
-
-    return SizedBox(
-      height: 36,
-      child: Material(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: BorderSide(
-            color: hasIssue
-                ? scheme.error.withValues(alpha: 0.16)
-                : scheme.outlineVariant.withValues(alpha: 0.22),
-          ),
+    return Material(
+      color: scheme.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: hasIssue
+              ? scheme.error.withValues(alpha: 0.14)
+              : scheme.outlineVariant.withValues(alpha: 0.22),
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => _openIncompleteListForAssignee(name),
-          child: Stack(
-            clipBehavior: Clip.none,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openIncompleteListForAssignee(name),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Positioned(
-                left: 5,
-                right: 5,
-                bottom: 0,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(9),
+              Row(
+                children: [
+                  _buildIncompleteAssigneeAvatar(
+                    scheme: scheme,
+                    initial: initial,
+                    rank: rank,
+                    accent: accent,
+                    radius: 11,
                   ),
-                  child: LinearProgressIndicator(
-                    value: percent,
-                    minHeight: 2,
-                    backgroundColor:
-                        scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.onSurface,
+                            height: 1.2,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '접수 $total건',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                            height: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  _buildIncompleteCountChip(
+                    scheme: scheme,
+                    incomplete: incomplete,
+                    hasIssue: hasIssue,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: percent,
+                  minHeight: 5,
+                  backgroundColor:
+                      scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
                 ),
               ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(compact ? 4 : 6, 4, compact ? 4 : 6, 5),
-                child: Row(
-                  children: [
-                    if (!compact)
-                      Container(
-                        width: 3,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: rank <= 3 ? 1 : 0.35),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    if (!compact) const SizedBox(width: 5),
-                    CircleAvatar(
-                      radius: avatarR,
-                      backgroundColor: accent.withValues(alpha: 0.14),
-                      child: Text(
-                        initial,
-                        style: TextStyle(
-                          fontSize: compact ? 9 : 10,
-                          fontWeight: FontWeight.w800,
-                          color: accent,
-                        ),
-                      ),
+              const SizedBox(height: 5),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '완료 $pctLabel%',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: progressColor,
+                      height: 1.2,
                     ),
-                    SizedBox(width: compact ? 4 : 5),
-                    Expanded(
-                      child: Text(
-                        compact
-                            ? '$name\n접수$total·${(percent * 100).round()}%'
-                            : '$name · 접수$total · ${(percent * 100).round()}%',
-                        maxLines: compact ? 2 : 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: fontSize,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurface,
-                          height: 1.05,
-                        ),
-                      ),
+                  ),
+                  Text(
+                    hasIssue ? '미통화 $incomplete' : '처리 완료',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+                      height: 1.2,
                     ),
-                    const SizedBox(width: 3),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: compact ? 4 : 5,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: hasIssue
-                            ? scheme.errorContainer.withValues(alpha: 0.8)
-                            : scheme.secondaryContainer.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      child: Text(
-                        hasIssue ? '$incomplete' : '완료',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          color: hasIssue ? scheme.error : scheme.secondary,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncompleteManagerTileCompact({
+    required ColorScheme scheme,
+    required String name,
+    required int rank,
+    required int incomplete,
+    required int total,
+  }) {
+    final percent = total > 0 ? (total - incomplete) / total : 1.0;
+    final pctLabel = (percent * 100).round();
+    final accent = _incompleteRankAccent(rank, scheme);
+    final initial = name.isNotEmpty ? name[0] : '?';
+    final hasIssue = incomplete > 0;
+    final progressColor = _incompleteProgressColor(percent, scheme);
+
+    return Material(
+      color: scheme.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(11),
+        side: BorderSide(
+          color: hasIssue
+              ? scheme.error.withValues(alpha: 0.12)
+              : scheme.outlineVariant.withValues(alpha: 0.2),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(11),
+        onTap: () => _openIncompleteListForAssignee(name),
+        child: SizedBox.expand(
+          child: Stack(
+          fit: StackFit.expand,
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildIncompleteAssigneeAvatar(
+                    scheme: scheme,
+                    initial: initial,
+                    rank: rank,
+                    accent: accent,
+                    radius: 7,
+                    showRankBadge: false,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.onSurface,
+                            height: 1.05,
+                            letterSpacing: -0.1,
+                          ),
+                        ),
+                        Text(
+                          '$pctLabel% · $total건',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant
+                                .withValues(alpha: 0.88),
+                            height: 1.05,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  _buildIncompleteCountChip(
+                    scheme: scheme,
+                    incomplete: incomplete,
+                    hasIssue: hasIssue,
+                    dense: true,
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 6,
+              right: 6,
+              bottom: 4,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: percent,
+                  minHeight: 2,
+                  backgroundColor:
+                      scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                ),
+              ),
+            ),
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncompleteAssigneeAvatar({
+    required ColorScheme scheme,
+    required String initial,
+    required int rank,
+    required Color accent,
+    required double radius,
+    bool showRankBadge = true,
+  }) {
+    return Stack(
+      clipBehavior: Clip.hardEdge,
+      children: [
+        CircleAvatar(
+          radius: radius,
+          backgroundColor: accent.withValues(alpha: 0.12),
+          child: Text(
+            initial,
+            style: TextStyle(
+              fontSize: radius * 0.95,
+              fontWeight: FontWeight.w800,
+              color: accent,
+              height: 1,
+            ),
+          ),
+        ),
+        if (showRankBadge && rank <= 3)
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+                border: Border.all(color: scheme.surface, width: 1.5),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                '$rank',
+                style: const TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildIncompleteCountChip({
+    required ColorScheme scheme,
+    required int incomplete,
+    required bool hasIssue,
+    bool dense = false,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 5 : 6,
+        vertical: dense ? 2 : 3,
+      ),
+      decoration: BoxDecoration(
+        color: hasIssue
+            ? scheme.errorContainer.withValues(alpha: 0.75)
+            : scheme.tertiaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        hasIssue ? '$incomplete' : '완료',
+        style: TextStyle(
+          fontSize: dense && !hasIssue ? 9 : (dense ? 10 : 11),
+          fontWeight: FontWeight.w900,
+          color: hasIssue ? scheme.error : scheme.tertiary,
+          height: 1.1,
         ),
       ),
     );
@@ -849,7 +1175,9 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
         builder: (_) => SalesCallListScreen(
           mode: ListQueryMode.incomplete,
           initialAssignee: name,
-          date: _currentFilter == _SummaryFilter.today ? todayYmdSeoul() : null,
+          date: _currentFilter == _SummaryFilter.today
+              ? ref.read(homeHubFlowAnchorYmdProvider)
+              : null,
         ),
       ),
     );
@@ -1078,12 +1406,22 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
   /// 사용자가 담당자 칩을 직접 탭한 뒤에는 '전체'를 로그인 담당자로 되돌리지 않음.
   bool _userPickedAssigneeFilter = false;
 
+  DateTime _ymdToDateTime(String ymd) {
+    final parts = ymd.split('-');
+    if (parts.length != 3) return DateTime.now();
+    final y = int.tryParse(parts[0]) ?? DateTime.now().year;
+    final m = int.tryParse(parts[1]) ?? DateTime.now().month;
+    final d = int.tryParse(parts[2]) ?? DateTime.now().day;
+    return DateTime(y, m, d);
+  }
+
   @override
   void initState() {
     super.initState();
     _calendarFormat = widget.initialCalendarFormat == CalendarFormat.month
         ? CalendarFormat.month
         : CalendarFormat.week;
+    _focusedDay = _ymdToDateTime(ref.read(homeHubFlowAnchorYmdProvider));
   }
 
   @override
@@ -1921,6 +2259,11 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(homeHubFlowAnchorYmdProvider, (prev, next) {
+      if (prev == next) return;
+      setState(() => _focusedDay = _ymdToDateTime(next));
+    });
+
     final rangeKey = _calendarRangeKey();
     final asyncCalls = ref.watch(calendarFollowRangeProvider(rangeKey));
     final overridesAsync = ref.watch(tempManagerOverridesProvider);

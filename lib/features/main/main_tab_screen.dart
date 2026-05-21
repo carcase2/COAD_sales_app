@@ -25,33 +25,11 @@ class MainTabScreen extends ConsumerStatefulWidget {
   ConsumerState<MainTabScreen> createState() => _MainTabScreenState();
 }
 
-class _QuickActionItem {
-  const _QuickActionItem({
-    required this.heroTag,
-    required this.color,
-    required this.tooltip,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String heroTag;
-  final Color color;
-  final String tooltip;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback onTap;
-}
-
 class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   int _currentIndex = 0;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
-  bool _quickActionsOpen = false;
-  final ScrollController _quickActionsScrollCtrl = ScrollController();
-  bool _quickHasMoreAbove = false;
-  bool _quickHasMoreBelow = false;
   RealtimeChannel? _issuanceCompletionWatchChannel;
   Timer? _issuanceCompletionDebounce;
 
@@ -89,7 +67,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       Supabase.instance.client.removeChannel(channel);
       _issuanceCompletionWatchChannel = null;
     }
-    _quickActionsScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -198,40 +175,21 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     if (index == 0) {
       ref.read(homeHubFlowResetTickProvider.notifier).state++;
     }
-    if (_currentIndex == index) {
-      if (index == 0) {
-        setState(() => _quickActionsOpen = false);
-      }
-      return;
-    }
+    if (_currentIndex == index) return;
 
     setState(() {
-      _quickActionsOpen = false;
       _currentIndex = index;
       _loadedIndices.add(index); // 선택한 탭을 로드 목록에 추가
       if (index != 0) _lastBackExitHintAt = null;
     });
   }
 
-  void _refreshQuickHints() {
-    if (!_quickActionsOpen || !_quickActionsScrollCtrl.hasClients) {
-      if (_quickHasMoreAbove || _quickHasMoreBelow) {
-        setState(() {
-          _quickHasMoreAbove = false;
-          _quickHasMoreBelow = false;
-        });
-      }
-      return;
-    }
-    final pos = _quickActionsScrollCtrl.position;
-    final nextAbove = pos.pixels > 1;
-    final nextBelow = pos.pixels < (pos.maxScrollExtent - 1);
-    if (nextAbove != _quickHasMoreAbove || nextBelow != _quickHasMoreBelow) {
-      setState(() {
-        _quickHasMoreAbove = nextAbove;
-        _quickHasMoreBelow = nextBelow;
-      });
-    }
+  Future<void> _openReceptionCreate() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SalesCallCreateScreen(),
+      ),
+    );
   }
 
   bool _handleGlobalScroll(UserScrollNotification n) {
@@ -265,50 +223,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final actionsBottom = 12.0 + safeBottom;
-    final quickMenuWidth = (screenWidth * 0.64).clamp(220.0, 300.0);
-    final quickActions = <_QuickActionItem>[
-      _QuickActionItem(
-        heroTag: 'global_home_open',
-        color: Colors.blueGrey.shade700,
-        tooltip: '홈',
-        subtitle: '업무 흐름·미통화·달력',
-        icon: Icons.home_rounded,
-        onTap: () {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          _onTabSelected(0);
-        },
-      ),
-      _QuickActionItem(
-        heroTag: 'global_call_create',
-        color: scheme.tertiary,
-        tooltip: '접수',
-        subtitle: '새 고객 전화 접수 등록',
-        icon: Icons.add_ic_call_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const SalesCallCreateScreen(),
-            ),
-          );
-        },
-      ),
-    ];
+    final actionsBottom = 12.0 + MediaQuery.paddingOf(context).bottom;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
         if (didPop) return;
-
-        if (_quickActionsOpen) {
-          setState(() => _quickActionsOpen = false);
-          return;
-        }
 
         final sm = scaffoldKey.currentState;
         if (sm != null && sm.isDrawerOpen) {
@@ -406,218 +326,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         body: Stack(
           children: [
             IndexedStack(index: _currentIndex, children: _buildScreens()),
-            if (_quickActionsOpen)
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () => setState(() => _quickActionsOpen = false),
-                  child: const SizedBox.expand(),
-                ),
-              ),
             Positioned(
               right: 16,
               bottom: actionsBottom,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (_quickActionsOpen)
-                    Container(
-                      key: const ValueKey('quick_actions_scroll_panel'),
-                      width: quickMenuWidth,
-                      constraints: const BoxConstraints(maxHeight: 320),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: scheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withValues(alpha: 0.5),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.12),
-                            blurRadius: 14,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          if (_quickHasMoreAbove)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2, bottom: 4),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.keyboard_arrow_up_rounded,
-                                    size: 16,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '위에 메뉴 더 있음',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          Expanded(
-                            child: NotificationListener<ScrollNotification>(
-                              onNotification: (n) {
-                                _refreshQuickHints();
-                                return false;
-                              },
-                              child: SingleChildScrollView(
-                                controller: _quickActionsScrollCtrl,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                child: Column(
-                                  children: quickActions
-                                      .map(
-                                        (item) => Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 3,
-                                          ),
-                                          child: Material(
-                                            color: item.color.withValues(
-                                              alpha: 0.12,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            child: InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              onTap: item.onTap,
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 10,
-                                                    ),
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      item.icon,
-                                                      size: 18,
-                                                      color: item.color,
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          Text(
-                                                            item.tooltip,
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            softWrap: false,
-                                                            style: TextStyle(
-                                                              fontSize: 13,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w800,
-                                                              color: scheme
-                                                                  .onSurface,
-                                                            ),
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 2,
-                                                          ),
-                                                          Text(
-                                                            item.subtitle,
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            softWrap: false,
-                                                            style: TextStyle(
-                                                              fontSize: 10.5,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                              color: scheme
-                                                                  .onSurfaceVariant,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    Icon(
-                                                      Icons
-                                                          .chevron_right_rounded,
-                                                      size: 18,
-                                                      color: scheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_quickHasMoreBelow)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4, bottom: 2),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    size: 16,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '아래 메뉴 더 있음',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  FloatingActionButton(
-                    heroTag: 'global_actions_toggle',
-                    backgroundColor: scheme.primary,
-                    foregroundColor: Colors.white,
-                    mini: true,
-                    onPressed: () {
-                      setState(() => _quickActionsOpen = !_quickActionsOpen);
-                      WidgetsBinding.instance.addPostFrameCallback(
-                        (_) => _refreshQuickHints(),
-                      );
-                    },
-                    tooltip: _quickActionsOpen ? '닫기' : '열기',
-                    child: Icon(
-                      _quickActionsOpen
-                          ? Icons.close_rounded
-                          : Icons.menu_open_rounded,
-                    ),
-                  ),
-                ],
+              child: FloatingActionButton.extended(
+                heroTag: 'global_call_create',
+                backgroundColor: scheme.tertiary,
+                foregroundColor: scheme.onTertiary,
+                onPressed: _openReceptionCreate,
+                tooltip: '접수 등록',
+                icon: const Icon(Icons.add_ic_call_rounded),
+                label: const Text(
+                  '접수',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
             ),
           ],

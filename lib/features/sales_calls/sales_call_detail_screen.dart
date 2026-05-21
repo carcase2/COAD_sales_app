@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -100,6 +101,27 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _onPhoneChanged(String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    String formatted;
+    if (digits.length <= 3) {
+      formatted = digits;
+    } else if (digits.length <= 7) {
+      formatted = '${digits.substring(0, 3)}-${digits.substring(3)}';
+    } else if (digits.length <= 11) {
+      formatted = '${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}';
+    } else {
+      formatted =
+          '${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7, 11)}';
+    }
+    if (formatted != value) {
+      _phoneCtrl.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
     }
   }
 
@@ -262,7 +284,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   Future<bool> _save(MasterDataBundle master) async {
-    if (_isEditMode && !_formKey.currentState!.validate()) return false;
+    if (_isEditMode) {
+      if (!(_formKey.currentState?.validate() ?? false)) return false;
+      if (_regionId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('배정될 지역을 선택해주세요.')),
+        );
+        return false;
+      }
+    }
 
     setState(() => _saving = true);
     try {
@@ -315,12 +345,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       }
 
       if (mounted) {
+        final wasEdit = _isEditMode;
         setState(() {
           _newConsultationCtrl.clear();
           _unsuccessfulReasonCtrl.clear();
           _consultationNextDateCtrl.clear();
           _isEditMode = false;
         });
+        if (wasEdit) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('접수 정보가 수정되었습니다.')),
+          );
+        }
       }
       return true;
     } catch (e) {
@@ -476,7 +512,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final masterAsync = ref.watch(masterDataProvider);
+    final masterAsync = ref.watch(salesCallCreateMasterDataProvider);
 
     if (_loadError != null && _model == null) {
       return Scaffold(
@@ -525,7 +561,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 }
               });
             },
-            tooltip: _isEditMode ? '조회 모드로 변경' : '전체 정보 수정',
+            tooltip: _isEditMode ? '조회 모드' : '접수 정보 수정',
           ),
           if (_loading)
             Padding(
@@ -590,40 +626,47 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         children: [
           if (m != null) _buildHeroHeader(m, scheme, assigneeColor),
 
-          sectionTitle('핵심 문의 및 제품', Icons.rocket_launch_rounded),
-          Row(
-            children: [
-              Expanded(
-                child: _buildInfoTile(
-                  '제품명', 
-                  m?.productCategoryName ?? '미지정', 
-                  Icons.category_rounded, 
-                  scheme,
-                  bgColor: assigneeColor.withOpacity(0.08),
+          if (_isEditMode) ...[
+            _buildEditFormSection(master, scheme),
+          ] else ...[
+            sectionTitle('핵심 문의 및 제품', Icons.rocket_launch_rounded),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildInfoTile(
+                    '제품명',
+                    m?.productCategoryName ?? '미지정',
+                    Icons.category_rounded,
+                    scheme,
+                    bgColor: assigneeColor.withOpacity(0.08),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildInfoTile(
-                  '지역', 
-                  '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'.trim().isEmpty 
-                    ? '미지정' 
-                    : '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'.trim(), 
-                  Icons.location_on_rounded, 
-                  scheme,
-                  bgColor: assigneeColor.withOpacity(0.08),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildInfoTile(
+                    '지역',
+                    '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'
+                            .trim()
+                            .isEmpty
+                        ? '미지정'
+                        : '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'
+                            .trim(),
+                    Icons.location_on_rounded,
+                    scheme,
+                    bgColor: assigneeColor.withOpacity(0.08),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _buildInfoTile(
-            '문의내용', 
-            m?.inquiryContent ?? '상세 문의 내용이 없습니다.', 
-            Icons.notes_rounded, 
-            scheme,
-            multiLine: true,
-          ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              '문의내용',
+              m?.inquiryContent ?? '상세 문의 내용이 없습니다.',
+              Icons.notes_rounded,
+              scheme,
+              multiLine: true,
+            ),
+          ],
 
           sectionTitle('진행 상태 및 일정', Icons.speed_rounded),
           _buildInfoTile(
@@ -737,6 +780,163 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           const SizedBox(height: 50),
         ],
       ),
+    );
+  }
+
+  Widget _buildEditFormSection(MasterDataBundle master, ColorScheme scheme) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.edit_rounded, size: 20, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                '접수 정보 수정',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '연락처·이름·지역·문의내용·분류를 고친 뒤 아래 저장을 누르세요.',
+            style: TextStyle(
+              fontSize: 12,
+              color: scheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildEditFieldLabel('연락처 *', scheme),
+          TextFormField(
+            controller: _phoneCtrl,
+            keyboardType: TextInputType.phone,
+            onChanged: _onPhoneChanged,
+            decoration: _editInputDecoration('010-0000-0000', scheme),
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? '연락처를 입력해주세요' : null,
+          ),
+          const SizedBox(height: 12),
+          _buildEditFieldLabel('고객명/상호명', scheme),
+          TextFormField(
+            controller: _nameCtrl,
+            decoration: _editInputDecoration('고객성함 또는 회사명', scheme),
+          ),
+          const SizedBox(height: 16),
+          _buildEditFieldLabel('제품군', scheme),
+          _buildMasterChoiceChips(
+            items: master.productCategories,
+            selectedValue: _productId,
+            selectedColor: const Color(0xFF10B981),
+            onSelected: (id) => setState(() => _productId = id),
+          ),
+          const SizedBox(height: 12),
+          _buildEditFieldLabel('문의 경로', scheme),
+          _buildMasterChoiceChips(
+            items: master.inquiryMethods,
+            selectedValue: _methodId,
+            selectedColor: const Color(0xFF0EA5E9),
+            onSelected: (id) => setState(() => _methodId = id),
+          ),
+          const SizedBox(height: 16),
+          _buildEditFieldLabel('지역 배정 *', scheme),
+          SearchableRegionPicker(
+            regions: master.regions,
+            value: _regionId,
+            decoration: _editInputDecoration('지역 검색 · 선택', scheme),
+            onChanged: (v) => setState(() => _regionId = v),
+            validator: (v) => v == null ? '지역을 선택해주세요' : null,
+          ),
+          const SizedBox(height: 16),
+          _buildEditFieldLabel('문의 내용 *', scheme),
+          TextFormField(
+            controller: _inquiryCtrl,
+            minLines: 4,
+            maxLines: 8,
+            decoration: _editInputDecoration('고객 요청·문의 내용', scheme),
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditFieldLabel(String label, ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, bottom: 6),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _editInputDecoration(String hint, ColorScheme scheme) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: scheme.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: scheme.primary, width: 2),
+      ),
+    );
+  }
+
+  Widget _buildMasterChoiceChips({
+    required List<NamedMasterRow> items,
+    required String? selectedValue,
+    required Color selectedColor,
+    required ValueChanged<String> onSelected,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: items.map((item) {
+        final selected = selectedValue == item.id;
+        return FilterChip(
+          label: Text(
+            item.name,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          selected: selected,
+          showCheckmark: true,
+          selectedColor: selectedColor.withValues(alpha: 0.18),
+          side: BorderSide(
+            color: selected
+                ? selectedColor
+                : scheme.outlineVariant.withValues(alpha: 0.6),
+          ),
+          onSelected: (_) => onSelected(item.id),
+        );
+      }).toList(),
     );
   }
 

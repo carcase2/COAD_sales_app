@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/local/database_helper.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/region.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
@@ -20,6 +21,9 @@ class SalesCallsRepository {
   final AppDependencies _deps;
   final SupabaseClient _client = Supabase.instance.client;
   final DatabaseHelper _db = DatabaseHelper.instance;
+
+  /// PostgREST/Supabase `api.max_rows` (see `supabase/config.toml`).
+  static const int postgrestMaxPageSize = 1000;
   static const String _regionSelect =
       'id,sido,region,manager,branch_type';
   static const String _callHistorySelect =
@@ -233,6 +237,88 @@ class SalesCallsRepository {
     bool excludeSimpleInquiries = false,
     bool calendarFull = false,
   }) async {
+    final batch = await _fetchCallsBatch(
+      date: date,
+      followDate: followDate,
+      followRangeStart: followRangeStart,
+      followRangeEndInclusive: followRangeEndInclusive,
+      dateRangeStart: dateRangeStart,
+      dateRangeEndInclusive: dateRangeEndInclusive,
+      fromDate: fromDate,
+      limit: limit,
+      offset: offset,
+      includeCallHistory: includeCallHistory,
+      incompleteOnly: incompleteOnly,
+      uncalledOnly: uncalledOnly,
+      completedOnly: completedOnly,
+      excludeSimpleInquiries: excludeSimpleInquiries,
+      calendarFull: calendarFull,
+    );
+    return batch.items;
+  }
+
+  /// [fetchCalls]와 동일 조건으로 PostgREST 페이지(최대 [postgrestMaxPageSize])를 반복 조회해 전체를 합칩니다.
+  /// `uncalledOnly` 등 클라이언트 후처리가 있어도, 다음 페이지 여부는 **서버 raw 행 수**로 판단합니다.
+  Future<List<SalesCall>> fetchCallsAllPages({
+    String? date,
+    String? followDate,
+    String? followRangeStart,
+    String? followRangeEndInclusive,
+    String? dateRangeStart,
+    String? dateRangeEndInclusive,
+    String? fromDate,
+    bool includeCallHistory = true,
+    bool? incompleteOnly,
+    bool? uncalledOnly,
+    bool? completedOnly,
+    bool excludeSimpleInquiries = false,
+    bool calendarFull = false,
+    int pageSize = postgrestMaxPageSize,
+  }) async {
+    final merged = <SalesCall>[];
+    var offset = 0;
+    while (true) {
+      final batch = await _fetchCallsBatch(
+        date: date,
+        followDate: followDate,
+        followRangeStart: followRangeStart,
+        followRangeEndInclusive: followRangeEndInclusive,
+        dateRangeStart: dateRangeStart,
+        dateRangeEndInclusive: dateRangeEndInclusive,
+        fromDate: fromDate,
+        limit: pageSize,
+        offset: offset,
+        includeCallHistory: includeCallHistory,
+        incompleteOnly: incompleteOnly,
+        uncalledOnly: uncalledOnly,
+        completedOnly: completedOnly,
+        excludeSimpleInquiries: excludeSimpleInquiries,
+        calendarFull: calendarFull,
+      );
+      merged.addAll(batch.items);
+      if (batch.rawRowCount < pageSize) break;
+      offset += pageSize;
+    }
+    return merged;
+  }
+
+  Future<({List<SalesCall> items, int rawRowCount})> _fetchCallsBatch({
+    String? date,
+    String? followDate,
+    String? followRangeStart,
+    String? followRangeEndInclusive,
+    String? dateRangeStart,
+    String? dateRangeEndInclusive,
+    String? fromDate,
+    int? limit,
+    int? offset,
+    bool includeCallHistory = true,
+    bool? incompleteOnly,
+    bool? uncalledOnly,
+    bool? completedOnly,
+    bool excludeSimpleInquiries = false,
+    bool calendarFull = false,
+  }) async {
     try {
       await revertExpiredTempManagerCalls();
       final overrides = await fetchTempOverrides();
@@ -289,6 +375,7 @@ class SalesCallsRepository {
       }
 
       final res = await transformBuilder;
+      final rawRowCount = res.length;
       
       // 로컬 DB 동기화 (Upsert)
       if (res.isNotEmpty) {
@@ -314,7 +401,10 @@ class SalesCallsRepository {
       if (excludeSimpleInquiries) {
         parsed = parsed.where((c) => c.statusId != 4).toList();
       }
-      return applyCallDisplayOverrides(parsed, overrides, DateTime.now());
+      return (
+        items: applyCallDisplayOverrides(parsed, overrides, DateTime.now()),
+        rawRowCount: rawRowCount,
+      );
     } catch (e) {
       throw ApiException('통화 목록을 불러오는데 실패했습니다: $e');
     }
@@ -442,15 +532,7 @@ class SalesCallsRepository {
   Future<TodayStats> fetchTodayStats() => fetchStatsForDate(todayYmdSeoul());
 
   Future<TodayStats> fetchStatsForDate(String ymdSeoul) async {
-    try {
-      final res = await _client
-          .from('sales_calls')
-          .select('id, status_id, call_stage')
-          .eq('call_date', ymdSeoul);
-      return _todayStatsFromRows(res);
-    } catch (e) {
-      throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
-    }
+    return fetchStatsForDateRange(ymdSeoul, ymdSeoul);
   }
 
   Future<TodayStats> fetchStatsForDateRange(
@@ -470,18 +552,28 @@ class SalesCallsRepository {
   }
 
   Future<List<SalesCall>> searchCalls(String query, {int limit = 50}) async {
-    if (query.trim().isEmpty) return [];
-    
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+
     try {
-      final q = '%${query.trim()}%';
-      // or filter: customer_name, customer_phone, inquiry_content, region_sido, region_name
+      final q = '%$trimmed%';
+      final orParts = <String>[
+        'customer_name.ilike.$q',
+        'inquiry_content.ilike.$q',
+        'region_sido.ilike.$q',
+        'region_name.ilike.$q',
+      ];
+      for (final phonePattern in phoneSearchPatterns(trimmed)) {
+        orParts.add('customer_phone.ilike.%$phonePattern%');
+      }
+
       final res = await _client.from('sales_calls').select('''
         *,
         product_categories(name),
         inquiry_methods(name),
         call_statuses(name),
         regions($_regionSelect)
-      ''').or('customer_name.ilike.$q,customer_phone.ilike.$q,inquiry_content.ilike.$q,region_sido.ilike.$q,region_name.ilike.$q')
+      ''').or(orParts.join(','))
       .order('created_at', ascending: false)
       .limit(limit);
 

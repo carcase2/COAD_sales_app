@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
@@ -108,15 +109,16 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
     if (terms.isEmpty) return [];
 
     return initialItems.where((c) {
-      final searchableText = [
-        c.customerName,
-        c.customerPhone,
-        c.inquiryContent,
-        c.regionLabel,
-        c.productCategoryName,
-      ].where((s) => s != null).join(' ').toLowerCase();
-
-      return terms.every((term) => searchableText.contains(term));
+      return terms.every(
+        (term) => termMatchesSalesCallSearch(
+          term,
+          customerName: c.customerName,
+          customerPhone: c.customerPhone,
+          inquiryContent: c.inquiryContent,
+          regionLabel: c.regionLabel,
+          productCategoryName: c.productCategoryName,
+        ),
+      );
     }).toList();
   }
 

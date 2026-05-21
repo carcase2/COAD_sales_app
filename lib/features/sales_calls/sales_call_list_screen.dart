@@ -2,6 +2,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
@@ -186,18 +187,16 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         );
       case ListQueryMode.incomplete:
         if (widget.date != null && widget.dateEndInclusive != null) {
-          return repo.fetchCalls(
+          return repo.fetchCallsAllPages(
             dateRangeStart: widget.date!,
             dateRangeEndInclusive: widget.dateEndInclusive!,
             uncalledOnly: true,
-            limit: 1000,
             includeCallHistory: true,
           );
         }
-        return repo.fetchCalls(
+        return repo.fetchCallsAllPages(
           date: widget.date, // 날짜가 전달된 경우 해당 날짜만 (오늘 요약 클릭 시), 없으면 전체 (전체 랭킹 등)
           uncalledOnly: true,
-          limit: 1000,
           includeCallHistory: true,
         );
       case ListQueryMode.recent:
@@ -214,28 +213,25 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           includeCallHistory: true,
         );
       case ListQueryMode.incompleteByDate:
-        return repo.fetchCalls(
+        return repo.fetchCallsAllPages(
           followDate: widget.date ?? todayYmdSeoul(),
           incompleteOnly: true,
           excludeSimpleInquiries: true,
-          limit: 1000,
           // `todayFollowOverviewProvider`·홈 바텀시트와 동일 조건 (call_history 포함 시 일부 행 누락 가능)
           includeCallHistory: false,
         );
       case ListQueryMode.dateRange:
-        return repo.fetchCalls(
+        return repo.fetchCallsAllPages(
           dateRangeStart: widget.date!,
           dateRangeEndInclusive: widget.dateEndInclusive!,
-          limit: 1000,
           includeCallHistory: true,
         );
       case ListQueryMode.followRange:
-        return repo.fetchCalls(
+        return repo.fetchCallsAllPages(
           followRangeStart: widget.date!,
           followRangeEndInclusive: widget.dateEndInclusive!,
           incompleteOnly: true,
           excludeSimpleInquiries: true,
-          limit: 1000,
           includeCallHistory: false,
         );
     }
@@ -740,19 +736,20 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             
             bool matchesSearch = true;
             if (_searchQuery.isNotEmpty) {
-              final queryTerms = _searchQuery.toLowerCase().split(' ').where((t) => t.isNotEmpty);
+              final queryTerms =
+                  _searchQuery.toLowerCase().split(' ').where((t) => t.isNotEmpty);
               if (queryTerms.isNotEmpty) {
-                final searchableText = [
-                  c.customerName,
-                  c.customerPhone,
-                  c.inquiryContent,
-                  c.productCategoryName,
-                  c.regionLabel,
-                  c.regionManager,
-                ].where((s) => s != null).join(' ').toLowerCase();
-                
-                // 모든 검색 키워드가 포함되어 있는지 확인 (AND 검색)
-                matchesSearch = queryTerms.every((term) => searchableText.contains(term));
+                matchesSearch = queryTerms.every(
+                  (term) => termMatchesSalesCallSearch(
+                    term,
+                    customerName: c.customerName,
+                    customerPhone: c.customerPhone,
+                    inquiryContent: c.inquiryContent,
+                    regionLabel: c.regionLabel,
+                    productCategoryName: c.productCategoryName,
+                    extra: c.regionManager,
+                  ),
+                );
               }
             }
             
