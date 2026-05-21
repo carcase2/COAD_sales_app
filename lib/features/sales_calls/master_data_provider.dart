@@ -15,6 +15,7 @@ final regionsRawProvider = FutureProvider<List<Region>>((ref) async {
 final tempManagerOverridesProvider =
     FutureProvider<List<TempManagerOverride>>((ref) async {
       final repo = ref.watch(salesCallsRepositoryProvider);
+      await repo.revertExpiredTempManagerCalls();
       return repo.fetchTempOverrides();
     });
 

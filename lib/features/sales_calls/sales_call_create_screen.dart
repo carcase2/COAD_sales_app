@@ -143,6 +143,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       };
 
       NamedMasterRow? regionRow;
+      var originalManager = '';
       if (_regionId != null) {
         for (final r in master.regions) {
           if (r.id == _regionId) { regionRow = r; break; }
@@ -155,23 +156,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         final effectiveManager = (e['effective_manager'] ?? e['manager'] ?? '')
             .toString()
             .trim();
-        final originalManager = (e['original_manager'] ?? e['manager'] ?? '')
+        originalManager = (e['original_manager'] ?? e['manager'] ?? '')
             .toString()
             .trim();
+        // 웹과 동일: 기간 중 assigned_to · region_manager 모두 현재(임시) 담당자
         if (effectiveManager.isNotEmpty) {
           body['region_manager'] = effectiveManager;
           body['assigned_to'] = effectiveManager;
-        }
-        if (originalManager.isNotEmpty) {
-          body['original_region_manager'] = originalManager;
-        }
-        final isOverridden = e['is_overridden'] == 'true';
-        if (isOverridden && originalManager.isNotEmpty) {
-          final currentInquiry = (body['inquiry_content'] ?? '').toString().trim();
-          final overrideNote = '임시변경(기존담당: $originalManager)';
-          if (currentInquiry.isNotEmpty && !currentInquiry.contains(overrideNote)) {
-            body['inquiry_content'] = '$currentInquiry\n$overrideNote';
-          }
         }
         if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
       }
@@ -189,7 +180,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         regionName: (body['region_name'] ?? '').toString(),
         regionManager: (body['region_manager'] ?? '').toString(),
         assignedTo: (body['assigned_to'] ?? '').toString(),
-        originalRegionManager: body['original_region_manager']?.toString(),
+        originalRegionManager: originalManager.isNotEmpty ? originalManager : null,
         productCategoryId: body['product_category_id']?.toString(),
         inquiryMethodId: body['inquiry_method_id']?.toString(),
         statusId: targetStatusId,

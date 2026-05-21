@@ -1,5 +1,7 @@
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
+import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/models/region.dart';
+import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -101,7 +103,6 @@ void main() {
   });
 
   test('UTC 시간이 KST 다음날이면 KST 날짜로 적용', () {
-    // UTC 2026-05-20 16:00 == KST 2026-05-21 01:00
     final nowUtc = DateTime.utc(2026, 5, 20, 16, 0, 0);
     final regions = SalesCallsRepository.buildEffectiveRegions(
       [baseRegion(manager: 'A')],
@@ -116,5 +117,94 @@ void main() {
     );
     expect(regions.first.resolvedManager, 'B');
     expect(regions.first.isManagerOverridden, true);
+  });
+
+  test('기간 중 목록 표시 — DB가 원담당이어도 임시 담당으로 오버레이', () {
+    final call = SalesCall(
+      id: 'c1',
+      regionName: '강남구',
+      regionManager: 'A',
+      assignedTo: 'A',
+    );
+    final displayed = applyCallDisplayOverrides(
+      [call],
+      [
+        override(
+          startDate: '2026-05-01',
+          endDate: '2026-05-31',
+          tempManager: 'B',
+        ),
+      ],
+      now,
+    ).first;
+    expect(displayed.regionManager, 'B');
+    expect(displayed.assignedTo, 'B');
+  });
+
+  test('기간 만료 후 — 오버레이 없음, DB 원담당 그대로 표시', () {
+    final call = SalesCall(
+      id: 'c1',
+      regionName: '강남구',
+      regionManager: 'A',
+      assignedTo: 'A',
+      callDate: '2026-05-05',
+    );
+    final displayed = applyCallDisplayOverrides(
+      [call],
+      [
+        override(
+          startDate: '2026-04-01',
+          endDate: '2026-05-01',
+          tempManager: 'B',
+        ),
+      ],
+      now,
+    ).first;
+    expect(displayed.regionManager, 'A');
+    expect(displayed.assignedTo, 'A');
+  });
+
+  test('만료 후 임시 담당 DB 잔존 건 — shouldRevert 대상', () {
+    final call = SalesCall(
+      id: 'c1',
+      regionName: '강남구',
+      regionManager: 'B',
+      assignedTo: 'B',
+      callDate: '2026-04-15',
+    );
+    expect(
+      shouldRevertCallToOriginal(
+        call,
+        override(
+          startDate: '2026-04-01',
+          endDate: '2026-05-01',
+          tempManager: 'B',
+        ),
+        '2026-05-20',
+      ),
+      isTrue,
+    );
+  });
+
+  test('기간 밖 접수 건 — shouldRevert 제외', () {
+    final call = SalesCall(
+      id: 'c1',
+      regionName: '강남구',
+      regionManager: 'B',
+      assignedTo: 'B',
+      callDate: '2026-04-20',
+    );
+    expect(
+      shouldRevertCallToOriginal(
+        call,
+        override(
+          startDate: '2026-05-01',
+          endDate: '2026-05-31',
+          tempManager: 'B',
+        ),
+        '2026-06-01',
+      ),
+      isFalse,
+    );
   });
 }

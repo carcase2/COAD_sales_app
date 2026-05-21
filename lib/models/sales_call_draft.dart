@@ -43,8 +43,7 @@ class SalesCallDraft {
       'region_name': regionName,
       'region_manager': regionManager,
       'assigned_to': assignedTo,
-      if (originalRegionManager != null && originalRegionManager!.isNotEmpty)
-        'original_region_manager': originalRegionManager,
+      // original_region_manager: DB 컬럼 없음 — 임시변경 시 inquiry_content에 메모로 남김
       if (productCategoryId != null) 'product_category_id': productCategoryId,
       if (inquiryMethodId != null) 'inquiry_method_id': inquiryMethodId,
       'status_id': statusId,

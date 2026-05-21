@@ -2,12 +2,71 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
 
+/** KST 기준 오늘 yyyy-MM-dd */
+function todayKstYmd(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+function isYmdInInclusiveRange(
+  today: string,
+  startYmd?: string | null,
+  endYmd?: string | null,
+): boolean {
+  if (startYmd && startYmd.length > 0 && today < startYmd) return false
+  if (endYmd && endYmd.length > 0 && today > endYmd) return false
+  return true
+}
+
+/**
+ * 휴가 대행 기간이면 푸시는 임시 담당자(`temp_manager`)에게만.
+ * 해당 없으면 null → 호출부에서 기존 브로드캐스트.
+ */
+async function resolveTempManagerNameForPush(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  record: Record<string, unknown> | null | undefined,
+): Promise<string | null> {
+  if (!record) return null
+
+  const regionName = (record.region_name ?? '').toString().trim()
+  const regionManager = (record.region_manager ?? '').toString().trim()
+  if (!regionName) return null
+
+  const today = todayKstYmd()
+  const { data: overrides, error } = await supabaseAdmin
+    .from('temp_manager_overrides')
+    .select('region_name, original_manager, temp_manager, start_date, end_date, is_active')
+    .eq('is_active', true)
+    .eq('region_name', regionName)
+
+  if (error) {
+    console.error('Error fetching temp_manager_overrides:', error)
+    return null
+  }
+
+  for (const o of overrides ?? []) {
+    if (!isYmdInInclusiveRange(today, o.start_date, o.end_date)) continue
+    if (regionManager && o.original_manager !== regionManager) continue
+    const temp = (o.temp_manager ?? '').toString().trim()
+    if (temp) {
+      console.log(
+        `Active temp override for push: region=${regionName} original=${o.original_manager} temp=${temp}`,
+      )
+      return temp
+    }
+  }
+  return null
+}
+
 serve(async (req) => {
   try {
     const payload = await req.json()
     const { type, record, old_record } = payload
-    
-    // Only notify on NEW Reception (INSERT)
+
     if (type !== 'INSERT') {
       console.log(`Skipping notification for event type: ${type}`)
       return new Response(JSON.stringify({ message: 'Only INSERT events are notified' }), { status: 200 })
@@ -15,37 +74,53 @@ serve(async (req) => {
 
     const activeRecord = record || old_record
 
-    // 1. Initialize Supabase Admin Client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
     console.log(`Webhook (${type}) payload received:`, JSON.stringify(payload))
 
-    // 2. Fetch ALL target users who have an FCM token (Broadcast mode)
-    console.log(`Querying ALL users with FCM tokens for broadcast...`)
+    const tempManagerForPush = await resolveTempManagerNameForPush(supabaseAdmin, activeRecord)
 
-    const { data: users, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('id, name, role, fcm_token')
-      .not('fcm_token', 'is', null)
+    let users: Array<{ id: string; name: string; role: string; fcm_token: string }> = []
+    if (tempManagerForPush) {
+      console.log(`Routing push to temp manager only: ${tempManagerForPush}`)
+      const { data, error: userError } = await supabaseAdmin
+        .from('users')
+        .select('id, name, role, fcm_token')
+        .eq('name', tempManagerForPush)
+        .not('fcm_token', 'is', null)
 
-    if (userError) {
-      console.error('Error fetching users:', userError)
-      throw userError
+      if (userError) throw userError
+      users = data ?? []
+      if (users.length === 0) {
+        console.log(`No users with FCM token matched temp manager name: ${tempManagerForPush}`)
+        return new Response(
+          JSON.stringify({ message: 'No temp manager user with FCM token', tempManager: tempManagerForPush }),
+          { status: 200 },
+        )
+      }
+    } else {
+      console.log(`Querying ALL users with FCM tokens for broadcast...`)
+      const { data, error: userError } = await supabaseAdmin
+        .from('users')
+        .select('id, name, role, fcm_token')
+        .not('fcm_token', 'is', null)
+
+      if (userError) throw userError
+      users = data ?? []
     }
-    
+
     if (!users || users.length === 0) {
       console.log('No target users with FCM tokens found')
       return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
-    const tokens = users.map((u: any) => u.fcm_token).filter((t: any) => t && t.length > 5)
-    console.log(`Found ${tokens.length} valid tokens to notify from ${users.length} matching users.`)
-    console.log(`Target users:`, users.map((u: any) => `${u.name}(${u.fcm_token ? 'Token OK' : 'No Token'})`).join(', '))
+    const tokens = users.map((u) => u.fcm_token).filter((t) => t && t.length > 5)
+    console.log(`Found ${tokens.length} valid tokens from ${users.length} users.`)
+    console.log(`Target users:`, users.map((u) => `${u.name}(Token OK)`).join(', '))
 
-    // 3. Authenticate with Firebase Service Account
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
     const FIREBASE_SERVICE_ACCOUNT = JSON.parse(Deno.env.get('FIREBASE_SERVICE_ACCOUNT') || '{}')
 
@@ -62,7 +137,6 @@ serve(async (req) => {
       throw new Error('Failed to get FCM access token')
     }
 
-    // 4. Fetch related data for richer notification
     let categoryName = '미지정'
     try {
       if (activeRecord && activeRecord.product_category_id) {
@@ -77,39 +151,26 @@ serve(async (req) => {
       console.error('Error fetching category:', e)
     }
 
-    const regionText = activeRecord && activeRecord.region_sido && activeRecord.region_name 
+    const regionText = activeRecord && activeRecord.region_sido && activeRecord.region_name
       ? `${activeRecord.region_sido} ${activeRecord.region_name}`
       : (activeRecord ? (activeRecord.region_display || activeRecord.region_name || '지역 미상') : '지역 미상')
 
-    let assigneeName = (activeRecord?.region_manager || '').toString().trim()
-    try {
-      if (activeRecord && activeRecord.assigned_to) {
-        const { data: userData } = await supabaseAdmin
-          .from('users')
-          .select('name')
-          .eq('id', activeRecord.assigned_to)
-          .maybeSingle()
-        if (userData?.name && userData.name.toString().trim().isNotEmpty) {
-          assigneeName = userData.name.toString().trim()
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching assignee:', e)
-    }
-    if (!assigneeName) assigneeName = '미지정'
+    // 푸시 제목: 당일 처리 담당(대행 중이면 assigned_to = 임시 담당)
+    const assigneeName = (
+      (activeRecord?.assigned_to ?? activeRecord?.region_manager ?? '') as string
+    ).toString().trim() || '미지정'
 
-    // 5. Build Notification Content
     const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'
     const phone = (activeRecord && activeRecord.customer_phone) || ''
-    const content = activeRecord ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음') : '내용 없음'
-    
-    // Title format: [담당자이름]
+    const content = activeRecord
+      ? (activeRecord.inquiry_content || activeRecord.inquiryContent || activeRecord.memo || '내용 없음')
+      : '내용 없음'
+
     const title = `[${assigneeName}] ${customerName}`
     const body = `📦 모델: ${categoryName}\n📍 지역: ${regionText}\n📞 연락처: ${phone}\n📝 상세: ${content}`
 
-    console.log(`Sending reception notification for: ${customerName}, assigned to: ${assigneeName}`)
+    console.log(`Sending reception notification for: ${customerName}, handler: ${assigneeName}`)
 
-    // 6. Send notifications
     const results = await Promise.all(tokens.map(async (token: string) => {
       try {
         const res = await fetch(
@@ -123,10 +184,7 @@ serve(async (req) => {
             body: JSON.stringify({
               message: {
                 token: token,
-                notification: {
-                  title: title,
-                  body: body,
-                },
+                notification: { title, body },
                 data: {
                   call_id: activeRecord ? activeRecord.id.toString() : '',
                   click_action: 'FLUTTER_NOTIFICATION_CLICK',
@@ -136,30 +194,36 @@ serve(async (req) => {
                   notification: {
                     channel_id: 'high_importance_channel',
                     click_action: 'FLUTTER_NOTIFICATION_CLICK',
-                    // Using default launcher icon to prevent missing resource errors
                   },
                 },
               },
             }),
-          }
+          },
         )
         const resText = await res.text()
-        console.log(`FCM Response for token ${token.substring(0, 10)}... (Status: ${res.status}):`, resText)
+        console.log(`FCM Response (Status: ${res.status}):`, resText)
         return { status: res.status, body: resText }
-      } catch (e: any) {
-        console.error(`FCM error for token ${token.substring(0, 10)}... :`, e)
-        return { error: e.message }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error(`FCM error:`, msg)
+        return { error: msg }
       }
     }))
 
-    return new Response(JSON.stringify({ success: true, results }), {
-      headers: { "Content-Type": "application/json" },
-      status: 200,
-    })
-  } catch (error: any) {
-    console.error('Error:', error.message)
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { "Content-Type": "application/json" },
+    return new Response(
+      JSON.stringify({
+        success: true,
+        routedTo: tempManagerForPush ?? 'broadcast',
+        recipientCount: tokens.length,
+        results,
+      }),
+      { headers: { 'Content-Type': 'application/json' }, status: 200 },
+    )
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('Error:', msg)
+    return new Response(JSON.stringify({ error: msg }), {
+      headers: { 'Content-Type': 'application/json' },
       status: 500,
     })
   }

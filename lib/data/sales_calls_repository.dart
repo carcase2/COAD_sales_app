@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
@@ -8,13 +9,15 @@ import 'package:coad_customer_calls/models/region.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/sales_call_draft.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
+import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// **1층: 메타데이터·URL** — 웹 `supabaseClient`와 동일한 **메인** Supabase 프로젝트
 class SalesCallsRepository {
-  SalesCallsRepository(AppDependencies deps);
+  SalesCallsRepository(this._deps);
 
+  final AppDependencies _deps;
   final SupabaseClient _client = Supabase.instance.client;
   final DatabaseHelper _db = DatabaseHelper.instance;
   static const String _regionSelect =
@@ -79,6 +82,76 @@ class SalesCallsRepository {
         .whereType<Map>()
         .map((e) => TempManagerOverride.fromJson(Map<String, dynamic>.from(e)))
         .toList();
+  }
+
+  /// 기간 만료된 임시 담당 접수 건을 original_manager로 DB 원복 (웹 revert-expired API와 동일).
+  /// BASE_URL이 있으면 Next API를 우선 호출하고, 없으면 Supabase로 직접 원복한다.
+  Future<int> revertExpiredTempManagerCalls() async {
+    final base = _deps.effectiveBaseUrl;
+    if (base.isNotEmpty) {
+      try {
+        final res = await _deps.transport.request(
+          baseUrl: base,
+          method: 'POST',
+          path: '/api/temp-manager/revert-expired',
+        );
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          if (res.body.isNotEmpty) {
+            final decoded = jsonDecode(res.body);
+            if (decoded is Map<String, dynamic>) {
+              return (decoded['revertedCount'] as num?)?.toInt() ?? 0;
+            }
+          }
+          return 0;
+        }
+      } catch (_) {
+        // API 실패 시 Supabase 직접 원복으로 폴백
+      }
+    }
+    return _revertExpiredViaSupabase();
+  }
+
+  Future<int> _revertExpiredViaSupabase() async {
+    final todayYmd = todayYmdSeoul();
+    final overrides = await fetchTempOverrides();
+    final expired = overrides.where((o) => isTempOverrideExpired(o, todayYmd)).toList();
+    if (expired.isEmpty) return 0;
+
+    final regionNames = expired.map((o) => o.regionName.trim()).where((s) => s.isNotEmpty).toSet().toList();
+    if (regionNames.isEmpty) return 0;
+
+    final callRes = await _client
+        .from('sales_calls')
+        .select('id, assigned_to, region_manager, call_date, created_at, region_name')
+        .inFilter('region_name', regionNames);
+
+    final revertTargets = <String, String>{};
+    for (final row in callRes) {
+      if (row is! Map) continue;
+      final call = SalesCall.fromJson(Map<String, dynamic>.from(row));
+      for (final o in expired) {
+        if (shouldRevertCallToOriginal(call, o, todayYmd)) {
+          revertTargets[call.id] = o.originalManager.trim();
+          break;
+        }
+      }
+    }
+    if (revertTargets.isEmpty) return 0;
+
+    final byManager = <String, List<String>>{};
+    for (final e in revertTargets.entries) {
+      byManager.putIfAbsent(e.value, () => []).add(e.key);
+    }
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    for (final entry in byManager.entries) {
+      await _client.from('sales_calls').update({
+        'assigned_to': entry.key,
+        'region_manager': entry.key,
+        'updated_at': now,
+      }).inFilter('id', entry.value);
+    }
+    return revertTargets.length;
   }
 
   static List<Region> buildEffectiveRegions(
@@ -161,6 +234,9 @@ class SalesCallsRepository {
     bool calendarFull = false,
   }) async {
     try {
+      await revertExpiredTempManagerCalls();
+      final overrides = await fetchTempOverrides();
+
       String selectStr = '''
         *,
         product_categories(name),
@@ -238,7 +314,7 @@ class SalesCallsRepository {
       if (excludeSimpleInquiries) {
         parsed = parsed.where((c) => c.statusId != 4).toList();
       }
-      return parsed;
+      return applyCallDisplayOverrides(parsed, overrides, DateTime.now());
     } catch (e) {
       throw ApiException('통화 목록을 불러오는데 실패했습니다: $e');
     }
@@ -246,6 +322,9 @@ class SalesCallsRepository {
 
   Future<SalesCall> fetchCallById(String id) async {
     try {
+      await revertExpiredTempManagerCalls();
+      final overrides = await fetchTempOverrides();
+
       final res = await _client.from('sales_calls').select('''
         *,
         product_categories(name),
@@ -262,7 +341,8 @@ class SalesCallsRepository {
       // 개별 상세 조회 시에도 캐시 업데이트
       await _db.saveSalesCalls([res]);
 
-      return SalesCall.fromJson(res);
+      final call = SalesCall.fromJson(res);
+      return applyCallDisplayOverrides([call], overrides, DateTime.now()).first;
     } catch (e) {
       if (e is ApiException) rethrow;
       throw ApiException('통화 상세 정보를 가져오는데 실패했습니다: $e');
@@ -395,7 +475,10 @@ class SalesCallsRepository {
       .order('created_at', ascending: false)
       .limit(limit);
 
-      return parseSalesCallList(res);
+      await revertExpiredTempManagerCalls();
+      final overrides = await fetchTempOverrides();
+      final parsed = parseSalesCallList(res);
+      return applyCallDisplayOverrides(parsed, overrides, DateTime.now());
     } catch (e) {
       throw ApiException('검색 중 오류가 발생했습니다: $e');
     }

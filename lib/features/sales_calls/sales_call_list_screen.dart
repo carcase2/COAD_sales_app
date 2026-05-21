@@ -8,8 +8,10 @@ import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
-import 'package:coad_customer_calls/data/sales_calls_repository.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
+import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -297,16 +299,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     return colors[assignee.hashCode.abs() % colors.length];
   }
 
-  String _assigneeForMode(SalesCall c) {
-    if (widget.mode == ListQueryMode.incompleteByDate ||
-        widget.mode == ListQueryMode.followRange) {
-      final manager = (c.regionManager ?? '').trim();
-      if (manager.isNotEmpty) return manager;
-      return '미지정';
-    }
-    final assigned = (c.assignedTo ?? '').trim();
-    if (assigned.isNotEmpty) return assigned;
-    return '미지정';
+  String _assigneeForMode(SalesCall c, List<TempManagerOverride> overrides) {
+    return displayAssigneeForCall(c, overrides, DateTime.now());
   }
 
   DateTime? _parseCreatedLocal(SalesCall c) {
@@ -690,6 +684,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     }
 
     final items = _items;
+    final overrides = ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
     if (items.isEmpty) {
       final scheme = Theme.of(context).colorScheme;
       return Center(
@@ -711,7 +706,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           final Map<String, int> counts = {'전체': items.length};
           for (var c in items) {
-            final a = _assigneeForMode(c);
+            final a = _assigneeForMode(c, overrides);
             counts[a] = (counts[a] ?? 0) + 1;
           }
 
@@ -770,7 +765,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           }
 
           final filteredItems = items.where((c) {
-            final a = _assigneeForMode(c);
+            final a = _assigneeForMode(c, overrides);
             bool matchesAssignee = _selectedAssignee == '전체' || a == _selectedAssignee;
             
             bool matchesSearch = true;
@@ -936,7 +931,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final showElapsed = c.isMissed && elapsedLabel.isNotEmpty;
                             final stageLabel = _stageLabelForCard(c);
                             final scheme = Theme.of(context).colorScheme;
-                            final displayAssignee = _assigneeForMode(c);
+                            final displayAssignee = _assigneeForMode(c, overrides);
                             final assignColor = _colorForAssignee(displayAssignee, scheme);
 
                             return Container(
