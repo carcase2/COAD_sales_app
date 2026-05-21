@@ -179,10 +179,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         final isTax = row.domain == IssuanceDomain.taxInvoice;
         final title = isTax ? '세금계산서 발급 완료' : '이행증권 발급 완료';
         final name = isTax
-            ? (row.master['customer_name'] ??
-                      row.master['company_name'] ??
-                      '요청 건')
-                  .toString()
+            ? (row.master['customer_name'] ?? '요청 건').toString()
             : (row.master['company_name'] ?? row.master['site_name'] ?? '요청 건')
                   .toString();
         await NotificationService.showIssuanceCompletedAlert(

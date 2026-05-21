@@ -32,7 +32,7 @@ class IssuanceRequestRow {
 
   String get title {
     if (domain == IssuanceDomain.taxInvoice) {
-      return (master['customer_name'] ?? master['company_name'] ?? '세금계산서 요청').toString();
+      return (master['customer_name'] ?? '세금계산서 요청').toString();
     }
     return (master['site_name'] ?? master['project_name'] ?? '이행증권 요청').toString();
   }
