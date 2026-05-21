@@ -23,7 +23,7 @@ class SalesCallsRepository {
   static const String _regionSelect =
       'id,sido,region,manager,branch_type';
   static const String _callHistorySelect =
-      'id,sales_call_id,call_stage,consultation_content,created_at,created_by';
+      'id,sales_call_id,call_stage,consultation_content,next_scheduled_date,unsuccessful_reason,status,status_id,created_at,created_by';
 
   Future<MasterDataBundle> fetchMasterData() async {
     final cached = await _db.getMasterData('master_bundle');
@@ -410,6 +410,16 @@ class SalesCallsRepository {
     } catch (e) {
       throw ApiException('상담 이력 저장에 실패했습니다: $e');
     }
+  }
+
+  /// 상담 저장: history INSERT 후 sales_calls UPDATE (웹과 동일 순서)
+  Future<SalesCall> saveConsultationRound({
+    required String callId,
+    required Map<String, dynamic> historyData,
+    required Map<String, dynamic> salesCallBody,
+  }) async {
+    await addCallHistory(callId, historyData);
+    return updateCall(callId, salesCallBody);
   }
 
   TodayStats _todayStatsFromRows(List<Map<String, dynamic>> res) {

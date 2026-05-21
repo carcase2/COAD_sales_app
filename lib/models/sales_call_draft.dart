@@ -30,7 +30,8 @@ class SalesCallDraft {
   final String? inquiryMethodId;
   final int statusId;
   final String? createdBy;
-  final String? callStage;
+  /// DB `sales_calls.call_stage` — 정수(0=미통화, 1+=상담 단계)
+  final Object? callStage;
   final List<String> images;
 
   Map<String, dynamic> toInsertJson() {

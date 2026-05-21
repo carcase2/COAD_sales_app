@@ -8,20 +8,41 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-/// 상담현황 → 달력 탭 → (선택) 주간 등 — `MainTab`·`ConsultationStatusScreen`이 한 번씩 소비.
-typedef ConsultationLaunchTarget = ({int tabIndex, CalendarFormat calendarFormat});
+/// 홈 통합 화면의 [흐름 | 미통화 | 달력] 구역 — `HomeHubScreen`이 소비.
+enum HomeHubSection { flow, incomplete, calendar }
 
-final pendingConsultationLaunchProvider = StateProvider<ConsultationLaunchTarget?>((ref) => null);
+typedef ConsultationLaunchTarget = ({
+  HomeHubSection section,
+  CalendarFormat calendarFormat,
+});
+
+final pendingConsultationLaunchProvider =
+    StateProvider<ConsultationLaunchTarget?>((ref) => null);
 
 /// [MainTabScreen]이 홈(탭 0)으로 이동할 때마다 증가. [HomeHubScreen]이 업무 흐름을 **일·금일**로 맞춤.
 final homeHubFlowResetTickProvider = StateProvider<int>((ref) => 0);
 
-/// 열기 메뉴 등: 상담현황의 **달력** 탭, **주간 달력** 형식으로 이동.
-/// [`rankingCallsProvider`]를 먼저 시작해 탭 전환 후 로딩 대기 시간을 줄임.
-void requestConsultationCalendarWeekNavigation(WidgetRef ref) {
-  unawaited(ref.read(rankingCallsProvider.future));
+/// 홈으로 이동한 뒤 지정 구역(흐름·미통화·달력)을 연다.
+void requestHomeHubSection(
+  WidgetRef ref,
+  HomeHubSection section, {
+  CalendarFormat calendarFormat = CalendarFormat.week,
+}) {
+  if (section == HomeHubSection.calendar ||
+      section == HomeHubSection.incomplete) {
+    unawaited(ref.read(rankingCallsProvider.future));
+  }
   ref.read(pendingConsultationLaunchProvider.notifier).state = (
-    tabIndex: 2,
+    section: section,
+    calendarFormat: calendarFormat,
+  );
+}
+
+/// 열기 메뉴 등: 홈 **달력** 구역, **주간 달력** 형식.
+void requestConsultationCalendarWeekNavigation(WidgetRef ref) {
+  requestHomeHubSection(
+    ref,
+    HomeHubSection.calendar,
     calendarFormat: CalendarFormat.week,
   );
 }
@@ -307,15 +328,20 @@ final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   return repo.fetchCalls(limit: 1000, includeCallHistory: false);
 });
 
-/// 달력 탭 전용 원본 데이터.
-/// 홈/목록의 날짜 팔로우 기준과 맞추기 위해 `미종료 + 단순문의 제외`를 동일 적용한다.
-/// (기존 `rankingCallsProvider`는 최근 1000건이라 월/주 집계에서 누락이 발생할 수 있음)
-final calendarFollowCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
+/// 달력에 표시 중인 주·월 구간 (`next_scheduled_date` 기준, 목록 `followDate`/`followRange`와 동일).
+typedef CalendarFollowRangeKey = ({String startYmd, String endYmd});
+
+/// [CalendarFollowRangeKey] 구간의 팔로우 통화 — `SalesCallListScreen.incompleteByDate`와 동일 API 조건.
+final calendarFollowRangeProvider =
+    FutureProvider.family<List<SalesCall>, CalendarFollowRangeKey>((ref, key) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
   return repo.fetchCalls(
+    followRangeStart: key.startYmd,
+    followRangeEndInclusive: key.endYmd,
     incompleteOnly: true,
     excludeSimpleInquiries: true,
     includeCallHistory: false,
+    limit: 2000,
   );
 });
 

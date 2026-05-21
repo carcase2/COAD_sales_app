@@ -1,15 +1,11 @@
 import 'dart:async';
 
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
-import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
-import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
@@ -68,7 +64,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
       AppUpdateService.checkAndUpdateIfNeeded(context);
     });
 
-    // 상담현황(미통화/달력)이 쓰는 대량 목록을 백그라운드로 미리 불러 탭 전환 시 빨리 표시
+    // 홈(미통화·달력)이 쓰는 대량 목록을 백그라운드로 미리 불러 전환 시 빨리 표시
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(ref.read(rankingCallsProvider.future));
     });
@@ -249,51 +245,26 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
     return false;
   }
 
-  List<Widget> _buildScreens() {
-    return [
-      const HomeHubScreen(),
-      _loadedIndices.contains(1)
-          ? const ConsultationStatusScreen()
-          : const SizedBox.shrink(),
-      _loadedIndices.contains(2)
-          ? const QuoterHubScreen()
-          : const SizedBox.shrink(),
-      _loadedIndices.contains(3)
-          ? const IssuanceRequestScreen()
-          : const SizedBox.shrink(),
-    ];
-  }
+  List<Widget> _buildScreens() => [const HomeHubScreen()];
 
   @override
   Widget build(BuildContext context) {
     ref.listen(pendingConsultationLaunchProvider, (prev, next) {
       if (next == null) return;
-      setState(() {
-        _currentIndex = 1;
-        _loadedIndices.add(1);
-      });
+      _onTabSelected(0);
     });
     ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
-      if (next == null) return;
-      setState(() {
-        _currentIndex = 3;
-        _loadedIndices.add(3);
-      });
+      if (next == null || !context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const IssuanceRequestScreen(),
+        ),
+      );
     });
 
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
-    final todayStats = ref.watch(todayStatsProvider).valueOrNull;
-    final todayFollow = ref.watch(todayFollowOverviewProvider).valueOrNull;
-    final issuanceBadgeCount = ref
-        .watch(issuanceRequestBadgeCountProvider)
-        .valueOrNull;
-    final incompleteCountText = '${todayStats?.incompleteCount ?? 0}건';
-    final followCountText = '${todayFollow?.total ?? 0}건';
-    final issuanceCountText = issuanceBadgeCount == null
-        ? '...'
-        : '${issuanceBadgeCount}건';
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final actionsBottom = 12.0 + safeBottom;
@@ -303,7 +274,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
         heroTag: 'global_home_open',
         color: Colors.blueGrey.shade700,
         tooltip: '홈',
-        subtitle: '메인 요약 화면으로 이동',
+        subtitle: '업무 흐름·미통화·달력',
         icon: Icons.home_rounded,
         onTap: () {
           setState(() => _quickActionsOpen = false);
@@ -325,81 +296,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
               builder: (_) => const SalesCallCreateScreen(),
             ),
           );
-        },
-      ),
-      _QuickActionItem(
-        heroTag: 'global_issuance_create',
-        color: Colors.indigo.shade600,
-        tooltip: '발행요청 (테스트중)($issuanceCountText)',
-        subtitle: '세금/이행 발급요청 확인',
-        icon: Icons.receipt_long_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          _onTabSelected(3);
-        },
-      ),
-      _QuickActionItem(
-        heroTag: 'global_quoter_open',
-        color: Colors.teal.shade600,
-        tooltip: '견적기 (테스트중)',
-        subtitle: '견적서 작성 화면 열기',
-        icon: Icons.calculate_rounded,
-        onTap: () {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          _onTabSelected(2);
-        },
-      ),
-      _QuickActionItem(
-        heroTag: 'global_incomplete_open',
-        color: Colors.orange.shade700,
-        tooltip: '미통화($incompleteCountText)',
-        subtitle: '금일 미통화 목록 보기',
-        icon: Icons.pending_actions_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(
-                mode: ListQueryMode.incomplete,
-                date: todayYmdSeoul(),
-              ),
-            ),
-          );
-        },
-      ),
-      _QuickActionItem(
-        heroTag: 'global_today_follow_open',
-        color: Colors.deepPurple.shade600,
-        tooltip: '금일팔로우($followCountText)',
-        subtitle: '날짜 팔로우 목록 열기',
-        icon: Icons.event_note_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(
-                mode: ListQueryMode.incompleteByDate,
-                date: todayYmdSeoul(),
-                initialAssignee: '전체',
-              ),
-            ),
-          );
-        },
-      ),
-      _QuickActionItem(
-        heroTag: 'global_consultation_calendar_week',
-        color: Colors.green.shade700,
-        tooltip: '달력',
-        subtitle: '상담현황 주간 달력 이동',
-        icon: Icons.calendar_view_week_rounded,
-        onTap: () {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          requestConsultationCalendarWeekNavigation(ref);
         },
       ),
     ];
@@ -457,20 +353,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           title: InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: () => _onTabSelected(0),
-            child: _currentIndex == 0
-                ? _buildBrandTitle()
-                : Text(
-                    _currentIndex == 1
-                        ? '상담현황'
-                        : (_currentIndex == 2
-                            ? '견적기 (테스트중)'
-                            : '발급요청 (테스트중)'),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                      color: Colors.white,
-                    ),
-                  ),
+            child: _buildBrandTitle(),
           ),
           centerTitle: true,
           backgroundColor: scheme.primary,
@@ -481,12 +364,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
             tooltip: '메뉴 열기',
           ),
           actions: [
-            if (_currentIndex == 2)
-              IconButton(
-                icon: const Icon(Icons.home_rounded),
-                onPressed: () => _onTabSelected(0),
-                tooltip: '홈으로 이동',
-              ),
             Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -789,35 +666,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
             onTap: () {
               Navigator.pop(context);
               _onTabSelected(0);
-            },
-            scheme: scheme,
-          ),
-          _buildDrawerItem(
-            icon: Icons.assignment_rounded,
-            title: '상담현황',
-            onTap: () {
-              Navigator.pop(context);
-              _onTabSelected(1);
-            },
-            scheme: scheme,
-          ),
-          _buildDrawerItem(
-            icon: Icons.calculate_rounded,
-            title: '견적기',
-            menuBadge: '(테스트중)',
-            onTap: () {
-              Navigator.pop(context);
-              _onTabSelected(2);
-            },
-            scheme: scheme,
-          ),
-          _buildDrawerItem(
-            icon: Icons.receipt_long_rounded,
-            title: '발급요청',
-            menuBadge: '(테스트중)',
-            onTap: () {
-              Navigator.pop(context);
-              _onTabSelected(3);
+              requestHomeHubSection(ref, HomeHubSection.flow);
             },
             scheme: scheme,
           ),
@@ -922,26 +771,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _navIssuanceIcon({required bool selected}) {
-    if (!selected) return const Icon(Icons.receipt_long_outlined);
-    return Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.indigo.shade500, Colors.deepOrange.shade400],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Icon(
-        Icons.receipt_long_rounded,
-        color: Colors.white,
-        size: 18,
-      ),
     );
   }
 

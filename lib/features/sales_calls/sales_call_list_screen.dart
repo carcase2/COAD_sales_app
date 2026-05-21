@@ -1,5 +1,5 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
@@ -344,13 +344,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     final quickActions = <_QuickActionItem>[
       _QuickActionItem(
         label: '홈',
-        subtitle: '메인 요약 화면으로 이동',
+        subtitle: '업무 흐름·미통화·달력',
         color: Colors.blueGrey.shade700,
         icon: Icons.home_rounded,
         onTap: () {
           setState(() => _quickActionsOpen = false);
           _refreshQuickHints();
-          Navigator.of(context).popUntil((route) => route.isFirst);
+          openHomeHub(context, ref);
         },
       ),
       _QuickActionItem(
@@ -397,37 +397,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               ),
             ),
           );
-        },
-      ),
-      _QuickActionItem(
-        label: '금일팔로우',
-        subtitle: '날짜 팔로우 목록 열기',
-        color: Colors.deepPurple.shade600,
-        icon: Icons.event_note_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(
-                mode: ListQueryMode.incompleteByDate,
-                date: todayYmdSeoul(),
-                initialAssignee: '전체',
-              ),
-            ),
-          );
-        },
-      ),
-      _QuickActionItem(
-        label: '달력',
-        subtitle: '상담현황 주간 달력 이동',
-        color: Colors.green.shade700,
-        icon: Icons.calendar_view_week_rounded,
-        onTap: () {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          requestConsultationCalendarWeekNavigation(ref);
-          Navigator.of(context).popUntil((route) => route.isFirst);
         },
       ),
     ];

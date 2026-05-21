@@ -1,0 +1,111 @@
+import 'package:coad_customer_calls/data/sales_call_consultation.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('nextConsultationCallStage', () {
+    expect(nextConsultationCallStage(0), 1);
+    expect(nextConsultationCallStage(2), 3);
+  });
+
+  test('validate — 미결정 예정일 필수', () {
+    expect(
+      () => validateConsultationSubmit(
+        consultationContent: '내용',
+        statusId: CallStatusIds.undecided,
+        nextScheduledDateYmd: null,
+        unsuccessfulReason: null,
+      ),
+      throwsA(isA<SalesCallConsultationValidationException>()),
+    );
+    expect(
+      () => validateConsultationSubmit(
+        consultationContent: '내용',
+        statusId: CallStatusIds.undecided,
+        nextScheduledDateYmd: '2026-06-01',
+        unsuccessfulReason: null,
+      ),
+      returnsNormally,
+    );
+  });
+
+  test('validate — 미수주 사유 필수', () {
+    expect(
+      () => validateConsultationSubmit(
+        consultationContent: '내용',
+        statusId: CallStatusIds.lost,
+        nextScheduledDateYmd: null,
+        unsuccessfulReason: null,
+      ),
+      throwsA(isA<SalesCallConsultationValidationException>()),
+    );
+    expect(
+      () => validateConsultationSubmit(
+        consultationContent: '내용',
+        statusId: CallStatusIds.lost,
+        nextScheduledDateYmd: null,
+        unsuccessfulReason: '가격',
+      ),
+      returnsNormally,
+    );
+  });
+
+  test('callHistoryStatusText — 2차+ 단순문의는 기타', () {
+    expect(
+      callHistoryStatusText(
+        statusId: CallStatusIds.simpleInquiry,
+        statusName: '단순문의',
+        callStage: 2,
+      ),
+      '기타',
+    );
+    expect(
+      callHistoryStatusText(
+        statusId: CallStatusIds.undecided,
+        statusName: '미결정',
+        callStage: 1,
+      ),
+      '미결정',
+    );
+  });
+
+  test('resolveNextScheduledDateForSave — 미결정만 날짜', () {
+    expect(
+      resolveNextScheduledDateForSave(CallStatusIds.undecided, '2026-06-01'),
+      '2026-06-01',
+    );
+    expect(resolveNextScheduledDateForSave(CallStatusIds.won, '2026-06-01'), isNull);
+    expect(
+      resolveNextScheduledDateForSave(CallStatusIds.simpleInquiry, '2026-06-01'),
+      isNull,
+    );
+  });
+
+  test('registrationStatus', () {
+    expect(registrationStatus(isSimpleInquiry: true).statusId, 4);
+    expect(registrationStatus(isSimpleInquiry: true).callStage, 1);
+    expect(registrationStatus(isSimpleInquiry: false).statusId, 1);
+    expect(registrationStatus(isSimpleInquiry: false).callStage, 0);
+  });
+
+  test('orderCallHistoryForDisplay — call_stage가 다르면 높은 차수 우선', () {
+    final ordered = orderCallHistoryForDisplay([
+      {'call_stage': 1, 'call_date': '2026-05-01', 'consultation_content': 'a'},
+      {'call_stage': 3, 'call_date': '2026-05-10', 'consultation_content': 'c'},
+      {'call_stage': 2, 'call_date': '2026-05-05', 'consultation_content': 'b'},
+    ]);
+    expect(displayStageFromHistoryMap(ordered[0]), 3);
+    expect(displayStageFromHistoryMap(ordered[1]), 2);
+    expect(displayStageFromHistoryMap(ordered[2]), 1);
+  });
+
+  test('orderCallHistoryForDisplay — call_stage가 모두 1이면 시각 순 3→2→1', () {
+    final ordered = orderCallHistoryForDisplay([
+      {'call_stage': 1, 'call_date': '2026-05-01', 'consultation_content': 'a'},
+      {'call_stage': 1, 'call_date': '2026-05-10', 'consultation_content': 'c'},
+      {'call_stage': 1, 'call_date': '2026-05-05', 'consultation_content': 'b'},
+    ]);
+    expect(displayStageFromHistoryMap(ordered[0]), 3);
+    expect(displayStageFromHistoryMap(ordered[1]), 2);
+    expect(displayStageFromHistoryMap(ordered[2]), 1);
+  });
+}

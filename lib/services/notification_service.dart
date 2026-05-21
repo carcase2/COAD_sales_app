@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -342,13 +342,7 @@ class NotificationService {
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return;
     try {
-      final container = ProviderScope.containerOf(ctx);
-      container.invalidate(todayStatsProvider);
-      container.invalidate(todayCallsContentProvider);
-      container.invalidate(todayFollowOverviewProvider);
-      container.invalidate(todayIncompleteOverviewProvider);
-      container.invalidate(rankingCallsProvider);
-      container.invalidate(calendarFollowCallsProvider);
+      invalidateHomeSalesCaches(ProviderScope.containerOf(ctx).invalidate);
     } catch (_) {
       // ProviderScope 미연결(테스트 등) 시 무시
     }

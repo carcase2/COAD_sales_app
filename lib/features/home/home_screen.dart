@@ -1,531 +1,34 @@
-import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
-import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
-import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-class ConsultationStatusScreen extends ConsumerStatefulWidget {
-  const ConsultationStatusScreen({super.key});
+/// 홈 [미통화] 구역 — 담당자별 미통화·접수 비율.
+class HomeIncompleteBreakdown extends ConsumerStatefulWidget {
+  const HomeIncompleteBreakdown({super.key, this.fitSingleScreen = false});
+
+  /// 홈 탭 단일 화면: 세로 스크롤 없이 보이는 담당자 수만 표시.
+  final bool fitSingleScreen;
 
   @override
-  ConsumerState<ConsultationStatusScreen> createState() => _ConsultationStatusScreenState();
-}
-
-class _ConsultationStatusScreenState extends ConsumerState<ConsultationStatusScreen> with SingleTickerProviderStateMixin {
-  int _pendingCount = 0;
-  late final ScrollController _scrollSummary;
-  late final ScrollController _scrollIncomplete;
-  late final ScrollController _scrollCalendar;
-  late TabController _tabController;
-  bool _isFabVisible = true;
-  CalendarFormat _launchCalendarFormat = CalendarFormat.month;
-  int _calendarKeyNonce = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollSummary = ScrollController();
-    _scrollIncomplete = ScrollController();
-    _scrollCalendar = ScrollController();
-    _scrollSummary.addListener(_onScroll);
-    _scrollIncomplete.addListener(_onScroll);
-    _scrollCalendar.addListener(_onScroll);
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() {
-      if (!mounted) return;
-      setState(() {
-        // 탭 전환 시 접수 버튼이 사라진 상태로 남지 않도록 복원
-        _isFabVisible = true;
-      });
-    });
-    // 탭 진입 시 바가 보이도록 초기화
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(bottomBarVisibilityProvider.notifier).state = true;
-      _checkAndSync();
-      _consumePendingLaunch();
-    });
-  }
-
-  void _consumePendingLaunch() {
-    final next = ref.read(pendingConsultationLaunchProvider);
-    if (next == null || !mounted) return;
-    setState(() {
-      _launchCalendarFormat = next.calendarFormat;
-      _calendarKeyNonce++;
-    });
-    _tabController.animateTo(
-      next.tabIndex.clamp(0, 2),
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
-    ref.read(pendingConsultationLaunchProvider.notifier).state = null;
-  }
-
-  @override
-  void dispose() {
-    _scrollSummary.removeListener(_onScroll);
-    _scrollIncomplete.removeListener(_onScroll);
-    _scrollCalendar.removeListener(_onScroll);
-    _scrollSummary.dispose();
-    _scrollIncomplete.dispose();
-    _scrollCalendar.dispose();
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  ScrollController? _scrollForActiveTab() {
-    switch (_tabController.index) {
-      case 0:
-        return _scrollSummary;
-      case 1:
-        return _scrollIncomplete;
-      case 2:
-        return _scrollCalendar;
-      default:
-        return null;
-    }
-  }
-
-  void _onScroll() {
-    final c = _scrollForActiveTab();
-    if (c == null || !c.hasClients) return;
-    if (c.offset <= 8) {
-      ref.read(bottomBarVisibilityProvider.notifier).state = true;
-      return;
-    }
-
-    if (c.position.userScrollDirection == ScrollDirection.reverse) {
-      ref.read(bottomBarVisibilityProvider.notifier).state = false;
-    } else if (c.position.userScrollDirection == ScrollDirection.forward) {
-      ref.read(bottomBarVisibilityProvider.notifier).state = true;
-    }
-  }
-
-  Future<void> _checkAndSync() async {
-    final repo = ref.read(salesCallsRepositoryProvider);
-    final count = await repo.getPendingCount();
-    if (mounted) setState(() => _pendingCount = count);
-
-    if (count > 0) {
-      final success = await repo.syncPendingCalls();
-      final newCount = await repo.getPendingCount();
-      if (mounted) {
-        setState(() => _pendingCount = newCount);
-        if (success > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('미전송 상담 $success건이 동기화되었습니다.')),
-          );
-        }
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    ref.listen(pendingConsultationLaunchProvider, (_, __) => _consumePendingLaunch());
-
-    final user = ref.watch(authControllerProvider);
-    final statsAsync = ref.watch(todayStatsProvider);
-    final scheme = Theme.of(context).colorScheme;
-
-    final currentIndex = _tabController.index;
-    final bgToday = scheme.surface;
-    final bgIncomplete = Color.alphaBlend(
-      scheme.tertiaryContainer.withValues(alpha: 0.22),
-      scheme.surface,
-    );
-    final bgCalendar = Color.alphaBlend(
-      scheme.secondaryContainer.withValues(alpha: 0.22),
-      scheme.surface,
-    );
-    
-    final currentBg = currentIndex == 0 ? bgToday : (currentIndex == 1 ? bgIncomplete : bgCalendar);
-    final barBg = currentIndex == 0
-        ? scheme.primary
-        : (currentIndex == 1 ? scheme.tertiary : scheme.secondary);
-    final onBar = Colors.white;
-
-    return Scaffold(
-      backgroundColor: currentBg,
-      body: Column(
-        children: [
-              Container(
-                color: barBg,
-                child: TabBar(
-                  controller: _tabController,
-                  tabs: [
-                    Tab(
-                      icon: Icon(
-                        Icons.dashboard_rounded,
-                        size: 20,
-                        color: onBar.withValues(alpha: 0.9),
-                      ),
-                      text: '요약',
-                    ),
-                    Tab(
-                      icon: Icon(
-                        Icons.pending_actions_rounded,
-                        size: 20,
-                        color: onBar.withValues(alpha: 0.9),
-                      ),
-                      text: '미통화',
-                    ),
-                    Tab(
-                      icon: Icon(
-                        Icons.calendar_month_rounded,
-                        size: 20,
-                        color: onBar.withValues(alpha: 0.9),
-                      ),
-                      text: '달력',
-                    ),
-                  ],
-                  indicatorColor: onBar,
-                  indicatorWeight: 3,
-                  labelColor: onBar,
-                  unselectedLabelColor: onBar.withValues(alpha: 0.65),
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                  dividerColor: Colors.transparent,
-                ),
-              ),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    RefreshIndicator(
-                      onRefresh: () async {
-                        ref.invalidate(todayStatsProvider);
-                        ref.invalidate(todayCallsContentProvider);
-                        await Future.wait([
-                          ref.read(todayStatsProvider.future),
-                          ref.read(todayCallsContentProvider.future),
-                          _checkAndSync(),
-                        ]);
-                      },
-                      child: ListView(
-                        controller: _scrollSummary,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                        children: [
-                          if (_pendingCount > 0) _buildPendingSyncBanner(scheme),
-                          if (_pendingCount > 0) const SizedBox(height: 12),
-                          const SizedBox(height: 12),
-                          statsAsync.when(
-                            data: (s) => _StatsCard(stats: s),
-                            loading: () => const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: CircularProgressIndicator(),
-                              ),
-                            ),
-                            error: (e, _) => _ErrorCard(
-                              message: koreanErrorMessage(e),
-                              onRetry: () => ref.invalidate(todayStatsProvider),
-                            ),
-                          ),
-                          const SizedBox(height: 40),
-                          Center(
-                            child: Icon(Icons.auto_graph_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.1)),
-                          ),
-                          const SizedBox(height: 16),
-                          Center(
-                            child: Text(
-                              '오늘 하루도 수고 많으십니다!',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    RefreshIndicator(
-                      onRefresh: () async {
-                        ref.invalidate(rankingCallsProvider);
-                        await ref.read(rankingCallsProvider.future);
-                      },
-                      child: SingleChildScrollView(
-                        controller: _scrollIncomplete,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                        child: const _IncompleteBreakdown(),
-                      ),
-                    ),
-                    _IncompleteCalendar(
-                      key: ValueKey(_calendarKeyNonce),
-                      scrollController: _scrollCalendar,
-                      initialCalendarFormat: _launchCalendarFormat,
-                    ),
-                  ],
-                ),
-              ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPendingSyncBanner(ColorScheme scheme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.cloud_sync_outlined, size: 20, color: scheme.onSecondaryContainer),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '동기화를 기다리는 상담이 $_pendingCount건 있습니다.',
-              style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer, fontWeight: FontWeight.w600),
-            ),
-          ),
-          TextButton(
-            onPressed: _checkAndSync,
-            child: const Text('지금 전송'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsCard extends StatelessWidget {
-  const _StatsCard({required this.stats});
-
-  final TodayStats stats;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.dashboard_customize_rounded, size: 20, color: scheme.primary.withValues(alpha: 0.7)),
-                const SizedBox(width: 8),
-                Text(
-                  '오늘 핵심 지표',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              todayYmdSeoul(),
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withValues(alpha: 0.5), fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: _StatCardItem(
-                label: '금일 접수',
-                value: stats.todayCount?.toString() ?? '0',
-                icon: Icons.assignment_rounded,
-                color: scheme.primary,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.today))),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _StatCardItem(
-                label: '금일 미통화',
-                value: stats.incompleteCount?.toString() ?? '0',
-                icon: Icons.pending_rounded,
-                color: scheme.error,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => SalesCallListScreen(
-                      mode: ListQueryMode.incomplete,
-                      date: todayYmdSeoul(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _StatCardItem(
-          label: '오늘 완료된 상담',
-          value: stats.completedToday?.toString() ?? '0',
-          icon: Icons.check_circle_rounded,
-          color: Colors.teal.shade600,
-          isWide: true,
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SalesCallListScreen(mode: ListQueryMode.completedToday))),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCardItem extends StatefulWidget {
-  const _StatCardItem({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-    this.isWide = false,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  final bool isWide;
-
-  @override
-  State<_StatCardItem> createState() => _StatCardItemState();
-}
-
-class _StatCardItemState extends State<_StatCardItem> {
-  double _scale = 1.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _scale = 0.97),
-      onTapUp: (_) => setState(() => _scale = 1.0),
-      onTapCancel: () => setState(() => _scale = 1.0),
-      onTap: () {
-        HapticFeedback.lightImpact();
-        widget.onTap();
-      },
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 100),
-        child: Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withValues(alpha: 0.12),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-            border: Border.all(color: widget.color.withValues(alpha: 0.08), width: 1.5),
-          ),
-          padding: EdgeInsets.symmetric(
-            vertical: widget.isWide ? 10 : 14,
-            horizontal: 16,
-          ),
-          child: widget.isWide 
-            ? Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: widget.color.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(widget.icon, color: widget.color, size: 24),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      widget.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    widget.value,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: widget.color,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text('건', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: widget.color.withValues(alpha: 0.5))),
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: widget.color.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(widget.icon, color: widget.color, size: 20),
-                      ),
-                      Text(
-                        widget.value,
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                          color: widget.color,
-                          letterSpacing: -1,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    widget.label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ],
-              ),
-        ),
-      ),
-    );
-  }
+  ConsumerState<HomeIncompleteBreakdown> createState() =>
+      _HomeIncompleteBreakdownState();
 }
 
 enum _SummaryFilter { today, week, month, total }
 
-class _IncompleteBreakdown extends ConsumerStatefulWidget {
-  const _IncompleteBreakdown();
-
-  @override
-  ConsumerState<_IncompleteBreakdown> createState() => _IncompleteBreakdownState();
-}
-
-class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
-  _SummaryFilter _currentFilter = _SummaryFilter.today; // 금일이 기본값
+class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdown> {
+  _SummaryFilter _currentFilter = _SummaryFilter.today;
 
   @override
   Widget build(BuildContext context) {
@@ -555,6 +58,17 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
             }).toList();
 
             if (filteredCalls.isEmpty && _currentFilter != _SummaryFilter.total) {
+              if (widget.fitSingleScreen) {
+                return SizedBox.expand(
+                  child: _buildSingleScreenContent(
+                    scheme: scheme,
+                    sorted: const [],
+                    incompleteCounts: const {},
+                    totalCounts: const {},
+                    totalIncomplete: 0,
+                  ),
+                );
+              }
               return _buildEmptyContent(scheme);
             }
 
@@ -598,35 +112,107 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                 return (totalCounts[b] ?? 0).compareTo(totalCounts[a] ?? 0);
               });
 
+            final totalIncomplete =
+                incompleteCounts.values.fold<int>(0, (s, v) => s + v);
+
+            if (widget.fitSingleScreen) {
+              return SizedBox.expand(
+                child: _buildSingleScreenContent(
+                  scheme: scheme,
+                  sorted: sorted,
+                  incompleteCounts: incompleteCounts,
+                  totalCounts: totalCounts,
+                  totalIncomplete: totalIncomplete,
+                ),
+              );
+            }
+
             return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    scheme.tertiaryContainer.withValues(alpha: 0.5),
+                    scheme.surface,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: scheme.tertiary.withValues(alpha: 0.15),
+                ),
+              ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.people_outline, size: 18, color: scheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        '담당자별 미통화 현황 (원본 기준)',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: scheme.tertiary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.pending_actions_rounded,
+                        size: 22, color: scheme.tertiary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '담당자별 미통화',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                        Text(
+                          '원본 담당자 기준 · ${_filterLabel(_currentFilter)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: totalIncomplete > 0
+                          ? scheme.errorContainer.withValues(alpha: 0.7)
+                          : scheme.secondaryContainer.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$totalIncomplete건',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: totalIncomplete > 0
+                            ? scheme.error
+                            : scheme.secondary,
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.only(bottom: 16),
               child: Container(
-                height: 54,
-                padding: const EdgeInsets.all(6),
+                height: 48,
+                padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(24),
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.25),
+                  ),
                 ),
                 child: Row(
                   children: _SummaryFilter.values.map((filter) {
@@ -693,10 +279,25 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
               else if (rank == 3) rankColor = const Color(0xFFCD7F32); // Bronze
 
               return Container(
-                margin: const EdgeInsets.only(bottom: 12),
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: rankColor.withValues(alpha: 0.12),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.shadow.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
                 child: Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
                   child: InkWell(
                     onTap: () {
                       HapticFeedback.lightImpact();
@@ -710,20 +311,22 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                         ),
                       );
                     },
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: rankColor.withValues(alpha: 0.1), width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          width: 4,
+                          decoration: BoxDecoration(
+                            color: rankColor.withValues(alpha: rank <= 3 ? 0.9 : 0.35),
+                            borderRadius: const BorderRadius.horizontal(
+                              left: Radius.circular(16),
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                       child: Column(
                         children: [
                           Row(
@@ -801,6 +404,9 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
                           ),
                         ],
                       ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -823,6 +429,428 @@ class _IncompleteBreakdownState extends ConsumerState<_IncompleteBreakdown> {
       error: (e, _) => _ErrorCard(
         message: koreanErrorMessage(e),
         onRetry: () => ref.refresh(rankingCallsProvider),
+      ),
+    );
+  }
+
+  String _filterLabel(_SummaryFilter f) => switch (f) {
+        _SummaryFilter.today => '금일',
+        _SummaryFilter.week => '금주',
+        _SummaryFilter.month => '금월',
+        _SummaryFilter.total => '전체',
+      };
+
+  Widget _buildSingleScreenContent({
+    required ColorScheme scheme,
+    required List<String> sorted,
+    required Map<String, int> incompleteCounts,
+    required Map<String, int> totalCounts,
+    required int totalIncomplete,
+  }) {
+    final totalCalls = totalCounts.values.fold<int>(0, (s, v) => s + v);
+    final cleared = (totalCalls - totalIncomplete).clamp(0, totalCalls);
+    final completePct =
+        totalCalls > 0 ? ((cleared / totalCalls) * 100).round() : 100;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildIncompleteSummaryCard(
+          scheme: scheme,
+          totalIncomplete: totalIncomplete,
+          totalCalls: totalCalls,
+          completePct: completePct,
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, listConstraints) {
+              if (sorted.isEmpty) {
+                return Center(
+                  child: Text(
+                    '미통화 담당자가 없습니다',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                );
+              }
+
+              const cols = 2;
+              const tileH = 36.0;
+              const gap = 4.0;
+              const outerPad = 26.0; // 하단·카드 패딩
+              const moreBlock = 34.0;
+
+              final maxColumnH = listConstraints.maxHeight - outerPad;
+              final reserveMore =
+                  sorted.length > cols * 2 ? moreBlock : 0.0;
+              final gridUsable = (maxColumnH - reserveMore).clamp(tileH, maxColumnH);
+              final maxRows =
+                  ((gridUsable + gap) / (tileH + gap)).floor().clamp(1, 16);
+              final maxVisible = (maxRows * cols).clamp(1, sorted.length);
+              final visible = sorted.take(maxVisible).toList();
+              final hidden = sorted.length - visible.length;
+              final showMore = hidden > 0;
+              final gridH =
+                  maxRows * tileH + (maxRows - 1) * gap;
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: scheme.outlineVariant.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        height: gridH,
+                        child: GridView.builder(
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: EdgeInsets.zero,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: cols,
+                            crossAxisSpacing: gap,
+                            mainAxisSpacing: gap,
+                            mainAxisExtent: tileH,
+                          ),
+                          itemCount: visible.length,
+                          itemBuilder: (context, i) {
+                            final name = visible[i];
+                            return _buildIncompleteManagerTile(
+                              scheme: scheme,
+                              name: name,
+                              rank: i + 1,
+                              incomplete: incompleteCounts[name] ?? 0,
+                              total: totalCounts[name] ?? 0,
+                              compact: true,
+                            );
+                          },
+                        ),
+                      ),
+                      if (showMore) ...[
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: 28,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const SalesCallListScreen(
+                                    mode: ListQueryMode.incomplete,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.groups_rounded, size: 14),
+                            label: Text('+$hidden명 더보기'),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIncompleteSummaryCard({
+    required ColorScheme scheme,
+    required int totalIncomplete,
+    required int totalCalls,
+    required int completePct,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: totalIncomplete > 0
+                      ? scheme.errorContainer.withValues(alpha: 0.65)
+                      : scheme.secondaryContainer.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$totalIncomplete',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: totalIncomplete > 0
+                        ? scheme.error
+                        : scheme.secondary,
+                    height: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '미통화 ${_filterLabel(_currentFilter)} · 접수 $totalCalls건 · 완료 $completePct%',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _buildIncompletePeriodFilter(scheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIncompletePeriodFilter(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: _SummaryFilter.values.map((filter) {
+          final isSelected = _currentFilter == filter;
+          final color = switch (filter) {
+            _SummaryFilter.today => scheme.primary,
+            _SummaryFilter.week => scheme.tertiary,
+            _SummaryFilter.month => scheme.secondary,
+            _SummaryFilter.total => scheme.onSurfaceVariant,
+          };
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _currentFilter = filter);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: isSelected ? scheme.surface : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.15),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _filterLabel(filter),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight:
+                        isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected
+                        ? color
+                        : scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Color _incompleteRankAccent(int rank, ColorScheme scheme) {
+    return switch (rank) {
+      1 => const Color(0xFFE6A817),
+      2 => const Color(0xFF9E9E9E),
+      3 => const Color(0xFFB87333),
+      _ => scheme.outlineVariant,
+    };
+  }
+
+  Widget _buildIncompleteManagerTile({
+    required ColorScheme scheme,
+    required String name,
+    required int rank,
+    required int incomplete,
+    required int total,
+    bool compact = false,
+  }) {
+    final percent = total > 0 ? (total - incomplete) / total : 1.0;
+    final accent = _incompleteRankAccent(rank, scheme);
+    final initial = name.isNotEmpty ? name[0] : '?';
+    final hasIssue = incomplete > 0;
+    final progressColor = percent >= 1.0
+        ? Colors.teal
+        : (percent < 0.5 ? scheme.error : scheme.primary);
+
+    final avatarR = compact ? 9.0 : 10.0;
+    final fontSize = compact ? 10.0 : 11.0;
+
+    return SizedBox(
+      height: 36,
+      child: Material(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: hasIssue
+                ? scheme.error.withValues(alpha: 0.16)
+                : scheme.outlineVariant.withValues(alpha: 0.22),
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _openIncompleteListForAssignee(name),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 5,
+                right: 5,
+                bottom: 0,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(9),
+                  ),
+                  child: LinearProgressIndicator(
+                    value: percent,
+                    minHeight: 2,
+                    backgroundColor:
+                        scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(compact ? 4 : 6, 4, compact ? 4 : 6, 5),
+                child: Row(
+                  children: [
+                    if (!compact)
+                      Container(
+                        width: 3,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: rank <= 3 ? 1 : 0.35),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    if (!compact) const SizedBox(width: 5),
+                    CircleAvatar(
+                      radius: avatarR,
+                      backgroundColor: accent.withValues(alpha: 0.14),
+                      child: Text(
+                        initial,
+                        style: TextStyle(
+                          fontSize: compact ? 9 : 10,
+                          fontWeight: FontWeight.w800,
+                          color: accent,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: compact ? 4 : 5),
+                    Expanded(
+                      child: Text(
+                        compact
+                            ? '$name\n접수$total·${(percent * 100).round()}%'
+                            : '$name · 접수$total · ${(percent * 100).round()}%',
+                        maxLines: compact ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface,
+                          height: 1.05,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 4 : 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: hasIssue
+                            ? scheme.errorContainer.withValues(alpha: 0.8)
+                            : scheme.secondaryContainer.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(
+                        hasIssue ? '$incomplete' : '완료',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: hasIssue ? scheme.error : scheme.secondary,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openIncompleteListForAssignee(String name) {
+    HapticFeedback.lightImpact();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.incomplete,
+          initialAssignee: name,
+          date: _currentFilter == _SummaryFilter.today ? todayYmdSeoul() : null,
+        ),
       ),
     );
   }
@@ -1025,43 +1053,49 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
-class _IncompleteCalendar extends ConsumerStatefulWidget {
-  const _IncompleteCalendar({
+/// 홈 [달력] 구역 — 팔로우·예정일 달력.
+class HomeFollowCalendarPanel extends ConsumerStatefulWidget {
+  const HomeFollowCalendarPanel({
     super.key,
-    required this.scrollController,
-    this.initialCalendarFormat = CalendarFormat.month,
+    this.scrollController,
+    this.initialCalendarFormat = CalendarFormat.week,
+    this.fitSingleScreen = false,
   });
-  final ScrollController scrollController;
+
+  final ScrollController? scrollController;
   final CalendarFormat initialCalendarFormat;
+  final bool fitSingleScreen;
 
   @override
-  ConsumerState<_IncompleteCalendar> createState() => _IncompleteCalendarState();
+  ConsumerState<HomeFollowCalendarPanel> createState() =>
+      _HomeFollowCalendarPanelState();
 }
 
-class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
+class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPanel> {
   DateTime _focusedDay = DateTime.now();
   String _selectedAssignee = '전체';
   late CalendarFormat _calendarFormat;
+  /// 사용자가 담당자 칩을 직접 탭한 뒤에는 '전체'를 로그인 담당자로 되돌리지 않음.
+  bool _userPickedAssigneeFilter = false;
 
   @override
   void initState() {
     super.initState();
-    _calendarFormat = widget.initialCalendarFormat;
+    _calendarFormat = widget.initialCalendarFormat == CalendarFormat.month
+        ? CalendarFormat.month
+        : CalendarFormat.week;
   }
 
   @override
-  void didUpdateWidget(_IncompleteCalendar oldWidget) {
+  void didUpdateWidget(HomeFollowCalendarPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialCalendarFormat != widget.initialCalendarFormat) {
-      _calendarFormat = widget.initialCalendarFormat;
+      setState(() {
+        _calendarFormat = widget.initialCalendarFormat == CalendarFormat.month
+            ? CalendarFormat.month
+            : CalendarFormat.week;
+      });
     }
-  }
-
-  DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  List<DateTime> _weekDays(DateTime focusedDay) {
-    final start = _dayOnly(focusedDay).subtract(Duration(days: focusedDay.weekday - 1));
-    return List<DateTime>.generate(7, (i) => start.add(Duration(days: i)));
   }
 
   String _weekdayKo(int weekday) {
@@ -1085,6 +1119,764 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
     });
   }
 
+  void _shiftFocusedWeek(int dir) {
+    final mon = seoulWeekRangeContaining(_focusedDayYmd()).$1;
+    final nextMon = addDaysToYmd(mon, 7 * dir);
+    final parts = nextMon.split('-');
+    if (parts.length != 3) return;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return;
+    setState(() => _focusedDay = DateTime(y, m, d));
+  }
+
+  void _openDayFollowList(String dateKey) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.incompleteByDate,
+          date: dateKey,
+          initialAssignee: _selectedAssignee,
+        ),
+      ),
+    );
+  }
+
+  void _selectAssigneeFilter(String assignee) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _selectedAssignee = assignee;
+      _userPickedAssigneeFilter = true;
+    });
+  }
+
+  Widget _buildFitSingleScreenLayout({
+    required ColorScheme scheme,
+    required List<String> sortedAssignees,
+    required Map<String, int> counts,
+    required Color Function(String) colorForAssignee,
+    required Map<String, int> dateMarkers,
+    Map<String, Map<String, int>> weekAssigneeCounts = const {},
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 24,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: sortedAssignees.length,
+              itemBuilder: (context, idx) {
+                final assignee = sortedAssignees[idx];
+                final count = counts[assignee] ?? 0;
+                final isSelected = _selectedAssignee == assignee;
+                final color = colorForAssignee(assignee);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: GestureDetector(
+                    onTap: () => _selectAssigneeFilter(assignee),
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 88),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? color.withValues(alpha: 0.16)
+                            : scheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? color.withValues(alpha: 0.45)
+                              : scheme.outlineVariant.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              assignee,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                color: color,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$count',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              color: color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 3),
+          _buildFitCalendarToolbarRow(scheme),
+          const SizedBox(height: 3),
+          Expanded(
+            child: _calendarFormat == CalendarFormat.week
+                ? _buildVerticalWeekBoard(
+                    scheme: scheme,
+                    weekAssigneeCounts: weekAssigneeCounts,
+                    colorForAssignee: colorForAssignee,
+                  )
+                : _buildCompactCalendar(
+                    scheme: scheme,
+                    dateMarkers: dateMarkers,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInlineWeekNav(ColorScheme scheme) {
+    final w = seoulWeekRangeContaining(_focusedDayYmd());
+    return SizedBox(
+      height: 22,
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => _shiftFocusedWeek(-1),
+            icon: const Icon(Icons.chevron_left_rounded, size: 20),
+            style: IconButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(28, 26),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              formatWeekRangeFlowLabel(w.$1, w.$2),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => _shiftFocusedWeek(1),
+            icon: const Icon(Icons.chevron_right_rounded, size: 20),
+            style: IconButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(28, 26),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVerticalWeekBoard({
+    required ColorScheme scheme,
+    required Map<String, Map<String, int>> weekAssigneeCounts,
+    required Color Function(String) colorForAssignee,
+  }) {
+    final weekKeys = _weekYmdKeys();
+    final today = todayYmdSeoul();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SizedBox(
+          height: constraints.maxHeight,
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Column(
+              children: [
+                for (var i = 0; i < weekKeys.length; i++)
+                  Expanded(
+                    child: _buildVerticalWeekDayRow(
+                      scheme: scheme,
+                      dateKey: weekKeys[i],
+                      dayMap: weekAssigneeCounts[weekKeys[i]] ?? const {},
+                      colorForAssignee: colorForAssignee,
+                      isToday: weekKeys[i] == today,
+                      showBottomBorder: i < weekKeys.length - 1,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVerticalWeekDayRow({
+    required ColorScheme scheme,
+    required String dateKey,
+    required Map<String, int> dayMap,
+    required Color Function(String) colorForAssignee,
+    required bool isToday,
+    bool showBottomBorder = false,
+  }) {
+    final parts = dateKey.split('-');
+    final month = parts.length == 3 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final dayNum = parts.length == 3 ? int.tryParse(parts[2]) ?? 0 : 0;
+    final weekday = parts.length == 3
+        ? DateTime(
+            int.tryParse(parts[0]) ?? 0,
+            month,
+            dayNum,
+          ).weekday
+        : 1;
+    final sorted = dayMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final total = sorted.fold<int>(0, (s, e) => s + e.value);
+
+    Color weekdayColor = scheme.onSurfaceVariant;
+    if (weekday == DateTime.saturday) weekdayColor = Colors.blueAccent;
+    if (weekday == DateTime.sunday) weekdayColor = Colors.redAccent;
+
+    final filteredOnly = _selectedAssignee != '전체';
+
+    return Material(
+      color: isToday
+          ? scheme.primaryContainer.withValues(alpha: 0.22)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          _openDayFollowList(dateKey);
+        },
+        child: Container(
+          decoration: showBottomBorder
+              ? BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: scheme.outlineVariant.withValues(alpha: 0.22),
+                    ),
+                  ),
+                )
+              : null,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 76,
+                padding: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  border: Border(
+                    right: BorderSide(
+                      color: scheme.outlineVariant.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+                child: Text(
+                  '$month/$dayNum(${_weekdayKo(weekday)})',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: isToday ? scheme.primary : weekdayColor,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+              if (total > 0)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Text(
+                    '$total건',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: scheme.error,
+                      height: 1.05,
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: total == 0
+                    ? Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '팔로우 없음',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      )
+                    : filteredOnly
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '${_selectedAssignee} ${dayMap[_selectedAssignee] ?? 0}건',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: colorForAssignee(_selectedAssignee),
+                              ),
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const ClampingScrollPhysics(),
+                            child: Row(
+                              children: sorted.map((e) {
+                                final c = colorForAssignee(e.key);
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 4),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: c.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(7),
+                                      border: Border.all(
+                                        color: c.withValues(alpha: 0.28),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${e.key} ${e.value}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: c,
+                                        height: 1.05,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 홈 단일 화면: 주 이동 + 주간/월간 토글을 한 줄로.
+  Widget _buildFitCalendarToolbarRow(ColorScheme scheme) {
+    final isWeek = _calendarFormat == CalendarFormat.week;
+    final shortcutColor = isWeek ? Colors.teal : Colors.indigo;
+    final w = seoulWeekRangeContaining(_focusedDayYmd());
+
+    Widget navBtn({required IconData icon, required VoidCallback onTap}) {
+      return IconButton(
+        onPressed: onTap,
+        icon: Icon(icon, size: 18),
+        style: IconButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(26, 26),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      );
+    }
+
+    Widget formatChip({
+      required bool selected,
+      required String label,
+      required Color activeColor,
+      required VoidCallback onTap,
+    }) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected ? scheme.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? activeColor.withValues(alpha: 0.35)
+                  : scheme.outlineVariant.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: selected ? activeColor : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          if (isWeek) ...[
+            navBtn(
+              icon: Icons.chevron_left_rounded,
+              onTap: () => _shiftFocusedWeek(-1),
+            ),
+            Expanded(
+              child: Text(
+                formatWeekRangeFlowLabel(w.$1, w.$2),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ),
+            navBtn(
+              icon: Icons.chevron_right_rounded,
+              onTap: () => _shiftFocusedWeek(1),
+            ),
+            Container(
+              width: 1,
+              height: 18,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              color: scheme.outlineVariant.withValues(alpha: 0.35),
+            ),
+          ],
+          formatChip(
+            selected: isWeek,
+            label: '주간',
+            activeColor: Colors.teal,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _calendarFormat = CalendarFormat.week);
+            },
+          ),
+          const SizedBox(width: 4),
+          formatChip(
+            selected: !isWeek,
+            label: '월간',
+            activeColor: Colors.indigo,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _calendarFormat = CalendarFormat.month);
+            },
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: isWeek ? _jumpToThisWeek : _jumpToThisMonth,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+              decoration: BoxDecoration(
+                color: shortcutColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: shortcutColor.withValues(alpha: 0.35)),
+              ),
+              child: Text(
+                isWeek ? '이번주' : '이번달',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: shortcutColor,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactFormatToggleRow(ColorScheme scheme) {
+    final isWeek = _calendarFormat == CalendarFormat.week;
+    final shortcutColor = isWeek ? Colors.teal : Colors.indigo;
+
+    Widget formatChip({
+      required bool selected,
+      required String label,
+      required IconData icon,
+      required Color activeColor,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: selected ? scheme.surface : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected
+                    ? activeColor.withValues(alpha: 0.35)
+                    : scheme.outlineVariant.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 12,
+                  color: selected ? activeColor : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: selected ? activeColor : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isWeek) ...[
+            _buildInlineWeekNav(scheme),
+            const SizedBox(height: 2),
+          ],
+          Row(
+            children: [
+              formatChip(
+                selected: isWeek,
+                label: '주간',
+                icon: Icons.view_week_rounded,
+                activeColor: Colors.teal,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _calendarFormat = CalendarFormat.week);
+                },
+              ),
+              const SizedBox(width: 4),
+              formatChip(
+                selected: !isWeek,
+                label: '월간',
+                icon: Icons.calendar_month_rounded,
+                activeColor: Colors.indigo,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _calendarFormat = CalendarFormat.month);
+                },
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: isWeek ? _jumpToThisWeek : _jumpToThisMonth,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: shortcutColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: shortcutColor.withValues(alpha: 0.35)),
+                  ),
+                  child: Text(
+                    isWeek ? '이번주' : '이번달',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: shortcutColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactCalendar({
+    required ColorScheme scheme,
+    required Map<String, int> dateMarkers,
+  }) {
+    final isWeek = _calendarFormat == CalendarFormat.week;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: TableCalendar(
+        key: ValueKey(_calendarFormat),
+        firstDay: DateTime.now().subtract(const Duration(days: 365)),
+        lastDay: DateTime.now().add(const Duration(days: 365)),
+        focusedDay: _focusedDay,
+        calendarFormat: _calendarFormat,
+        availableCalendarFormats: const {
+          CalendarFormat.week: '주간',
+          CalendarFormat.month: '월간',
+        },
+        onFormatChanged: (format) {
+          if (_calendarFormat == format) return;
+          setState(() => _calendarFormat = format);
+        },
+        startingDayOfWeek: StartingDayOfWeek.monday,
+        locale: 'ko_KR',
+        daysOfWeekHeight: isWeek ? 18 : 22,
+        rowHeight: isWeek ? 26 : 32,
+        availableGestures: AvailableGestures.none,
+        headerStyle: HeaderStyle(
+          formatButtonVisible: false,
+          titleCentered: true,
+          headerPadding: EdgeInsets.symmetric(vertical: isWeek ? 2 : 4),
+          titleTextStyle: TextStyle(
+            fontSize: isWeek ? 12 : 13,
+            fontWeight: FontWeight.bold,
+            color: scheme.onSurface,
+          ),
+        ),
+        daysOfWeekStyle: const DaysOfWeekStyle(
+          weekendStyle: TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.w700,
+            fontSize: 10,
+          ),
+        ),
+        calendarStyle: const CalendarStyle(
+          holidayTextStyle: TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        calendarBuilders: CalendarBuilders(
+          dowBuilder: (context, day) {
+            final txt = _weekdayKo(day.weekday);
+            Color color = scheme.onSurfaceVariant;
+            if (day.weekday == DateTime.saturday) color = Colors.blueAccent;
+            if (day.weekday == DateTime.sunday) color = Colors.redAccent;
+            return Center(
+              child: Text(
+                txt,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            );
+          },
+          defaultBuilder: (context, day, focusedDay) {
+            Color color = scheme.onSurface;
+            if (day.weekday == DateTime.saturday) color = Colors.blueAccent;
+            if (day.weekday == DateTime.sunday) color = Colors.redAccent;
+            return Center(
+              child: Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            );
+          },
+          markerBuilder: (context, date, events) {
+            final dateKey = date.toIso8601String().substring(0, 10);
+            final count = dateMarkers[dateKey] ?? 0;
+            if (count <= 0) return null;
+            return Positioned(
+              right: 1,
+              bottom: 1,
+              child: Container(
+                width: 12,
+                height: 12,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: scheme.error,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  count > 9 ? '9+' : '$count',
+                  style: TextStyle(
+                    color: scheme.onError,
+                    fontSize: 7,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        onDaySelected: (selectedDay, focusedDay) {
+          setState(() => _focusedDay = focusedDay);
+          final dateStr = selectedDay.toIso8601String().substring(0, 10);
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SalesCallListScreen(
+                mode: ListQueryMode.incompleteByDate,
+                date: dateStr,
+                initialAssignee: _selectedAssignee,
+              ),
+            ),
+          );
+        },
+        onPageChanged: (focusedDay) {
+          setState(() => _focusedDay = focusedDay);
+        },
+      ),
+    );
+  }
+
   Color _strongColorForAssignee(String assignee) {
     if (assignee == '전체') return Colors.blueGrey.shade700;
     if (assignee == '미지정') return Colors.grey.shade700;
@@ -1100,47 +1892,78 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
     return colors[assignee.hashCode.abs() % colors.length];
   }
 
-  String _calendarAssignee(SalesCall c) {
-    final manager = (c.regionManager ?? '').trim();
-    if (manager.isNotEmpty) return manager;
-    return '미지정';
+  String _calendarAssignee(SalesCall c, List<TempManagerOverride> overrides) {
+    return displayAssigneeForCall(c, overrides, DateTime.now());
+  }
+
+  String _focusedDayYmd() =>
+      '${_focusedDay.year}-${_focusedDay.month.toString().padLeft(2, '0')}-${_focusedDay.day.toString().padLeft(2, '0')}';
+
+  CalendarFollowRangeKey _calendarRangeKey() {
+    if (_calendarFormat == CalendarFormat.month) {
+      final m = seoulMonthRangeContaining(_focusedDayYmd());
+      return (startYmd: m.$1, endYmd: m.$2);
+    }
+    final w = seoulWeekRangeContaining(_focusedDayYmd());
+    return (startYmd: w.$1, endYmd: w.$2);
+  }
+
+  List<String> _weekYmdKeys() {
+    final w = seoulWeekRangeContaining(_focusedDayYmd());
+    final keys = <String>[w.$1];
+    var cur = w.$1;
+    for (var i = 0; i < 6; i++) {
+      cur = addDaysToYmd(cur, 1);
+      keys.add(cur);
+    }
+    return keys;
   }
 
   @override
   Widget build(BuildContext context) {
-    final asyncCalls = ref.watch(calendarFollowCallsProvider);
+    final rangeKey = _calendarRangeKey();
+    final asyncCalls = ref.watch(calendarFollowRangeProvider(rangeKey));
+    final overridesAsync = ref.watch(tempManagerOverridesProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return asyncCalls.when(
-      data: (calls) {
-        // 날짜 팔로우: 미종료(status_id NOT IN 2,3,4) + next_scheduled_date 있음 (접수일과 무관)
-        final followCalls = calls
-            .where((c) => ![2, 3, 4].contains(c.statusId) && c.followCalendarDateKey != null)
-            .toList();
+      data: (calls) => overridesAsync.when(
+        data: (overrides) => _buildCalendarBody(calls, overrides, scheme),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+    );
+  }
 
-        final focusedYear = _focusedDay.year;
-        final focusedMonth = _focusedDay.month;
-        final focusedMonthStr = "$focusedYear-${focusedMonth.toString().padLeft(2, '0')}";
-        final weekStart = DateTime(_focusedDay.year, _focusedDay.month, _focusedDay.day)
-            .subtract(Duration(days: _focusedDay.weekday - 1));
-        final weekEnd = weekStart.add(const Duration(days: 6));
+  Widget _buildCalendarBody(
+    List<SalesCall> calls,
+    List<TempManagerOverride> overrides,
+    ColorScheme scheme,
+  ) {
+        // API `followRange` + 목록 `incompleteByDate`와 동일 조건(서버에서 이미 미종료·단순문의 제외)
+        final followCalls =
+            calls.where((c) => c.followCalendarDateKey != null).toList();
+
+        final focusedMonthStr = _focusedDayYmd().substring(0, 7);
+        final weekYmdSet = _weekYmdKeys().toSet();
 
         bool inFocusedPeriod(String? followYmd) {
           if (followYmd == null || followYmd.length < 10) return false;
+          final key = followYmd.substring(0, 10);
           if (_calendarFormat == CalendarFormat.month) {
-            return followYmd.startsWith(focusedMonthStr);
+            return key.startsWith(focusedMonthStr);
           }
-          final dt = DateTime.tryParse(followYmd.substring(0, 10));
-          if (dt == null) return false;
-          final dayOnly = DateTime(dt.year, dt.month, dt.day);
-          return !dayOnly.isBefore(weekStart) && !dayOnly.isAfter(weekEnd);
+          return weekYmdSet.contains(key);
         }
 
-        final visibleCallsInPeriod = followCalls.where((c) => inFocusedPeriod(c.followCalendarDateKey)).toList();
+        final visibleCallsInPeriod =
+            followCalls.where((c) => inFocusedPeriod(c.followCalendarDateKey)).toList();
 
         final Map<String, int> counts = {'전체': visibleCallsInPeriod.length};
         for (var c in visibleCallsInPeriod) {
-          final a = _calendarAssignee(c);
+          final a = _calendarAssignee(c, overrides);
           counts[a] = (counts[a] ?? 0) + 1;
         }
 
@@ -1184,63 +2007,137 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
         Color colorForAssignee(String name) =>
             assigneeColorMap[name] ?? _strongColorForAssignee(name);
 
-        // 2-1. Smart default: filter by logged-in user if not already filtered
+        // 최초 진입 시에만 로그인 담당자로 기본 선택 (이후 '전체' 탭은 유지)
         final user = ref.watch(authControllerProvider);
         final userName = user?.name;
-        if (_selectedAssignee == '전체' && userName != null && counts.containsKey(userName)) {
+        if (!_userPickedAssigneeFilter &&
+            _selectedAssignee == '전체' &&
+            userName != null &&
+            counts.containsKey(userName)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _selectedAssignee == '전체') {
-              setState(() => _selectedAssignee = userName);
+            if (!mounted ||
+                _userPickedAssigneeFilter ||
+                _selectedAssignee != '전체') {
+              return;
             }
+            setState(() => _selectedAssignee = userName);
           });
         }
 
         // 3. Prepare calendar markers (group by date) filtered by selected assignee
         final Map<String, int> dateMarkers = {};
         for (final c in followCalls) {
-          final a = _calendarAssignee(c);
+          final a = _calendarAssignee(c, overrides);
           if (_selectedAssignee != '전체' && a != _selectedAssignee) continue;
 
           final fk = c.followCalendarDateKey;
-          if (fk != null) {
-            dateMarkers[fk] = (dateMarkers[fk] ?? 0) + 1;
+          if (fk != null && inFocusedPeriod(fk)) {
+            final dateKey = fk.substring(0, 10);
+            dateMarkers[dateKey] = (dateMarkers[dateKey] ?? 0) + 1;
           }
         }
 
-        final weekDays = _weekDays(_focusedDay);
-        final Map<String, Map<String, int>> weekAssigneeCounts = {};
-        for (final day in weekDays) {
-          weekAssigneeCounts[day.toIso8601String().substring(0, 10)] = <String, int>{};
-        }
+        final weekYmdKeys = _weekYmdKeys();
+        final Map<String, Map<String, int>> weekAssigneeCounts = {
+          for (final ymd in weekYmdKeys) ymd: <String, int>{},
+        };
         for (final c in followCalls) {
           final fk = c.followCalendarDateKey;
           if (fk == null || fk.length < 10) continue;
           final dateKey = fk.substring(0, 10);
           final bucket = weekAssigneeCounts[dateKey];
           if (bucket == null) continue;
-          final assignee = _calendarAssignee(c);
+          final assignee = _calendarAssignee(c, overrides);
           if (_selectedAssignee != '전체' && assignee != _selectedAssignee) continue;
           bucket[assignee] = (bucket[assignee] ?? 0) + 1;
         }
 
+        if (widget.fitSingleScreen) {
+          return SizedBox.expand(
+            child: _buildFitSingleScreenLayout(
+              scheme: scheme,
+              sortedAssignees: sortedAssignees,
+              counts: counts,
+              colorForAssignee: colorForAssignee,
+              dateMarkers: dateMarkers,
+              weekAssigneeCounts: weekAssigneeCounts,
+            ),
+          );
+        }
+
         return RefreshIndicator(
           onRefresh: () async {
-            ref.invalidate(calendarFollowCallsProvider);
-            await ref.read(calendarFollowCallsProvider.future);
+            final key = _calendarRangeKey();
+            ref.invalidate(calendarFollowRangeProvider(key));
+            await ref.read(calendarFollowRangeProvider(key).future);
           },
           child: ListView(
             controller: widget.scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 200), // 압도적인 하단 여백 추가
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 200),
           children: [
-            // ─── 상단 담당자 필터 바 (캘린더용) ───
             Container(
-              height: 52,
-              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    scheme.secondaryContainer.withValues(alpha: 0.5),
+                    scheme.surface,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: scheme.secondary.withValues(alpha: 0.12),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: scheme.secondary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.calendar_month_rounded,
+                        size: 22, color: scheme.secondary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '팔로우 달력',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                        Text(
+                          _calendarFormat == CalendarFormat.week
+                              ? '주간 일정 · 담당자별 건수'
+                              : '월간 일정 · 담당자별 건수',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ─── 상단 담당자 필터 바 (캘린더용) ───
+            SizedBox(
+              height: 38,
+              width: double.infinity,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
                 itemCount: sortedAssignees.length,
                 itemBuilder: (context, idx) {
                   final assignee = sortedAssignees[idx];
@@ -1248,25 +2145,22 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                   final isSelected = _selectedAssignee == assignee;
 
                   return Padding(
-                    padding: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.only(right: 5),
                     child: GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        setState(() => _selectedAssignee = assignee);
-                      },
+                      onTap: () => _selectAssigneeFilter(assignee),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                          horizontal: 10,
+                          vertical: 4,
                         ),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: isSelected
                               ? _strongColorForAssignee(assignee).withValues(alpha: 0.18)
                               : Colors.white,
-                          borderRadius: BorderRadius.circular(22),
+                          borderRadius: BorderRadius.circular(16),
                           boxShadow: isSelected ? [
                             BoxShadow(
                               color: _strongColorForAssignee(assignee).withValues(alpha: 0.25),
@@ -1284,25 +2178,26 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                         child: Row(
                           children: [
                             Container(
-                              width: 8,
-                              height: 8,
+                              width: 6,
+                              height: 6,
                               decoration: BoxDecoration(
                                 color: colorForAssignee(assignee),
                                 shape: BoxShape.circle,
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 5),
                             Text(
                               assignee,
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
+                                height: 1.1,
                                 color: colorForAssignee(assignee),
                                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 5),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? colorForAssignee(assignee)
@@ -1312,7 +2207,8 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                               child: Text(
                                 '$count',
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 10,
+                                  height: 1.1,
                                   fontWeight: FontWeight.w900,
                                   color: isSelected ? Colors.white : colorForAssignee(assignee),
                                 ),
@@ -1326,6 +2222,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                 },
               ),
             ),
+            const SizedBox(height: 8),
             // ─── 캘린더 영역 ───
             Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -1340,7 +2237,7 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
               ),
-              child: Row(
+                  child: Row(
                 children: [
                   Expanded(
                     child: Row(
@@ -1348,64 +2245,10 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                         Expanded(
                           child: InkWell(
                             borderRadius: BorderRadius.circular(10),
-                            onTap: () => setState(() => _calendarFormat = CalendarFormat.month),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: _calendarFormat == CalendarFormat.month
-                                    ? Colors.white
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: _calendarFormat == CalendarFormat.month
-                                      ? Colors.indigo.withValues(alpha: 0.35)
-                                      : Colors.transparent,
-                                ),
-                                boxShadow: _calendarFormat == CalendarFormat.month
-                                    ? [
-                                        BoxShadow(
-                                          color: Colors.indigo.withValues(alpha: 0.16),
-                                          blurRadius: 10,
-                                          offset: const Offset(0, 3),
-                                        ),
-                                      ]
-                                    : null,
-                              ),
-                              alignment: Alignment.center,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.calendar_month_rounded,
-                                    size: 14,
-                                    color: _calendarFormat == CalendarFormat.month
-                                        ? Colors.indigo
-                                        : scheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '월간 달력',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w800,
-                                      color: _calendarFormat == CalendarFormat.month
-                                          ? Colors.indigo
-                                          : scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(10),
                             onTap: () => setState(() => _calendarFormat = CalendarFormat.week),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(vertical: 7),
                               decoration: BoxDecoration(
                                 color: _calendarFormat == CalendarFormat.week
                                     ? Colors.white
@@ -1453,6 +2296,60 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                             ),
                           ),
                         ),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => setState(() => _calendarFormat = CalendarFormat.month),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(vertical: 7),
+                              decoration: BoxDecoration(
+                                color: _calendarFormat == CalendarFormat.month
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: _calendarFormat == CalendarFormat.month
+                                      ? Colors.indigo.withValues(alpha: 0.35)
+                                      : Colors.transparent,
+                                ),
+                                boxShadow: _calendarFormat == CalendarFormat.month
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.indigo.withValues(alpha: 0.16),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              alignment: Alignment.center,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.calendar_month_rounded,
+                                    size: 14,
+                                    color: _calendarFormat == CalendarFormat.month
+                                        ? Colors.indigo
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '월간 달력',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: _calendarFormat == CalendarFormat.month
+                                          ? Colors.indigo
+                                          : scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1484,10 +2381,13 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
               ),
             ),
             const SizedBox(height: 4),
-            Container(
+            Builder(
+              builder: (context) {
+                final isWeekView = _calendarFormat == CalendarFormat.week;
+                return Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(isWeekView ? 16 : 24),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.04),
@@ -1497,20 +2397,34 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                 ],
                 border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3), width: 1.5),
               ),
-              padding: const EdgeInsets.all(12),
+              padding: EdgeInsets.all(isWeekView ? 6 : 12),
                 child: TableCalendar(
+                  key: ValueKey(_calendarFormat),
                   firstDay: DateTime.now().subtract(const Duration(days: 365)),
                   lastDay: DateTime.now().add(const Duration(days: 365)),
                   focusedDay: _focusedDay,
                   calendarFormat: _calendarFormat,
+                  availableCalendarFormats: const {
+                    CalendarFormat.week: '주간',
+                    CalendarFormat.month: '월간',
+                  },
+                  onFormatChanged: (format) {
+                    if (_calendarFormat == format) return;
+                    setState(() => _calendarFormat = format);
+                  },
+                  startingDayOfWeek: StartingDayOfWeek.monday,
                   locale: 'ko_KR',
-                  daysOfWeekHeight: 40,
-                  rowHeight: 52,
-                  availableGestures: AvailableGestures.horizontalSwipe,
-                  headerStyle: const HeaderStyle(
+                  daysOfWeekHeight: isWeekView ? 20 : 34,
+                  rowHeight: isWeekView ? 28 : 46,
+                  availableGestures: AvailableGestures.none,
+                  headerStyle: HeaderStyle(
                     formatButtonVisible: false,
                     titleCentered: true,
-                    titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    headerPadding: EdgeInsets.symmetric(vertical: isWeekView ? 2 : 8),
+                    titleTextStyle: TextStyle(
+                      fontSize: isWeekView ? 13 : 17,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   daysOfWeekStyle: const DaysOfWeekStyle(
                     weekendStyle: TextStyle(
@@ -1533,7 +2447,11 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                       return Center(
                         child: Text(
                           txt,
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color),
+                          style: TextStyle(
+                            fontSize: isWeekView ? 11 : 12,
+                            fontWeight: FontWeight.w700,
+                            color: color,
+                          ),
                         ),
                       );
                     },
@@ -1544,7 +2462,11 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                       return Center(
                         child: Text(
                           '${day.day}',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color),
+                          style: TextStyle(
+                            fontSize: isWeekView ? 12 : 14,
+                            fontWeight: FontWeight.w600,
+                            color: color,
+                          ),
                         ),
                       );
                     },
@@ -1563,20 +2485,23 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                       final dateKey = date.toIso8601String().substring(0, 10);
                       final count = dateMarkers[dateKey] ?? 0;
                       if (count > 0) {
+                        final markerSize = isWeekView ? 14.0 : 18.0;
                         return Positioned(
-                          right: 4,
-                          bottom: 4,
+                          right: 2,
+                          bottom: 2,
                           child: Container(
-                            padding: const EdgeInsets.all(4),
+                            width: markerSize,
+                            height: markerSize,
+                            alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: scheme.error,
                               shape: BoxShape.circle,
                             ),
                             child: Text(
-                              '$count',
+                              count > 9 ? '9+' : '$count',
                               style: TextStyle(
                                 color: scheme.onError,
-                                fontSize: 10,
+                                fontSize: isWeekView ? 8 : 9,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -1607,15 +2532,17 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                     });
                   },
                 ),
-              ),
+              );
+              },
+            ),
             if (_calendarFormat == CalendarFormat.week) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 4),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
                 ),
                 child: Column(
@@ -1623,22 +2550,27 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.view_week_rounded, size: 16, color: scheme.primary),
-                        const SizedBox(width: 6),
+                        Icon(Icons.view_week_rounded, size: 12, color: scheme.primary),
+                        const SizedBox(width: 4),
                         Text(
                           '주간 상세',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.onSurface),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: scheme.onSurface),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    ...weekDays.map((day) {
-                      final dateKey = day.toIso8601String().substring(0, 10);
+                    const SizedBox(height: 4),
+                    ...weekYmdKeys.map((dateKey) {
                       final dayMap = weekAssigneeCounts[dateKey] ?? const <String, int>{};
                       final total = dayMap.values.fold<int>(0, (sum, v) => sum + v);
                       final sorted = dayMap.entries.toList()
                         ..sort((a, b) => b.value.compareTo(a.value));
-                      final isToday = _dayOnly(day) == _dayOnly(DateTime.now());
+                      final parts = dateKey.split('-');
+                      final month = parts.length == 3 ? int.tryParse(parts[1]) ?? 0 : 0;
+                      final dayNum = parts.length == 3 ? int.tryParse(parts[2]) ?? 0 : 0;
+                      final weekday = parts.length == 3
+                          ? DateTime(int.tryParse(parts[0]) ?? 0, month, dayNum).weekday
+                          : 1;
+                      final isToday = dateKey == todayYmdSeoul();
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(12),
@@ -1654,11 +2586,11 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                           );
                         },
                         child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          margin: const EdgeInsets.only(bottom: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: isToday ? scheme.primaryContainer.withValues(alpha: 0.25) : scheme.surface,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: isToday ? scheme.primary.withValues(alpha: 0.45) : scheme.outlineVariant.withValues(alpha: 0.25),
                             ),
@@ -1666,11 +2598,12 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                           child: Row(
                             children: [
                               SizedBox(
-                                width: 68,
+                                width: 56,
                                 child: Text(
-                                  '${day.month}/${day.day} (${_weekdayKo(day.weekday)})',
+                                  '$month/$dayNum (${_weekdayKo(weekday)})',
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 9,
+                                    height: 1.1,
                                     fontWeight: FontWeight.w800,
                                     color: isToday ? scheme.primary : scheme.onSurfaceVariant,
                                   ),
@@ -1726,11 +2659,11 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
                               ),
                               const SizedBox(width: 4),
                               SizedBox(
-                                width: 34,
+                                width: 30,
                                 child: Text(
                                   '$total건',
                                   textAlign: TextAlign.right,
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: scheme.error),
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: scheme.error),
                                 ),
                               ),
                             ],
@@ -1745,10 +2678,6 @@ class _IncompleteCalendarState extends ConsumerState<_IncompleteCalendar> {
             ],
           ),
         );
-        },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
-    );
   }
 }
 

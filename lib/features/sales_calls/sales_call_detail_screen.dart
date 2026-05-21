@@ -3,6 +3,9 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/data/sales_call_consultation.dart';
+import 'package:coad_customer_calls/features/home/home_navigation.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:file_picker/file_picker.dart';
@@ -34,7 +37,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   late TextEditingController _inquiryCtrl;
   late TextEditingController _assignedCtrl;
   late TextEditingController _stageCtrl;
+  /// 전체 수정 폼용 (상담 입력과 분리)
   late TextEditingController _nextDateCtrl;
+  /// 상담 입력 시트 전용 — DB `next_scheduled_date`와 동기하지 않음
+  late TextEditingController _consultationNextDateCtrl;
 
   String? _productId;
   String? _regionId;
@@ -43,6 +49,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   bool _isEditMode = false;
 
   final _newConsultationCtrl = TextEditingController();
+  final _unsuccessfulReasonCtrl = TextEditingController();
 
   bool _saving = false;
   List<String> _imageUrls = [];
@@ -53,6 +60,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   // 상담 이력 스와이프 관련 상태
   late PageController _historyPageController;
   int _selectedHistoryIdx = 0;
+  List<Map<String, dynamic>> _orderedCallHistory = [];
+  int _historyViewKey = 0;
 
   @override
   void initState() {
@@ -66,12 +75,14 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     _assignedCtrl = TextEditingController(text: i?.assignedTo ?? '');
     _stageCtrl = TextEditingController(text: i?.callStage ?? '');
     _nextDateCtrl = TextEditingController(text: i?.nextScheduledDate ?? '');
+    _consultationNextDateCtrl = TextEditingController();
     _productId = i?.productCategoryId;
     _regionId = i?.regionId;
     _methodId = i?.inquiryMethodId;
     _statusId = i?.statusId;
-    _historyPageController = PageController(initialPage: (i?.callHistory.length ?? 1) - 1);
-    _selectedHistoryIdx = (i?.callHistory.length ?? 1) - 1;
+    _orderedCallHistory = i != null ? orderCallHistoryForDisplay(i.callHistory) : [];
+    _historyPageController = PageController(initialPage: 0);
+    _selectedHistoryIdx = 0;
     _bootstrap();
   }
 
@@ -100,22 +111,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       _inquiryCtrl.text = m.inquiryContent ?? '';
       _assignedCtrl.text = m.assignedTo ?? '';
       _stageCtrl.text = m.callStage ?? '';
-      _nextDateCtrl.text = m.nextScheduledDate ?? '';
+      if (_isEditMode) {
+        _nextDateCtrl.text = m.nextScheduledDate ?? '';
+      }
       _productId = m.productCategoryId;
       _regionId = m.regionId;
       _methodId = m.inquiryMethodId;
       _statusId = m.statusId;
       _imageUrls = List<String>.from(m.images);
-      
-      // 최신 이력이 추가되었을 경우 첫 번째 페이지(최신)로 이동
-      if (m.callHistory.isNotEmpty) {
-        _selectedHistoryIdx = 0;
-        if (_historyPageController.hasClients) {
-          _historyPageController.jumpToPage(0);
-        } else {
-          _historyPageController = PageController(initialPage: _selectedHistoryIdx);
-        }
-      }
+      // fromJson에서 이미 정렬됨 — 재정렬 시 _display_stage 중복 부여 방지
+      _orderedCallHistory = List<Map<String, dynamic>>.from(m.callHistory);
+      _selectedHistoryIdx = 0;
+      _historyViewKey++;
+      _historyPageController = PageController(initialPage: 0);
     });
   }
 
@@ -127,7 +135,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     _assignedCtrl.dispose();
     _stageCtrl.dispose();
     _nextDateCtrl.dispose();
+    _consultationNextDateCtrl.dispose();
     _newConsultationCtrl.dispose();
+    _unsuccessfulReasonCtrl.dispose();
     _historyPageController.dispose();
     super.dispose();
   }
@@ -142,7 +152,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       if (_methodId != null) 'inquiry_method_id': _methodId,
       if (_statusId != null) 'status_id': _statusId,
       if (_assignedCtrl.text.trim().isNotEmpty) 'assigned_to': _assignedCtrl.text.trim(),
-      if (_stageCtrl.text.trim().isNotEmpty) 'call_stage': _stageCtrl.text.trim(),
+      if (_stageCtrl.text.trim().isNotEmpty)
+        'call_stage': _parseStageValue(_stageCtrl.text.trim()),
       if (_nextDateCtrl.text.trim().isNotEmpty)
         'next_scheduled_date': _nextDateCtrl.text.trim(),
     };
@@ -250,9 +261,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     }
   }
 
-  Future<void> _save(MasterDataBundle master) async {
-    if (_isEditMode && !_formKey.currentState!.validate()) return;
-    
+  Future<bool> _save(MasterDataBundle master) async {
+    if (_isEditMode && !_formKey.currentState!.validate()) return false;
+
     setState(() => _saving = true);
     try {
       final repo = ref.read(salesCallsRepositoryProvider);
@@ -261,87 +272,143 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         final updated = await repo.updateCall(widget.id, _bodyFromForm(master));
         _applyModel(updated);
       } else {
-        // Only saving new consultation and next date
         final now = DateTime.now();
-        
-        final newContent = _newConsultationCtrl.text.trim();
-        if (newContent.isEmpty) {
-          throw Exception('상담내용을 입력해주세요.');
-        }
+        final statusId = _statusId ?? CallStatusIds.undecided;
+        final statusName = callStatusNameFromId(statusId);
+        final historyCount = _model?.callHistory.length ?? 0;
+        final stage = nextConsultationCallStage(historyCount);
 
-        // 1. History 추가 (상담내용 입력 시 항상 이력으로 저장)
+        validateConsultationSubmit(
+          consultationContent: _newConsultationCtrl.text,
+          statusId: statusId,
+          nextScheduledDateYmd: _consultationNextDateCtrl.text,
+          unsuccessfulReason: _unsuccessfulReasonCtrl.text,
+        );
+
         final user = ref.read(authControllerProvider);
-        final currentStageNum = _resolveInputStageNumber(_model);
-        
-        await repo.addCallHistory(widget.id, {
-          'consultation_content': newContent, // 스키마 반영: consultation_content
-          'call_date': now.toIso8601String().split('T').first,
-          'call_time': "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}", // HH:mm:ss
-          'call_stage': currentStageNum, // 스키마 반영: 정수형
-          'status_id': _statusId,
-          'created_by': user?.name ?? 'system', // 스키마 반영: 작성자
-          'status': _getStatusNameById(master, _statusId), // 스키마의 status (text) 필드 대응
-        });
+        final historyPayload = buildCallHistoryInsert(
+          salesCallId: widget.id,
+          consultationContent: _newConsultationCtrl.text,
+          statusId: statusId,
+          statusName: statusName,
+          callStage: stage,
+          callDateYmd: now.toIso8601String().split('T').first,
+          callTimeHms:
+              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',
+          nextScheduledDateYmd: _consultationNextDateCtrl.text,
+          unsuccessfulReason: _unsuccessfulReasonCtrl.text,
+          createdBy: user?.name ?? 'system',
+        );
 
-        // 2. 메인 정보 업데이트
-        final nextStage = '${currentStageNum + 1}차';
-        
-        final body = {
-          'next_scheduled_date': _nextDateCtrl.text.trim(),
-          'status_id': _statusId,
-          'call_stage': nextStage,
-        };
+        final salesPayload = buildSalesCallUpdateAfterConsultation(
+          statusId: statusId,
+          callStage: stage,
+          nextScheduledDateYmd: _consultationNextDateCtrl.text,
+        );
 
-        final updated = await repo.updateCall(widget.id, body);
+        final updated = await repo.saveConsultationRound(
+          callId: widget.id,
+          historyData: historyPayload,
+          salesCallBody: salesPayload,
+        );
         _applyModel(updated);
       }
 
       if (mounted) {
         setState(() {
           _newConsultationCtrl.clear();
+          _unsuccessfulReasonCtrl.clear();
+          _consultationNextDateCtrl.clear();
           _isEditMode = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('상담내용 및 이력이 저장되었습니다.')),
-        );
       }
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(koreanErrorMessage(e))),
         );
       }
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
-  int _getStageInt(String? current) {
-    if (current == null || current.isEmpty || current == '접수' || current == '0') return 1;
-    final match = RegExp(r'(\d+)').firstMatch(current);
-    if (match != null) {
-      return int.parse(match.group(1)!);
-    }
-    return 1;
+  void _showConsultationSavingDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              Text(
+                '저장 중입니다.',
+                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '잠시만 기다려 주세요.',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
-  int _resolveInputStageNumber(SalesCall? call) {
-    final stageFromCall = _getStageInt(call?.callStage);
-    var historyMax = 0;
-    if (call != null) {
-      for (final h in call.callHistory) {
-        final raw = (h['call_stage'] ?? h['stage'])?.toString() ?? '';
-        final m = RegExp(r'(\d+)').firstMatch(raw);
-        if (m == null) continue;
-        final n = int.tryParse(m.group(1) ?? '');
-        if (n != null && n > historyMax) historyMax = n;
-      }
-    }
-    final nextByHistory = historyMax > 0 ? historyMax + 1 : 1;
-    return stageFromCall > nextByHistory ? stageFromCall : nextByHistory;
+  void _hideConsultationSavingDialog(BuildContext context) {
+    final nav = Navigator.of(context, rootNavigator: true);
+    if (nav.canPop()) nav.pop();
   }
 
-  String _inputStageLabel(SalesCall? call) => '${_resolveInputStageNumber(call)}차';
+  int _parseStageValue(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty || raw == '접수') return 0;
+    final m = RegExp(r'(\d+)').firstMatch(raw);
+    if (m != null) return int.tryParse(m.group(1)!) ?? 0;
+    return 0;
+  }
+
+  /// 웹과 동일: 다음 상담 차수 = 기존 이력 건수 + 1
+  int _nextConsultationStageNumber(SalesCall? call) {
+    return (call?.callHistory.length ?? 0) + 1;
+  }
+
+  String _inputStageLabel(SalesCall? call) => '${_nextConsultationStageNumber(call)}차';
+
+  /// 지금 입력하는 N차 상담 이후 예정일 = (N+1)차
+  String _scheduledStageAfterInput(SalesCall? call) =>
+      '${_nextConsultationStageNumber(call) + 1}차';
+
+  DateTime _historySortKey(Map<String, dynamic> h) {
+    final dateRaw = (h['call_date'] ?? '').toString().trim();
+    final timeRaw = (h['call_time'] ?? '').toString().trim();
+    if (dateRaw.isNotEmpty) {
+      final combined = timeRaw.isNotEmpty ? '$dateRaw $timeRaw' : dateRaw;
+      final parsed = DateTime.tryParse(combined.replaceFirst(' ', 'T'));
+      if (parsed != null) return parsed;
+    }
+    final created = (h['created_at'] ?? '').toString().trim();
+    if (created.isNotEmpty) {
+      final parsed = DateTime.tryParse(created);
+      if (parsed != null) return parsed;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
 
   String _getNextStage(String? current) {
     if (current == null || current.isEmpty || current == '접수' || current == '0') return '2차';
@@ -376,18 +443,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return '—';
   }
 
-  String _getStatusNameById(MasterDataBundle master, int? id) {
-    if (id == null) return '미결정';
-    final mapping = {
-      1: '미결정',
-      3: '수주',
-      2: '미수주',
-      6: '기타',
-      4: '단순문의',
-      5: '설계문의',
-    };
-    return mapping[id] ?? '미결정';
-  }
+  String _getStatusNameById(MasterDataBundle master, int? id) =>
+      callStatusNameFromId(id);
 
   String _attachmentSavePrefix(SalesCall? call) {
     final now = DateTime.now();
@@ -460,7 +517,14 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
           IconButton(
             icon: Icon(_isEditMode ? Icons.view_headline_rounded : Icons.edit_note_rounded),
-            onPressed: () => setState(() => _isEditMode = !_isEditMode),
+            onPressed: () {
+              setState(() {
+                _isEditMode = !_isEditMode;
+                if (_isEditMode) {
+                  _nextDateCtrl.text = _model?.nextScheduledDate ?? '';
+                }
+              });
+            },
             tooltip: _isEditMode ? '조회 모드로 변경' : '전체 정보 수정',
           ),
           if (_loading)
@@ -609,8 +673,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
 
           sectionTitle('상담 이력 (단계별)', Icons.history_rounded),
-          if (m != null && m.callHistory.isNotEmpty)
-            _buildHistorySwiper(m.callHistory, scheme)
+          if (_orderedCallHistory.isNotEmpty)
+            _buildHistorySwiper(_orderedCallHistory, scheme)
           else
             Container(
               padding: const EdgeInsets.all(32),
@@ -862,18 +926,16 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return _scheduledDateFromMap(history[index]);
   }
 
-  int? _stageNumber(Map<String, dynamic> h) {
-    final raw = (h['call_stage'] ?? h['stage'] ?? '').toString();
-    final m = RegExp(r'(\d+)').firstMatch(raw);
-    if (m == null) return null;
-    return int.tryParse(m.group(1)!);
-  }
+  int _stageNumberForHistory(Map<String, dynamic> h) =>
+      displayStageFromHistoryMap(h);
 
   String? _resolveScheduledDateForStage(List<Map<String, dynamic>> history, int stage) {
     if (stage <= 1) return null;
     final prevStage = stage - 1;
-    for (final item in history) {
-      if (_stageNumber(item) != prevStage) continue;
+    final len = history.length;
+    for (var i = 0; i < len; i++) {
+      final item = history[i];
+      if (_stageNumberForHistory(item) != prevStage) continue;
       final scheduled = _scheduledDateFromMap(item);
       if (scheduled != null) return scheduled;
     }
@@ -911,13 +973,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     final actualDate = formatSeoulDate(actualRaw);
     final scheduledRaw = _resolveScheduledDateForHistory(history, index);
     final scheduledDate = scheduledRaw == null ? '없음' : formatSeoulDate(scheduledRaw);
-    final stageNum = int.tryParse((h['call_stage'] ?? '').toString());
-    final scheduledForCurrentStage = stageNum == null ? null : _resolveScheduledDateForStage(history, stageNum);
+    final stageNum = _stageNumberForHistory(h);
+    final scheduledForCurrentStage = _resolveScheduledDateForStage(history, stageNum);
     final diffDays = _diffDaysBetween(scheduledForCurrentStage, actualRaw);
-    final currentStageLabel = stageNum == null ? ((h['stage'] ?? '기록').toString()) : '${stageNum}차';
-    final scheduledStageLabel = stageNum == null ? '다음차수 예정일' : '${stageNum + 1}차 예정일';
+    final currentStageLabel = displayStageLabelFromHistoryMap(h);
+    final scheduledStageLabel = '${stageNum + 1}차 예정일';
     final showScheduledLine = scheduledRaw != null;
-    final showDiffLine = stageNum != null && stageNum > 1 && diffDays != null;
+    final showDiffLine = stageNum > 1 && diffDays != null;
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -944,7 +1006,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        (h['call_stage'] != null) ? "${h['call_stage']}차" : (h['stage'] ?? '기록').toString(),
+                        displayStageLabelFromHistoryMap(h),
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: scheme.primary),
                       ),
                     ),
@@ -1029,7 +1091,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             itemBuilder: (context, index) {
               final h = history[index];
               final isSelected = _selectedHistoryIdx == index;
-              final stage = h['call_stage'] != null ? "${h['call_stage']}차" : (h['stage'] ?? '${index + 1}차').toString();
+              final stage = displayStageLabelFromHistoryMap(h);
               
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -1062,6 +1124,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         SizedBox(
           height: 280,
           child: PageView.builder(
+            key: ValueKey('history-$_historyViewKey-${history.length}'),
             controller: _historyPageController,
             itemCount: history.length,
             onPageChanged: (idx) {
@@ -1097,15 +1160,22 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   void _showConsultationDialog(MasterDataBundle master) {
+    _consultationNextDateCtrl.clear();
+    _unsuccessfulReasonCtrl.clear();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
+      useSafeArea: true,
+      builder: (sheetContext) => StatefulBuilder(
         builder: (context, setModalState) {
           final m = _model;
           final scheme = Theme.of(context).colorScheme;
-          
+          final viewInsets = MediaQuery.viewInsetsOf(context);
+          final screenH = MediaQuery.sizeOf(context).height;
+          final sheetHeight = (screenH * 0.92 - viewInsets.bottom).clamp(320.0, screenH * 0.92);
+          final fieldScrollPadding = EdgeInsets.only(bottom: viewInsets.bottom + 160);
+
           // 선택된 상태에 따른 배경색 정의 (투명해지지 않도록 불투명한 연한 색상 적용)
           Color bgColor = Colors.white;
           if (_statusId == 3) { // 수주
@@ -1122,37 +1192,43 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             bgColor = const Color(0xFFECEFF1);
           }
           
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            height: MediaQuery.of(context).size.height * 0.85,
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '${_inputStageLabel(m)} 상담내용 입력',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: ListView(
+          return Padding(
+            padding: EdgeInsets.only(bottom: viewInsets.bottom),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              height: sheetHeight,
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // Header
+                  Padding(
                     padding: const EdgeInsets.all(16),
-                    children: [
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${_inputStageLabel(m)} 상담내용 입력',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: _saving ? null : () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView(
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                      children: [
                       // Context Box
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -1182,12 +1258,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                               const Divider(height: 1),
                               const SizedBox(height: 12),
                               Text(
-                                '이전(${m.callHistory.last['call_stage'] ?? '직전'}) 상담내용:',
+                                '이전(${displayStageLabelFromHistoryMap(_orderedCallHistory.first)}) 상담내용:',
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueAccent),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                m.callHistory.last['content']?.toString() ?? '',
+                                (_orderedCallHistory.first['consultation_content'] ??
+                                        _orderedCallHistory.first['content'])
+                                    ?.toString() ??
+                                    '',
                                 style: const TextStyle(color: Colors.black54, height: 1.4, fontSize: 13),
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
@@ -1203,8 +1282,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         controller: _newConsultationCtrl,
                         minLines: 5,
                         maxLines: 15,
+                        scrollPadding: fieldScrollPadding,
+                        style: const TextStyle(fontSize: 16, height: 1.45),
                         decoration: InputDecoration(
                           hintText: '고객와의 상담내용을 자세히 입력하세요...',
+                          filled: true,
+                          fillColor: Colors.white,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
@@ -1212,57 +1295,105 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       const Text('상담 결과 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 12),
                       _buildStatusGrid(scheme, setModalState),
-                      const SizedBox(height: 24),
-                      Text('${_getNextStage(m?.callStage)} 상담 예정일 *', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: _nextDateCtrl,
-                        readOnly: true,
-                        onTap: () async {
-                           final date = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now().add(const Duration(days: 7)),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
-                          );
-                          if (date != null) {
-                            setModalState(() {
-                              _nextDateCtrl.text = date.toIso8601String().split('T').first;
-                            });
-                          }
-                        },
-                        decoration: InputDecoration(
-                          hintText: '연도. 월. 일.',
-                          suffixIcon: const Icon(Icons.calendar_today_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      if (_statusId == CallStatusIds.lost) ...[
+                        const SizedBox(height: 24),
+                        const Text('미수주 사유 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _unsuccessfulReasonCtrl,
+                          minLines: 2,
+                          maxLines: 6,
+                          scrollPadding: fieldScrollPadding,
+                          style: const TextStyle(fontSize: 16, height: 1.45),
+                          onChanged: (_) => setModalState(() {}),
+                          decoration: InputDecoration(
+                            hintText: '미수주 사유를 입력하세요',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                      if (statusRequiresNextScheduledDate(_statusId ?? CallStatusIds.undecided)) ...[
+                        const SizedBox(height: 24),
+                        Text(
+                          '${_scheduledStageAfterInput(m)} 상담 예정일 *',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _consultationNextDateCtrl,
+                          readOnly: true,
+                          onTap: () async {
+                            final date = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now().add(const Duration(days: 7)),
+                              firstDate: DateTime.now(),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (date != null) {
+                              setModalState(() {
+                                _consultationNextDateCtrl.text =
+                                    date.toIso8601String().split('T').first;
+                              });
+                            }
+                          },
+                          decoration: InputDecoration(
+                            hintText: '날짜를 선택하세요',
+                            suffixIcon: const Icon(Icons.calendar_today_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ],
+                      ],
+                    ),
                   ),
-                ),
-                const Divider(height: 1),
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                    child: FilledButton(
-                      onPressed: _saving ? null : () async {
-                        await _save(master);
-                        if (mounted) Navigator.pop(context);
-                      },
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: Text(
-                        _saving ? '저장 중...' : '상담내용 저장',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  const Divider(height: 1),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                      child: FilledButton(
+                        onPressed: _saving
+                            ? null
+                            : () async {
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                _showConsultationSavingDialog(sheetContext);
+                                final ok = await _save(master);
+                                if (sheetContext.mounted) {
+                                  _hideConsultationSavingDialog(sheetContext);
+                                }
+                                if (ok && sheetContext.mounted) {
+                                  Navigator.pop(sheetContext);
+                                }
+                                if (ok && context.mounted) {
+                                  navigateToHomeAndRefresh(
+                                    context,
+                                    ref,
+                                    message: '상담내용 및 이력이 저장되었습니다.',
+                                  );
+                                } else if (!ok) {
+                                  setModalState(() {});
+                                }
+                              },
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          _saving ? '저장 중...' : '상담내용 저장',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -1288,10 +1419,16 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         final statusColor = s['color'] as Color;
         return GestureDetector(
           onTap: () {
+            void apply() {
+              _statusId = s['id'] as int;
+              if (!statusRequiresNextScheduledDate(_statusId!)) {
+                _consultationNextDateCtrl.clear();
+              }
+            }
             if (setModalState != null) {
-              setModalState(() => _statusId = s['id'] as int);
+              setModalState(apply);
             } else {
-              setState(() => _statusId = s['id'] as int);
+              setState(apply);
             }
           },
           child: Container(

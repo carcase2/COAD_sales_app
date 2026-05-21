@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
@@ -475,7 +475,7 @@ class _IssuanceRequestCreateScreenState
         icon: Icons.home_rounded,
         onTap: () {
           setState(() => _quickActionsOpen = false);
-          Navigator.of(context).popUntil((route) => route.isFirst);
+          openHomeHub(context, ref);
         },
       ),
       _CreateQuickActionItem(
@@ -509,47 +509,6 @@ class _IssuanceRequestCreateScreenState
               ),
             ),
           );
-        },
-      ),
-      _CreateQuickActionItem(
-        label: '미통화',
-        color: Colors.orange.shade700,
-        icon: Icons.pending_actions_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) =>
-                  SalesCallListScreen(mode: ListQueryMode.incomplete),
-            ),
-          );
-        },
-      ),
-      _CreateQuickActionItem(
-        label: '금일팔로우',
-        color: Colors.deepPurple.shade600,
-        icon: Icons.event_note_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(
-                mode: ListQueryMode.incompleteByDate,
-                date: todayYmdSeoul(),
-                initialAssignee: '전체',
-              ),
-            ),
-          );
-        },
-      ),
-      _CreateQuickActionItem(
-        label: '달력',
-        color: Colors.green.shade700,
-        icon: Icons.calendar_view_week_rounded,
-        onTap: () {
-          setState(() => _quickActionsOpen = false);
-          requestConsultationCalendarWeekNavigation(ref);
-          Navigator.of(context).popUntil((route) => route.isFirst);
         },
       ),
     ];

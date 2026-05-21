@@ -7,10 +7,9 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/home/home_navigation.dart';
+import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -124,8 +123,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       );
       return;
     }
-    // 단순문의로 바로 마무리 체크 시 status_id = 4 (단순문의) 강제 설정 로직 예시
-    final targetStatusId = _isSimpleInquiry ? 4 : (_statusId ?? 1);
+    final reg = registrationStatus(isSimpleInquiry: _isSimpleInquiry);
 
     setState(() => _submitting = true);
     try {
@@ -137,9 +135,9 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         if (_productId != null) 'product_category_id': _productId,
         if (_regionId != null) 'region_id': _regionId,
         if (_methodId != null) 'inquiry_method_id': _methodId,
-        'status_id': targetStatusId,
+        'status_id': reg.statusId,
+        'call_stage': reg.callStage,
         if (user != null) 'created_by': user.id,
-        if (_isSimpleInquiry) 'call_stage': '종료',
       };
 
       NamedMasterRow? regionRow;
@@ -183,9 +181,9 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         originalRegionManager: originalManager.isNotEmpty ? originalManager : null,
         productCategoryId: body['product_category_id']?.toString(),
         inquiryMethodId: body['inquiry_method_id']?.toString(),
-        statusId: targetStatusId,
+        statusId: reg.statusId,
         createdBy: body['created_by']?.toString(),
-        callStage: body['call_stage']?.toString(),
+        callStage: body['call_stage'],
         images: _uploadedImageUrls,
       );
 
@@ -225,19 +223,11 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         // 푸시 실패가 접수 저장 흐름을 막지 않도록 무시
       }
       
-      // 홈 화면 데이터 무기본화(새로고침 예약)
-      ref.invalidate(todayStatsProvider);
-      ref.invalidate(todayCallsContentProvider);
-      ref.invalidate(todayFollowOverviewProvider);
-      ref.invalidate(todayIncompleteOverviewProvider);
-      ref.invalidate(rankingCallsProvider);
-      ref.invalidate(calendarFollowCallsProvider);
-
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => SalesCallDetailScreen(id: created.id, initial: created),
-        ),
+      navigateToHomeAndRefresh(
+        context,
+        ref,
+        message: '접수가 완료되었습니다.',
       );
     } on OfflineException catch (e) {
       if (!mounted) return;
@@ -443,10 +433,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           IconButton(
             icon: const Icon(Icons.home_rounded),
             onPressed: () {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute<void>(builder: (_) => const MainTabScreen()),
-                (route) => false,
-              );
+              navigateToHomeAndRefresh(context, ref);
             },
             tooltip: '홈으로 이동',
           ),
@@ -510,47 +497,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                       label: '홈',
                       color: Colors.blueGrey.shade700,
                       onTap: () async {
-                        Navigator.of(context).popUntil((route) => route.isFirst);
-                      },
-                    ),
-                    _quickActionTile(
-                      icon: Icons.pending_actions_rounded,
-                      label: '미통화',
-                      color: Colors.orange.shade700,
-                      onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => SalesCallListScreen(
-                              mode: ListQueryMode.incomplete,
-                              date: todayYmdSeoul(),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    _quickActionTile(
-                      icon: Icons.event_note_rounded,
-                      label: '금일팔로우',
-                      color: Colors.deepPurple.shade600,
-                      onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => SalesCallListScreen(
-                              mode: ListQueryMode.incompleteByDate,
-                              date: todayYmdSeoul(),
-                              initialAssignee: '전체',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    _quickActionTile(
-                      icon: Icons.calendar_view_week_rounded,
-                      label: '달력',
-                      color: Colors.green.shade700,
-                      onTap: () async {
-                        requestConsultationCalendarWeekNavigation(ref);
-                        Navigator.of(context).popUntil((route) => route.isFirst);
+                        openHomeHub(context, ref);
                       },
                     ),
                     _quickActionTile(

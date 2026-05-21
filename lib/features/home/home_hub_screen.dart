@@ -1,12 +1,13 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 /// 상단 ◀▶ 이동 단위 (일 / 주 / 월).
 enum HubNavStep { day, week, month }
@@ -19,10 +20,19 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
-  late ScrollController _scrollController;
+  static const List<HomeHubSection> _sectionOrder = [
+    HomeHubSection.flow,
+    HomeHubSection.incomplete,
+    HomeHubSection.calendar,
+  ];
+
+  late PageController _sectionPageController;
   late String _hubFlowAnchorYmd;
   HubNavStep _hubNavStep = HubNavStep.day;
-  bool _isBottomBarVisible = true;
+  HomeHubSection _section = HomeHubSection.flow;
+  CalendarFormat _launchCalendarFormat = CalendarFormat.week;
+  int _calendarKeyNonce = 0;
+  int _pendingSyncCount = 0;
   static const int _followPickerFetchLimit = 1000;
   static const int _incompletePickerFetchLimit = 1000;
 
@@ -120,96 +130,214 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     }
   }
 
-  Widget _buildHubFlowDateBar(ColorScheme scheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SegmentedButton<HubNavStep>(
-          segments: const [
-            ButtonSegment(
-              value: HubNavStep.day,
-              label: Text('일'),
-              icon: Icon(Icons.calendar_today_rounded, size: 16),
-            ),
-            ButtonSegment(
-              value: HubNavStep.week,
-              label: Text('주'),
-              icon: Icon(Icons.date_range_rounded, size: 16),
-            ),
-            ButtonSegment(
-              value: HubNavStep.month,
-              label: Text('월'),
-              icon: Icon(Icons.calendar_month_rounded, size: 16),
-            ),
+  String _homeTopDateLine() {
+    if (_section == HomeHubSection.flow) {
+      return _hubNavCenterLabel();
+    }
+    return formatYmdFlowLabelKo(todayYmdSeoul());
+  }
+
+  Widget _buildUnifiedHomeTop(ColorScheme scheme, AppUser? user) {
+    final name = user?.name.trim();
+    final initial =
+        (name != null && name.isNotEmpty) ? name[0] : '?';
+
+    final compact = _section != HomeHubSection.flow;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(14, compact ? 6 : 8, 14, compact ? 8 : 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primary,
+            Color.lerp(scheme.primary, scheme.tertiary, 0.38)!,
           ],
-          selected: {_hubNavStep},
-          onSelectionChanged: (s) {
-            if (s.isEmpty) return;
-            final next = s.first;
-            setState(() {
-              _hubNavStep = next;
-              final today = todayYmdSeoul();
-              _hubFlowAnchorYmd = switch (next) {
-                HubNavStep.day => today,
-                HubNavStep.week => seoulWeekRangeContaining(today).$1,
-                HubNavStep.month => firstDayOfMonthYmd(today),
-              };
-            });
-          },
-          style: ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            foregroundColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.selected)) {
-                return scheme.onSecondaryContainer;
-              }
-              return scheme.onSurfaceVariant;
-            }),
-          ),
         ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            IconButton.filledTonal(
-              onPressed: () => _shiftHubNav(-1),
-              icon: const Icon(Icons.chevron_left_rounded),
-              tooltip: switch (_hubNavStep) {
-                HubNavStep.day => '이전 날',
-                HubNavStep.week => '이전 주',
-                HubNavStep.month => '이전 달',
-              },
-            ),
-            Expanded(
-              child: Text(
-                _hubNavCenterLabel(),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
-                  height: 1.25,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: 0.18),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: scheme.onPrimary.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: scheme.onPrimary.withValues(alpha: 0.35),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  initial,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: scheme.onPrimary,
+                  ),
                 ),
               ),
-            ),
-            IconButton.filledTonal(
-              onPressed: _canShiftHubNavNewer()
-                  ? () => _shiftHubNav(1)
-                  : null,
-              icon: const Icon(Icons.chevron_right_rounded),
-              tooltip: switch (_hubNavStep) {
-                HubNavStep.day => '다음 날',
-                HubNavStep.week => '다음 주',
-                HubNavStep.month => '다음 달',
-              },
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      'COAD',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onPrimary.withValues(alpha: 0.75),
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    if (name != null && name.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '$name님',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onPrimary.withValues(alpha: 0.92),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _homeTopDateLine(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onPrimary.withValues(alpha: 0.95),
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_section == HomeHubSection.flow)
+                _buildHubFlowResetButton(scheme, onPrimary: true),
+            ],
+          ),
+          SizedBox(height: compact ? 6 : 8),
+          _buildSectionSegmentBar(scheme, embedded: true),
+          if (_section == HomeHubSection.flow) ...[
+            const SizedBox(height: 8),
+            _buildEmbeddedFlowDateControls(scheme),
           ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildHubFlowResetButton(ColorScheme scheme) {
+  Widget _buildEmbeddedFlowDateControls(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.onPrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.onPrimary.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => _shiftHubNav(-1),
+            icon: const Icon(Icons.chevron_left_rounded, size: 22),
+            style: IconButton.styleFrom(
+              foregroundColor: scheme.onPrimary,
+              minimumSize: const Size(36, 36),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+            ),
+            tooltip: switch (_hubNavStep) {
+              HubNavStep.day => '이전 날',
+              HubNavStep.week => '이전 주',
+              HubNavStep.month => '이전 달',
+            },
+          ),
+          Expanded(
+            child: SegmentedButton<HubNavStep>(
+              segments: const [
+                ButtonSegment(value: HubNavStep.day, label: Text('일')),
+                ButtonSegment(value: HubNavStep.week, label: Text('주')),
+                ButtonSegment(value: HubNavStep.month, label: Text('월')),
+              ],
+              selected: {_hubNavStep},
+              onSelectionChanged: (s) {
+                if (s.isEmpty) return;
+                final next = s.first;
+                setState(() {
+                  _hubNavStep = next;
+                  final today = todayYmdSeoul();
+                  _hubFlowAnchorYmd = switch (next) {
+                    HubNavStep.day => today,
+                    HubNavStep.week => seoulWeekRangeContaining(today).$1,
+                    HubNavStep.month => firstDayOfMonthYmd(today),
+                  };
+                });
+              },
+              style: ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                backgroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return scheme.surface;
+                  }
+                  return Colors.transparent;
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return scheme.primary;
+                  }
+                  return scheme.onPrimary.withValues(alpha: 0.9);
+                }),
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed:
+                _canShiftHubNavNewer() ? () => _shiftHubNav(1) : null,
+            icon: const Icon(Icons.chevron_right_rounded, size: 22),
+            style: IconButton.styleFrom(
+              foregroundColor: scheme.onPrimary,
+              disabledForegroundColor:
+                  scheme.onPrimary.withValues(alpha: 0.35),
+              minimumSize: const Size(36, 36),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+            ),
+            tooltip: switch (_hubNavStep) {
+              HubNavStep.day => '다음 날',
+              HubNavStep.week => '다음 주',
+              HubNavStep.month => '다음 달',
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHubFlowResetButton(ColorScheme scheme, {bool onPrimary = false}) {
     final enabled = !_isHubFlowOnCurrentPeriod();
     final label = _hubResetShortcutLabel();
     final icon = switch (_hubNavStep) {
@@ -222,6 +350,26 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       HubNavStep.week => '이번 주(금주)로 이동합니다',
       HubNavStep.month => '이번 달(금월)로 이동합니다',
     };
+
+    if (onPrimary) {
+      return Tooltip(
+        message: tip,
+        child: IconButton(
+          onPressed: enabled ? _resetHubFlowAnchorToCurrent : null,
+          icon: Icon(icon, size: 20),
+          style: IconButton.styleFrom(
+            foregroundColor: scheme.onPrimary,
+            disabledForegroundColor:
+                scheme.onPrimary.withValues(alpha: 0.35),
+            backgroundColor: enabled
+                ? scheme.onPrimary.withValues(alpha: 0.16)
+                : Colors.transparent,
+            minimumSize: const Size(36, 36),
+            padding: EdgeInsets.zero,
+          ),
+        ),
+      );
+    }
 
     return Tooltip(
       message: tip,
@@ -909,41 +1057,110 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
 
+  int _sectionIndex(HomeHubSection section) =>
+      _sectionOrder.indexOf(section).clamp(0, _sectionOrder.length - 1);
+
+  HomeHubSection _sectionAt(int index) =>
+      _sectionOrder[index.clamp(0, _sectionOrder.length - 1)];
+
+  void _jumpSectionPage(int index) {
+    if (!_sectionPageController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _sectionPageController.hasClients) {
+          _sectionPageController.jumpToPage(index);
+        }
+      });
+      return;
+    }
+    _sectionPageController.jumpToPage(index);
+  }
+
+  void _goToSection(HomeHubSection section, {bool fromPill = false}) {
+    if (_section == section && !fromPill) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _section = section;
+      if (fromPill && section == HomeHubSection.calendar) {
+        _launchCalendarFormat = CalendarFormat.week;
+        _calendarKeyNonce++;
+      }
+      ref.read(bottomBarVisibilityProvider.notifier).state = true;
+    });
+    if (_sectionPageController.hasClients) {
+      _sectionPageController.animateToPage(
+        _sectionIndex(section),
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _onSectionPageChanged(int index) {
+    final next = _sectionAt(index);
+    if (_section == next) return;
+    HapticFeedback.selectionClick();
+    setState(() => _section = next);
+  }
+
+  void _consumePendingLaunch() {
+    final next = ref.read(pendingConsultationLaunchProvider);
+    if (next == null || !mounted) return;
+    setState(() {
+      _section = next.section;
+      _launchCalendarFormat = next.calendarFormat;
+      if (next.section == HomeHubSection.calendar) {
+        _calendarKeyNonce++;
+      }
+    });
+    _jumpSectionPage(_sectionIndex(next.section));
+    ref.read(pendingConsultationLaunchProvider.notifier).state = null;
+  }
+
+  Future<void> _checkAndSyncPending() async {
+    final repo = ref.read(salesCallsRepositoryProvider);
+    final count = await repo.getPendingCount();
+    if (mounted) setState(() => _pendingSyncCount = count);
+    if (count <= 0) return;
+    final success = await repo.syncPendingCalls();
+    final newCount = await repo.getPendingCount();
+    if (!mounted) return;
+    setState(() => _pendingSyncCount = newCount);
+    if (success > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('미전송 상담 $success건이 동기화되었습니다.')),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _hubFlowAnchorYmd = todayYmdSeoul();
-    _scrollController = ScrollController();
-    _scrollController.addListener(_onScroll);
-    // 탭 진입 시 바가 보이도록 초기화
+    _sectionPageController = PageController(initialPage: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(bottomBarVisibilityProvider.notifier).state = true;
+      _checkAndSyncPending();
+      _consumePendingLaunch();
     });
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
+    _sectionPageController.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    final direction = _scrollController.position.userScrollDirection;
-    if (direction == ScrollDirection.reverse) {
-      if (_isBottomBarVisible) {
-        setState(() => _isBottomBarVisible = false);
-        ref.read(bottomBarVisibilityProvider.notifier).state = false;
-      }
-    } else if (direction == ScrollDirection.forward) {
-      if (!_isBottomBarVisible) {
-        setState(() => _isBottomBarVisible = true);
-        ref.read(bottomBarVisibilityProvider.notifier).state = true;
-      }
-    }
-  }
-
   Future<void> _onRefresh() async {
+    if (_section == HomeHubSection.incomplete) {
+      ref.invalidate(rankingCallsProvider);
+      await ref.read(rankingCallsProvider.future);
+      await _checkAndSyncPending();
+      return;
+    }
+    if (_section == HomeHubSection.calendar) {
+      ref.invalidate(calendarFollowRangeProvider);
+      return;
+    }
     final d = _dayKey;
     final w = _weekKey;
     final m = _monthKey;
@@ -966,6 +1183,241 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       ref.read(hubPeriodFollowOverviewProvider(m).future),
       ref.read(hubPeriodQualityOverviewProvider(m).future),
     ]);
+    await _checkAndSyncPending();
+  }
+
+  Color _sectionBackground(ColorScheme scheme) {
+    return switch (_section) {
+      HomeHubSection.flow => scheme.surface,
+      HomeHubSection.incomplete => Color.alphaBlend(
+          scheme.tertiaryContainer.withValues(alpha: 0.22),
+          scheme.surface,
+        ),
+      HomeHubSection.calendar => Color.alphaBlend(
+          scheme.secondaryContainer.withValues(alpha: 0.22),
+          scheme.surface,
+        ),
+    };
+  }
+
+  Widget _buildSectionSegmentBar(ColorScheme scheme, {bool embedded = false}) {
+    const sections = <(HomeHubSection, String, IconData)>[
+      (HomeHubSection.flow, '흐름', Icons.insights_rounded),
+      (HomeHubSection.incomplete, '미통화', Icons.pending_actions_rounded),
+      (HomeHubSection.calendar, '달력', Icons.calendar_month_rounded),
+    ];
+
+    Color accentFor(HomeHubSection s) => switch (s) {
+          HomeHubSection.flow => scheme.primary,
+          HomeHubSection.incomplete => scheme.tertiary,
+          HomeHubSection.calendar => scheme.secondary,
+        };
+
+    final trackColor = embedded
+        ? scheme.onPrimary.withValues(alpha: 0.14)
+        : scheme.surfaceContainerHighest.withValues(alpha: 0.55);
+    final selectedBg = embedded ? scheme.surface : scheme.surface;
+    final unselectedLabel = embedded
+        ? scheme.onPrimary.withValues(alpha: 0.82)
+        : scheme.onSurfaceVariant.withValues(alpha: 0.7);
+
+    final bar = Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: trackColor,
+        borderRadius: BorderRadius.circular(12),
+        border: embedded
+            ? Border.all(color: scheme.onPrimary.withValues(alpha: 0.18))
+            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          for (final (section, label, icon) in sections) ...[
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _goToSection(section, fromPill: true),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  decoration: BoxDecoration(
+                    color: _section == section
+                        ? selectedBg
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: _section == section
+                        ? [
+                            BoxShadow(
+                              color: accentFor(section).withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 15,
+                        color: _section == section
+                            ? accentFor(section)
+                            : unselectedLabel,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: _section == section
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          color: _section == section
+                              ? accentFor(section)
+                              : unselectedLabel,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    if (embedded) return bar;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      child: bar,
+    );
+  }
+
+  Widget _buildPendingSyncBanner(ColorScheme scheme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: scheme.secondary.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 52,
+            decoration: BoxDecoration(
+              color: scheme.secondary,
+              borderRadius: const BorderRadius.horizontal(
+                left: Radius.circular(14),
+              ),
+            ),
+          ),
+          Icon(Icons.cloud_sync_outlined,
+              size: 22, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                '동기화 대기 $_pendingSyncCount건',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: scheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton.tonal(
+              onPressed: _checkAndSyncPending,
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text('전송'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlowBody(ColorScheme scheme, AppUser? user, (String, String) wk) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+      child: switch (_hubNavStep) {
+              HubNavStep.day => _buildPeriodFlowBlock(
+                  user: user,
+                  scheme: scheme,
+                  title: '오늘의 흐름',
+                  subtitle: formatYmdFlowLabelKo(_hubFlowAnchorYmd),
+                  periodKey: _dayKey,
+                  receptionLabel: '금일 접수',
+                  incompleteLabel: '금일 미통화',
+                  followLabel: '오늘 팔로우',
+                ),
+              HubNavStep.week => _buildPeriodFlowBlock(
+                  user: user,
+                  scheme: scheme,
+                  title: '금주 흐름',
+                  subtitle:
+                      '${formatWeekRangeFlowLabel(wk.$1, wk.$2)} · 월~일 합산',
+                  periodKey: _weekKey,
+                  receptionLabel: '금주 접수',
+                  incompleteLabel: '금주 미통화',
+                  followLabel: '금주 팔로우',
+                ),
+              HubNavStep.month => _buildPeriodFlowBlock(
+                  user: user,
+                  scheme: scheme,
+                  title: '금월 흐름',
+                  subtitle:
+                      '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} · 월 합산',
+                  periodKey: _monthKey,
+                  receptionLabel: '금월 접수',
+                  incompleteLabel: '금월 미통화',
+                  followLabel: '금월 팔로우',
+                ),
+            },
+    );
+  }
+
+  Widget _buildIncompleteBody(ColorScheme scheme) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom + 52;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12, 2, 12, 10 + bottomInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_pendingSyncCount > 0) ...[
+            _buildPendingSyncBanner(scheme),
+            const SizedBox(height: 6),
+          ],
+          const Expanded(
+            child: HomeIncompleteBreakdown(fitSingleScreen: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarBody() {
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final bottomInset = safeBottom + 56;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: HomeFollowCalendarPanel(
+        key: ValueKey('cal_${_calendarKeyNonce}_${_launchCalendarFormat.name}'),
+        initialCalendarFormat: _launchCalendarFormat,
+        fitSingleScreen: true,
+      ),
+    );
   }
 
   void _openReceptionList(AppUser? user, HubPeriod scope) {
@@ -1029,31 +1481,15 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final scope = periodKey.period;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
-          ),
-        ),
-        const SizedBox(height: 10),
-        statsAsync.when(
+        Expanded(
+          child: statsAsync.when(
           data: (s) {
             final followCount = followOverviewAsync.valueOrNull?.total ?? 0;
             final quality = qualityAsync.valueOrNull;
             return _MiniStatsWidget(
+              compact: true,
               receptionLabel: receptionLabel,
               incompleteLabel: incompleteLabel,
               followLabel: followLabel,
@@ -1079,8 +1515,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   ),
             );
           },
-          loading: () => const LinearProgressIndicator(),
+          loading: () => const Center(
+            child: LinearProgressIndicator(minHeight: 3),
+          ),
           error: (e, _) => const SizedBox.shrink(),
+          ),
         ),
       ],
     );
@@ -1093,118 +1532,37 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       setState(() {
         _hubNavStep = HubNavStep.day;
         _hubFlowAnchorYmd = todayYmdSeoul();
+        _section = HomeHubSection.flow;
       });
+      _jumpSectionPage(0);
+    });
+    ref.listen(pendingConsultationLaunchProvider, (_, __) {
+      _consumePendingLaunch();
     });
 
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
     final wk = seoulWeekRangeContaining(_hubFlowAnchorYmd);
 
-    return RefreshIndicator(
-      onRefresh: _onRefresh,
-      child: CustomScrollView(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        slivers: [
-        // ─── 상단 배경 헤더 + 오늘 날짜 ───
-        SliverToBoxAdapter(
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [scheme.primary, scheme.primary.withValues(alpha: 0.8)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(32),
-                bottomRight: Radius.circular(32),
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              formatTodayGreetingSentenceKo(),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15.5,
-                fontWeight: FontWeight.w800,
-                color: scheme.onPrimary,
-                height: 1.35,
-                letterSpacing: -0.2,
-              ),
-            ),
-          ),
-        ),
-        
-        // ─── 본문 영역 ───
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      color: _sectionBackground(scheme),
+      child: Column(
+        children: [
+          _buildUnifiedHomeTop(scheme, user),
+          Expanded(
+            child: PageView(
+              controller: _sectionPageController,
+              onPageChanged: _onSectionPageChanged,
               children: [
-                // ─── 미니 대시보드 (현황 요약) ───
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '업무 흐름',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                    _buildHubFlowResetButton(scheme),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildHubFlowDateBar(scheme),
-                const SizedBox(height: 18),
-                switch (_hubNavStep) {
-                  HubNavStep.day => _buildPeriodFlowBlock(
-                      user: user,
-                      scheme: scheme,
-                      title: '오늘의 흐름',
-                      subtitle: formatYmdFlowLabelKo(_hubFlowAnchorYmd),
-                      periodKey: _dayKey,
-                      receptionLabel: '금일 접수',
-                      incompleteLabel: '금일 미통화',
-                      followLabel: '오늘 팔로우',
-                    ),
-                  HubNavStep.week => _buildPeriodFlowBlock(
-                      user: user,
-                      scheme: scheme,
-                      title: '금주 흐름',
-                      subtitle:
-                          '${formatWeekRangeFlowLabel(wk.$1, wk.$2)} · 월~일 합산',
-                      periodKey: _weekKey,
-                      receptionLabel: '금주 접수',
-                      incompleteLabel: '금주 미통화',
-                      followLabel: '금주 팔로우',
-                    ),
-                  HubNavStep.month => _buildPeriodFlowBlock(
-                      user: user,
-                      scheme: scheme,
-                      title: '금월 흐름',
-                      subtitle:
-                          '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} · 월 합산',
-                      periodKey: _monthKey,
-                      receptionLabel: '금월 접수',
-                      incompleteLabel: '금월 미통화',
-                      followLabel: '금월 팔로우',
-                    ),
-                },
+                _buildFlowBody(scheme, user, wk),
+                _buildIncompleteBody(scheme),
+                _buildCalendarBody(),
               ],
             ),
           ),
-        ),
-      ],
+        ],
       ),
     );
   }
@@ -1225,6 +1583,7 @@ class _MiniStatsWidget extends StatelessWidget {
     required this.onTapTodayFollow,
     required this.onTapUncalledRate,
     required this.onTapFirstResponse,
+    this.compact = false,
   });
 
   final String receptionLabel;
@@ -1240,23 +1599,29 @@ class _MiniStatsWidget extends StatelessWidget {
   final VoidCallback onTapTodayFollow;
   final VoidCallback onTapUncalledRate;
   final VoidCallback onTapFirstResponse;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: EdgeInsets.fromLTRB(
+        10,
+        compact ? 8 : 14,
+        10,
+        compact ? 8 : 12,
+      ),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.32),
+          color: scheme.outlineVariant.withValues(alpha: 0.28),
         ),
         boxShadow: [
           BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: scheme.shadow.withValues(alpha: 0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -1267,53 +1632,69 @@ class _MiniStatsWidget extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: onTapToday,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: _StatItem(
-                        label: receptionLabel,
-                        value: today.toString(),
-                        color: scheme.primary,
+                  child: Material(
+                    color: scheme.primaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: onTapToday,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: compact ? 6 : 10,
+                        ),
+                        child: _StatItem(
+                          icon: Icons.inbox_rounded,
+                          label: receptionLabel,
+                          value: today.toString(),
+                          color: scheme.primary,
+                          compact: compact,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                Container(
-                  width: 1,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  color: scheme.primary.withValues(alpha: 0.12),
-                ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: onTapIncomplete,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: _StatItem(
-                        label: incompleteLabel,
-                        value: incomplete.toString(),
-                        color: scheme.error,
+                  child: Material(
+                    color: scheme.errorContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: onTapIncomplete,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: compact ? 6 : 10,
+                        ),
+                        child: _StatItem(
+                          icon: Icons.phone_missed_rounded,
+                          label: incompleteLabel,
+                          value: incomplete.toString(),
+                          color: scheme.error,
+                          compact: compact,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                Container(
-                  width: 1,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  color: scheme.primary.withValues(alpha: 0.12),
-                ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: onTapTodayFollow,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: _StatItem(
-                        label: followLabel,
-                        value: todayFollow.toString(),
-                        color: scheme.tertiary,
+                  child: Material(
+                    color: scheme.tertiaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: onTapTodayFollow,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: compact ? 6 : 10,
+                        ),
+                        child: _StatItem(
+                          icon: Icons.event_available_rounded,
+                          label: followLabel,
+                          value: todayFollow.toString(),
+                          color: scheme.tertiary,
+                          compact: compact,
+                        ),
                       ),
                     ),
                   ),
@@ -1321,7 +1702,7 @@ class _MiniStatsWidget extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: compact ? 6 : 10),
           Row(
             children: [
               Expanded(
@@ -1330,15 +1711,17 @@ class _MiniStatsWidget extends StatelessWidget {
                   value: uncalledRateText,
                   color: scheme.error,
                   onTap: onTapUncalledRate,
+                  compact: compact,
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: compact ? 6 : 8),
               Expanded(
                 child: _InsightItem(
                   label: '초기응답 평균',
                   value: avgFirstResponseText,
                   color: scheme.secondary,
                   onTap: onTapFirstResponse,
+                  compact: compact,
                 ),
               ),
             ],
@@ -1355,12 +1738,14 @@ class _InsightItem extends StatelessWidget {
     required this.value,
     required this.color,
     required this.onTap,
+    this.compact = false,
   });
 
   final String label;
   final String value;
   final Color color;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1368,44 +1753,54 @@ class _InsightItem extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 10,
+          vertical: compact ? 6 : 10,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.18)),
+        ),
+        child: Row(
           children: [
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.25,
-                fontWeight: FontWeight.w800,
-                color: color.withValues(alpha: 0.95),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: compact ? 10.5 : 11.5,
+                      height: 1.2,
+                      fontWeight: FontWeight.w700,
+                      color: color.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  SizedBox(height: compact ? 2 : 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: compact ? 15 : 18,
+                        height: 1.1,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.center,
-              child: Text(
-                value,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: 17,
-                  height: 1.15,
-                  fontWeight: FontWeight.w900,
-                  color: color,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ),
+            if (!compact)
+              Icon(Icons.chevron_right_rounded,
+                  size: 20, color: color.withValues(alpha: 0.5)),
           ],
         ),
       ),
@@ -1414,10 +1809,19 @@ class _InsightItem extends StatelessWidget {
 }
 
 class _StatItem extends StatelessWidget {
-  const _StatItem({required this.label, required this.value, required this.color});
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    this.compact = false,
+  });
+
+  final IconData icon;
   final String label;
   final String value;
   final Color color;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1425,34 +1829,49 @@ class _StatItem extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Icon(icon, size: compact ? 15 : 18, color: color.withValues(alpha: 0.85)),
+        SizedBox(height: compact ? 4 : 6),
         Text(
           value,
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 24,
+            fontSize: compact ? 18 : 22,
             fontWeight: FontWeight.w900,
             color: color,
-            letterSpacing: -0.8,
+            letterSpacing: -0.6,
             height: 1.0,
           ),
         ),
-        const SizedBox(height: 4),
+        SizedBox(height: compact ? 2 : 4),
         Text(
           label,
           textAlign: TextAlign.center,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 12,
-            height: 1.2,
+            fontSize: compact ? 10 : 11,
+            height: 1.15,
             fontWeight: FontWeight.w800,
-            color: Color.alphaBlend(
-              color.withValues(alpha: 0.88),
-              scheme.surfaceContainerLowest,
-            ),
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HeaderDecoCircle extends StatelessWidget {
+  const _HeaderDecoCircle({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }

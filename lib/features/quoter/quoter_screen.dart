@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/data/shutter_repository.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
@@ -700,8 +700,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         label: '홈',
         color: Colors.blueGrey.shade700,
         icon: Icons.home_rounded,
-        onTap: () async =>
-            Navigator.of(context).popUntil((route) => route.isFirst),
+        onTap: () async {
+          openHomeHub(context, ref);
+        },
       ),
       _QuoterQuickActionItem(
         label: '접수',
@@ -713,46 +714,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               builder: (_) => const SalesCallCreateScreen(),
             ),
           );
-        },
-      ),
-      _QuoterQuickActionItem(
-        label: '미통화',
-        color: Colors.orange.shade700,
-        icon: Icons.pending_actions_rounded,
-        onTap: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(
-                mode: ListQueryMode.incomplete,
-                date: todayYmdSeoul(),
-              ),
-            ),
-          );
-        },
-      ),
-      _QuoterQuickActionItem(
-        label: '금일팔로우',
-        color: Colors.deepPurple.shade600,
-        icon: Icons.event_note_rounded,
-        onTap: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(
-                mode: ListQueryMode.incompleteByDate,
-                date: todayYmdSeoul(),
-                initialAssignee: '전체',
-              ),
-            ),
-          );
-        },
-      ),
-      _QuoterQuickActionItem(
-        label: '달력',
-        color: Colors.green.shade700,
-        icon: Icons.calendar_view_week_rounded,
-        onTap: () async {
-          requestConsultationCalendarWeekNavigation(ref);
-          Navigator.of(context).popUntil((route) => route.isFirst);
         },
       ),
       _QuoterQuickActionItem(
