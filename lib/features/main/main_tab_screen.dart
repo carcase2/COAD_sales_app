@@ -180,7 +180,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   }
 
   void _onTabSelected(int index) {
-    if (index == 0) {
+    // 다른 탭에서 홈으로 돌아올 때만 흐름·금일로 리셋 (홈 재탭 시 불필요한 PageView 리셋 방지).
+    if (index == 0 && _currentIndex != 0) {
       ref.read(homeHubFlowResetTickProvider.notifier).state++;
     }
     if (_currentIndex == index) return;

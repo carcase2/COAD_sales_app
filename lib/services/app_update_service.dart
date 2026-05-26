@@ -5,6 +5,10 @@ import 'package:in_app_update/in_app_update.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Play 인앱 업데이트 — **설치는 Play가 전담**하도록 즉시 업데이트·스토어 이동만 사용합니다.
+///
+/// 유연(flexible) 업데이트는 앱 안에서 `completeFlexibleUpdate()`로 설치를 마무리할 때
+/// 실패·멈춤이 잦아 사용하지 않습니다.
 class AppUpdateService {
   static const String _playPackageId = 'com.coad.customer_calls';
 
@@ -12,14 +16,16 @@ class AppUpdateService {
   static bool _optionalDialogShown = false;
 
   /// [showUpToDateMessage]가 true이면 설정·푸시 등 사용자가 직접 누른 경우로,
-  /// Play 인앱 업데이트 → Play 스토어 앱 페이지 순으로 시도합니다.
+  /// Play 즉시 업데이트 → Play 스토어 앱 페이지 순으로 시도합니다.
   static Future<void> checkAndUpdateIfNeeded(
     BuildContext context, {
     bool forceRecheck = false,
     bool showUpToDateMessage = false,
     String? preferredStoreUrl,
   }) async {
-    if ((!forceRecheck && _alreadyChecked) || kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+    if ((!forceRecheck && _alreadyChecked) ||
+        kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.android) {
       return;
     }
     if (forceRecheck) {
@@ -32,7 +38,8 @@ class AppUpdateService {
     try {
       final policy = await _fetchUpdatePolicy();
       final shouldForce = policy != null &&
-          (policy.forceUpdate || _compareVersion(kAppVersion, policy.minVersion) < 0);
+          (policy.forceUpdate ||
+              _compareVersion(kAppVersion, policy.minVersion) < 0);
       final shouldRecommend = policy != null &&
           _compareVersion(kAppVersion, policy.latestVersion) < 0;
 
@@ -55,7 +62,10 @@ class AppUpdateService {
         return;
       }
 
-      if (context.mounted && policy != null && shouldRecommend && !_optionalDialogShown) {
+      if (context.mounted &&
+          policy != null &&
+          shouldRecommend &&
+          !_optionalDialogShown) {
         _optionalDialogShown = true;
         await _showOptionalUpdateDialog(
           context,
@@ -64,18 +74,20 @@ class AppUpdateService {
         );
       }
 
-      await _tryInAppUpdate(context: context, showAppliedSnackBar: false);
+      await _tryImmediateInAppUpdate();
     } catch (e) {
       debugPrint('앱 업데이트 체크 실패: $e');
       if (showUpToDateMessage && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('업데이트 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.')),
+          const SnackBar(
+            content: Text('업데이트 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
+          ),
         );
       }
     }
   }
 
-  /// 설정 > 업데이트 확인: 정책 버전과 무관하게 Play 업데이트를 먼저 시도합니다.
+  /// 설정 > 업데이트 확인: 즉시 업데이트 불가 시 Play 스토어에서 설치.
   static Future<void> _runUserInitiatedUpdate(
     BuildContext context, {
     required _UpdatePolicy? policy,
@@ -84,21 +96,14 @@ class AppUpdateService {
   }) async {
     if (!context.mounted) return;
 
-    final applied = await _tryInAppUpdate(
-      context: context,
-      showAppliedSnackBar: true,
-    );
+    final applied = await _tryImmediateInAppUpdate();
     if (applied) return;
 
-    final targetUrl = _resolveStoreUrl(
+    await _openStoreForInstall(
+      context,
       policy: policy,
       preferredStoreUrl: preferredStoreUrl,
     );
-    if (targetUrl.isNotEmpty) {
-      await _openStoreUrl(targetUrl);
-    } else {
-      await _openPlayStoreListing();
-    }
 
     if (!context.mounted) return;
 
@@ -106,9 +111,9 @@ class AppUpdateService {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Play 스토어에서 v${policy.latestVersion}으로 업데이트해 주세요. (현재 v$kAppVersion)',
+            'Play 스토어에서 [업데이트]를 눌러 v${policy.latestVersion}을 설치해 주세요. (현재 v$kAppVersion)',
           ),
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 6),
         ),
       );
       return;
@@ -117,9 +122,9 @@ class AppUpdateService {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Play 스토어에서 업데이트 가능 여부를 확인해 주세요. (현재 v$kAppVersion)',
+          'Play 스토어에서 [업데이트]로 설치해 주세요. (현재 v$kAppVersion)',
         ),
-        duration: const Duration(seconds: 4),
+        duration: const Duration(seconds: 5),
       ),
     );
   }
@@ -133,6 +138,22 @@ class AppUpdateService {
     return policy?.storeUrl ?? '';
   }
 
+  static Future<void> _openStoreForInstall(
+    BuildContext context, {
+    required _UpdatePolicy? policy,
+    String? preferredStoreUrl,
+  }) async {
+    final targetUrl = _resolveStoreUrl(
+      policy: policy,
+      preferredStoreUrl: preferredStoreUrl,
+    );
+    if (targetUrl.isNotEmpty) {
+      await _openStoreUrl(targetUrl);
+    } else {
+      await _openPlayStoreListing();
+    }
+  }
+
   static Future<void> _fallbackToStoreOrNotify(
     BuildContext context, {
     required _UpdatePolicy policy,
@@ -140,24 +161,19 @@ class AppUpdateService {
   }) async {
     if (!context.mounted) return;
 
-    final targetUrl = _resolveStoreUrl(
+    await _openStoreForInstall(
+      context,
       policy: policy,
       preferredStoreUrl: preferredStoreUrl,
     );
-
-    if (targetUrl.isNotEmpty) {
-      await _openStoreUrl(targetUrl);
-    } else {
-      await _openPlayStoreListing();
-    }
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Play 스토어에서 v${policy.latestVersion}으로 업데이트해 주세요. (현재 v$kAppVersion)',
+          'Play 스토어에서 [업데이트]를 눌러 v${policy.latestVersion}을 설치해 주세요. (현재 v$kAppVersion)',
         ),
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 6),
       ),
     );
   }
@@ -211,7 +227,10 @@ class AppUpdateService {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('업데이트 필요'),
-          content: Text('현재 버전(v$kAppVersion)은 더 이상 지원되지 않습니다.\n최신 버전(v${policy.latestVersion})으로 업데이트해 주세요.'),
+          content: Text(
+            '현재 버전(v$kAppVersion)은 더 이상 지원되지 않습니다.\n'
+            'Play 스토어에서 v${policy.latestVersion}을 설치해 주세요.',
+          ),
           actions: [
             FilledButton(
               onPressed: () async {
@@ -242,7 +261,10 @@ class AppUpdateService {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('새 버전 안내'),
-          content: Text('최신 버전(v${policy.latestVersion})이 있습니다.\n업데이트하시겠어요?'),
+          content: Text(
+            '최신 버전(v${policy.latestVersion})이 있습니다.\n'
+            '업데이트하시겠어요?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
@@ -270,7 +292,7 @@ class AppUpdateService {
     required _UpdatePolicy policy,
     String? preferredStoreUrl,
   }) async {
-    final applied = await _tryInAppUpdate(context: context, showAppliedSnackBar: true);
+    final applied = await _tryImmediateInAppUpdate();
     if (applied) return;
     await _fallbackToStoreOrNotify(
       context,
@@ -279,38 +301,40 @@ class AppUpdateService {
     );
   }
 
-  static Future<bool> _tryInAppUpdate({
-    BuildContext? context,
-    bool showAppliedSnackBar = false,
-  }) async {
+  /// Play 전체 화면 **즉시** 업데이트만 시도. 설치 단계는 Play API가 처리합니다.
+  ///
+  /// 유연 업데이트·앱 내 `completeFlexibleUpdate()`는 설치 실패가 잦아 사용하지 않습니다.
+  /// 백그라운드 다운로드만 끝난 상태면 false를 반환하고 스토어 설치로 넘깁니다.
+  static Future<bool> _tryImmediateInAppUpdate() async {
     try {
       final info = await InAppUpdate.checkForUpdate();
       debugPrint(
         'InAppUpdate: availability=${info.updateAvailability}, '
-        'immediate=${info.immediateUpdateAllowed}, flexible=${info.flexibleUpdateAllowed}',
+        'status=${info.installStatus}, immediate=${info.immediateUpdateAllowed}, '
+        'flexible=${info.flexibleUpdateAllowed}',
       );
+
+      if (info.installStatus == InstallStatus.downloaded ||
+          info.updateAvailability ==
+              UpdateAvailability.developerTriggeredUpdateInProgress) {
+        debugPrint(
+          'InAppUpdate: pending flexible install — open Play Store instead',
+        );
+        return false;
+      }
 
       if (info.updateAvailability != UpdateAvailability.updateAvailable) {
         return false;
       }
 
-      if (info.immediateUpdateAllowed) {
-        final result = await InAppUpdate.performImmediateUpdate();
-        if (result == AppUpdateResult.success) return true;
-        debugPrint('InAppUpdate immediate result: $result');
+      if (!info.immediateUpdateAllowed) {
+        debugPrint('InAppUpdate: immediate not allowed, use Play Store');
         return false;
       }
 
-      if (info.flexibleUpdateAllowed) {
-        await InAppUpdate.startFlexibleUpdate();
-        await InAppUpdate.completeFlexibleUpdate();
-        if (showAppliedSnackBar && context != null && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('업데이트가 적용되었습니다. 앱을 다시 열어 최신 버전을 사용하세요.')),
-          );
-        }
-        return true;
-      }
+      final result = await InAppUpdate.performImmediateUpdate();
+      if (result == AppUpdateResult.success) return true;
+      debugPrint('InAppUpdate immediate result: $result');
     } catch (e) {
       debugPrint('인앱 업데이트 실행 실패: $e');
     }

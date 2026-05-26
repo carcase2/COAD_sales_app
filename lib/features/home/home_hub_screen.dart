@@ -1389,8 +1389,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       if (section == HomeHubSection.calendar) {
         _resetCalendarToThisWeek();
       }
-      ref.read(bottomBarVisibilityProvider.notifier).state = true;
     });
+    ref.read(bottomBarVisibilityProvider.notifier).state = true;
     if (section == HomeHubSection.calendar) {
       _publishHubPeriod();
     }
@@ -2075,15 +2075,18 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(homeHubFlowResetTickProvider, (previous, _) {
-      if (!mounted) return;
+    ref.listen<int>(homeHubFlowResetTickProvider, (previous, next) {
+      if (!mounted || previous == next) return;
       setState(() {
         _hubNavStep = HubNavStep.day;
         _hubFlowAnchorYmd = todayYmdSeoul();
         _section = HomeHubSection.flow;
       });
       _publishHubPeriod();
-      _jumpSectionPage(0);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _jumpSectionPage(0);
+      });
     });
     ref.listen(pendingConsultationLaunchProvider, (_, __) {
       _consumePendingLaunch();

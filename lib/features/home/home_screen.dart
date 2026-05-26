@@ -47,6 +47,11 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
 
   void _syncFilterFromHub() {
     if (!mounted) return;
+    // 금년·전체는 미통화 탭 전용 — 흐름 탭 일/주/월과 동기화하지 않음.
+    if (_currentFilter == _SummaryFilter.year ||
+        _currentFilter == _SummaryFilter.total) {
+      return;
+    }
     final next = _filterForHubStep(ref.read(homeHubNavStepProvider));
     if (_currentFilter == next) return;
     setState(() => _currentFilter = next);
@@ -2326,8 +2331,14 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
   @override
   Widget build(BuildContext context) {
     ref.listen(homeHubFlowAnchorYmdProvider, (prev, next) {
-      if (prev == next) return;
-      setState(() => _focusedDay = _ymdToDateTime(next));
+      if (prev == next || next.isEmpty) return;
+      final nextDay = _ymdToDateTime(next);
+      if (_calendarFormat == CalendarFormat.week) {
+        final focusedWeek = seoulWeekRangeContaining(_focusedDayYmd());
+        final anchorWeek = seoulWeekRangeContaining(next);
+        if (focusedWeek.$1 == anchorWeek.$1) return;
+      }
+      setState(() => _focusedDay = nextDay);
     });
 
     final rangeKey = _calendarRangeKey();
