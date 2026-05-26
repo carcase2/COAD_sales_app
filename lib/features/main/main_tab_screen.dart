@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
@@ -44,7 +45,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
 
     // 홈(미통화·달력)이 쓰는 대량 목록을 백그라운드로 미리 불러 전환 시 빨리 표시
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(ref.read(rankingCallsProvider.future));
+      unawaited(
+        ref.read(
+          incompleteBreakdownCallsProvider((
+            period: IncompleteSummaryPeriod.today,
+            anchorYmd: todayYmdSeoul(),
+          )).future,
+        ),
+      );
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {

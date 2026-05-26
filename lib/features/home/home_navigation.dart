@@ -14,6 +14,7 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(todayFollowOverviewProvider);
   invalidate(todayIncompleteOverviewProvider);
   invalidate(todayCallQualityOverviewProvider);
+  invalidate(incompleteBreakdownCallsProvider);
   invalidate(rankingCallsProvider);
   invalidate(calendarFollowRangeProvider);
 }

@@ -41,7 +41,14 @@ void requestHomeHubSection(
 }) {
   if (section == HomeHubSection.calendar ||
       section == HomeHubSection.incomplete) {
-    unawaited(ref.read(rankingCallsProvider.future));
+    unawaited(
+      ref.read(
+        incompleteBreakdownCallsProvider((
+          period: IncompleteSummaryPeriod.today,
+          anchorYmd: todayYmdSeoul(),
+        )).future,
+      ),
+    );
   }
   ref.read(pendingConsultationLaunchProvider.notifier).state = (
     section: section,
@@ -324,9 +331,68 @@ final hubPeriodQualityOverviewProvider =
   }
 });
 
+/// 홈 미통화 탭 기간 필터 — `HomeIncompleteBreakdown`과 동일.
+enum IncompleteSummaryPeriod { today, week, month, year, all }
+
+typedef IncompleteBreakdownKey = ({
+  IncompleteSummaryPeriod period,
+  String anchorYmd,
+});
+
+/// 미통화 담당자별 집계용 접수 목록 — 기간별 서버 조회 + 페이지네이션(1000행 제한 회피).
+final incompleteBreakdownCallsProvider =
+    FutureProvider.family<List<SalesCall>, IncompleteBreakdownKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  switch (key.period) {
+    case IncompleteSummaryPeriod.today:
+      return repo.fetchCallsAllPages(
+        date: key.anchorYmd,
+        includeCallHistory: false,
+      );
+    case IncompleteSummaryPeriod.week:
+      final range = seoulWeekRangeContaining(key.anchorYmd);
+      return repo.fetchCallsAllPages(
+        dateRangeStart: range.$1,
+        dateRangeEndInclusive: range.$2,
+        includeCallHistory: false,
+      );
+    case IncompleteSummaryPeriod.month:
+      final range = seoulMonthRangeContaining(key.anchorYmd);
+      return repo.fetchCallsAllPages(
+        dateRangeStart: range.$1,
+        dateRangeEndInclusive: range.$2,
+        includeCallHistory: false,
+      );
+    case IncompleteSummaryPeriod.year:
+      final range = seoulYearRangeContaining(key.anchorYmd);
+      return repo.fetchCallsAllPages(
+        dateRangeStart: range.$1,
+        dateRangeEndInclusive: range.$2,
+        includeCallHistory: false,
+      );
+    case IncompleteSummaryPeriod.all:
+      // 연도별로 나눠 조회 — 단일 무제한 조회 시 1000행에서 끊기는 현상 방지.
+      final endYear = int.tryParse(key.anchorYmd.substring(0, 4)) ??
+          DateTime.now().year;
+      const startYear = 2020;
+      final merged = <SalesCall>[];
+      for (var y = startYear; y <= endYear; y++) {
+        final range = seoulYearRangeContaining('$y-06-15');
+        merged.addAll(
+          await repo.fetchCallsAllPages(
+            dateRangeStart: range.$1,
+            dateRangeEndInclusive: range.$2,
+            includeCallHistory: false,
+          ),
+        );
+      }
+      return merged;
+  }
+});
+
+/// 레거시 프리로드·달력 새로고침 호환.
 final rankingCallsProvider = FutureProvider<List<SalesCall>>((ref) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  // 미통화·달력 집계에는 상담 이력 불필요. embed 제거로 페이로드·타임아웃(연결 끊김) 방지
   return repo.fetchCallsAllPages(includeCallHistory: false);
 });
 

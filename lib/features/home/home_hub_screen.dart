@@ -1374,17 +1374,26 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _sectionPageController.jumpToPage(index);
   }
 
+  void _resetCalendarToThisWeek() {
+    _hubFlowAnchorYmd = todayYmdSeoul();
+    _hubNavStep = HubNavStep.week;
+    _launchCalendarFormat = CalendarFormat.week;
+    _calendarKeyNonce++;
+  }
+
   void _goToSection(HomeHubSection section, {bool fromPill = false}) {
     if (_section == section && !fromPill) return;
     HapticFeedback.selectionClick();
     setState(() {
       _section = section;
-      if (fromPill && section == HomeHubSection.calendar) {
-        _launchCalendarFormat = CalendarFormat.week;
-        _calendarKeyNonce++;
+      if (section == HomeHubSection.calendar) {
+        _resetCalendarToThisWeek();
       }
       ref.read(bottomBarVisibilityProvider.notifier).state = true;
     });
+    if (section == HomeHubSection.calendar) {
+      _publishHubPeriod();
+    }
     if (_sectionPageController.hasClients) {
       _sectionPageController.animateToPage(
         _sectionIndex(section),
@@ -1398,6 +1407,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final next = _sectionAt(index);
     if (_section == next) return;
     HapticFeedback.selectionClick();
+    if (next == HomeHubSection.calendar) {
+      setState(() {
+        _section = next;
+        _resetCalendarToThisWeek();
+      });
+      _publishHubPeriod();
+      return;
+    }
     setState(() => _section = next);
   }
 
@@ -1497,8 +1514,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       case HomeHubSection.flow:
         await _refreshActiveFlowPeriod();
       case HomeHubSection.incomplete:
-        ref.invalidate(rankingCallsProvider);
-        await ref.read(rankingCallsProvider.future);
+        ref.invalidate(incompleteBreakdownCallsProvider);
         await ref.read(hubSegmentIncompleteBadgeProvider.future);
       case HomeHubSection.calendar:
         ref.invalidate(rankingCallsProvider);

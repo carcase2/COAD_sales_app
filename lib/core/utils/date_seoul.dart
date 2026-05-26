@@ -116,6 +116,12 @@ String firstDayOfMonthYmd(String ymd) {
   return '${y}-${m.toString().padLeft(2, '0')}-01';
 }
 
+/// [ymd]가 속한 해의 **1월 1일·12월 31일**(포함, `yyyy-MM-dd`).
+(String firstYmd, String lastYmd) seoulYearRangeContaining(String ymd) {
+  final y = ymd.length >= 4 ? ymd.substring(0, 4) : '${DateTime.now().year}';
+  return ('$y-01-01', '$y-12-31');
+}
+
 /// [ymd]가 속한 달의 **첫날·마지막날**(포함, `yyyy-MM-dd`).
 (String firstYmd, String lastYmd) seoulMonthRangeContaining(String ymd) {
   final parts = ymd.split('-');

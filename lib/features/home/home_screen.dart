@@ -25,7 +25,7 @@ class HomeIncompleteBreakdown extends ConsumerStatefulWidget {
       _HomeIncompleteBreakdownState();
 }
 
-enum _SummaryFilter { today, week, month, total }
+enum _SummaryFilter { today, week, month, year, total }
 
 class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdown> {
   static const double _incompleteGridTileH = 52.0;
@@ -66,48 +66,53 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
         ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.month;
         ref.read(homeHubFlowAnchorYmdProvider.notifier).state =
             firstDayOfMonthYmd(today);
+      case _SummaryFilter.year:
+        ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.month;
+        ref.read(homeHubFlowAnchorYmdProvider.notifier).state =
+            seoulYearRangeContaining(today).$1;
       case _SummaryFilter.total:
         break;
     }
   }
 
-  bool _callMatchesFilter(SalesCall c, _SummaryFilter filter, String anchorYmd) {
-    if (filter == _SummaryFilter.total) return true;
-    if (c.callDate == null || c.callDate!.length < 10) return false;
-    final dateKey = c.callDate!.substring(0, 10);
-    return switch (filter) {
-      _SummaryFilter.today => dateKey == anchorYmd,
-      _SummaryFilter.week => () {
-        final w = seoulWeekRangeContaining(anchorYmd);
-        return dateKey.compareTo(w.$1) >= 0 && dateKey.compareTo(w.$2) <= 0;
-      }(),
-      _SummaryFilter.month => () {
-        final m = seoulMonthRangeContaining(anchorYmd);
-        return dateKey.compareTo(m.$1) >= 0 && dateKey.compareTo(m.$2) <= 0;
-      }(),
-      _SummaryFilter.total => true,
-    };
-  }
+  IncompleteSummaryPeriod _toBreakdownPeriod(_SummaryFilter filter) =>
+      switch (filter) {
+        _SummaryFilter.today => IncompleteSummaryPeriod.today,
+        _SummaryFilter.week => IncompleteSummaryPeriod.week,
+        _SummaryFilter.month => IncompleteSummaryPeriod.month,
+        _SummaryFilter.year => IncompleteSummaryPeriod.year,
+        _SummaryFilter.total => IncompleteSummaryPeriod.all,
+      };
+
+  Color _filterAccent(_SummaryFilter filter, ColorScheme scheme) =>
+      switch (filter) {
+        _SummaryFilter.today => scheme.primary,
+        _SummaryFilter.week => scheme.tertiary,
+        _SummaryFilter.month => scheme.secondary,
+        _SummaryFilter.year => const Color(0xFF0D9488),
+        _SummaryFilter.total => scheme.onSurfaceVariant,
+      };
 
   @override
   Widget build(BuildContext context) {
     ref.listen(homeHubNavStepProvider, (_, __) => _syncFilterFromHub());
     ref.listen(homeHubFlowAnchorYmdProvider, (_, __) => _syncFilterFromHub());
 
-    final asyncCalls = ref.watch(rankingCallsProvider);
+    final anchorYmd = ref.watch(homeHubFlowAnchorYmdProvider);
+    final breakdownKey = (
+      period: _toBreakdownPeriod(_currentFilter),
+      anchorYmd: anchorYmd,
+    );
+    final asyncCalls = ref.watch(incompleteBreakdownCallsProvider(breakdownKey));
     final masterAsync = ref.watch(masterDataProvider);
     final scheme = Theme.of(context).colorScheme;
-    final anchorYmd = ref.watch(homeHubFlowAnchorYmdProvider);
 
     return asyncCalls.when(
       data: (calls) {
         Widget buildWithMaster(MasterDataBundle? master) {
-            // 1. Filter calls (흐름 탭 일/주/월 앵커와 동일 기간)
-            final filteredCalls = calls
-                .where((c) => _callMatchesFilter(c, _currentFilter, anchorYmd))
-                .toList();
+            final filteredCalls = calls;
 
-            if (filteredCalls.isEmpty && _currentFilter != _SummaryFilter.total) {
+            if (filteredCalls.isEmpty) {
               if (widget.fitSingleScreen) {
                 return SizedBox.expand(
                   child: _buildSingleScreenContent(
@@ -255,8 +260,8 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Container(
-                height: 48,
-                padding: const EdgeInsets.all(5),
+                height: 44,
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(16),
@@ -264,54 +269,26 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
                     color: scheme.outlineVariant.withValues(alpha: 0.25),
                   ),
                 ),
-                child: Row(
-                  children: _SummaryFilter.values.map((filter) {
-                    final isSelected = _currentFilter == filter;
-                    Color filterColor;
-                    String label;
-                    
-                    switch (filter) {
-                      case _SummaryFilter.today: filterColor = scheme.primary; label = '금일'; break;
-                      case _SummaryFilter.week: filterColor = scheme.tertiary; label = '금주'; break;
-                      case _SummaryFilter.month: filterColor = scheme.secondary; label = '금월'; break;
-                      case _SummaryFilter.total: filterColor = scheme.onSurfaceVariant; label = '전체'; break;
-                    }
-
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          setState(() => _currentFilter = filter);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOutCubic,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? scheme.surfaceContainerLowest
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: isSelected ? [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 10,
-                                offset: const Offset(0, 3),
-                              )
-                            ] : [],
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                              color: isSelected ? filterColor : scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                            ),
-                          ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final filter in _SummaryFilter.values) ...[
+                        _buildIncompletePeriodChip(
+                          scheme: scheme,
+                          filter: filter,
+                          selected: _currentFilter == filter,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _currentFilter = filter);
+                            _publishFilterToHub(filter);
+                          },
                         ),
-                      ),
-                    );
-                  }).toList(),
+                        if (filter != _SummaryFilter.total)
+                          const SizedBox(width: 4),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -353,13 +330,15 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
                       HapticFeedback.lightImpact();
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => SalesCallListScreen(
-                            mode: ListQueryMode.incomplete,
-                            initialAssignee: name,
-                            date: _currentFilter == _SummaryFilter.today
-              ? ref.read(homeHubFlowAnchorYmdProvider)
-              : null,
-                          ),
+                          builder: (_) {
+                            final range = _incompleteListDateArgs();
+                            return SalesCallListScreen(
+                              mode: ListQueryMode.incomplete,
+                              initialAssignee: name,
+                              date: range.date,
+                              dateEndInclusive: range.dateEndInclusive,
+                            );
+                          },
                         ),
                       );
                     },
@@ -480,7 +459,9 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
       )),
       error: (e, _) => _ErrorCard(
         message: koreanErrorMessage(e),
-        onRetry: () => ref.refresh(rankingCallsProvider),
+        onRetry: () => ref.refresh(
+              incompleteBreakdownCallsProvider(breakdownKey),
+            ),
       ),
     );
   }
@@ -489,7 +470,20 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
         _SummaryFilter.today => '금일',
         _SummaryFilter.week => '금주',
         _SummaryFilter.month => '금월',
+        _SummaryFilter.year => '금년',
         _SummaryFilter.total => '전체',
+      };
+
+  String _filterPeriodHint(_SummaryFilter f, String anchorYmd) =>
+      switch (f) {
+        _SummaryFilter.today => anchorYmd,
+        _SummaryFilter.week => () {
+          final w = seoulWeekRangeContaining(anchorYmd);
+          return formatWeekRangeFlowLabel(w.$1, w.$2);
+        }(),
+        _SummaryFilter.month => formatYearMonthLabelKo(anchorYmd),
+        _SummaryFilter.year => '${anchorYmd.substring(0, 4)}년',
+        _SummaryFilter.total => '전 기간',
       };
 
   Widget _buildSingleScreenContent({
@@ -693,7 +687,7 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '접수 $totalCalls건 · 처리 $cleared건',
+                      '${_filterPeriodHint(_currentFilter, ref.read(homeHubFlowAnchorYmdProvider))} · 접수 $totalCalls건 · 처리 $cleared건',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -774,54 +768,64 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
-        children: _SummaryFilter.values.map((filter) {
-          final isSelected = _currentFilter == filter;
-          final color = switch (filter) {
-            _SummaryFilter.today => scheme.primary,
-            _SummaryFilter.week => scheme.tertiary,
-            _SummaryFilter.month => scheme.secondary,
-            _SummaryFilter.total => scheme.onSurfaceVariant,
-          };
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() => _currentFilter = filter);
-                _publishFilterToHub(filter);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: isSelected ? scheme.surface : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: color.withValues(alpha: 0.15),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  _filterLabel(filter),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight:
-                        isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected
-                        ? color
-                        : scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                  ),
-                ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final filter in _SummaryFilter.values) ...[
+              _buildIncompletePeriodChip(
+                scheme: scheme,
+                filter: filter,
+                selected: _currentFilter == filter,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _currentFilter = filter);
+                  _publishFilterToHub(filter);
+                },
               ),
-            ),
-          );
-        }).toList(),
+              if (filter != _SummaryFilter.total) const SizedBox(width: 4),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncompletePeriodChip({
+    required ColorScheme scheme,
+    required _SummaryFilter filter,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final color = _filterAccent(filter, scheme);
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? scheme.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.15),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          _filterLabel(filter),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            color: selected
+                ? color
+                : scheme.onSurfaceVariant.withValues(alpha: 0.7),
+          ),
+        ),
       ),
     );
   }
@@ -1168,16 +1172,36 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
     );
   }
 
+  ({String? date, String? dateEndInclusive}) _incompleteListDateArgs() {
+    final anchor = ref.read(homeHubFlowAnchorYmdProvider);
+    return switch (_currentFilter) {
+      _SummaryFilter.today => (date: anchor, dateEndInclusive: null),
+      _SummaryFilter.week => () {
+        final w = seoulWeekRangeContaining(anchor);
+        return (date: w.$1, dateEndInclusive: w.$2);
+      }(),
+      _SummaryFilter.month => () {
+        final m = seoulMonthRangeContaining(anchor);
+        return (date: m.$1, dateEndInclusive: m.$2);
+      }(),
+      _SummaryFilter.year => () {
+        final y = seoulYearRangeContaining(anchor);
+        return (date: y.$1, dateEndInclusive: y.$2);
+      }(),
+      _SummaryFilter.total => (date: null, dateEndInclusive: null),
+    };
+  }
+
   void _openIncompleteListForAssignee(String name) {
     HapticFeedback.lightImpact();
+    final range = _incompleteListDateArgs();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SalesCallListScreen(
           mode: ListQueryMode.incomplete,
           initialAssignee: name,
-          date: _currentFilter == _SummaryFilter.today
-              ? ref.read(homeHubFlowAnchorYmdProvider)
-              : null,
+          date: range.date,
+          dateEndInclusive: range.dateEndInclusive,
         ),
       ),
     );
@@ -1221,6 +1245,10 @@ class _HomeIncompleteBreakdownState extends ConsumerState<HomeIncompleteBreakdow
                   case _SummaryFilter.month:
                     filterColor = scheme.secondary;
                     label = '금월';
+                    break;
+                  case _SummaryFilter.year:
+                    filterColor = const Color(0xFF0D9488);
+                    label = '금년';
                     break;
                   case _SummaryFilter.total:
                     filterColor = scheme.onSurfaceVariant;
@@ -1421,7 +1449,12 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
     _calendarFormat = widget.initialCalendarFormat == CalendarFormat.month
         ? CalendarFormat.month
         : CalendarFormat.week;
-    _focusedDay = _ymdToDateTime(ref.read(homeHubFlowAnchorYmdProvider));
+    if (_calendarFormat == CalendarFormat.week) {
+      _focusedDay = _ymdToDateTime(todayYmdSeoul());
+    } else {
+      _focusedDay =
+          _ymdToDateTime(ref.read(homeHubFlowAnchorYmdProvider));
+    }
   }
 
   @override
@@ -1432,6 +1465,9 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
         _calendarFormat = widget.initialCalendarFormat == CalendarFormat.month
             ? CalendarFormat.month
             : CalendarFormat.week;
+        if (_calendarFormat == CalendarFormat.week) {
+          _focusedDay = _ymdToDateTime(todayYmdSeoul());
+        }
       });
     }
   }
@@ -1441,20 +1477,48 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
     return labels[(weekday - 1).clamp(0, 6)];
   }
 
+  void _publishHubWeekAnchor(String anchorYmd) {
+    ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.week;
+    ref.read(homeHubFlowAnchorYmdProvider.notifier).state = anchorYmd;
+  }
+
+  void _publishHubMonthAnchor(String anchorYmd) {
+    ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.month;
+    ref.read(homeHubFlowAnchorYmdProvider.notifier).state = anchorYmd;
+  }
+
+  bool _isViewingCurrentWeek() {
+    final focused = seoulWeekRangeContaining(_focusedDayYmd());
+    final current = seoulWeekRangeContaining(todayYmdSeoul());
+    return focused.$1 == current.$1 && focused.$2 == current.$2;
+  }
+
+  String _focusedWeekRangeLabel() {
+    final w = seoulWeekRangeContaining(_focusedDayYmd());
+    final range = formatWeekRangeFlowLabel(w.$1, w.$2);
+    if (_calendarFormat == CalendarFormat.week && _isViewingCurrentWeek()) {
+      return '금주 $range';
+    }
+    return range;
+  }
+
   void _jumpToThisMonth() {
-    final now = DateTime.now();
+    final today = todayYmdSeoul();
     setState(() {
       _calendarFormat = CalendarFormat.month;
-      _focusedDay = DateTime(now.year, now.month, now.day);
+      _focusedDay = _ymdToDateTime(today);
     });
+    _publishHubMonthAnchor(firstDayOfMonthYmd(today));
   }
 
   void _jumpToThisWeek() {
-    final now = DateTime.now();
+    final today = todayYmdSeoul();
+    final mon = seoulWeekRangeContaining(today).$1;
     setState(() {
       _calendarFormat = CalendarFormat.week;
-      _focusedDay = DateTime(now.year, now.month, now.day);
+      _focusedDay = _ymdToDateTime(today);
     });
+    _publishHubWeekAnchor(mon);
   }
 
   void _shiftFocusedWeek(int dir) {
@@ -1467,6 +1531,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
     final d = int.tryParse(parts[2]);
     if (y == null || m == null || d == null) return;
     setState(() => _focusedDay = DateTime(y, m, d));
+    _publishHubWeekAnchor(nextMon);
   }
 
   void _openDayFollowList(String dateKey) {
@@ -1589,7 +1654,6 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
   }
 
   Widget _buildInlineWeekNav(ColorScheme scheme) {
-    final w = seoulWeekRangeContaining(_focusedDayYmd());
     return SizedBox(
       height: 22,
       child: Row(
@@ -1606,7 +1670,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
           ),
           Expanded(
             child: Text(
-              formatWeekRangeFlowLabel(w.$1, w.$2),
+              _focusedWeekRangeLabel(),
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1833,8 +1897,6 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
   Widget _buildFitCalendarToolbarRow(ColorScheme scheme) {
     final isWeek = _calendarFormat == CalendarFormat.week;
     final shortcutColor = isWeek ? Colors.teal : Colors.indigo;
-    final w = seoulWeekRangeContaining(_focusedDayYmd());
-
     Widget navBtn({required IconData icon, required VoidCallback onTap}) {
       return IconButton(
         onPressed: onTap,
@@ -1897,7 +1959,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
             ),
             Expanded(
               child: Text(
-                formatWeekRangeFlowLabel(w.$1, w.$2),
+                _focusedWeekRangeLabel(),
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1925,7 +1987,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
             activeColor: Colors.teal,
             onTap: () {
               HapticFeedback.selectionClick();
-              setState(() => _calendarFormat = CalendarFormat.week);
+              _jumpToThisWeek();
             },
           ),
           const SizedBox(width: 4),
@@ -1935,7 +1997,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
             activeColor: Colors.indigo,
             onTap: () {
               HapticFeedback.selectionClick();
-              setState(() => _calendarFormat = CalendarFormat.month);
+              _jumpToThisMonth();
             },
           ),
           const SizedBox(width: 4),
@@ -2038,7 +2100,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
                 activeColor: Colors.teal,
                 onTap: () {
                   HapticFeedback.selectionClick();
-                  setState(() => _calendarFormat = CalendarFormat.week);
+                  _jumpToThisWeek();
                 },
               ),
               const SizedBox(width: 4),
@@ -2049,7 +2111,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
                 activeColor: Colors.indigo,
                 onTap: () {
                   HapticFeedback.selectionClick();
-                  setState(() => _calendarFormat = CalendarFormat.month);
+                  _jumpToThisMonth();
                 },
               ),
               const SizedBox(width: 6),
@@ -2106,7 +2168,11 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
         },
         onFormatChanged: (format) {
           if (_calendarFormat == format) return;
-          setState(() => _calendarFormat = format);
+          if (format == CalendarFormat.week) {
+            _jumpToThisWeek();
+          } else {
+            _jumpToThisMonth();
+          }
         },
         startingDayOfWeek: StartingDayOfWeek.monday,
         locale: 'ko_KR',
@@ -2588,7 +2654,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
                         Expanded(
                           child: InkWell(
                             borderRadius: BorderRadius.circular(10),
-                            onTap: () => setState(() => _calendarFormat = CalendarFormat.week),
+                            onTap: _jumpToThisWeek,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
                               padding: const EdgeInsets.symmetric(vertical: 7),
@@ -2642,7 +2708,7 @@ class _HomeFollowCalendarPanelState extends ConsumerState<HomeFollowCalendarPane
                         Expanded(
                           child: InkWell(
                             borderRadius: BorderRadius.circular(10),
-                            onTap: () => setState(() => _calendarFormat = CalendarFormat.month),
+                            onTap: _jumpToThisMonth,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
                               padding: const EdgeInsets.symmetric(vertical: 7),
