@@ -54,11 +54,6 @@ class NotificationService {
   static const String _androidChannelName = 'High Importance Notifications';
   static const String _androidChannelDescription = 'This channel is used for important notifications.';
 
-  /// 최신 알림 이벤트만 처리되도록 하는 시리얼.
-  /// 포그라운드 수신(onMessage) + 알림 탭(onMessageOpenedApp/local tap) + navigator 준비 지연이
-  /// 겹치는 경우, 이전 이벤트의 재시도가 나중에 화면을 덮어쓰는 문제를 방지하기 위해 사용합니다.
-  static int _navigationSerial = 0;
-
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -202,21 +197,16 @@ class NotificationService {
     if (kDebugMode) {
       print('[FCM] local notification tap payload=$payload action=${details.actionId}');
     }
-    // Android 포그라운드 탭은 콜백만으로는 누락될 수 있어 SharedPreferences에도 저장
+    // Android 포그라운드 탭은 콜백 누락 가능성을 대비해 백업 저장
+    // (실제 이동은 schedule 흐름 하나로만 처리해 경합을 줄임)
     unawaited(persistNotificationPayload(payload));
-    _navigationSerial++;
-    _handleNotificationClick(payload);
     _scheduleNotificationHandling(() => _handleNotificationClick(payload));
   }
 
   /// navigator·로그인 준비 후 알림 탭 처리 (cold start / 백그라운드 탭).
   static void _scheduleNotificationHandling(VoidCallback handle) {
-    final serial = ++_navigationSerial;
-
     void run() {
-      if (serial != _navigationSerial) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (serial != _navigationSerial) return;
         handle();
       });
     }
@@ -520,7 +510,6 @@ class NotificationService {
     String id, {
     required int authAttempt,
   }) {
-    final serialAtEntry = _navigationSerial;
     _queuePendingData({'type': 'sales_call', 'call_id': id});
 
     final ctx = navigatorKey.currentContext;
@@ -528,12 +517,11 @@ class NotificationService {
       try {
         final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
         if (user == null) {
-          if (authAttempt < 12 && serialAtEntry == _navigationSerial) {
+          if (authAttempt < 12) {
             final ms = 200 + authAttempt * 150;
             Future<void>.delayed(
               Duration(milliseconds: ms),
               () {
-                if (serialAtEntry != _navigationSerial) return;
                 _navigateToCallDetailInternal(id, authAttempt: authAttempt + 1);
               },
             );
@@ -541,12 +529,11 @@ class NotificationService {
           return;
         }
       } catch (_) {
-        if (authAttempt < 12 && serialAtEntry == _navigationSerial) {
+        if (authAttempt < 12) {
           final ms = 200 + authAttempt * 150;
           Future<void>.delayed(
             Duration(milliseconds: ms),
             () {
-              if (serialAtEntry != _navigationSerial) return;
               _navigateToCallDetailInternal(id, authAttempt: authAttempt + 1);
             },
           );
@@ -555,7 +542,7 @@ class NotificationService {
       }
     }
 
-    _pushDetailRoute(id, serialAtCall: serialAtEntry);
+    _pushDetailRoute(id);
   }
 
   static void _invalidateHomeSalesCaches() {
@@ -571,9 +558,7 @@ class NotificationService {
   static void _pushDetailRoute(
     String id, {
     int attempt = 0,
-    required int serialAtCall,
   }) {
-    if (serialAtCall != _navigationSerial) return;
     final nav = navigatorKey.currentState;
     if (nav != null) {
       _pendingMessageData = null;
@@ -608,7 +593,6 @@ class NotificationService {
         () => _pushDetailRoute(
           id,
           attempt: attempt + 1,
-          serialAtCall: serialAtCall,
         ),
       );
     } else if (kDebugMode) {
