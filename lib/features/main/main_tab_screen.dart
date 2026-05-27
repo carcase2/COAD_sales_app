@@ -71,7 +71,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      NotificationService.retryPendingNavigation();
+      unawaited(NotificationService.onAppResumed());
     }
   }
 

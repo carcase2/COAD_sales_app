@@ -200,32 +200,52 @@ class NotificationService {
     final payload = details.payload;
     if (payload == null || payload.isEmpty) return;
     if (kDebugMode) {
-      print('[FCM] local notification tap payload=$payload');
+      print('[FCM] local notification tap payload=$payload action=${details.actionId}');
     }
+    // Android 포그라운드 탭은 콜백만으로는 누락될 수 있어 SharedPreferences에도 저장
+    unawaited(persistNotificationPayload(payload));
+    _navigationSerial++;
+    _handleNotificationClick(payload);
     _scheduleNotificationHandling(() => _handleNotificationClick(payload));
   }
 
   /// navigator·로그인 준비 후 알림 탭 처리 (cold start / 백그라운드 탭).
   static void _scheduleNotificationHandling(VoidCallback handle) {
     final serial = ++_navigationSerial;
-    var handled = false;
 
     void run() {
+      if (serial != _navigationSerial) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (handled) return;
         if (serial != _navigationSerial) return;
-        handled = true;
         handle();
       });
     }
 
-    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-      run();
-      return;
-    }
     run();
-    Future<void>.delayed(const Duration(milliseconds: 400), run);
-    Future<void>.delayed(const Duration(milliseconds: 900), run);
+    const retryDelaysMs = <int>[100, 300, 600, 1200];
+    for (final ms in retryDelaysMs) {
+      Future<void>.delayed(Duration(milliseconds: ms), run);
+    }
+  }
+
+  /// 앱 재개 시(Android 알림 탭 → singleTop) 보류 payload·launch details 소비.
+  static Future<void> onAppResumed() async {
+    await _consumeStoredNotificationPayload();
+    try {
+      final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
+      final payload = launchDetails?.notificationResponse?.payload;
+      if (payload != null && payload.isNotEmpty) {
+        if (kDebugMode) {
+          print('[FCM] onAppResumed launch payload=$payload');
+        }
+        _scheduleNotificationHandling(() => _handleNotificationClick(payload));
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[FCM] onAppResumed launch details failed: $e');
+      }
+    }
+    retryPendingNavigation();
   }
 
   /// FCM data를 로컬 알림으로 표시. 탭 시 [payload]로 상세 화면 이동.
@@ -286,6 +306,8 @@ class NotificationService {
           priority: Priority.high,
           styleInformation: BigTextStyleInformation(body),
           tag: callId,
+          autoCancel: true,
+          category: AndroidNotificationCategory.message,
         ),
       ),
     );
@@ -561,8 +583,7 @@ class NotificationService {
         settings: RouteSettings(name: routeName),
       );
 
-      final ctx = navigatorKey.currentContext;
-      final topName = ctx != null ? ModalRoute.of(ctx)?.settings.name : null;
+      final topName = _topRouteName(nav);
       if (topName == routeName) {
         if (kDebugMode) {
           print('[FCM] already on $routeName');
@@ -593,6 +614,16 @@ class NotificationService {
     } else if (kDebugMode) {
       print('[FCM] NavigatorState still null after retries; keeping pending payload');
     }
+  }
+
+  /// Navigator 스택 최상단 route 이름 (currentContext의 ModalRoute는 하위 위젯일 수 있음).
+  static String? _topRouteName(NavigatorState nav) {
+    Route<dynamic>? top;
+    nav.popUntil((route) {
+      if (route.isCurrent) top = route;
+      return true;
+    });
+    return top?.settings.name;
   }
 
   static Future<String?> getToken() async {
