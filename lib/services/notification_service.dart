@@ -137,7 +137,22 @@ class NotificationService {
     await androidPlugin?.requestNotificationsPermission();
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      // 포그라운드에서는 로컬 알림 탭 이벤트가 누락되는 케이스가 있어,
+      // 우선 알림을 띄우고 동시에(탭 없이도) 상세 이동을 시도합니다.
+      final data = Map<String, dynamic>.from(message.data);
       unawaited(showRemoteMessageNotification(message, plugin: _localNotifications));
+
+      final isSalesCall =
+          (data['type']?.toString().toLowerCase() == 'sales_call') ||
+          data.containsKey('call_id') ||
+          data.containsKey('callId') ||
+          data.containsKey('sales_call_id');
+
+      if (isSalesCall) {
+        _scheduleNotificationHandling(
+          () => _handleMessageData(data),
+        );
+      }
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
