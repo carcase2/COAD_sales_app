@@ -54,6 +54,11 @@ class NotificationService {
   static const String _androidChannelName = 'High Importance Notifications';
   static const String _androidChannelDescription = 'This channel is used for important notifications.';
 
+  /// 최신 알림 이벤트만 처리되도록 하는 시리얼.
+  /// 포그라운드 수신(onMessage) + 알림 탭(onMessageOpenedApp/local tap) + navigator 준비 지연이
+  /// 겹치는 경우, 이전 이벤트의 재시도가 나중에 화면을 덮어쓰는 문제를 방지하기 위해 사용합니다.
+  static int _navigationSerial = 0;
+
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -109,9 +114,7 @@ class NotificationService {
     await _localNotifications.initialize(
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse details) {
-        if (details.payload != null && details.payload!.isNotEmpty) {
-          _scheduleNotificationHandling(() => _handleNotificationClick(details.payload));
-        }
+        _onForegroundLocalNotificationTap(details);
       },
       onDidReceiveBackgroundNotificationResponse: _onBackgroundLocalNotificationTap,
     );
@@ -137,22 +140,9 @@ class NotificationService {
     await androidPlugin?.requestNotificationsPermission();
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      // 포그라운드에서는 로컬 알림 탭 이벤트가 누락되는 케이스가 있어,
-      // 우선 알림을 띄우고 동시에(탭 없이도) 상세 이동을 시도합니다.
-      final data = Map<String, dynamic>.from(message.data);
+      // Android 포그라운드: 알림만 표시하고, 상세 이동은 사용자 탭 시에만 처리합니다.
+      // (수신 즉시 자동 이동하면 탭 이벤트·pending 재시도와 겹쳐 다른 접수로 가거나 이동이 무시됨)
       unawaited(showRemoteMessageNotification(message, plugin: _localNotifications));
-
-      final isSalesCall =
-          (data['type']?.toString().toLowerCase() == 'sales_call') ||
-          data.containsKey('call_id') ||
-          data.containsKey('callId') ||
-          data.containsKey('sales_call_id');
-
-      if (isSalesCall) {
-        _scheduleNotificationHandling(
-          () => _handleMessageData(data),
-        );
-      }
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
@@ -205,10 +195,26 @@ class NotificationService {
     _scheduleNotificationHandling(() => _handleMessageData(data));
   }
 
+  /// Android 포그라운드 로컬 알림 탭.
+  static void _onForegroundLocalNotificationTap(NotificationResponse details) {
+    final payload = details.payload;
+    if (payload == null || payload.isEmpty) return;
+    if (kDebugMode) {
+      print('[FCM] local notification tap payload=$payload');
+    }
+    _scheduleNotificationHandling(() => _handleNotificationClick(payload));
+  }
+
   /// navigator·로그인 준비 후 알림 탭 처리 (cold start / 백그라운드 탭).
   static void _scheduleNotificationHandling(VoidCallback handle) {
+    final serial = ++_navigationSerial;
+    var handled = false;
+
     void run() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (handled) return;
+        if (serial != _navigationSerial) return;
+        handled = true;
         handle();
       });
     }
@@ -233,9 +239,17 @@ class NotificationService {
     if (payload == null) return;
 
     final titleBody = _titleAndBodyFromMessage(message);
-    final title = titleBody.$1;
-    final body = titleBody.$2;
-    if (title.isEmpty && body.isEmpty) return;
+    var title = titleBody.$1;
+    var body = titleBody.$2;
+    if (title.isEmpty && body.isEmpty) {
+      final callId = _extractCallIdFromData(data);
+      if (callId != null) {
+        title = '새 통화 접수';
+        body = '알림을 탭하면 접수 상세로 이동합니다.';
+      } else {
+        return;
+      }
+    }
 
     if (initializePlugin) {
       const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -259,7 +273,7 @@ class NotificationService {
 
     final callId = _extractCallIdFromData(data);
     await plugin.show(
-      id: callId?.hashCode ?? message.hashCode,
+      id: _notificationIdFor(callId, message),
       title: title,
       body: body,
       payload: payload,
@@ -332,6 +346,13 @@ class NotificationService {
       }
     }
     return null;
+  }
+
+  static int _notificationIdFor(String? callId, RemoteMessage message) {
+    if (callId != null && callId.isNotEmpty) {
+      return callId.hashCode & 0x7fffffff;
+    }
+    return message.hashCode & 0x7fffffff;
   }
 
   static String? _normalizeCallId(Object? raw) {
@@ -470,19 +491,49 @@ class NotificationService {
   }
 
   static void _navigateToCallDetail(String id) {
+    _navigateToCallDetailInternal(id, authAttempt: 0);
+  }
+
+  static void _navigateToCallDetailInternal(
+    String id, {
+    required int authAttempt,
+  }) {
+    final serialAtEntry = _navigationSerial;
     _queuePendingData({'type': 'sales_call', 'call_id': id});
+
     final ctx = navigatorKey.currentContext;
     if (ctx != null) {
       try {
         final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
         if (user == null) {
+          if (authAttempt < 12 && serialAtEntry == _navigationSerial) {
+            final ms = 200 + authAttempt * 150;
+            Future<void>.delayed(
+              Duration(milliseconds: ms),
+              () {
+                if (serialAtEntry != _navigationSerial) return;
+                _navigateToCallDetailInternal(id, authAttempt: authAttempt + 1);
+              },
+            );
+          }
           return;
         }
       } catch (_) {
+        if (authAttempt < 12 && serialAtEntry == _navigationSerial) {
+          final ms = 200 + authAttempt * 150;
+          Future<void>.delayed(
+            Duration(milliseconds: ms),
+            () {
+              if (serialAtEntry != _navigationSerial) return;
+              _navigateToCallDetailInternal(id, authAttempt: authAttempt + 1);
+            },
+          );
+        }
         return;
       }
     }
-    _pushDetailRoute(id);
+
+    _pushDetailRoute(id, serialAtCall: serialAtEntry);
   }
 
   static void _invalidateHomeSalesCaches() {
@@ -495,25 +546,50 @@ class NotificationService {
     }
   }
 
-  static void _pushDetailRoute(String id, {int attempt = 0}) {
+  static void _pushDetailRoute(
+    String id, {
+    int attempt = 0,
+    required int serialAtCall,
+  }) {
+    if (serialAtCall != _navigationSerial) return;
     final nav = navigatorKey.currentState;
     if (nav != null) {
       _pendingMessageData = null;
-      nav.push(
-        MaterialPageRoute<void>(
-          builder: (context) => SalesCallDetailScreen(id: id),
-          settings: RouteSettings(name: 'SalesCallDetail/$id'),
-        ),
+      final routeName = 'SalesCallDetail/$id';
+      final detailRoute = MaterialPageRoute<void>(
+        builder: (context) => SalesCallDetailScreen(id: id),
+        settings: RouteSettings(name: routeName),
       );
+
+      final ctx = navigatorKey.currentContext;
+      final topName = ctx != null ? ModalRoute.of(ctx)?.settings.name : null;
+      if (topName == routeName) {
+        if (kDebugMode) {
+          print('[FCM] already on $routeName');
+        }
+        return;
+      }
+      if (topName != null && topName.startsWith('SalesCallDetail/')) {
+        nav.pushReplacement(detailRoute);
+      } else {
+        nav.push(detailRoute);
+      }
       _invalidateHomeSalesCaches();
       if (kDebugMode) {
-        print('[FCM] navigated to SalesCallDetail/$id');
+        print('[FCM] navigated to $routeName (from top=$topName)');
       }
       return;
     }
     if (attempt < 60) {
       final ms = 50 + attempt * 40;
-      Future<void>.delayed(Duration(milliseconds: ms), () => _pushDetailRoute(id, attempt: attempt + 1));
+      Future<void>.delayed(
+        Duration(milliseconds: ms),
+        () => _pushDetailRoute(
+          id,
+          attempt: attempt + 1,
+          serialAtCall: serialAtCall,
+        ),
+      );
     } else if (kDebugMode) {
       print('[FCM] NavigatorState still null after retries; keeping pending payload');
     }
@@ -611,7 +687,7 @@ class NotificationService {
       'call_id': callId,
     });
     await _localNotifications.show(
-      id: callId.hashCode,
+      id: callId.hashCode & 0x7fffffff,
       title: '[$assignee] 새 통화 등록 완료',
       body: '$name$phoneText 접수가 등록되었습니다.',
       payload: payload,
