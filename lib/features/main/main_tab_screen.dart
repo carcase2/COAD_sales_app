@@ -26,7 +26,7 @@ class MainTabScreen extends ConsumerStatefulWidget {
   ConsumerState<MainTabScreen> createState() => _MainTabScreenState();
 }
 
-class _MainTabScreenState extends ConsumerState<MainTabScreen> {
+class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
@@ -37,9 +37,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 1. Handle deep link if app was opened via notification (Cold Start)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      NotificationService.handleInitialMessage();
+      unawaited(NotificationService.handleInitialMessage());
       AppUpdateService.checkAndUpdateIfNeeded(context);
     });
 
@@ -68,7 +69,15 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      NotificationService.retryPendingNavigation();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _issuanceCompletionDebounce?.cancel();
     final channel = _issuanceCompletionWatchChannel;
     if (channel != null) {

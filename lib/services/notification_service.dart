@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
@@ -10,14 +11,39 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
+
+/// Background isolate용 (메인 isolate의 [_localNotifications]와 별도).
+@pragma('vm:entry-point')
+final FlutterLocalNotificationsPlugin _backgroundLocalNotifications =
+    FlutterLocalNotificationsPlugin();
+
+/// 로컬 알림 탭(백그라운드 isolate) → 메인 앱으로 payload 전달.
+@pragma('vm:entry-point')
+void _onBackgroundLocalNotificationTap(NotificationResponse response) {
+  final payload = response.payload;
+  if (payload == null || payload.isEmpty) return;
+  unawaited(NotificationService.persistNotificationPayload(payload));
+}
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   if (kDebugMode) {
-    print("Handling a background message: ${message.messageId}");
+    print('[FCM] background message: ${message.messageId} data=${message.data}');
+  }
+  try {
+    await NotificationService.showRemoteMessageNotification(
+      message,
+      plugin: _backgroundLocalNotifications,
+      initializePlugin: true,
+    );
+  } catch (e, st) {
+    if (kDebugMode) {
+      print('[FCM] background handler failed: $e\n$st');
+    }
   }
 }
 
@@ -31,34 +57,50 @@ class NotificationService {
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  /// Cold start payload cache. [MainTabScreen] calls [handleInitialMessage] after login.
+  /// Cold start / 로그인 대기 payload. [MainTabScreen]에서 [handleInitialMessage]로 처리.
   static Map<String, dynamic>? _pendingMessageData;
+
+  /// [init] 시점 로컬 알림 cold-start payload (navigator 준비 전에는 큐만).
+  static String? _pendingLaunchPayload;
 
   static void _queuePendingData(Map<String, dynamic> data) {
     _pendingMessageData = data;
   }
 
+  static Future<void> persistNotificationPayload(String payload) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(StorageKeys.pendingNotificationPayload, payload);
+    } catch (e) {
+      if (kDebugMode) {
+        print('[FCM] persistNotificationPayload failed: $e');
+      }
+    }
+  }
+
+  static Future<void> _consumeStoredNotificationPayload() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(StorageKeys.pendingNotificationPayload);
+      if (raw == null || raw.isEmpty) return;
+      await prefs.remove(StorageKeys.pendingNotificationPayload);
+      _handleNotificationClick(raw);
+    } catch (e) {
+      if (kDebugMode) {
+        print('[FCM] consumeStoredNotificationPayload failed: $e');
+      }
+    }
+  }
+
   static Future<void> init() async {
-    // 1. Initialize Firebase Messaging
     await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
 
-    // 2. Set Background Handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // 3. Cold start: read once as early as possible (after Firebase.initializeApp in main).
-    final initial = await FirebaseMessaging.instance.getInitialMessage();
-    if (initial != null) {
-      _pendingMessageData = Map<String, dynamic>.from(initial.data);
-      if (kDebugMode) {
-        print('[FCM] getInitialMessage data=${initial.data}');
-      }
-    }
-
-    // 4. Setup Local Notifications (for foreground)
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const InitializationSettings initializationSettings =
@@ -68,21 +110,20 @@ class NotificationService {
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse details) {
         if (details.payload != null && details.payload!.isNotEmpty) {
-          _handleNotificationClick(details.payload);
+          _scheduleNotificationHandling(() => _handleNotificationClick(details.payload));
         }
       },
+      onDidReceiveBackgroundNotificationResponse: _onBackgroundLocalNotificationTap,
     );
 
-    // 앱이 "로컬 알림 탭"으로 시작된 경우(종료 상태)도 누락 없이 처리.
     final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
     final launchPayload = launchDetails?.notificationResponse?.payload;
     if (launchDetails?.didNotificationLaunchApp == true &&
         launchPayload != null &&
         launchPayload.isNotEmpty) {
-      _handleNotificationClick(launchPayload);
+      _pendingLaunchPayload = launchPayload;
     }
 
-    // 5. Create Notification Channel for Android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       _androidChannelId,
       _androidChannelName,
@@ -90,53 +131,144 @@ class NotificationService {
       importance: Importance.max,
     );
 
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+    final androidPlugin =
+        _localNotifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(channel);
+    await androidPlugin?.requestNotificationsPermission();
 
-    // 6. Listen for foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
-
-      if (notification != null && android != null) {
-        final payload = _buildLocalPayload(message.data);
-        _localNotifications.show(
-          id: notification.hashCode,
-          title: notification.title,
-          body: notification.body,
-          payload: payload,
-          notificationDetails: NotificationDetails(
-            android: AndroidNotificationDetails(
-              channel.id,
-              channel.name,
-              channelDescription: channel.description,
-              importance: Importance.max,
-              priority: Priority.high,
-              styleInformation: BigTextStyleInformation(notification.body ?? ''),
-              icon: android.smallIcon,
-            ),
-          ),
-        );
-      }
+      unawaited(showRemoteMessageNotification(message, plugin: _localNotifications));
     });
 
-    // 7. Background → user taps system notification (app still in memory)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      final data = Map<String, dynamic>.from(message.data);
       if (kDebugMode) {
         print('[FCM] onMessageOpenedApp data=${message.data}');
       }
-      _handleMessageData(data);
+      _scheduleNotificationHandling(
+        () => _handleMessageData(Map<String, dynamic>.from(message.data)),
+      );
     });
   }
 
   /// Called from [MainTabScreen] when the user is logged in and the navigator is mounted.
-  static void handleInitialMessage() {
+  static Future<void> handleInitialMessage() async {
+    await _consumeStoredNotificationPayload();
+
+    final launchPayload = _pendingLaunchPayload;
+    if (launchPayload != null && launchPayload.isNotEmpty) {
+      _pendingLaunchPayload = null;
+      _scheduleNotificationHandling(() => _handleNotificationClick(launchPayload));
+    }
+
+    if (_pendingMessageData != null) {
+      _scheduleNotificationHandling(() => _handleMessageData(_pendingMessageData!));
+    }
+
+    for (var attempt = 0; attempt < 8; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(Duration(milliseconds: 200 * attempt));
+      }
+      final initial = await FirebaseMessaging.instance.getInitialMessage();
+      if (initial == null || initial.data.isEmpty) continue;
+      if (kDebugMode) {
+        print('[FCM] getInitialMessage (attempt $attempt) data=${initial.data}');
+      }
+      _scheduleNotificationHandling(
+        () => _handleMessageData(Map<String, dynamic>.from(initial.data)),
+      );
+      return;
+    }
+
+    retryPendingNavigation();
+  }
+
+  /// 앱 재개·navigator 준비 후 대기 중인 접수 상세 이동 재시도.
+  static void retryPendingNavigation() {
+    unawaited(_consumeStoredNotificationPayload());
     final data = _pendingMessageData;
     if (data == null) return;
-    _pendingMessageData = null;
-    _handleMessageData(data);
+    _scheduleNotificationHandling(() => _handleMessageData(data));
+  }
+
+  /// navigator·로그인 준비 후 알림 탭 처리 (cold start / 백그라운드 탭).
+  static void _scheduleNotificationHandling(VoidCallback handle) {
+    void run() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        handle();
+      });
+    }
+
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      run();
+      return;
+    }
+    run();
+    Future<void>.delayed(const Duration(milliseconds: 400), run);
+    Future<void>.delayed(const Duration(milliseconds: 900), run);
+  }
+
+  /// FCM data를 로컬 알림으로 표시. 탭 시 [payload]로 상세 화면 이동.
+  static Future<void> showRemoteMessageNotification(
+    RemoteMessage message, {
+    required FlutterLocalNotificationsPlugin plugin,
+    bool initializePlugin = false,
+  }) async {
+    final data = Map<String, dynamic>.from(message.data);
+    final payload = _buildLocalPayload(data);
+    if (payload == null) return;
+
+    final titleBody = _titleAndBodyFromMessage(message);
+    final title = titleBody.$1;
+    final body = titleBody.$2;
+    if (title.isEmpty && body.isEmpty) return;
+
+    if (initializePlugin) {
+      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      await plugin.initialize(
+        settings: const InitializationSettings(android: androidSettings),
+        onDidReceiveBackgroundNotificationResponse: _onBackgroundLocalNotificationTap,
+      );
+    }
+
+    final androidPlugin =
+        plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      const channel = AndroidNotificationChannel(
+        _androidChannelId,
+        _androidChannelName,
+        description: _androidChannelDescription,
+        importance: Importance.max,
+      );
+      await androidPlugin.createNotificationChannel(channel);
+    }
+
+    final callId = _extractCallIdFromData(data);
+    await plugin.show(
+      id: callId?.hashCode ?? message.hashCode,
+      title: title,
+      body: body,
+      payload: payload,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _androidChannelId,
+          _androidChannelName,
+          channelDescription: _androidChannelDescription,
+          importance: Importance.max,
+          priority: Priority.high,
+          styleInformation: BigTextStyleInformation(body),
+          tag: callId,
+        ),
+      ),
+    );
+  }
+
+  static (String, String) _titleAndBodyFromMessage(RemoteMessage message) {
+    final data = message.data;
+    final fromDataTitle = (data['title'] ?? '').toString().trim();
+    final fromDataBody = (data['body'] ?? '').toString().trim();
+    final title = message.notification?.title ?? fromDataTitle;
+    final body = message.notification?.body ?? fromDataBody;
+    return (title, body);
   }
 
   static String? _buildLocalPayload(Map<String, dynamic> data) {
@@ -168,7 +300,6 @@ class NotificationService {
         if (n != null) return n;
       }
     }
-    // 일부 전송 경로는 data가 JSON 문자열로 한 단계 더 감싸질 수 있음.
     final rawNested = data['data'];
     if (rawNested is String && rawNested.trim().isNotEmpty) {
       try {
@@ -230,6 +361,10 @@ class NotificationService {
     final id = _extractCallIdFromData(data);
     if (id != null) {
       _navigateToCallDetail(id);
+      return;
+    }
+    if (kDebugMode) {
+      print('[FCM] tap ignored: no call_id in data=$data');
     }
   }
 
@@ -320,24 +455,21 @@ class NotificationService {
   }
 
   static void _navigateToCallDetail(String id) {
+    _queuePendingData({'type': 'sales_call', 'call_id': id});
     final ctx = navigatorKey.currentContext;
     if (ctx != null) {
       try {
         final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
         if (user == null) {
-          _queuePendingData({'type': 'sales_call', 'call_id': id});
           return;
         }
       } catch (_) {
-        _queuePendingData({'type': 'sales_call', 'call_id': id});
         return;
       }
     }
     _pushDetailRoute(id);
   }
 
-  /// 푸시로 상세 진입 시 홈·상담현황에 쓰이는 목록/통계가 이전 캐시를 유지하는 문제 방지
-  /// ([SalesCallCreateScreen] 접수 성공 시와 동일하게 무효화)
   static void _invalidateHomeSalesCaches() {
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return;
@@ -359,16 +491,16 @@ class NotificationService {
         ),
       );
       _invalidateHomeSalesCaches();
+      if (kDebugMode) {
+        print('[FCM] navigated to SalesCallDetail/$id');
+      }
       return;
     }
-    if (attempt < 30) {
-      final ms = 30 + attempt * 25;
+    if (attempt < 60) {
+      final ms = 50 + attempt * 40;
       Future<void>.delayed(Duration(milliseconds: ms), () => _pushDetailRoute(id, attempt: attempt + 1));
-    } else {
-      if (kDebugMode) {
-        print('[FCM] NavigatorState still null after retries; keeping pending payload');
-      }
-      _queuePendingData({'type': 'sales_call', 'call_id': id});
+    } else if (kDebugMode) {
+      print('[FCM] NavigatorState still null after retries; keeping pending payload');
     }
   }
 
@@ -450,6 +582,7 @@ class NotificationService {
   }
 
   static Future<void> showSalesCallRegisteredAlert({
+    required String callId,
     required String customerName,
     required String phone,
     String? assigneeName,
@@ -458,17 +591,23 @@ class NotificationService {
     final phoneText = phone.trim().isEmpty ? '' : ' ($phone)';
     final rawAssignee = (assigneeName ?? '').trim();
     final assignee = rawAssignee.isEmpty ? '미지정' : rawAssignee;
+    final payload = jsonEncode({
+      'type': 'sales_call',
+      'call_id': callId,
+    });
     await _localNotifications.show(
-      id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      id: callId.hashCode,
       title: '[$assignee] 새 통화 등록 완료',
       body: '$name$phoneText 접수가 등록되었습니다.',
-      notificationDetails: const NotificationDetails(
+      payload: payload,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _androidChannelId,
           _androidChannelName,
           channelDescription: _androidChannelDescription,
           importance: Importance.max,
           priority: Priority.high,
+          tag: callId,
         ),
       ),
     );

@@ -168,8 +168,16 @@ serve(async (req) => {
 
     const title = `[${assigneeName}] ${customerName}`
     const body = `📦 모델: ${categoryName}\n📍 지역: ${regionText}\n📞 연락처: ${phone}\n📝 상세: ${content}`
+    // FCM data 값은 단일 문자열. data.body는 한 줄로(탭·로컬 알림용), notification.body는 여러 줄 유지.
+    const dataBody = body.replace(/\s+/g, ' ').trim()
 
-    console.log(`Sending reception notification for: ${customerName}, handler: ${assigneeName}`)
+    const callId = activeRecord ? String(activeRecord.id) : ''
+    if (!callId) {
+      console.error('Missing call id in activeRecord; aborting push')
+      return new Response(JSON.stringify({ error: 'Missing call id' }), { status: 400 })
+    }
+
+    console.log(`Sending reception notification for: ${customerName}, handler: ${assigneeName}, callId=${callId}`)
 
     const results = await Promise.all(tokens.map(async (token: string) => {
       try {
@@ -184,17 +192,16 @@ serve(async (req) => {
             body: JSON.stringify({
               message: {
                 token: token,
-                notification: { title, body },
+                // data-only → 앱이 로컬 알림(payload 포함)으로 표시·탭 처리 (시스템 알림은 call_id 탭 불안정).
                 data: {
-                  call_id: activeRecord ? activeRecord.id.toString() : '',
+                  type: 'sales_call',
+                  call_id: callId,
+                  title,
+                  body: dataBody,
                   click_action: 'FLUTTER_NOTIFICATION_CLICK',
                 },
                 android: {
                   priority: 'high',
-                  notification: {
-                    channel_id: 'high_importance_channel',
-                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
-                  },
                 },
               },
             }),

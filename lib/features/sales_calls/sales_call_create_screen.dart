@@ -191,6 +191,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       // 로컬 알림 표시 실패가 접수 저장 성공을 덮어쓰지 않도록 분리한다.
       try {
         await NotificationService.showSalesCallRegisteredAlert(
+          callId: created.id,
           customerName: created.customerName ?? '',
           phone: created.customerPhone ?? '',
           assigneeName: user?.name,
@@ -217,9 +218,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             },
           },
         );
-        debugPrint('[notify-new-call] success status=${res.status} data=${res.data}');
-      } catch (_) {
-        debugPrint('[notify-new-call] failed (function invoke error)');
+        debugPrint('[notify-new-call] status=${res.status} data=${res.data}');
+        if (res.status >= 400) {
+          debugPrint('[notify-new-call] push invoke returned error status');
+        }
+      } catch (e, st) {
+        debugPrint('[notify-new-call] invoke failed: $e');
+        debugPrint('$st');
         // 푸시 실패가 접수 저장 흐름을 막지 않도록 무시
       }
       
