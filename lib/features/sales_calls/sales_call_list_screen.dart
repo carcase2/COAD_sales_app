@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
@@ -358,7 +359,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           setState(() => _quickActionsOpen = false);
           _refreshQuickHints();
           await Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const SalesCallCreateScreen()),
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: kSalesCallCreateRouteName),
+              builder: (_) => const SalesCallCreateScreen(),
+            ),
           );
         },
       ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
@@ -63,6 +64,9 @@ class NotificationService {
   /// [init] 시점 로컬 알림 cold-start payload (navigator 준비 전에는 큐만).
   static String? _pendingLaunchPayload;
 
+  /// cold-start launch payload 1회 처리 후 재사용 방지(파일 선택 등 resume 시 오탐).
+  static bool _coldStartLaunchHandled = false;
+
   /// 최신 알림 탭 처리만 유효하게 유지하기 위한 세대 토큰.
   static int _handlingGeneration = 0;
 
@@ -88,7 +92,21 @@ class NotificationService {
     }
   }
 
+  static bool _shouldSuppressCallDetailNavigation() {
+    final nav = navigatorKey.currentState;
+    if (nav == null) return false;
+    var onCreate = false;
+    nav.popUntil((route) {
+      if (route.settings.name == kSalesCallCreateRouteName) {
+        onCreate = true;
+      }
+      return true;
+    });
+    return onCreate;
+  }
+
   static Future<void> _consumeStoredNotificationPayload() async {
+    if (_shouldSuppressCallDetailNavigation()) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(StorageKeys.pendingNotificationPayload);
@@ -165,7 +183,10 @@ class NotificationService {
     await _consumeStoredNotificationPayload();
 
     final launchPayload = _pendingLaunchPayload;
-    if (launchPayload != null && launchPayload.isNotEmpty) {
+    if (!_coldStartLaunchHandled &&
+        launchPayload != null &&
+        launchPayload.isNotEmpty) {
+      _coldStartLaunchHandled = true;
       _pendingLaunchPayload = null;
       _scheduleNotificationHandling(() => _handleNotificationClick(launchPayload));
     }
@@ -194,6 +215,7 @@ class NotificationService {
 
   /// 앱 재개·navigator 준비 후 대기 중인 접수 상세 이동 재시도.
   static void retryPendingNavigation() {
+    if (_shouldSuppressCallDetailNavigation()) return;
     unawaited(_consumeStoredNotificationPayload());
     final data = _pendingMessageData;
     if (data == null) return;
@@ -232,23 +254,10 @@ class NotificationService {
     }
   }
 
-  /// 앱 재개 시(Android 알림 탭 → singleTop) 보류 payload·launch details 소비.
+  /// 앱 재개 시 보류 payload 소비. launch details는 cold start에서만 1회 처리.
   static Future<void> onAppResumed() async {
+    if (_shouldSuppressCallDetailNavigation()) return;
     await _consumeStoredNotificationPayload();
-    try {
-      final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
-      final payload = launchDetails?.notificationResponse?.payload;
-      if (payload != null && payload.isNotEmpty) {
-        if (kDebugMode) {
-          print('[FCM] onAppResumed launch payload=$payload');
-        }
-        _scheduleNotificationHandling(() => _handleNotificationClick(payload));
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('[FCM] onAppResumed launch details failed: $e');
-      }
-    }
     retryPendingNavigation();
   }
 
@@ -533,6 +542,10 @@ class NotificationService {
     required int requestSeq,
   }) {
     if (requestSeq != _callNavigationRequestSeq) return;
+    if (_shouldSuppressCallDetailNavigation()) {
+      _log('skip call detail navigation: $kSalesCallCreateRouteName active');
+      return;
+    }
     _queuePendingData({'type': 'sales_call', 'call_id': id});
 
     final ctx = navigatorKey.currentContext;

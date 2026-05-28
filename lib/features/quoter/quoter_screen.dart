@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/data/shutter_repository.dart';
@@ -711,6 +712,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         onTap: () async {
           await Navigator.of(context).push(
             MaterialPageRoute<void>(
+              settings: const RouteSettings(name: kSalesCallCreateRouteName),
               builder: (_) => const SalesCallCreateScreen(),
             ),
           );

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
@@ -486,6 +487,7 @@ class _IssuanceRequestCreateScreenState
           setState(() => _quickActionsOpen = false);
           await Navigator.of(context).push(
             MaterialPageRoute<void>(
+              settings: const RouteSettings(name: kSalesCallCreateRouteName),
               builder: (_) => const SalesCallCreateScreen(),
             ),
           );

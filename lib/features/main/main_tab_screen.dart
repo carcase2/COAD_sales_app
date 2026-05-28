@@ -209,6 +209,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
   Future<void> _openReceptionCreate() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: kSalesCallCreateRouteName),
         builder: (_) => const SalesCallCreateScreen(),
       ),
     );
