@@ -58,6 +58,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 );
               }
 
+              if (snapshot.hasError) {
+                return Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '업데이트 내역을 불러오지 못했습니다.',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${snapshot.error}',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: scheme.error,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: () => setState(() {}),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('다시 시도'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
               final items = snapshot.data ?? const <UpdateHistoryEntry>[];
               if (items.isEmpty) {
                 return Card(

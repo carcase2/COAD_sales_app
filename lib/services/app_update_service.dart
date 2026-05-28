@@ -184,6 +184,7 @@ class AppUpdateService {
       final row = await client
           .from('app_update_policy')
           .select('min_version, latest_version, store_url, force_update')
+          .eq('is_active', true)
           .order('updated_at', ascending: false)
           .limit(1)
           .maybeSingle();
@@ -204,40 +205,30 @@ class AppUpdateService {
   }
 
   /// 설정 화면용 업데이트 이력 조회.
-  ///
-  /// `app_update_policy` 최근 rows를 기반으로,
-  /// - 버전: `latest_version` (fallback: `min_version`)
-  /// - 제안자: `proposed_by` / `proposer` / `requested_by`
-  /// - 변경내역: `release_notes` / `changes` / `change_summary`
-  /// 를 유연하게 파싱합니다.
+  /// `app_update_history` 최신 row를 created_at DESC 기준으로 조회합니다.
   static Future<List<UpdateHistoryEntry>> fetchUpdateHistory({
     int limit = 10,
   }) async {
     try {
       final client = Supabase.instance.client;
       final rows = await client
-          .from('app_update_policy')
-          .select()
-          .order('updated_at', ascending: false)
+          .from('app_update_history')
+          .select('version, proposer, release_notes, created_at')
+          .eq('is_visible', true)
+          .order('created_at', ascending: false)
           .limit(limit);
 
       final parsed = <UpdateHistoryEntry>[];
       for (final raw in rows) {
         final map = Map<String, dynamic>.from(raw);
-        final version = (map['latest_version'] ?? map['min_version'] ?? '')
+        final version = (map['version'] ?? '')
             .toString()
             .trim();
         if (version.isEmpty) continue;
 
-        final dateLabel = _dateOnlyLabel(map['updated_at']);
-        final proposer = _firstNonEmptyString([
-          map['proposed_by'],
-          map['proposer'],
-          map['requested_by'],
-        ]);
-        final changes = _normalizeReleaseNotes(
-          map['release_notes'] ?? map['changes'] ?? map['change_summary'],
-        );
+        final dateLabel = _dateOnlyLabel(map['created_at']);
+        final proposer = _firstNonEmptyString([map['proposer']]);
+        final changes = _normalizeReleaseNotes(map['release_notes']);
         parsed.add(
           UpdateHistoryEntry(
             version: version,
@@ -249,8 +240,8 @@ class AppUpdateService {
       }
       return parsed;
     } catch (e) {
-      debugPrint('업데이트 이력 조회 실패(무시): $e');
-      return const [];
+      debugPrint('업데이트 이력 조회 실패: $e');
+      throw Exception('업데이트 내역 조회 실패');
     }
   }
 
