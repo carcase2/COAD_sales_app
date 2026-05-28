@@ -5,8 +5,6 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
-import 'package:coad_customer_calls/features/home/home_navigation.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1653,11 +1651,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                                   Navigator.pop(sheetContext);
                                 }
                                 if (ok && context.mounted) {
-                                  navigateToHomeAndRefresh(
-                                    context,
-                                    ref,
-                                    message: '상담내용 및 이력이 저장되었습니다.',
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('상담내용 및 이력이 저장되었습니다.'),
+                                    ),
                                   );
+                                  Navigator.of(context).pop(true);
                                 } else if (!ok) {
                                   setModalState(() {});
                                 }
