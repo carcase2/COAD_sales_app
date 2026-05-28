@@ -26,7 +26,10 @@ class MainTabScreen extends ConsumerStatefulWidget {
   ConsumerState<MainTabScreen> createState() => _MainTabScreenState();
 }
 
-class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindingObserver {
+class _MainTabScreenState extends ConsumerState<MainTabScreen>
+    with WidgetsBindingObserver {
+  static const int _homeTabIndex = 0;
+  static const int _issuanceTabIndex = 1;
   int _currentIndex = 0;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
@@ -194,7 +197,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
 
   void _onTabSelected(int index) {
     // 다른 탭에서 홈으로 돌아올 때만 흐름·금일로 리셋 (홈 재탭 시 불필요한 PageView 리셋 방지).
-    if (index == 0 && _currentIndex != 0) {
+    if (index == _homeTabIndex && _currentIndex != _homeTabIndex) {
       ref.read(homeHubFlowResetTickProvider.notifier).state++;
     }
     if (_currentIndex == index) return;
@@ -202,7 +205,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
     setState(() {
       _currentIndex = index;
       _loadedIndices.add(index); // 선택한 탭을 로드 목록에 추가
-      if (index != 0) _lastBackExitHintAt = null;
+      if (index != _homeTabIndex) _lastBackExitHintAt = null;
     });
   }
 
@@ -226,21 +229,22 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
     return false;
   }
 
-  List<Widget> _buildScreens() => [const HomeHubScreen()];
+  List<Widget> _buildScreens() => [
+    const HomeHubScreen(),
+    _loadedIndices.contains(_issuanceTabIndex)
+        ? const IssuanceRequestScreen()
+        : const SizedBox.shrink(),
+  ];
 
   @override
   Widget build(BuildContext context) {
     ref.listen(pendingConsultationLaunchProvider, (prev, next) {
       if (next == null) return;
-      _onTabSelected(0);
+      _onTabSelected(_homeTabIndex);
     });
     ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
       if (next == null || !context.mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const IssuanceRequestScreen(),
-        ),
-      );
+      _onTabSelected(_issuanceTabIndex);
     });
 
     final scheme = Theme.of(context).colorScheme;
@@ -259,9 +263,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
           return;
         }
 
-        if (_currentIndex != 0) {
+        if (_currentIndex != _homeTabIndex) {
           ref.read(homeHubFlowResetTickProvider.notifier).state++;
-          setState(() => _currentIndex = 0);
+          setState(() => _currentIndex = _homeTabIndex);
           return;
         }
 
@@ -295,7 +299,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
         appBar: AppBar(
           title: InkWell(
             borderRadius: BorderRadius.circular(8),
-            onTap: () => _onTabSelected(0),
+            onTap: () => _onTabSelected(_homeTabIndex),
             child: _buildBrandTitle(),
           ),
           centerTitle: true,
@@ -349,21 +353,43 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
         body: Stack(
           children: [
             IndexedStack(index: _currentIndex, children: _buildScreens()),
-            Positioned(
-              right: 16,
-              bottom: actionsBottom,
-              child: FloatingActionButton.extended(
-                heroTag: 'global_call_create',
-                backgroundColor: scheme.tertiary,
-                foregroundColor: scheme.onTertiary,
-                onPressed: _openReceptionCreate,
-                tooltip: '접수 등록',
-                icon: const Icon(Icons.add_ic_call_rounded),
-                label: const Text(
-                  '접수',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+            if (_currentIndex == _homeTabIndex)
+              Positioned(
+                right: 16,
+                bottom: actionsBottom,
+                child: FloatingActionButton.extended(
+                  heroTag: 'global_call_create',
+                  backgroundColor: scheme.tertiary,
+                  foregroundColor: scheme.onTertiary,
+                  onPressed: _openReceptionCreate,
+                  tooltip: '접수 등록',
+                  icon: const Icon(Icons.add_ic_call_rounded),
+                  label: const Text(
+                    '접수',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
               ),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: _onTabSelected,
+          destinations: [
+            const NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: '홈',
+            ),
+            NavigationDestination(
+              icon: _IssuanceNavIcon(
+                badgeAsync: ref.watch(issuanceRequestBadgeCountProvider),
+              ),
+              selectedIcon: _IssuanceNavIcon(
+                badgeAsync: ref.watch(issuanceRequestBadgeCountProvider),
+                selected: true,
+              ),
+              label: '발급요청',
             ),
           ],
         ),
@@ -410,8 +436,17 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
             title: '홈',
             onTap: () {
               Navigator.pop(context);
-              _onTabSelected(0);
+              _onTabSelected(_homeTabIndex);
               requestHomeHubSection(ref, HomeHubSection.flow);
+            },
+            scheme: scheme,
+          ),
+          _buildDrawerItem(
+            icon: Icons.receipt_long_rounded,
+            title: '발급요청',
+            onTap: () {
+              Navigator.pop(context);
+              _onTabSelected(_issuanceTabIndex);
             },
             scheme: scheme,
           ),
@@ -567,5 +602,22 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
       visualDensity: VisualDensity.compact,
       contentPadding: const EdgeInsets.symmetric(horizontal: 24),
     );
+  }
+}
+
+class _IssuanceNavIcon extends StatelessWidget {
+  const _IssuanceNavIcon({required this.badgeAsync, this.selected = false});
+
+  final AsyncValue<int> badgeAsync;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = Icon(
+      selected ? Icons.receipt_long_rounded : Icons.receipt_long_outlined,
+    );
+    final count = badgeAsync.valueOrNull ?? 0;
+    if (count <= 0) return icon;
+    return Badge(label: Text(count > 99 ? '99+' : '$count'), child: icon);
   }
 }
