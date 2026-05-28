@@ -78,6 +78,12 @@ String? emptyToNull(String? value) {
 bool statusRequiresNextScheduledDate(int statusId) =>
     statusId == CallStatusIds.undecided;
 
+/// 수주·미수주·단순문의·설계문의·기타는 추가 상담 입력 불필요.
+bool canEnterFurtherConsultation(int? statusId) {
+  if (statusId == null) return true;
+  return statusId == CallStatusIds.undecided;
+}
+
 /// 수주·미수주·단순문의·설계문의·기타 → DB `next_scheduled_date` = null
 String? resolveNextScheduledDateForSave(int statusId, String? nextScheduledDateYmd) {
   if (!statusRequiresNextScheduledDate(statusId)) return null;
@@ -233,3 +239,32 @@ int displayStageFromHistoryMap(Map<String, dynamic> h) {
 
 String displayStageLabelFromHistoryMap(Map<String, dynamic> h) =>
     '${displayStageFromHistoryMap(h)}차';
+
+int? statusIdFromStatusName(String? raw) {
+  final name = (raw ?? '').trim();
+  if (name.isEmpty || name == 'null') return null;
+  return kCallStatusIdByName[name];
+}
+
+int? statusIdFromHistoryMap(Map<String, dynamic> h) {
+  final v = h['status_id'];
+  if (v is int) {
+    return v;
+  }
+  if (v is num) {
+    return v.toInt();
+  }
+  final parsed = int.tryParse('${v ?? ''}');
+  if (parsed != null) return parsed;
+  return statusIdFromStatusName((h['status'] ?? '').toString());
+}
+
+bool isTerminalConsultationStatus(int? statusId) =>
+    statusId != null && statusId != CallStatusIds.undecided;
+
+String? unsuccessfulReasonFromHistoryMap(Map<String, dynamic> h) {
+  final raw = h['unsuccessful_reason'] ?? h['unsuccessfulReason'];
+  final s = (raw ?? '').toString().trim();
+  if (s.isEmpty || s == 'null') return null;
+  return s;
+}

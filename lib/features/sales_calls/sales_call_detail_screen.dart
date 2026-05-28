@@ -419,9 +419,14 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return 0;
   }
 
-  /// 웹과 동일: 다음 상담 차수 = 기존 이력 건수 + 1
+  /// 웹과 동일: 다음 상담 차수 = 기존 이력 건수 + 1.
+  /// 목록 `initial`에 이력이 비어 있어도 `call_stage`로 차수를 추정해 라벨 깜빡임을 줄임.
   int _nextConsultationStageNumber(SalesCall? call) {
-    return (call?.callHistory.length ?? 0) + 1;
+    if (call == null) return 1;
+    final fromHistory = call.callHistory.length + 1;
+    final currentStage = _parseStageValue(call.callStage);
+    final fromStage = currentStage <= 0 ? 1 : currentStage + 1;
+    return fromHistory > fromStage ? fromHistory : fromStage;
   }
 
   String _inputStageLabel(SalesCall? call) => '${_nextConsultationStageNumber(call)}차';
@@ -481,6 +486,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
   String _getStatusNameById(MasterDataBundle master, int? id) =>
       callStatusNameFromId(id);
+
+  String _displayStatusLabel(SalesCall? call) {
+    if (call == null) return '미확인';
+    return call.effectiveStatusLabel(orderedHistory: _orderedCallHistory);
+  }
+
+  bool get _canEnterFurtherConsultation {
+    final call = _model;
+    if (call == null) return false;
+    return call.canEnterFurtherConsultationRound(
+      orderedHistory: _orderedCallHistory,
+    );
+  }
 
   String _attachmentSavePrefix(SalesCall? call) {
     final now = DateTime.now();
@@ -577,7 +595,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
         ],
       ),
-      floatingActionButton: (!_isEditMode && _model != null)
+      floatingActionButton: (!_isEditMode &&
+              _model != null &&
+              !_loading &&
+              _canEnterFurtherConsultation)
           ? FloatingActionButton.extended(
               onPressed: () => masterAsync.whenData((m) => _showConsultationDialog(m)),
               icon: const Icon(Icons.add_comment_rounded),
@@ -681,7 +702,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               Expanded(
                 child: _buildInfoTile(
                   '현재 성과', 
-                  m?.statusLabel ?? '미확인', 
+                  _displayStatusLabel(m), 
                   Icons.stars_rounded, 
                   scheme,
                   labelColor: scheme.primary,
@@ -705,6 +726,21 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             Icons.edit_note_rounded,
             scheme,
           ),
+          if (m != null &&
+              m.effectiveStatusId(orderedHistory: _orderedCallHistory) ==
+                  CallStatusIds.lost) ...[
+            const SizedBox(height: 12),
+            _buildInfoTile(
+              '미수주 사유',
+              m.effectiveUnsuccessfulReason(orderedHistory: _orderedCallHistory) ??
+                  '미기재',
+              Icons.report_gmailerrorred_outlined,
+              scheme,
+              multiLine: true,
+              labelColor: scheme.error,
+              bgColor: scheme.errorContainer.withValues(alpha: 0.35),
+            ),
+          ],
           const SizedBox(height: 12),
           _buildInfoTile(
             '${_getNextStage(m?.callStage)} 예정일', 
@@ -971,7 +1007,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  m.statusLabel ?? '접수',
+                  _displayStatusLabel(m),
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                 ),
               ),
@@ -1020,6 +1056,20 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               letterSpacing: 0.2,
             ),
           ),
+          if ((m.inquiryContent ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              m.inquiryContent!.trim(),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: Colors.white.withOpacity(0.88),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -1180,6 +1230,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     final scheduledStageLabel = '${stageNum + 1}차 예정일';
     final showScheduledLine = scheduledRaw != null;
     final showDiffLine = stageNum > 1 && diffDays != null;
+    final histStatusId = statusIdFromHistoryMap(h);
+    final lostReason = histStatusId == CallStatusIds.lost
+        ? unsuccessfulReasonFromHistoryMap(h)
+        : null;
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -1267,9 +1321,38 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             const SizedBox(height: 16),
             Expanded(
               child: SingleChildScrollView(
-                child: Text(
-                  content.isEmpty ? '기록된 상담 내용이 없습니다.' : content,
-                  style: TextStyle(fontSize: 15, height: 1.6, color: scheme.onSurface),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      content.isEmpty ? '기록된 상담 내용이 없습니다.' : content,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 1.6,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    if (lostReason != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        '미수주 사유',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        lostReason,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -1362,6 +1445,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   void _showConsultationDialog(MasterDataBundle master) {
     _consultationNextDateCtrl.clear();
     _unsuccessfulReasonCtrl.clear();
+    _statusId = CallStatusIds.undecided;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

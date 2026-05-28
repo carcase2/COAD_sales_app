@@ -72,6 +72,13 @@ class SalesCall {
       );
     }
 
+    final statusId = _int(json, const ['status_id', 'statusId']);
+    final nestedStatusLabel = _nestedName(json, const [
+      'call_statuses',
+      'call_status',
+      'callStatus',
+    ]);
+
     return SalesCall(
       id: _pick(json, const ['id']) ?? '',
       callDate: _pick(json, const ['call_date', 'callDate']),
@@ -82,7 +89,7 @@ class SalesCall {
       productCategoryId: _pick(json, const ['product_category_id', 'productCategoryId']),
       inquiryMethodId: _pick(json, const ['inquiry_method_id', 'inquiryMethodId']),
       regionId: _pick(json, const ['region_id', 'regionId']),
-      statusId: _int(json, const ['status_id', 'statusId']),
+      statusId: statusId,
       assignedTo: _pick(json, const ['assigned_to', 'assignedTo']),
       createdBy: _pick(json, const ['created_by', 'createdBy']),
       callStage: _pick(json, const ['call_stage', 'callStage']),
@@ -104,11 +111,9 @@ class SalesCall {
         'inquiryMethod',
       ]),
       regionLabel: _regionLabel(json),
-      statusLabel: _nestedName(json, const [
-        'call_statuses',
-        'call_status',
-        'callStatus',
-      ]),
+      statusLabel: statusId != null
+          ? callStatusNameFromId(statusId)
+          : nestedStatusLabel,
       callHistory: history,
       images: _parseImageUrls(json['images']),
     );
@@ -136,6 +141,52 @@ class SalesCall {
       return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
     }
     return null;
+  }
+
+  /// 상단 카드·현재 성과용 `status_id`.
+  /// `sales_calls.status_id`가 종료 상태면 우선하고, 아니면 최신 이력·라벨을 참고.
+  int? effectiveStatusId({List<Map<String, dynamic>>? orderedHistory}) {
+    if (isTerminalConsultationStatus(statusId)) return statusId;
+
+    final history = orderedHistory ?? orderCallHistoryForDisplay(callHistory);
+    if (history.isNotEmpty) {
+      final histId = statusIdFromHistoryMap(history.first);
+      if (histId != null) return histId;
+    }
+    if (statusId != null) return statusId;
+    return statusIdFromStatusName(statusLabel);
+  }
+
+  bool canEnterFurtherConsultationRound({List<Map<String, dynamic>>? orderedHistory}) =>
+      canEnterFurtherConsultation(effectiveStatusId(orderedHistory: orderedHistory));
+
+  /// 미수주일 때 최신 이력의 `unsuccessful_reason`.
+  String? effectiveUnsuccessfulReason({List<Map<String, dynamic>>? orderedHistory}) {
+    if (effectiveStatusId(orderedHistory: orderedHistory) != CallStatusIds.lost) {
+      return null;
+    }
+    final history = orderedHistory ?? orderCallHistoryForDisplay(callHistory);
+    for (final h in history) {
+      if (statusIdFromHistoryMap(h) != CallStatusIds.lost) continue;
+      final reason = unsuccessfulReasonFromHistoryMap(h);
+      if (reason != null) return reason;
+    }
+    return null;
+  }
+
+  /// 상단 카드·현재 성과용. 최신 `call_history` → `status_id` 순.
+  String effectiveStatusLabel({List<Map<String, dynamic>>? orderedHistory}) {
+    final history = orderedHistory ?? orderCallHistoryForDisplay(callHistory);
+    final effectiveId = effectiveStatusId(orderedHistory: orderedHistory);
+    if (effectiveId != null) return callStatusNameFromId(effectiveId);
+    if (history.isNotEmpty) {
+      final text = (history.first['status'] ?? '').toString().trim();
+      if (text.isNotEmpty && text != 'null') return text;
+    }
+    if (statusId != null) return callStatusNameFromId(statusId);
+    final label = statusLabel?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    return '미확인';
   }
 
   Map<String, dynamic> toUpdateBody() {

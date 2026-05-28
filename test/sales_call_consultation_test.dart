@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
+import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -107,5 +108,107 @@ void main() {
     expect(displayStageFromHistoryMap(ordered[0]), 3);
     expect(displayStageFromHistoryMap(ordered[1]), 2);
     expect(displayStageFromHistoryMap(ordered[2]), 1);
+  });
+
+  test('statusIdFromHistoryMap — status 텍스트로 id 해석', () {
+    expect(
+      statusIdFromHistoryMap({'status': '미수주'}),
+      CallStatusIds.lost,
+    );
+    expect(
+      statusIdFromHistoryMap({'status_id': CallStatusIds.won}),
+      CallStatusIds.won,
+    );
+  });
+
+  test('effectiveStatusId — sales_calls 종료 상태 우선', () {
+    final call = SalesCall(
+      id: 'test',
+      statusId: CallStatusIds.lost,
+      callHistory: [
+        {
+          'status_id': CallStatusIds.undecided,
+          'call_stage': 4,
+          'call_date': '2026-05-29',
+        },
+      ],
+    );
+    expect(call.effectiveStatusId(), CallStatusIds.lost);
+    expect(call.canEnterFurtherConsultationRound(), isFalse);
+  });
+
+  test('canEnterFurtherConsultation — 미결정만 추가 상담', () {
+    expect(canEnterFurtherConsultation(CallStatusIds.undecided), isTrue);
+    expect(canEnterFurtherConsultation(CallStatusIds.won), isFalse);
+    expect(canEnterFurtherConsultation(CallStatusIds.lost), isFalse);
+    expect(canEnterFurtherConsultation(CallStatusIds.simpleInquiry), isFalse);
+    expect(canEnterFurtherConsultation(CallStatusIds.designInquiry), isFalse);
+    expect(canEnterFurtherConsultation(CallStatusIds.other), isFalse);
+    expect(canEnterFurtherConsultation(null), isTrue);
+  });
+
+  test('SalesCall.effectiveUnsuccessfulReason — 미수주 이력 사유', () {
+    final call = SalesCall(
+      id: 'test',
+      statusId: CallStatusIds.lost,
+      callHistory: [
+        {
+          'status_id': CallStatusIds.lost,
+          'call_stage': 2,
+          'call_date': '2026-05-28',
+          'unsuccessful_reason': '가격 경쟁력 부족',
+        },
+      ],
+    );
+    expect(call.effectiveUnsuccessfulReason(), '가격 경쟁력 부족');
+    expect(
+      SalesCall(
+        id: 'x',
+        statusId: CallStatusIds.won,
+        callHistory: [
+          {
+            'status_id': CallStatusIds.won,
+            'call_stage': 3,
+            'call_date': '2026-05-29',
+          },
+          {
+            'status_id': CallStatusIds.lost,
+            'call_stage': 2,
+            'call_date': '2026-05-28',
+            'unsuccessful_reason': '가격 경쟁력 부족',
+          },
+        ],
+      ).effectiveUnsuccessfulReason(),
+      isNull,
+    );
+  });
+
+  test('SalesCall.effectiveStatusLabel — sales_calls 종료 상태 우선', () {
+    final wonMain = SalesCall(
+      id: 'test',
+      statusId: CallStatusIds.won,
+      statusLabel: '수주',
+      callHistory: [
+        {
+          'status_id': CallStatusIds.lost,
+          'call_stage': 4,
+          'call_date': '2026-05-28',
+        },
+      ],
+    );
+    expect(wonMain.effectiveStatusLabel(), '수주');
+
+    final lostMain = SalesCall(
+      id: 'test2',
+      statusId: CallStatusIds.lost,
+      callHistory: [
+        {
+          'status_id': CallStatusIds.undecided,
+          'call_stage': 4,
+          'call_date': '2026-05-29',
+        },
+      ],
+    );
+    expect(lostMain.effectiveStatusLabel(), '미수주');
   });
 }

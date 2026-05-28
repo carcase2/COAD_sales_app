@@ -123,6 +123,8 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
   }
 
   Widget _buildSearchItem(BuildContext context, SalesCall c, ColorScheme scheme) {
+    final statusLabel = c.effectiveStatusLabel();
+    final inquiry = (c.inquiryContent ?? '').trim();
     return Container(
       margin: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
       decoration: BoxDecoration(
@@ -171,9 +173,33 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
                       ],
                     ),
                   ),
-                  Text(
-                    c.callDate ?? '',
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          statusLabel,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        c.callDate ?? '',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -192,7 +218,7 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (c.inquiryContent != null && c.inquiryContent!.isNotEmpty) ...[
+              if (inquiry.isNotEmpty) ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -200,12 +226,30 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
                     color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: SearchHighlightText(
-                    text: c.inquiryContent!,
-                    query: query,
-                    style: TextStyle(fontSize: 13, color: scheme.onSurface.withValues(alpha: 0.8), height: 1.4),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '문의내용',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      SearchHighlightText(
+                        text: inquiry,
+                        query: query,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onSurface.withValues(alpha: 0.85),
+                          height: 1.4,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 8),
