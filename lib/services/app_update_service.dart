@@ -217,9 +217,7 @@ class AppUpdateService {
       final client = Supabase.instance.client;
       final rows = await client
           .from('app_update_policy')
-          .select(
-            'latest_version, min_version, updated_at, proposed_by, proposer, requested_by, release_notes, changes, change_summary',
-          )
+          .select()
           .order('updated_at', ascending: false)
           .limit(limit);
 
