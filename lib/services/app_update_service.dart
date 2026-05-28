@@ -203,6 +203,107 @@ class AppUpdateService {
     }
   }
 
+  /// 설정 화면용 업데이트 이력 조회.
+  ///
+  /// `app_update_policy` 최근 rows를 기반으로,
+  /// - 버전: `latest_version` (fallback: `min_version`)
+  /// - 제안자: `proposed_by` / `proposer` / `requested_by`
+  /// - 변경내역: `release_notes` / `changes` / `change_summary`
+  /// 를 유연하게 파싱합니다.
+  static Future<List<UpdateHistoryEntry>> fetchUpdateHistory({
+    int limit = 10,
+  }) async {
+    try {
+      final client = Supabase.instance.client;
+      final rows = await client
+          .from('app_update_policy')
+          .select(
+            'latest_version, min_version, updated_at, proposed_by, proposer, requested_by, release_notes, changes, change_summary',
+          )
+          .order('updated_at', ascending: false)
+          .limit(limit);
+
+      final parsed = <UpdateHistoryEntry>[];
+      for (final raw in rows) {
+        final map = Map<String, dynamic>.from(raw);
+        final version = (map['latest_version'] ?? map['min_version'] ?? '')
+            .toString()
+            .trim();
+        if (version.isEmpty) continue;
+
+        final dateLabel = _dateOnlyLabel(map['updated_at']);
+        final proposer = _firstNonEmptyString([
+          map['proposed_by'],
+          map['proposer'],
+          map['requested_by'],
+        ]);
+        final changes = _normalizeReleaseNotes(
+          map['release_notes'] ?? map['changes'] ?? map['change_summary'],
+        );
+        parsed.add(
+          UpdateHistoryEntry(
+            version: version,
+            dateLabel: dateLabel.isEmpty ? '-' : dateLabel,
+            proposer: proposer.isEmpty ? '미기재' : proposer,
+            changes: changes,
+          ),
+        );
+      }
+      return parsed;
+    } catch (e) {
+      debugPrint('업데이트 이력 조회 실패(무시): $e');
+      return const [];
+    }
+  }
+
+  static String _dateOnlyLabel(dynamic raw) {
+    final src = (raw ?? '').toString().trim();
+    if (src.isEmpty) return '';
+    final parsed = DateTime.tryParse(src);
+    if (parsed == null) {
+      return src.length >= 10 ? src.substring(0, 10) : src;
+    }
+    final y = parsed.year.toString().padLeft(4, '0');
+    final m = parsed.month.toString().padLeft(2, '0');
+    final d = parsed.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  static String _firstNonEmptyString(List<dynamic> values) {
+    for (final v in values) {
+      final s = (v ?? '').toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    return '';
+  }
+
+  static List<String> _normalizeReleaseNotes(dynamic raw) {
+    if (raw == null) return const [];
+    if (raw is List) {
+      return raw
+          .map((e) => (e ?? '').toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (raw is Map) {
+      final items = <String>[];
+      for (final entry in raw.entries) {
+        final key = entry.key.toString().trim();
+        final value = (entry.value ?? '').toString().trim();
+        if (value.isEmpty) continue;
+        items.add(key.isEmpty ? value : '$key: $value');
+      }
+      return items;
+    }
+    final text = raw.toString().trim();
+    if (text.isEmpty) return const [];
+    return text
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.replaceFirst(RegExp(r'^\s*[-•]\s*'), '').trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
+
   static int _compareVersion(String a, String b) {
     final aParts = a.split('.').map((e) => int.tryParse(e) ?? 0).toList();
     final bParts = b.split('.').map((e) => int.tryParse(e) ?? 0).toList();
@@ -362,6 +463,20 @@ class AppUpdateService {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
+}
+
+class UpdateHistoryEntry {
+  const UpdateHistoryEntry({
+    required this.version,
+    required this.dateLabel,
+    required this.proposer,
+    required this.changes,
+  });
+
+  final String version;
+  final String dateLabel;
+  final String proposer;
+  final List<String> changes;
 }
 
 class _UpdatePolicy {
