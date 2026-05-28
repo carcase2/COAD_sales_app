@@ -63,6 +63,16 @@ class NotificationService {
   /// [init] 시점 로컬 알림 cold-start payload (navigator 준비 전에는 큐만).
   static String? _pendingLaunchPayload;
 
+  /// 최신 알림 탭 처리만 유효하게 유지하기 위한 세대 토큰.
+  static int _handlingGeneration = 0;
+
+  /// 통화 상세 이동 요청의 최신성 보장을 위한 시퀀스.
+  static int _callNavigationRequestSeq = 0;
+
+  static void _log(String message) {
+    debugPrint('[NotificationService] $message');
+  }
+
   static void _queuePendingData(Map<String, dynamic> data) {
     _pendingMessageData = data;
   }
@@ -93,16 +103,17 @@ class NotificationService {
   }
 
   static Future<void> init() async {
-    await FirebaseMessaging.instance.requestPermission(
+    final settings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
+    _log('FCM permission status=${settings.authorizationStatus}');
 
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@mipmap/launcher_icon');
     const InitializationSettings initializationSettings =
         InitializationSettings(android: initializationSettingsAndroid);
 
@@ -135,15 +146,14 @@ class NotificationService {
     await androidPlugin?.requestNotificationsPermission();
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      _log('onMessage id=${message.messageId} dataKeys=${message.data.keys.toList()}');
       // Android 포그라운드: 알림만 표시하고, 상세 이동은 사용자 탭 시에만 처리합니다.
       // (수신 즉시 자동 이동하면 탭 이벤트·pending 재시도와 겹쳐 다른 접수로 가거나 이동이 무시됨)
       unawaited(showRemoteMessageNotification(message, plugin: _localNotifications));
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      if (kDebugMode) {
-        print('[FCM] onMessageOpenedApp data=${message.data}');
-      }
+      _log('onMessageOpenedApp data=${message.data}');
       _scheduleNotificationHandling(
         () => _handleMessageData(Map<String, dynamic>.from(message.data)),
       );
@@ -205,8 +215,12 @@ class NotificationService {
 
   /// navigator·로그인 준비 후 알림 탭 처리 (cold start / 백그라운드 탭).
   static void _scheduleNotificationHandling(VoidCallback handle) {
+    final generation = ++_handlingGeneration;
+
     void run() {
+      if (generation != _handlingGeneration) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (generation != _handlingGeneration) return;
         handle();
       });
     }
@@ -262,7 +276,7 @@ class NotificationService {
     }
 
     if (initializePlugin) {
-      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
       await plugin.initialize(
         settings: const InitializationSettings(android: androidSettings),
         onDidReceiveBackgroundNotificationResponse: _onBackgroundLocalNotificationTap,
@@ -282,6 +296,7 @@ class NotificationService {
     }
 
     final callId = _extractCallIdFromData(data);
+    _log('showRemoteMessageNotification callId=$callId titleLen=${title.length} bodyLen=${body.length}');
     await plugin.show(
       id: _notificationIdFor(callId, message),
       title: title,
@@ -329,7 +344,7 @@ class NotificationService {
   }
 
   static String? _extractCallIdFromData(Map<String, dynamic> data) {
-    const keys = ['call_id', 'callId', 'sales_call_id'];
+    const keys = ['call_id', 'callId', 'sales_call_id', 'salesCallId', 'id'];
     for (final k in keys) {
       if (!data.containsKey(k)) continue;
       final n = _normalizeCallId(data[k]);
@@ -356,6 +371,15 @@ class NotificationService {
       } catch (_) {
         // ignore malformed nested data
       }
+    }
+    final rawRecord = data['record'];
+    if (rawRecord is Map<String, dynamic>) {
+      return _extractCallIdFromData(rawRecord);
+    }
+    if (rawRecord is Map) {
+      return _extractCallIdFromData(
+        rawRecord.map((key, value) => MapEntry('$key', value)),
+      );
     }
     return null;
   }
@@ -391,9 +415,7 @@ class NotificationService {
     }
     final id = _normalizeCallId(rawPayload);
     if (id == null) return;
-    if (kDebugMode) {
-      print('[FCM] local notification tap legacy callId=$id');
-    }
+    _log('local notification tap legacy callId=$id');
     _navigateToCallDetail(id);
   }
 
@@ -411,9 +433,7 @@ class NotificationService {
       _navigateToCallDetail(id);
       return;
     }
-    if (kDebugMode) {
-      print('[FCM] tap ignored: no call_id in data=$data');
-    }
+    _log('tap ignored: no call_id in data=$data');
   }
 
   static bool _isIssuanceCompletedNotification(Map<String, dynamic> data) {
@@ -503,13 +523,16 @@ class NotificationService {
   }
 
   static void _navigateToCallDetail(String id) {
-    _navigateToCallDetailInternal(id, authAttempt: 0);
+    final requestSeq = ++_callNavigationRequestSeq;
+    _navigateToCallDetailInternal(id, authAttempt: 0, requestSeq: requestSeq);
   }
 
   static void _navigateToCallDetailInternal(
     String id, {
     required int authAttempt,
+    required int requestSeq,
   }) {
+    if (requestSeq != _callNavigationRequestSeq) return;
     _queuePendingData({'type': 'sales_call', 'call_id': id});
 
     final ctx = navigatorKey.currentContext;
@@ -522,7 +545,11 @@ class NotificationService {
             Future<void>.delayed(
               Duration(milliseconds: ms),
               () {
-                _navigateToCallDetailInternal(id, authAttempt: authAttempt + 1);
+                _navigateToCallDetailInternal(
+                  id,
+                  authAttempt: authAttempt + 1,
+                  requestSeq: requestSeq,
+                );
               },
             );
           }
@@ -534,7 +561,11 @@ class NotificationService {
           Future<void>.delayed(
             Duration(milliseconds: ms),
             () {
-              _navigateToCallDetailInternal(id, authAttempt: authAttempt + 1);
+              _navigateToCallDetailInternal(
+                id,
+                authAttempt: authAttempt + 1,
+                requestSeq: requestSeq,
+              );
             },
           );
         }
@@ -542,7 +573,7 @@ class NotificationService {
       }
     }
 
-    _pushDetailRoute(id);
+    _pushDetailRoute(id, requestSeq: requestSeq);
   }
 
   static void _invalidateHomeSalesCaches() {
@@ -558,7 +589,9 @@ class NotificationService {
   static void _pushDetailRoute(
     String id, {
     int attempt = 0,
+    required int requestSeq,
   }) {
+    if (requestSeq != _callNavigationRequestSeq) return;
     final nav = navigatorKey.currentState;
     if (nav != null) {
       _pendingMessageData = null;
@@ -593,6 +626,7 @@ class NotificationService {
         () => _pushDetailRoute(
           id,
           attempt: attempt + 1,
+          requestSeq: requestSeq,
         ),
       );
     } else if (kDebugMode) {
@@ -622,20 +656,25 @@ class NotificationService {
   }
 
   static Future<void> updateTokenInSupabase(String userId) async {
-    final token = await getToken();
-    if (token == null) return;
-
-    try {
-      await Supabase.instance.client.from('users').update({'fcm_token': token}).eq('id', userId);
-
-      if (kDebugMode) {
-        print("[NotificationService] FCM Token updated successfully for user $userId");
+    const retryDelaysMs = <int>[0, 600, 1200, 2000, 3500, 5000];
+    for (var i = 0; i < retryDelaysMs.length; i++) {
+      final delayMs = retryDelaysMs[i];
+      if (delayMs > 0) {
+        await Future<void>.delayed(Duration(milliseconds: delayMs));
       }
-    } catch (e) {
-      if (kDebugMode) {
-        print("[NotificationService] ERROR updating FCM token in Supabase: $e");
+      final token = await getToken();
+      if (token == null || token.isEmpty) {
+        continue;
+      }
+      try {
+        await Supabase.instance.client.from('users').update({'fcm_token': token}).eq('id', userId);
+        _log('FCM token sync success user=$userId attempt=${i + 1}');
+        return;
+      } catch (e) {
+        _log('FCM token sync failed user=$userId attempt=${i + 1} error=$e');
       }
     }
+    _log('FCM token sync gave up user=$userId');
   }
 
   static void listenToTokenRefresh(String userId) {

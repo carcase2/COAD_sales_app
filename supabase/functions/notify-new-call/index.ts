@@ -117,8 +117,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
-    const tokens = users.map((u) => u.fcm_token).filter((t) => t && t.length > 5)
-    console.log(`Found ${tokens.length} valid tokens from ${users.length} users.`)
+    const tokens = Array.from(
+      new Set(
+        users
+          .map((u) => (u.fcm_token ?? '').trim())
+          .filter((t) => t.length > 5),
+      ),
+    )
+    console.log(`Found ${tokens.length} unique valid tokens from ${users.length} users.`)
     console.log(`Target users:`, users.map((u) => `${u.name}(Token OK)`).join(', '))
 
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
@@ -196,6 +202,7 @@ serve(async (req) => {
                 data: {
                   type: 'sales_call',
                   call_id: callId,
+                  id: callId,
                   title,
                   body: dataBody,
                   click_action: 'FLUTTER_NOTIFICATION_CLICK',

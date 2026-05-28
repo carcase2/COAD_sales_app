@@ -72,6 +72,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen> with WidgetsBindi
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(NotificationService.onAppResumed());
+      final user = ref.read(authControllerProvider);
+      if (user != null) {
+        unawaited(NotificationService.updateTokenInSupabase(user.id));
+      }
     }
   }
 
