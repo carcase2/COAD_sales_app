@@ -177,7 +177,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         final title = isTax ? '세금계산서 발급 완료' : '이행증권 발급 완료';
         final name = isTax
             ? (row.master['customer_name'] ?? '요청 건').toString()
-            : (row.master['company_name'] ?? row.master['site_name'] ?? '요청 건')
+            : (row.master['company_name'] ?? row.master['bond_type'] ?? '요청 건')
                   .toString();
         await NotificationService.showIssuanceCompletedAlert(
           title: title,
@@ -193,6 +193,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     } catch (_) {
       // 감시 실패 시 UI 영향 없이 다음 주기에 재시도
     }
+  }
+
+  void _openHomeFlowToday() {
+    ref.read(homeHubFlowResetTickProvider.notifier).state++;
+    requestHomeHubSection(ref, HomeHubSection.flow);
+    _onTabSelected(_homeTabIndex);
   }
 
   void _onTabSelected(int index) {
@@ -299,7 +305,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         appBar: AppBar(
           title: InkWell(
             borderRadius: BorderRadius.circular(8),
-            onTap: () => _onTabSelected(_homeTabIndex),
+            onTap: _openHomeFlowToday,
             child: _buildBrandTitle(),
           ),
           centerTitle: true,

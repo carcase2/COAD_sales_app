@@ -17,23 +17,20 @@ class _HubVisual {
   static ({Color canvas, Color accent}) sectionTone(
     HomeHubSection section,
     ColorScheme scheme,
-  ) =>
-      switch (section) {
-        HomeHubSection.flow => (
-            canvas: Color.lerp(scheme.surface, scheme.primaryContainer, 0.07)!,
-            accent: scheme.primary,
-          ),
-        HomeHubSection.incomplete => (
-            canvas:
-                Color.lerp(scheme.surface, scheme.tertiaryContainer, 0.12)!,
-            accent: scheme.tertiary,
-          ),
-        HomeHubSection.calendar => (
-            canvas:
-                Color.lerp(scheme.surface, scheme.secondaryContainer, 0.12)!,
-            accent: scheme.secondary,
-          ),
-      };
+  ) => switch (section) {
+    HomeHubSection.flow => (
+      canvas: Color.lerp(scheme.surface, scheme.primaryContainer, 0.07)!,
+      accent: scheme.primary,
+    ),
+    HomeHubSection.incomplete => (
+      canvas: Color.lerp(scheme.surface, scheme.tertiaryContainer, 0.12)!,
+      accent: scheme.tertiary,
+    ),
+    HomeHubSection.calendar => (
+      canvas: Color.lerp(scheme.surface, scheme.secondaryContainer, 0.12)!,
+      accent: scheme.secondary,
+    ),
+  };
 
   static BoxDecoration screenBackground(
     HomeHubSection section,
@@ -51,41 +48,39 @@ class _HubVisual {
   }
 
   static BoxDecoration header(ColorScheme scheme) => BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            scheme.primary,
-            Color.lerp(scheme.primary, scheme.primaryContainer, 0.22)!,
-          ],
-        ),
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(18),
-          bottomRight: Radius.circular(18),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.1),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      );
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        scheme.primary,
+        Color.lerp(scheme.primary, scheme.primaryContainer, 0.22)!,
+      ],
+    ),
+    borderRadius: const BorderRadius.only(
+      bottomLeft: Radius.circular(18),
+      bottomRight: Radius.circular(18),
+    ),
+    boxShadow: [
+      BoxShadow(
+        color: scheme.shadow.withValues(alpha: 0.1),
+        blurRadius: 14,
+        offset: const Offset(0, 5),
+      ),
+    ],
+  );
 
   static BoxDecoration elevatedCard(ColorScheme scheme) => BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.32),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      );
+    color: scheme.surface,
+    borderRadius: BorderRadius.circular(14),
+    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.32)),
+    boxShadow: [
+      BoxShadow(
+        color: scheme.shadow.withValues(alpha: 0.05),
+        blurRadius: 10,
+        offset: const Offset(0, 3),
+      ),
+    ],
+  );
 }
 
 class HomeHubScreen extends ConsumerStatefulWidget {
@@ -122,31 +117,31 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       (period: HubPeriod.month, anchorYmd: _hubFlowAnchorYmd);
 
   HubPeriodKey get _previousPeriodKey => switch (_hubNavStep) {
-        HubNavStep.day => (
-            period: HubPeriod.day,
-            anchorYmd: addDaysToYmd(_hubFlowAnchorYmd, -1),
-          ),
-        HubNavStep.week => (
-            period: HubPeriod.week,
-            anchorYmd: addDaysToYmd(
-              seoulWeekRangeContaining(_hubFlowAnchorYmd).$1,
-              -7,
-            ),
-          ),
-        HubNavStep.month => (
-            period: HubPeriod.month,
-            anchorYmd: addCalendarMonthsFirstOfMonth(
-              firstDayOfMonthYmd(_hubFlowAnchorYmd),
-              -1,
-            ),
-          ),
-      };
+    HubNavStep.day => (
+      period: HubPeriod.day,
+      anchorYmd: addDaysToYmd(_hubFlowAnchorYmd, -1),
+    ),
+    HubNavStep.week => (
+      period: HubPeriod.week,
+      anchorYmd: addDaysToYmd(
+        seoulWeekRangeContaining(_hubFlowAnchorYmd).$1,
+        -7,
+      ),
+    ),
+    HubNavStep.month => (
+      period: HubPeriod.month,
+      anchorYmd: addCalendarMonthsFirstOfMonth(
+        firstDayOfMonthYmd(_hubFlowAnchorYmd),
+        -1,
+      ),
+    ),
+  };
 
   String _comparePeriodLabel() => switch (_hubNavStep) {
-        HubNavStep.day => '전일 대비',
-        HubNavStep.week => '전주 대비',
-        HubNavStep.month => '전월 대비',
-      };
+    HubNavStep.day => '전일 대비',
+    HubNavStep.week => '전주 대비',
+    HubNavStep.month => '전월 대비',
+  };
 
   /// 현재 탭 기준으로 앵커를 이동: 일→오늘, 주→이번 주(월요일), 월→이번 달 1일. 탭은 유지한다.
   void _resetHubFlowAnchorToCurrent() {
@@ -177,22 +172,22 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   String _hubJumpPeriodLabel() => switch (_hubNavStep) {
-        HubNavStep.day => '금일',
-        HubNavStep.week => '금주',
-        HubNavStep.month => '금월',
-      };
+    HubNavStep.day => '금일',
+    HubNavStep.week => '금주',
+    HubNavStep.month => '금월',
+  };
 
   IconData _hubJumpPeriodIcon() => switch (_hubNavStep) {
-        HubNavStep.day => Icons.today_rounded,
-        HubNavStep.week => Icons.view_week_rounded,
-        HubNavStep.month => Icons.calendar_view_month_rounded,
-      };
+    HubNavStep.day => Icons.today_rounded,
+    HubNavStep.week => Icons.view_week_rounded,
+    HubNavStep.month => Icons.calendar_view_month_rounded,
+  };
 
   String _hubJumpPeriodTooltip() => switch (_hubNavStep) {
-        HubNavStep.day => '조회 기준을 오늘(금일)로 이동',
-        HubNavStep.week => '조회 기준을 이번 주(금주)로 이동',
-        HubNavStep.month => '조회 기준을 이번 달(금월)로 이동',
-      };
+    HubNavStep.day => '조회 기준을 오늘(금일)로 이동',
+    HubNavStep.week => '조회 기준을 이번 주(금주)로 이동',
+    HubNavStep.month => '조회 기준을 이번 달(금월)로 이동',
+  };
 
   void _selectHubNavStep(HubNavStep next) {
     setState(() {
@@ -270,8 +265,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   Widget _buildUnifiedHomeTop(ColorScheme scheme, AppUser? user) {
     final name = user?.name.trim();
-    final initial =
-        (name != null && name.isNotEmpty) ? name[0] : '?';
+    final initial = (name != null && name.isNotEmpty) ? name[0] : '?';
 
     final compact = _section != HomeHubSection.flow;
     return Container(
@@ -352,10 +346,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           _buildSectionSegmentBar(
             scheme,
             embedded: true,
-            incompleteBadge:
-                ref.watch(hubSegmentIncompleteBadgeProvider).valueOrNull,
-            calendarBadge:
-                ref.watch(hubSegmentCalendarBadgeProvider).valueOrNull,
+            incompleteBadge: ref
+                .watch(hubSegmentIncompleteBadgeProvider)
+                .valueOrNull,
+            calendarBadge: ref
+                .watch(hubSegmentCalendarBadgeProvider)
+                .valueOrNull,
           ),
           if (_section == HomeHubSection.flow) ...[
             const SizedBox(height: 8),
@@ -421,8 +417,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                       maxLines: 1,
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight:
-                            selected ? FontWeight.w900 : FontWeight.w700,
+                        fontWeight: selected
+                            ? FontWeight.w900
+                            : FontWeight.w700,
                         color: fg,
                         height: 1,
                         letterSpacing: -0.2,
@@ -488,13 +485,15 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               ),
               const SizedBox(width: 4),
               IconButton(
-                onPressed:
-                    _canShiftHubNavNewer() ? () => _shiftHubNav(1) : null,
+                onPressed: _canShiftHubNavNewer()
+                    ? () => _shiftHubNav(1)
+                    : null,
                 icon: const Icon(Icons.chevron_right_rounded, size: 24),
                 style: IconButton.styleFrom(
                   foregroundColor: scheme.onPrimary,
-                  disabledForegroundColor:
-                      scheme.onPrimary.withValues(alpha: 0.35),
+                  disabledForegroundColor: scheme.onPrimary.withValues(
+                    alpha: 0.35,
+                  ),
                   minimumSize: const Size(40, 40),
                   padding: EdgeInsets.zero,
                 ),
@@ -512,8 +511,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             children: [
               Expanded(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.onPrimary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
@@ -548,17 +549,15 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final fg = onPrimary
         ? (enabled ? scheme.primary : scheme.onPrimary.withValues(alpha: 0.4))
         : (enabled
-            ? scheme.onSecondaryContainer
-            : scheme.onSurfaceVariant.withValues(alpha: 0.45));
+              ? scheme.onSecondaryContainer
+              : scheme.onSurfaceVariant.withValues(alpha: 0.45));
     final bg = onPrimary
         ? (enabled ? scheme.surface : scheme.onPrimary.withValues(alpha: 0.1))
         : (enabled
-            ? scheme.secondaryContainer
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.5));
+              ? scheme.secondaryContainer
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.5));
     final border = onPrimary
-        ? (enabled
-            ? scheme.surface
-            : scheme.onPrimary.withValues(alpha: 0.25))
+        ? (enabled ? scheme.surface : scheme.onPrimary.withValues(alpha: 0.25))
         : scheme.outlineVariant.withValues(alpha: 0.35);
 
     return Tooltip(
@@ -654,17 +653,16 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     Map<String, int> counts,
     String defaultAssignee,
   ) {
-    return counts.keys.toList()
-      ..sort((a, b) {
-        if (a == '전체') return -1;
-        if (b == '전체') return 1;
-        if (a == defaultAssignee) return -1;
-        if (b == defaultAssignee) return 1;
-        final countA = counts[a] ?? 0;
-        final countB = counts[b] ?? 0;
-        if (countA != countB) return countB.compareTo(countA);
-        return a.compareTo(b);
-      });
+    return counts.keys.toList()..sort((a, b) {
+      if (a == '전체') return -1;
+      if (b == '전체') return 1;
+      if (a == defaultAssignee) return -1;
+      if (b == defaultAssignee) return 1;
+      final countA = counts[a] ?? 0;
+      final countB = counts[b] ?? 0;
+      if (countA != countB) return countB.compareTo(countA);
+      return a.compareTo(b);
+    });
   }
 
   String? _listInitialAssignee(String assignee) =>
@@ -674,11 +672,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final weekR = seoulWeekRangeContaining(_hubFlowAnchorYmd);
     return switch (scope) {
       HubPeriod.day => '${_hubFlowAnchorYmd} 기준',
-      HubPeriod.week =>
-        '${formatWeekRangeFlowLabel(weekR.$1, weekR.$2)} 주간 기준',
-      HubPeriod.month => follow
-          ? '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} 팔로우 기준'
-          : '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} 기준',
+      HubPeriod.week => '${formatWeekRangeFlowLabel(weekR.$1, weekR.$2)} 주간 기준',
+      HubPeriod.month =>
+        follow
+            ? '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} 팔로우 기준'
+            : '${formatYearMonthLabelKo(_hubFlowAnchorYmd)} 기준',
     };
   }
 
@@ -695,7 +693,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     }
 
     final assignees = _sortedAssigneeKeys(counts, defaultAssignee);
-    final isTruncated = truncationWarnAbove != null &&
+    final isTruncated =
+        truncationWarnAbove != null &&
         (counts['전체'] ?? 0) >= truncationWarnAbove;
 
     return showModalBottomSheet<String>(
@@ -742,8 +741,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
-                    onPressed: () =>
-                        Navigator.of(context).pop(defaultAssignee),
+                    onPressed: () => Navigator.of(context).pop(defaultAssignee),
                     icon: const Icon(Icons.check_circle_rounded),
                     label: Text('기본 선택: $defaultAssignee'),
                   ),
@@ -789,8 +787,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: scheme.primaryContainer
-                                .withValues(alpha: 0.5),
+                            color: scheme.primaryContainer.withValues(
+                              alpha: 0.5,
+                            ),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1140,8 +1139,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final periodKey = (period: scope, anchorYmd: _hubFlowAnchorYmd);
     CallQualityOverview overview;
     try {
-      overview =
-          await ref.read(hubPeriodQualityOverviewProvider(periodKey).future);
+      overview = await ref.read(
+        hubPeriodQualityOverviewProvider(periodKey).future,
+      );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1174,19 +1174,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       return a.compareTo(b);
     }
 
-    final rankedIndividuals = metricMap.keys
-        .where((name) => name != '전체')
-        .toList()
-      ..sort(
-        forUncalledRate
-            ? (a, b) {
-                final totalA = metricMap[a]?.total ?? 0;
-                final totalB = metricMap[b]?.total ?? 0;
-                if (totalA != totalB) return totalB.compareTo(totalA);
-                return a.compareTo(b);
-              }
-            : compareFirstResponseLongest,
-      );
+    final rankedIndividuals =
+        metricMap.keys.where((name) => name != '전체').toList()..sort(
+          forUncalledRate
+              ? (a, b) {
+                  final totalA = metricMap[a]?.total ?? 0;
+                  final totalB = metricMap[b]?.total ?? 0;
+                  if (totalA != totalB) return totalB.compareTo(totalA);
+                  return a.compareTo(b);
+                }
+              : compareFirstResponseLongest,
+        );
 
     final assignees = ['전체', ...rankedIndividuals];
 
@@ -1289,7 +1287,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: scheme.primaryContainer.withValues(alpha: 0.5),
+                            color: scheme.primaryContainer.withValues(
+                              alpha: 0.5,
+                            ),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1354,7 +1354,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         );
     }
   }
-
 
   int _sectionIndex(HomeHubSection section) =>
       _sectionOrder.indexOf(section).clamp(0, _sectionOrder.length - 1);
@@ -1442,9 +1441,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     if (!mounted) return;
     setState(() => _pendingSyncCount = newCount);
     if (success > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('미전송 상담 $success건이 동기화되었습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('미전송 상담 $success건이 동기화되었습니다.')));
     }
   }
 
@@ -1473,10 +1472,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   HubPeriodKey get _activeFlowPeriodKey => switch (_hubNavStep) {
-        HubNavStep.day => _dayKey,
-        HubNavStep.week => _weekKey,
-        HubNavStep.month => _monthKey,
-      };
+    HubNavStep.day => _dayKey,
+    HubNavStep.week => _weekKey,
+    HubNavStep.month => _monthKey,
+  };
 
   CalendarFollowRangeKey _calendarRangeKeyForHub() {
     if (_launchCalendarFormat == CalendarFormat.month) {
@@ -1531,24 +1530,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     await _checkAndSyncPending();
   }
 
-  Widget _wrapPageWithPullRefresh({required Widget child}) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return RefreshIndicator(
-          onRefresh: _onRefresh,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: SizedBox(
-              height: constraints.maxHeight,
-              width: constraints.maxWidth,
-              child: child,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildSectionSegmentBar(
     ColorScheme scheme, {
     bool embedded = false,
@@ -1562,10 +1543,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     ];
 
     int badgeCountFor(HomeHubSection section) => switch (section) {
-          HomeHubSection.incomplete => incompleteBadge ?? 0,
-          HomeHubSection.calendar => calendarBadge ?? 0,
-          _ => 0,
-        };
+      HomeHubSection.incomplete => incompleteBadge ?? 0,
+      HomeHubSection.calendar => calendarBadge ?? 0,
+      _ => 0,
+    };
 
     bool showsCountBadge(HomeHubSection section) =>
         section == HomeHubSection.incomplete ||
@@ -1618,8 +1599,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         color: _section == section
                             ? scheme.onSurface
                             : (embedded
-                                ? scheme.onPrimary.withValues(alpha: 0.9)
-                                : scheme.onSurfaceVariant),
+                                  ? scheme.onPrimary.withValues(alpha: 0.9)
+                                  : scheme.onSurfaceVariant),
                       ),
                       const SizedBox(width: 4),
                       Flexible(
@@ -1635,8 +1616,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             color: _section == section
                                 ? scheme.onSurface
                                 : (embedded
-                                    ? scheme.onPrimary.withValues(alpha: 0.92)
-                                    : scheme.onSurfaceVariant),
+                                      ? scheme.onPrimary.withValues(alpha: 0.92)
+                                      : scheme.onSurfaceVariant),
                           ),
                         ),
                       ),
@@ -1644,7 +1625,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         const SizedBox(width: 5),
                         _buildSectionCountBadge(
                           count: badgeCountFor(section),
-                          accent: _HubVisual.sectionTone(section, scheme).accent,
+                          accent: _HubVisual.sectionTone(
+                            section,
+                            scheme,
+                          ).accent,
                           selected: _section == section,
                           onPrimary: embedded && _section != section,
                         ),
@@ -1684,8 +1668,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         color: hasCount
             ? accent.withValues(alpha: onPrimary ? 0.92 : 0.88)
             : (onPrimary
-                ? Colors.white.withValues(alpha: 0.16)
-                : accent.withValues(alpha: 0.1)),
+                  ? Colors.white.withValues(alpha: 0.16)
+                  : accent.withValues(alpha: 0.1)),
         borderRadius: BorderRadius.circular(9),
       ),
       child: Text(
@@ -1697,8 +1681,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           color: hasCount
               ? Colors.white
               : (onPrimary
-                  ? Colors.white.withValues(alpha: 0.88)
-                  : accent.withValues(alpha: 0.75)),
+                    ? Colors.white.withValues(alpha: 0.88)
+                    : accent.withValues(alpha: 0.75)),
           height: 1.2,
         ),
       ),
@@ -1710,9 +1694,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       decoration: BoxDecoration(
         color: scheme.secondaryContainer.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: scheme.secondary.withValues(alpha: 0.25),
-        ),
+        border: Border.all(color: scheme.secondary.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
@@ -1726,8 +1708,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               ),
             ),
           ),
-          Icon(Icons.cloud_sync_outlined,
-              size: 22, color: scheme.onSecondaryContainer),
+          Icon(
+            Icons.cloud_sync_outlined,
+            size: 22,
+            color: scheme.onSecondaryContainer,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Padding(
@@ -1794,17 +1779,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   Widget _buildIncompleteBody(ColorScheme scheme) {
     return Padding(
       padding: EdgeInsets.fromLTRB(12, 2, 12, 10 + _homeBottomInset(context)),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return RefreshIndicator(
-            onRefresh: _onRefresh,
-            child: SizedBox(
-              height: constraints.maxHeight,
-              width: constraints.maxWidth,
-              child: const HomeIncompleteBreakdown(fitSingleScreen: true),
-            ),
-          );
-        },
+      child: HomeIncompleteBreakdown(
+        fitSingleScreen: true,
+        onRefresh: _onRefresh,
       ),
     );
   }
@@ -1816,6 +1793,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         key: ValueKey('cal_${_calendarKeyNonce}_${_launchCalendarFormat.name}'),
         initialCalendarFormat: _launchCalendarFormat,
         fitSingleScreen: true,
+        onRefresh: _onRefresh,
       ),
     );
   }
@@ -1827,10 +1805,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   String _comparePeriodShortLabel() => switch (_hubNavStep) {
-        HubNavStep.day => '전일',
-        HubNavStep.week => '전주',
-        HubNavStep.month => '전월',
-      };
+    HubNavStep.day => '전일',
+    HubNavStep.week => '전주',
+    HubNavStep.month => '전월',
+  };
 
   Widget _buildFlowReceptionCompareBanner({
     required ColorScheme scheme,
@@ -1843,13 +1821,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final deltaColor = delta == 0
         ? scheme.onSurfaceVariant
         : delta > 0
-            ? scheme.tertiary
-            : scheme.error;
+        ? scheme.tertiary
+        : scheme.error;
     final trendIcon = delta > 0
         ? Icons.trending_up_rounded
         : delta < 0
-            ? Icons.trending_down_rounded
-            : Icons.trending_flat_rounded;
+        ? Icons.trending_down_rounded
+        : Icons.trending_flat_rounded;
     final periodShort = _comparePeriodShortLabel();
 
     return Container(
@@ -1869,8 +1847,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ),
             Expanded(
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1927,8 +1907,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w500,
-                                    color: scheme.onSurfaceVariant
-                                        .withValues(alpha: 0.85),
+                                    color: scheme.onSurfaceVariant.withValues(
+                                      alpha: 0.85,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1983,11 +1964,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     required String followLabel,
   }) {
     final statsAsync = ref.watch(hubPeriodStatsProvider(periodKey));
-    final prevStatsAsync = ref.watch(hubPeriodStatsProvider(_previousPeriodKey));
-    final followOverviewAsync =
-        ref.watch(hubPeriodFollowOverviewProvider(periodKey));
-    final qualityAsync =
-        ref.watch(hubPeriodQualityOverviewProvider(periodKey));
+    final prevStatsAsync = ref.watch(
+      hubPeriodStatsProvider(_previousPeriodKey),
+    );
+    final followOverviewAsync = ref.watch(
+      hubPeriodFollowOverviewProvider(periodKey),
+    );
+    final qualityAsync = ref.watch(hubPeriodQualityOverviewProvider(periodKey));
     final scope = periodKey.period;
 
     return statsAsync.when(
@@ -2001,64 +1984,65 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            return SingleChildScrollView(
-              physics: const ClampingScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (prevStatsAsync.hasValue) ...[
-                      _buildFlowReceptionCompareBanner(
-                        scheme: scheme,
-                        compareLabel: _comparePeriodLabel(),
-                        reception: reception,
-                        prevReception: prevReception,
+            return RefreshIndicator(
+              onRefresh: _onRefresh,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (prevStatsAsync.hasValue) ...[
+                        _buildFlowReceptionCompareBanner(
+                          scheme: scheme,
+                          compareLabel: _comparePeriodLabel(),
+                          reception: reception,
+                          prevReception: prevReception,
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      _MiniStatsWidget(
+                        compact: true,
+                        receptionLabel: receptionLabel,
+                        incompleteLabel: incompleteLabel,
+                        followLabel: followLabel,
+                        today: reception,
+                        incomplete: incomplete,
+                        todayFollow: followCount,
+                        uncalledRateText: quality == null
+                            ? '-'
+                            : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
+                        avgFirstResponseText: quality == null
+                            ? '-'
+                            : _formatMinutes(quality.avgFirstResponseMinutes),
+                        onTapToday: () => _openReceptionPicker(scope),
+                        onLongPressToday: () =>
+                            _openReceptionPicker(scope, forcePicker: true),
+                        onTapIncomplete: () => _openIncompletePicker(scope),
+                        onLongPressIncomplete: () =>
+                            _openIncompletePicker(scope, forcePicker: true),
+                        onTapTodayFollow: () => _openFollowPicker(scope),
+                        onLongPressTodayFollow: () =>
+                            _openFollowPicker(scope, forcePicker: true),
+                        onTapUncalledRate: () => _openQualityPicker(
+                          forUncalledRate: true,
+                          scope: scope,
+                        ),
+                        onTapFirstResponse: () => _openQualityPicker(
+                          forUncalledRate: false,
+                          scope: scope,
+                        ),
                       ),
-                      const SizedBox(height: 8),
                     ],
-                    _MiniStatsWidget(
-                      compact: true,
-                      receptionLabel: receptionLabel,
-                      incompleteLabel: incompleteLabel,
-                      followLabel: followLabel,
-                      today: reception,
-                      incomplete: incomplete,
-                      todayFollow: followCount,
-                      uncalledRateText: quality == null
-                          ? '-'
-                          : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
-                      avgFirstResponseText: quality == null
-                          ? '-'
-                          : _formatMinutes(quality.avgFirstResponseMinutes),
-                      onTapToday: () => _openReceptionPicker(scope),
-                      onLongPressToday: () =>
-                          _openReceptionPicker(scope, forcePicker: true),
-                      onTapIncomplete: () => _openIncompletePicker(scope),
-                      onLongPressIncomplete: () =>
-                          _openIncompletePicker(scope, forcePicker: true),
-                      onTapTodayFollow: () => _openFollowPicker(scope),
-                      onLongPressTodayFollow: () =>
-                          _openFollowPicker(scope, forcePicker: true),
-                      onTapUncalledRate: () => _openQualityPicker(
-                            forUncalledRate: true,
-                            scope: scope,
-                          ),
-                      onTapFirstResponse: () => _openQualityPicker(
-                            forUncalledRate: false,
-                            scope: scope,
-                          ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             );
           },
         );
       },
-      loading: () => const Center(
-        child: LinearProgressIndicator(minHeight: 3),
-      ),
+      loading: () => const Center(child: LinearProgressIndicator(minHeight: 3)),
       error: (e, _) => Center(
         child: _FlowErrorPanel(
           message: koreanErrorMessage(e),
@@ -2121,27 +2105,23 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               decoration: BoxDecoration(
                 border: Border(
                   top: BorderSide(
-                    color: _HubVisual
-                        .sectionTone(_section, scheme)
-                        .accent
-                        .withValues(alpha: 0.28),
+                    color: _HubVisual.sectionTone(
+                      _section,
+                      scheme,
+                    ).accent.withValues(alpha: 0.28),
                     width: 2,
                   ),
                 ),
               ),
               child: PageView(
-              controller: _sectionPageController,
-              onPageChanged: _onSectionPageChanged,
-              children: [
-                _wrapPageWithPullRefresh(
-                  child: _buildFlowBody(scheme, user),
-                ),
-                _buildIncompleteBody(scheme),
-                _wrapPageWithPullRefresh(
-                  child: _buildCalendarBody(),
-                ),
-              ],
-            ),
+                controller: _sectionPageController,
+                onPageChanged: _onSectionPageChanged,
+                children: [
+                  _buildFlowBody(scheme, user),
+                  _buildIncompleteBody(scheme),
+                  _buildCalendarBody(),
+                ],
+              ),
             ),
           ),
         ],
@@ -2412,7 +2392,11 @@ class _StatItem extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: compact ? 15 : 17, color: color.withValues(alpha: 0.75)),
+        Icon(
+          icon,
+          size: compact ? 15 : 17,
+          color: color.withValues(alpha: 0.75),
+        ),
         SizedBox(height: compact ? 4 : 6),
         Text(
           value,
@@ -2444,10 +2428,7 @@ class _StatItem extends StatelessWidget {
 }
 
 class _FlowErrorPanel extends StatelessWidget {
-  const _FlowErrorPanel({
-    required this.message,
-    required this.onRetry,
-  });
+  const _FlowErrorPanel({required this.message, required this.onRetry});
 
   final String message;
   final VoidCallback onRetry;
@@ -2472,10 +2453,7 @@ class _FlowErrorPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          FilledButton.tonal(
-            onPressed: onRetry,
-            child: const Text('다시 시도'),
-          ),
+          FilledButton.tonal(onPressed: onRetry, child: const Text('다시 시도')),
         ],
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -20,6 +22,13 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   String _selectedAssignee = '전체';
   _IssuanceStatusFilter _statusFilter = _IssuanceStatusFilter.pending;
   bool _isListeningLaunch = false;
+
+  Future<void> _refreshIssuanceData() async {
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceRequestBadgeCountProvider);
+    await ref.read(issuanceAllRowsProvider(_domain).future);
+  }
 
   void _consumePendingLaunch() {
     final next = ref.read(pendingIssuanceLaunchProvider);
@@ -117,10 +126,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                           backgroundColor: Colors.white.withValues(alpha: 0.2),
                           foregroundColor: Colors.white,
                         ),
-                        onPressed: () {
-                          ref.invalidate(issuanceAllRowsProvider(_domain));
-                          ref.invalidate(issuanceRequestBadgeCountProvider);
-                        },
+                        onPressed: () => unawaited(_refreshIssuanceData()),
                         icon: const Icon(Icons.refresh_rounded, size: 18),
                       ),
                       const SizedBox(width: 6),
@@ -232,20 +238,43 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   ) {
     return pendingRowsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline_rounded, color: scheme.error, size: 40),
-              const SizedBox(height: 8),
-              Text(
-                '발급요청을 불러오지 못했습니다.\n$e',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant),
+      error: (e, _) => RefreshIndicator(
+        onRefresh: _refreshIssuanceData,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.error_outline_rounded,
+                        color: scheme.error,
+                        size: 40,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '발급요청을 불러오지 못했습니다.\n$e',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '아래로 당겨 새로고침',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -298,35 +327,48 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
           });
 
         if (allCount == 0) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.inbox_rounded,
-                    size: 44,
-                    color: scheme.outlineVariant,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '현재 발급요청 건이 없습니다.',
-                    style: TextStyle(
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
+          return RefreshIndicator(
+            onRefresh: _refreshIssuanceData,
+            child: LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.inbox_rounded,
+                            size: 44,
+                            color: scheme.outlineVariant,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '현재 발급요청 건이 없습니다.',
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '상단의 발급하기 버튼으로 바로 등록할 수 있습니다.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.85,
+                              ),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '상단의 발급하기 버튼으로 바로 등록할 수 있습니다.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           );
@@ -431,43 +473,63 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               ),
             ),
             Expanded(
-              child: filteredRows.isEmpty
-                  ? Center(
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 24),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest.withValues(
-                            alpha: 0.35,
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: scheme.outlineVariant.withValues(alpha: 0.35),
-                          ),
-                        ),
-                        child: Text(
-                          '선택한 담당자 조건에 맞는 요청이 없습니다.\n상단 필터를 변경해 다른 요청을 확인해 보세요.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: scheme.onSurfaceVariant,
-                            fontSize: 12,
-                            height: 1.35,
-                          ),
+              child: RefreshIndicator(
+                onRefresh: _refreshIssuanceData,
+                child: filteredRows.isEmpty
+                    ? LayoutBuilder(
+                        builder: (context, constraints) =>
+                            SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
+                                ),
+                                child: Center(
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.surfaceContainerHighest
+                                          .withValues(alpha: 0.35),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: scheme.outlineVariant.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '선택한 담당자 조건에 맞는 요청이 없습니다.\n'
+                                      '상단 필터를 변경해 다른 요청을 확인해 보세요.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: scheme.onSurfaceVariant,
+                                        fontSize: 12,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                      )
+                    : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        itemCount: filteredRows.length,
+                        separatorBuilder: (_, index) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, index) => _IssuanceRequestCard(
+                          row: filteredRows[index],
+                          onTap: () => _showRequestDetail(filteredRows[index]),
                         ),
                       ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      itemCount: filteredRows.length,
-                      separatorBuilder: (_, index) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) => _IssuanceRequestCard(
-                        row: filteredRows[index],
-                        onTap: () => _showRequestDetail(filteredRows[index]),
-                      ),
-                    ),
+              ),
             ),
           ],
         );
@@ -478,12 +540,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   String _assigneeText(IssuanceRequestRow row) {
     final master = row.master;
     final assignee =
-        (master['requester'] ??
-                master['created_by_name'] ??
-                master['created_by'] ??
-                '')
-            .toString()
-            .trim();
+        (master['requester'] ?? master['created_by'] ?? '').toString().trim();
     return assignee.isEmpty ? '미지정' : assignee;
   }
 
@@ -796,7 +853,8 @@ class _IssuanceRequestCard extends StatelessWidget {
     final requestStepText = row.isCompleted
         ? '발급 완료'
         : (row.issue == null ? '요청 접수' : '요청 진행');
-    final isUrgent = (row.issue?['is_urgent'] ?? false) == true;
+    final isUrgent =
+        isTax && (row.issue?['is_urgent'] ?? false) == true;
 
     Color statusColor(String status) {
       switch (status) {
