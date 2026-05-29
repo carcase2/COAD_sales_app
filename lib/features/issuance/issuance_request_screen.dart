@@ -154,7 +154,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          '발급요청',
+                          '발급요청 (TEST)',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 17,

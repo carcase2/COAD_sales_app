@@ -458,7 +458,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 badgeAsync: ref.watch(issuanceRequestBadgeCountProvider),
                 selected: true,
               ),
-              label: '발급요청',
+              label: '발급요청 (TEST)',
             ),
           ],
         ),
@@ -557,7 +557,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           ),
           _buildDrawerItem(
             icon: Icons.receipt_long_rounded,
-            title: '발급요청',
+            title: '발급요청 (TEST)',
             onTap: () {
               Navigator.pop(context);
               _onTabSelected(_issuanceTabIndex);
