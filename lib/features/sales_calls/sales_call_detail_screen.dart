@@ -1462,7 +1462,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           Color bgColor = Colors.white;
           if (_statusId == 3) { // 수주
             bgColor = const Color(0xFFE8F5E9);
-          } else if (_statusId == 2) { // 미수주
+          } else if (_statusId == CallStatusIds.lost) {
             bgColor = const Color(0xFFFFEBEE);
           } else if (_statusId == 1) { // 미결정
             bgColor = const Color(0xFFFFF8E1);
@@ -1494,8 +1494,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            '${_inputStageLabel(m)} 상담내용 입력',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            (_statusId == CallStatusIds.lost)
+                                ? '${_inputStageLabel(m)} 미수주 등록'
+                                : '${_inputStageLabel(m)} 상담내용 입력',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -1558,35 +1563,27 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Text(
-                        (_statusId == CallStatusIds.lost)
-                            ? '상담내용 (선택)'
-                            : '상담내용 *',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: _newConsultationCtrl,
-                        minLines: 5,
-                        maxLines: 15,
-                        scrollPadding: fieldScrollPadding,
-                        style: const TextStyle(fontSize: 16, height: 1.45),
-                        decoration: InputDecoration(
-                          hintText: (_statusId == CallStatusIds.lost)
-                              ? '추가 메모가 있으면 입력하세요 (미수주 사유는 아래에 필수)'
-                              : '고객와의 상담내용을 자세히 입력하세요...',
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
                       const Text('상담 결과 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 12),
                       _buildStatusGrid(scheme, setModalState),
+                      if (_statusId != CallStatusIds.lost) ...[
+                        const SizedBox(height: 24),
+                        const Text('상담내용 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _newConsultationCtrl,
+                          minLines: 5,
+                          maxLines: 15,
+                          scrollPadding: fieldScrollPadding,
+                          style: const TextStyle(fontSize: 16, height: 1.45),
+                          decoration: InputDecoration(
+                            hintText: '고객와의 상담내용을 자세히 입력하세요...',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ],
                       if (_statusId == CallStatusIds.lost) ...[
                         const SizedBox(height: 24),
                         const Text('미수주 사유 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -1679,7 +1676,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                           ),
                         ),
                         child: Text(
-                          _saving ? '저장 중...' : '상담내용 저장',
+                          _saving
+                              ? '저장 중...'
+                              : (_statusId == CallStatusIds.lost)
+                              ? '미수주 저장'
+                              : '상담내용 저장',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                       ),

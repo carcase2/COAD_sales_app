@@ -39,6 +39,7 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
     this.date,
     this.dateEndInclusive,
     this.initialAssignee,
+    this.embedded = false,
   });
 
   final ListQueryMode mode;
@@ -46,6 +47,8 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
   /// [ListQueryMode.dateRange]·[ListQueryMode.followRange]에서 사용.
   final String? dateEndInclusive;
   final String? initialAssignee;
+  /// [SalesCallDayFollowPagerScreen] 등 상위 Scaffold 안에 넣을 때 true.
+  final bool embedded;
 
   @override
   ConsumerState<SalesCallListScreen> createState() => _SalesCallListScreenState();
@@ -400,6 +403,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         },
       ),
     ];
+
+    if (widget.embedded) {
+      return _buildBody();
+    }
 
     return Scaffold(
       appBar: AppBar(

@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_day_follow_pager_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
@@ -1659,9 +1660,8 @@ class _HomeFollowCalendarPanelState
   void _openDayFollowList(String dateKey) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SalesCallListScreen(
-          mode: ListQueryMode.incompleteByDate,
-          date: dateKey,
+        builder: (_) => SalesCallDayFollowPagerScreen(
+          initialDateYmd: dateKey,
           initialAssignee: _selectedAssignee,
         ),
       ),
