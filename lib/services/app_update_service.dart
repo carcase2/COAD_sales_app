@@ -14,6 +14,64 @@ class AppUpdateService {
 
   static bool _alreadyChecked = false;
   static bool _optionalDialogShown = false;
+  static DateTime? _lastInUsePromptAt;
+  static const Duration _inUsePromptCooldown = Duration(hours: 4);
+
+  /// Supabase `app_update_policy` 기준으로 업데이트 필요 여부만 조회 (UI 배지·배너용).
+  static Future<AppUpdateStatus> fetchUpdateStatus() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return const AppUpdateStatus();
+    }
+    try {
+      final policy = await _fetchUpdatePolicy();
+      if (policy == null) return const AppUpdateStatus();
+      final shouldForce = policy.forceUpdate ||
+          _compareVersion(kAppVersion, policy.minVersion) < 0;
+      final shouldRecommend =
+          _compareVersion(kAppVersion, policy.latestVersion) < 0;
+      return AppUpdateStatus(
+        hasUpdate: shouldForce || shouldRecommend,
+        forceUpdate: shouldForce,
+        latestVersion: policy.latestVersion,
+        storeUrl: policy.storeUrl,
+      );
+    } catch (e) {
+      debugPrint('업데이트 상태 조회 실패: $e');
+      return const AppUpdateStatus();
+    }
+  }
+
+  /// 앱 사용 중(다시 foreground 등) 주기적으로 정책을 확인하고 안내합니다.
+  static Future<void> checkWhileInUse(BuildContext context) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+
+    try {
+      final policy = await _fetchUpdatePolicy();
+      if (policy == null || !context.mounted) return;
+
+      final shouldForce = policy.forceUpdate ||
+          _compareVersion(kAppVersion, policy.minVersion) < 0;
+      final shouldRecommend =
+          _compareVersion(kAppVersion, policy.latestVersion) < 0;
+
+      if (shouldForce) {
+        await _showForceUpdateDialog(context, policy);
+        return;
+      }
+
+      if (!shouldRecommend) return;
+
+      final now = DateTime.now();
+      final cooldownOk = _lastInUsePromptAt == null ||
+          now.difference(_lastInUsePromptAt!) >= _inUsePromptCooldown;
+      if (!cooldownOk) return;
+
+      _lastInUsePromptAt = now;
+      await _showOptionalUpdateDialog(context, policy);
+    } catch (e) {
+      debugPrint('사용 중 업데이트 체크 실패: $e');
+    }
+  }
 
   /// [showUpToDateMessage]가 true이면 설정·푸시 등 사용자가 직접 누른 경우로,
   /// Play 즉시 업데이트 → Play 스토어 앱 페이지 순으로 시도합니다.
@@ -452,6 +510,23 @@ class AppUpdateService {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
+}
+
+/// 설정·메인 화면 배지용 업데이트 상태.
+class AppUpdateStatus {
+  const AppUpdateStatus({
+    this.hasUpdate = false,
+    this.forceUpdate = false,
+    this.latestVersion,
+    this.storeUrl,
+  });
+
+  final bool hasUpdate;
+  final bool forceUpdate;
+  final String? latestVersion;
+  final String? storeUrl;
+
+  bool get isUpToDate => !hasUpdate;
 }
 
 class UpdateHistoryEntry {

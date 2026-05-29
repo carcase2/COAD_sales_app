@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
+import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
@@ -30,14 +32,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.system_update_alt_rounded, color: scheme.primary),
             title: const Text('업데이트 확인'),
-            subtitle: const Text('Play 스토어에서 최신 버전으로 업데이트를 시도합니다.'),
-            trailing: const Icon(Icons.chevron_right_rounded),
+            subtitle: Text(
+              updateStatus?.hasUpdate == true &&
+                      updateStatus?.latestVersion != null
+                  ? '새 버전 v${updateStatus!.latestVersion} 사용 가능 · 탭하여 업데이트'
+                  : 'Play 스토어에서 최신 버전으로 업데이트를 시도합니다.',
+            ),
+            trailing: updateStatus?.hasUpdate == true
+                ? Icon(Icons.new_releases_rounded, color: scheme.tertiary)
+                : const Icon(Icons.chevron_right_rounded),
             onTap: () async {
+              ref.invalidate(appUpdateStatusProvider);
               await AppUpdateService.checkAndUpdateIfNeeded(
                 context,
                 forceRecheck: true,
                 showUpToDateMessage: true,
               );
+              if (context.mounted) {
+                ref.invalidate(appUpdateStatusProvider);
+              }
             },
           ),
           const SizedBox(height: 20),

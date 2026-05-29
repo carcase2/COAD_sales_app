@@ -11,6 +11,7 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_search_deleg
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
@@ -36,15 +37,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   DateTime? _lastBackExitHintAt;
   RealtimeChannel? _issuanceCompletionWatchChannel;
   Timer? _issuanceCompletionDebounce;
+  String? _dismissedUpdateBannerVersion;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // 1. Handle deep link if app was opened via notification (Cold Start)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       unawaited(NotificationService.handleInitialMessage());
-      AppUpdateService.checkAndUpdateIfNeeded(context);
+      await AppUpdateService.checkAndUpdateIfNeeded(context);
+      if (mounted) {
+        ref.invalidate(appUpdateStatusProvider);
+      }
     });
 
     // 홈(미통화·달력)이 쓰는 대량 목록을 백그라운드로 미리 불러 전환 시 빨리 표시
@@ -78,6 +83,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       final user = ref.read(authControllerProvider);
       if (user != null) {
         unawaited(NotificationService.updateTokenInSupabase(user.id));
+      }
+      ref.invalidate(appUpdateStatusProvider);
+      if (mounted) {
+        unawaited(AppUpdateService.checkWhileInUse(context));
       }
     }
   }
@@ -255,8 +264,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
+    final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final actionsBottom = 12.0 + MediaQuery.paddingOf(context).bottom;
+    final latestRemote = updateStatus?.latestVersion;
+    final showUpdateBanner = updateStatus?.hasUpdate == true &&
+        updateStatus?.forceUpdate != true &&
+        latestRemote != null &&
+        latestRemote != _dismissedUpdateBannerVersion;
 
     return PopScope(
       canPop: false,
@@ -301,7 +316,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       },
       child: Scaffold(
         key: scaffoldKey,
-        drawer: _buildDrawer(context, user, scheme),
+        drawer: _buildDrawer(context, user, scheme, updateStatus),
         appBar: AppBar(
           title: InkWell(
             borderRadius: BorderRadius.circular(8),
@@ -318,18 +333,49 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           ),
           actions: [
             Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  'v$kAppVersion',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white.withValues(alpha: 0.9),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: updateStatus?.hasUpdate == true
+                    ? () => AppUpdateService.checkAndUpdateIfNeeded(
+                        context,
+                        forceRecheck: true,
+                      )
+                    : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: updateStatus?.hasUpdate == true
+                        ? Colors.amber.shade700.withValues(alpha: 0.35)
+                        : Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                    border: updateStatus?.hasUpdate == true
+                        ? Border.all(
+                            color: Colors.amber.shade200.withValues(alpha: 0.7),
+                          )
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (updateStatus?.hasUpdate == true) ...[
+                        Icon(
+                          Icons.system_update_alt_rounded,
+                          size: 14,
+                          color: Colors.amber.shade100,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        updateStatus?.hasUpdate == true && latestRemote != null
+                            ? 'v$kAppVersion → $latestRemote'
+                            : 'v$kAppVersion',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white.withValues(alpha: 0.95),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -359,6 +405,23 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         body: Stack(
           children: [
             IndexedStack(index: _currentIndex, children: _buildScreens()),
+            if (showUpdateBanner)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _buildUpdateAvailableBanner(
+                  scheme: scheme,
+                  latestVersion: latestRemote!,
+                  onUpdate: () => AppUpdateService.checkAndUpdateIfNeeded(
+                    context,
+                    forceRecheck: true,
+                  ),
+                  onDismiss: () => setState(
+                    () => _dismissedUpdateBannerVersion = latestRemote,
+                  ),
+                ),
+              ),
             if (_currentIndex == _homeTabIndex)
               Positioned(
                 right: 16,
@@ -403,7 +466,52 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     );
   }
 
-  Widget _buildDrawer(BuildContext context, AppUser? user, ColorScheme scheme) {
+  Widget _buildUpdateAvailableBanner({
+    required ColorScheme scheme,
+    required String latestVersion,
+    required VoidCallback onUpdate,
+    required VoidCallback onDismiss,
+  }) {
+    return Material(
+      elevation: 3,
+      color: scheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        child: Row(
+          children: [
+            Icon(Icons.system_update_alt_rounded, color: scheme.onTertiaryContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '새 버전 v$latestVersion 사용 가능',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onUpdate,
+              child: const Text('업데이트'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20),
+              onPressed: onDismiss,
+              tooltip: '닫기',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawer(
+    BuildContext context,
+    AppUser? user,
+    ColorScheme scheme,
+    AppUpdateStatus? updateStatus,
+  ) {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -461,6 +569,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           _buildDrawerItem(
             icon: Icons.settings_outlined,
             title: '설정',
+            menuBadge: updateStatus?.hasUpdate == true ? '업데이트' : null,
             onTap: () {
               Navigator.pop(context);
               Navigator.of(context).push(
