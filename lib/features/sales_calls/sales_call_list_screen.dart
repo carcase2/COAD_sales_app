@@ -40,6 +40,8 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
     this.dateEndInclusive,
     this.initialAssignee,
     this.embedded = false,
+    this.selectedAssignee,
+    this.onAssigneeChanged,
   });
 
   final ListQueryMode mode;
@@ -49,6 +51,9 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
   final String? initialAssignee;
   /// [SalesCallDayFollowPagerScreen] 등 상위 Scaffold 안에 넣을 때 true.
   final bool embedded;
+  /// 달력 팔로우 페이저 등에서 날짜 스와이프 시 담당자 필터 유지.
+  final String? selectedAssignee;
+  final ValueChanged<String>? onAssigneeChanged;
 
   @override
   ConsumerState<SalesCallListScreen> createState() => _SalesCallListScreenState();
@@ -70,6 +75,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   final ScrollController _quickActionsScrollCtrl = ScrollController();
   bool _quickHasMoreAbove = false;
   bool _quickHasMoreBelow = false;
+
+  bool get _sharedAssigneeFilter => widget.onAssigneeChanged != null;
+
+  String get _activeAssignee => widget.selectedAssignee ?? _selectedAssignee;
+
+  void _updateAssignee(String assignee) {
+    if (widget.onAssigneeChanged != null) {
+      widget.onAssigneeChanged!(assignee);
+    } else {
+      setState(() => _selectedAssignee = assignee);
+    }
+  }
 
   @override
   void initState() {
@@ -687,6 +704,15 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             counts[a] = (counts[a] ?? 0) + 1;
           }
 
+          final activeAssignee = _activeAssignee;
+
+          // 페이저 공유 필터: 해당 일에 건이 없어도 선택 담당자 칩 유지
+          if (_sharedAssigneeFilter &&
+              activeAssignee != '전체' &&
+              !counts.containsKey(activeAssignee)) {
+            counts[activeAssignee] = 0;
+          }
+
           final sortedAssignees = counts.keys.toList()..sort((a, b) {
             if (a == '전체') return -1;
             if (b == '전체') return 1;
@@ -699,11 +725,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           });
 
           // 전달받은/자동 선택 담당자가 현재 목록에 없으면 빈 결과가 되므로 '전체'로 보정
-          if (!sortedAssignees.contains(_selectedAssignee)) {
+          if (!_sharedAssigneeFilter &&
+              !sortedAssignees.contains(activeAssignee)) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
-              if (_selectedAssignee != '전체') {
-                setState(() => _selectedAssignee = '전체');
+              if (_activeAssignee != '전체') {
+                _updateAssignee('전체');
               }
             });
           }
@@ -711,20 +738,24 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           final user = ref.watch(authControllerProvider);
           final userName = user?.name;
           // 날짜 팔로우: 로그인명 자동 선택 시 전체 건수와 칩 필터가 어긋나 0건으로 보일 수 있음 → 비활성화
-          if (widget.mode != ListQueryMode.incompleteByDate &&
+          if (!_sharedAssigneeFilter &&
+              widget.mode != ListQueryMode.incompleteByDate &&
               widget.mode != ListQueryMode.followRange &&
               widget.initialAssignee == null &&
-              _selectedAssignee == '전체' &&
+              activeAssignee == '전체' &&
               userName != null &&
               counts.containsKey(userName)) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _selectedAssignee == '전체') {
-                setState(() => _selectedAssignee = userName);
+              if (mounted && _activeAssignee == '전체') {
+                _updateAssignee(userName);
               }
             });
           }
 
-          if (widget.initialAssignee != null && widget.initialAssignee != '전체' && !_hasScrolledToInitial) {
+          if (!_sharedAssigneeFilter &&
+              widget.initialAssignee != null &&
+              widget.initialAssignee != '전체' &&
+              !_hasScrolledToInitial) {
             final idx = sortedAssignees.indexOf(widget.initialAssignee!);
             if (idx != -1) {
               _hasScrolledToInitial = true;
@@ -743,7 +774,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           final filteredItems = items.where((c) {
             final a = _assigneeForMode(c, overrides);
-            bool matchesAssignee = _selectedAssignee == '전체' || a == _selectedAssignee;
+            bool matchesAssignee =
+                activeAssignee == '전체' || a == activeAssignee;
             
             bool matchesSearch = true;
             if (_searchQuery.isNotEmpty) {
@@ -788,7 +820,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                   itemBuilder: (context, idx) {
                     final assignee = sortedAssignees[idx];
                     final count = counts[assignee] ?? 0;
-                    final isSelected = _selectedAssignee == assignee;
+                    final isSelected = activeAssignee == assignee;
                     final color = _colorForAssignee(assignee, Theme.of(context).colorScheme);
 
                     return Padding(
@@ -796,7 +828,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       child: GestureDetector(
                         onTap: () {
                           HapticFeedback.selectionClick();
-                          setState(() => _selectedAssignee = assignee);
+                          _updateAssignee(assignee);
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),

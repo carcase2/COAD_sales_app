@@ -25,12 +25,14 @@ class _SalesCallDayFollowPagerScreenState
 
   late final PageController _pageController;
   int _pageIndex = 0;
+  late String _selectedAssignee;
 
   @override
   void initState() {
     super.initState();
     _pageIndex = _ymdToPageIndex(widget.initialDateYmd);
     _pageController = PageController(initialPage: _pageIndex);
+    _selectedAssignee = widget.initialAssignee ?? '전체';
   }
 
   @override
@@ -148,7 +150,11 @@ class _SalesCallDayFollowPagerScreenState
             embedded: true,
             mode: ListQueryMode.incompleteByDate,
             date: ymd,
-            initialAssignee: widget.initialAssignee,
+            selectedAssignee: _selectedAssignee,
+            onAssigneeChanged: (assignee) {
+              if (_selectedAssignee == assignee) return;
+              setState(() => _selectedAssignee = assignee);
+            },
           );
         },
       ),
