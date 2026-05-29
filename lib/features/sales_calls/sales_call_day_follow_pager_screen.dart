@@ -26,6 +26,7 @@ class _SalesCallDayFollowPagerScreenState
   late final PageController _pageController;
   int _pageIndex = 0;
   late String _selectedAssignee;
+  int _assigneeScrollNonce = 0;
 
   @override
   void initState() {
@@ -33,6 +34,9 @@ class _SalesCallDayFollowPagerScreenState
     _pageIndex = _ymdToPageIndex(widget.initialDateYmd);
     _pageController = PageController(initialPage: _pageIndex);
     _selectedAssignee = widget.initialAssignee ?? '전체';
+    if (_selectedAssignee != '전체') {
+      _bumpAssigneeScrollNonce();
+    }
   }
 
   @override
@@ -63,8 +67,12 @@ class _SalesCallDayFollowPagerScreenState
   }
 
   String _titleForYmd(String ymd) {
-    if (ymd == todayYmdSeoul()) return '오늘 날짜 팔로우';
-    return '${_shortMd(ymd)} 날짜 팔로우';
+    if (ymd == todayYmdSeoul()) return '오늘 팔로우';
+    return '${formatYmdFlowLabelKo(ymd)} 팔로우';
+  }
+
+  void _bumpAssigneeScrollNonce() {
+    _assigneeScrollNonce++;
   }
 
   void _goToPage(int index) {
@@ -86,20 +94,7 @@ class _SalesCallDayFollowPagerScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_titleForYmd(currentYmd)),
-            Text(
-              formatYmdFlowLabelKo(currentYmd),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: scheme.onPrimary.withValues(alpha: 0.88),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+        title: Text(_titleForYmd(currentYmd)),
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
         actions: [
@@ -142,7 +137,12 @@ class _SalesCallDayFollowPagerScreenState
       ),
       body: PageView.builder(
         controller: _pageController,
-        onPageChanged: (index) => setState(() => _pageIndex = index),
+        onPageChanged: (index) {
+          setState(() {
+            _pageIndex = index;
+            _bumpAssigneeScrollNonce();
+          });
+        },
         itemBuilder: (context, index) {
           final ymd = _pageIndexToYmd(index);
           return SalesCallListScreen(
@@ -151,9 +151,13 @@ class _SalesCallDayFollowPagerScreenState
             mode: ListQueryMode.incompleteByDate,
             date: ymd,
             selectedAssignee: _selectedAssignee,
+            assigneeScrollNonce: _assigneeScrollNonce,
             onAssigneeChanged: (assignee) {
               if (_selectedAssignee == assignee) return;
-              setState(() => _selectedAssignee = assignee);
+              setState(() {
+                _selectedAssignee = assignee;
+                _bumpAssigneeScrollNonce();
+              });
             },
           );
         },

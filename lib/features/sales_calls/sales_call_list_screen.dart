@@ -42,6 +42,7 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
     this.embedded = false,
     this.selectedAssignee,
     this.onAssigneeChanged,
+    this.assigneeScrollNonce,
   });
 
   final ListQueryMode mode;
@@ -54,6 +55,8 @@ class SalesCallListScreen extends ConsumerStatefulWidget {
   /// 달력 팔로우 페이저 등에서 날짜 스와이프 시 담당자 필터 유지.
   final String? selectedAssignee;
   final ValueChanged<String>? onAssigneeChanged;
+  /// 페이저 날짜·담당자 변경 시 담당자 칩이 보이도록 가로 스크롤.
+  final int? assigneeScrollNonce;
 
   @override
   ConsumerState<SalesCallListScreen> createState() => _SalesCallListScreenState();
@@ -71,6 +74,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   String _selectedAssignee = '전체';
   final ScrollController _scrollController = ScrollController();
   bool _hasScrolledToInitial = false;
+  int? _lastHandledAssigneeScrollNonce;
+  bool _pendingSharedAssigneeScroll = false;
   bool _quickActionsOpen = false;
   final ScrollController _quickActionsScrollCtrl = ScrollController();
   bool _quickHasMoreAbove = false;
@@ -88,11 +93,63 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     }
   }
 
+  void _scrollActiveAssigneeChipIntoView(List<String> sortedAssignees) {
+    final assignee = _activeAssignee;
+    if (assignee == '전체') return;
+    final idx = sortedAssignees.indexOf(assignee);
+    if (idx < 0) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      const chipStride = 96.0;
+      final viewport = _scrollController.position.viewportDimension;
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      final chipStart = idx * chipStride;
+      final chipEnd = chipStart + chipStride;
+      final current = _scrollController.offset;
+      double target = current;
+      if (chipStart < current) {
+        target = chipStart;
+      } else if (chipEnd > current + viewport) {
+        target = chipEnd - viewport;
+      } else {
+        return;
+      }
+      _scrollController.animateTo(
+        target.clamp(0.0, maxExtent),
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _markSharedAssigneeScrollPending() {
+    if (!_sharedAssigneeFilter) return;
+    _pendingSharedAssigneeScroll = true;
+  }
+
+  @override
+  void didUpdateWidget(SalesCallListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nonce = widget.assigneeScrollNonce;
+    if (nonce != null && nonce != _lastHandledAssigneeScrollNonce) {
+      _lastHandledAssigneeScrollNonce = nonce;
+      _markSharedAssigneeScrollPending();
+    } else if (_sharedAssigneeFilter &&
+        oldWidget.selectedAssignee != widget.selectedAssignee) {
+      _markSharedAssigneeScrollPending();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     if (widget.initialAssignee != null) {
       _selectedAssignee = widget.initialAssignee!;
+    }
+    if (widget.assigneeScrollNonce != null) {
+      _lastHandledAssigneeScrollNonce = widget.assigneeScrollNonce;
+      _markSharedAssigneeScrollPending();
     }
     _loadWithCache();
   }
@@ -172,6 +229,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       final remote = await _fetchRemote(repo);
       
       if (mounted) {
+        if (_sharedAssigneeFilter && _activeAssignee != '전체') {
+          _markSharedAssigneeScrollPending();
+        }
         setState(() {
           _items = remote;
           _isLoading = false;
@@ -770,6 +830,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 }
               });
             }
+          }
+
+          if (_pendingSharedAssigneeScroll) {
+            _pendingSharedAssigneeScroll = false;
+            _scrollActiveAssigneeChipIntoView(sortedAssignees);
           }
 
           final filteredItems = items.where((c) {
