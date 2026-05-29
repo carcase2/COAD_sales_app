@@ -433,6 +433,16 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   String _scheduledStageAfterInput(SalesCall? call) =>
       '${_nextConsultationStageNumber(call) + 1}차';
 
+  DateTime _ymdToCalendarDate(String ymd) {
+    final parts = ymd.split('-');
+    if (parts.length != 3) return DateTime.now();
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return DateTime.now();
+    return DateTime(y, m, d);
+  }
+
   DateTime _historySortKey(Map<String, dynamic> h) {
     final dateRaw = (h['call_date'] ?? '').toString().trim();
     final timeRaw = (h['call_time'] ?? '').toString().trim();
@@ -1614,11 +1624,16 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                           controller: _consultationNextDateCtrl,
                           readOnly: true,
                           onTap: () async {
+                            final today = _ymdToCalendarDate(todayYmdSeoul());
+                            final picked = _consultationNextDateCtrl.text.trim();
+                            final initial = picked.isNotEmpty
+                                ? _ymdToCalendarDate(picked)
+                                : today;
                             final date = await showDatePicker(
                               context: context,
-                              initialDate: DateTime.now().add(const Duration(days: 7)),
-                              firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                              initialDate: initial,
+                              firstDate: today,
+                              lastDate: today.add(const Duration(days: 365)),
                             );
                             if (date != null) {
                               setModalState(() {
