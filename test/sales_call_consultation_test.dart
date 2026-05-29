@@ -29,15 +29,24 @@ void main() {
     );
   });
 
-  test('validate — 미수주 사유 필수', () {
+  test('validate — 미수주 사유 필수, 상담내용 선택', () {
     expect(
       () => validateConsultationSubmit(
-        consultationContent: '내용',
+        consultationContent: '',
         statusId: CallStatusIds.lost,
         nextScheduledDateYmd: null,
         unsuccessfulReason: null,
       ),
       throwsA(isA<SalesCallConsultationValidationException>()),
+    );
+    expect(
+      () => validateConsultationSubmit(
+        consultationContent: '',
+        statusId: CallStatusIds.lost,
+        nextScheduledDateYmd: null,
+        unsuccessfulReason: '가격',
+      ),
+      returnsNormally,
     );
     expect(
       () => validateConsultationSubmit(

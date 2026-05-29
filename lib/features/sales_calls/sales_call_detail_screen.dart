@@ -1558,7 +1558,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      const Text('상담내용 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(
+                        (_statusId == CallStatusIds.lost)
+                            ? '상담내용 (선택)'
+                            : '상담내용 *',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _newConsultationCtrl,
@@ -1567,7 +1575,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         scrollPadding: fieldScrollPadding,
                         style: const TextStyle(fontSize: 16, height: 1.45),
                         decoration: InputDecoration(
-                          hintText: '고객와의 상담내용을 자세히 입력하세요...',
+                          hintText: (_statusId == CallStatusIds.lost)
+                              ? '추가 메모가 있으면 입력하세요 (미수주 사유는 아래에 필수)'
+                              : '고객와의 상담내용을 자세히 입력하세요...',
                           filled: true,
                           fillColor: Colors.white,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),

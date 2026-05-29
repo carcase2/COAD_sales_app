@@ -90,13 +90,18 @@ String? resolveNextScheduledDateForSave(int statusId, String? nextScheduledDateY
   return emptyToNull(nextScheduledDateYmd);
 }
 
+/// 미수주는 `unsuccessful_reason`만 필수, 상담내용은 선택.
+bool consultationContentRequiredForStatus(int statusId) =>
+    statusId != CallStatusIds.lost;
+
 void validateConsultationSubmit({
   required String consultationContent,
   required int statusId,
   required String? nextScheduledDateYmd,
   required String? unsuccessfulReason,
 }) {
-  if (consultationContent.trim().isEmpty) {
+  if (consultationContentRequiredForStatus(statusId) &&
+      consultationContent.trim().isEmpty) {
     throw SalesCallConsultationValidationException('상담내용을 입력해주세요.');
   }
   if (statusId == CallStatusIds.undecided &&
