@@ -2043,16 +2043,28 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         );
       },
       loading: () => const Center(child: LinearProgressIndicator(minHeight: 3)),
-      error: (e, _) => Center(
-        child: _FlowErrorPanel(
-          message: koreanErrorMessage(e),
-          onRetry: () {
-            ref.invalidate(hubPeriodStatsProvider(periodKey));
-            ref.invalidate(hubPeriodStatsProvider(_previousPeriodKey));
-            ref.invalidate(hubPeriodFollowOverviewProvider(periodKey));
-            ref.invalidate(hubPeriodQualityOverviewProvider(periodKey));
-          },
-        ),
+      error: (e, _) => LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: _FlowErrorPanel(
+                  message: koreanErrorMessage(e),
+                  onRetry: () {
+                    ref.invalidate(hubPeriodStatsProvider(periodKey));
+                    ref.invalidate(hubPeriodStatsProvider(_previousPeriodKey));
+                    ref.invalidate(hubPeriodFollowOverviewProvider(periodKey));
+                    ref.invalidate(
+                      hubPeriodQualityOverviewProvider(periodKey),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2437,7 +2449,7 @@ class _FlowErrorPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2447,9 +2459,10 @@ class _FlowErrorPanel extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 13,
-              color: scheme.onSurfaceVariant,
-              height: 1.35,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface,
+              height: 1.4,
             ),
           ),
           const SizedBox(height: 12),

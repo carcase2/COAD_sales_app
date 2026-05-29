@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
+import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/local/database_helper.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
@@ -547,6 +548,10 @@ class SalesCallsRepository {
           .lte('call_date', '$toYmdInclusive 23:59:59');
       return _todayStatsFromRows(res);
     } catch (e) {
+      if (e is ApiException) rethrow;
+      if (isNetworkConnectivityError(e)) {
+        throw ApiException('통계를 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.');
+      }
       throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
     }
   }
