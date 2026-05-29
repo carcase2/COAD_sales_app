@@ -9,6 +9,11 @@
 ## Pre-Release
 - `git status` 확인 (의도한 변경만 포함).
 - 릴리스 노트 파일 추가/수정 (`RELEASE_NOTE_vX.Y.Z.md`).
+- **설정 > 업데이트 내역**용 Supabase 마이그레이션 추가:
+  - `supabase/migrations/*_seed_app_update_history_vX_Y_Z.sql`
+  - `app_update_history`에 버전·변경 요약 insert
+  - `app_update_policy.latest_version`을 배포 버전으로 갱신
+- 배포 전/후 원격 DB 반영: `supabase db push` (또는 Dashboard SQL 실행)
 - 업데이트 정책 사용 시 `app_update_policy` 값 점검:
   - `latest_version`: 최신 표시 버전
   - `min_version`: 강제 업데이트 하한 버전
