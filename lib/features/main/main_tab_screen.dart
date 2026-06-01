@@ -31,7 +31,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     with WidgetsBindingObserver {
   static const int _homeTabIndex = 0;
   static const int _issuanceTabIndex = 1;
+  static const int _navHomeIndex = 0;
+  static const int _navReceptionIndex = 1;
+  static const int _navIssuanceIndex = 2;
   int _currentIndex = 0;
+  int _navSelectedIndex = _navHomeIndex;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
@@ -207,21 +211,45 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   void _openHomeFlowToday() {
     ref.read(homeHubFlowResetTickProvider.notifier).state++;
     requestHomeHubSection(ref, HomeHubSection.flow);
-    _onTabSelected(_homeTabIndex);
+    _selectHomeTab();
   }
 
-  void _onTabSelected(int index) {
-    // 다른 탭에서 홈으로 돌아올 때만 흐름·금일로 리셋 (홈 재탭 시 불필요한 PageView 리셋 방지).
-    if (index == _homeTabIndex && _currentIndex != _homeTabIndex) {
+  void _selectHomeTab() {
+    if (_navSelectedIndex == _navHomeIndex && _currentIndex == _homeTabIndex) {
+      return;
+    }
+    if (_currentIndex != _homeTabIndex) {
       ref.read(homeHubFlowResetTickProvider.notifier).state++;
     }
-    if (_currentIndex == index) return;
-
     setState(() {
-      _currentIndex = index;
-      _loadedIndices.add(index); // 선택한 탭을 로드 목록에 추가
-      if (index != _homeTabIndex) _lastBackExitHintAt = null;
+      _navSelectedIndex = _navHomeIndex;
+      _currentIndex = _homeTabIndex;
     });
+  }
+
+  void _selectIssuanceTab() {
+    if (_navSelectedIndex == _navIssuanceIndex &&
+        _currentIndex == _issuanceTabIndex) {
+      return;
+    }
+    setState(() {
+      _navSelectedIndex = _navIssuanceIndex;
+      _currentIndex = _issuanceTabIndex;
+      _loadedIndices.add(_issuanceTabIndex);
+      _lastBackExitHintAt = null;
+    });
+  }
+
+  void _onNavDestinationSelected(int navIndex) {
+    if (navIndex == _navReceptionIndex) {
+      unawaited(_openReceptionCreate());
+      return;
+    }
+    if (navIndex == _navHomeIndex) {
+      _selectHomeTab();
+    } else if (navIndex == _navIssuanceIndex) {
+      _selectIssuanceTab();
+    }
   }
 
   Future<void> _openReceptionCreate() async {
@@ -255,18 +283,17 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   Widget build(BuildContext context) {
     ref.listen(pendingConsultationLaunchProvider, (prev, next) {
       if (next == null) return;
-      _onTabSelected(_homeTabIndex);
+      _selectHomeTab();
     });
     ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
       if (next == null || !context.mounted) return;
-      _onTabSelected(_issuanceTabIndex);
+      _selectIssuanceTab();
     });
 
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
-    final actionsBottom = 12.0 + MediaQuery.paddingOf(context).bottom;
     final latestRemote = updateStatus?.latestVersion;
     final showUpdateBanner = updateStatus?.hasUpdate == true &&
         updateStatus?.forceUpdate != true &&
@@ -285,8 +312,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         }
 
         if (_currentIndex != _homeTabIndex) {
-          ref.read(homeHubFlowResetTickProvider.notifier).state++;
-          setState(() => _currentIndex = _homeTabIndex);
+          _selectHomeTab();
           return;
         }
 
@@ -422,33 +448,28 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                   ),
                 ),
               ),
-            if (_currentIndex == _homeTabIndex)
-              Positioned(
-                right: 16,
-                bottom: actionsBottom,
-                child: FloatingActionButton.extended(
-                  heroTag: 'global_call_create',
-                  backgroundColor: scheme.tertiary,
-                  foregroundColor: scheme.onTertiary,
-                  onPressed: _openReceptionCreate,
-                  tooltip: '접수 등록',
-                  icon: const Icon(Icons.add_ic_call_rounded),
-                  label: const Text(
-                    '접수',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
           ],
         ),
         bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: _onTabSelected,
+          selectedIndex: _navSelectedIndex,
+          onDestinationSelected: _onNavDestinationSelected,
           destinations: [
             const NavigationDestination(
               icon: Icon(Icons.home_outlined),
               selectedIcon: Icon(Icons.home_rounded),
               label: '홈',
+            ),
+            NavigationDestination(
+              icon: Icon(
+                Icons.add_ic_call_rounded,
+                color: scheme.tertiary,
+              ),
+              selectedIcon: Icon(
+                Icons.add_ic_call_rounded,
+                color: scheme.tertiary,
+              ),
+              label: '접수',
+              tooltip: '접수 등록',
             ),
             NavigationDestination(
               icon: _IssuanceNavIcon(
@@ -550,8 +571,17 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             title: '홈',
             onTap: () {
               Navigator.pop(context);
-              _onTabSelected(_homeTabIndex);
+              _selectHomeTab();
               requestHomeHubSection(ref, HomeHubSection.flow);
+            },
+            scheme: scheme,
+          ),
+          _buildDrawerItem(
+            icon: Icons.add_ic_call_rounded,
+            title: '접수 등록',
+            onTap: () {
+              Navigator.pop(context);
+              unawaited(_openReceptionCreate());
             },
             scheme: scheme,
           ),
@@ -560,7 +590,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             title: '발급요청 (TEST)',
             onTap: () {
               Navigator.pop(context);
-              _onTabSelected(_issuanceTabIndex);
+              _selectIssuanceTab();
             },
             scheme: scheme,
           ),

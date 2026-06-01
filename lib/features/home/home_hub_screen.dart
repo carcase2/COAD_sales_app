@@ -1743,8 +1743,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
-  double _homeBottomInset(BuildContext context) =>
-      MediaQuery.paddingOf(context).bottom + 68;
+  double _homeBottomInset(BuildContext context) => 12;
 
   Widget _buildFlowBody(ColorScheme scheme, AppUser? user) {
     return Padding(
