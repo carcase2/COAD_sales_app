@@ -93,6 +93,8 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   static const String _longPressHintHiddenPrefKey =
       'home_flow_longpress_hint_hidden_v1';
+  static const String _flowNoUncalledPopupPrefKey =
+      'home_flow_no_uncalled_popup_v2';
   static const List<HomeHubSection> _sectionOrder = [
     HomeHubSection.flow,
     HomeHubSection.incomplete,
@@ -107,6 +109,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   int _calendarKeyNonce = 0;
   int _pendingSyncCount = 0;
   bool _showLongPressHint = true;
+  bool _flowNoUncalledPopupEnabled = false;
   ProviderSubscription<HubNavStep>? _hubNavStepSub;
   ProviderSubscription<String>? _hubAnchorSub;
   ProviderSubscription<dynamic>? _pendingLaunchSub;
@@ -1219,6 +1222,16 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     if (!mounted) return;
 
     final counts = _countsFromRows(rows, _callAssigneeOf);
+    final loginName = ref.read(authControllerProvider)?.name.trim();
+    final loginHasNoUncalled = !forcePicker &&
+        _flowNoUncalledPopupEnabled &&
+        loginName != null &&
+        loginName.isNotEmpty &&
+        (counts[loginName] ?? 0) == 0;
+    if (loginHasNoUncalled) {
+      await _showAutoCloseInfoDialog('미통화가 없습니다.');
+      return;
+    }
     final selected = await _pickHubAssignee(
       title: '미통화 담당자 선택',
       subtitle: _hubPeriodScopeLabel(scope),
@@ -1227,6 +1240,37 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
     if (!mounted || selected == null) return;
     await _pushIncompleteList(scope, selected);
+  }
+
+  Future<void> _showAutoCloseInfoDialog(
+    String message, {
+    Duration duration = const Duration(seconds: 2),
+  }) async {
+    if (!mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    Future.delayed(duration, () {
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+    });
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          content: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurface,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildQualityPickerLeading({
@@ -1589,8 +1633,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   Future<void> _loadLongPressHintVisibility() async {
     final prefs = ref.read(appDependenciesProvider).prefs;
     final hidden = prefs.getBool(_longPressHintHiddenPrefKey) ?? false;
+    final noUncalledPopup = prefs.getBool(_flowNoUncalledPopupPrefKey) ?? false;
     if (!mounted) return;
-    setState(() => _showLongPressHint = !hidden);
+    setState(() {
+      _showLongPressHint = !hidden;
+      _flowNoUncalledPopupEnabled = noUncalledPopup;
+    });
   }
 
   Future<void> _dismissLongPressHint() async {
@@ -1598,6 +1646,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     setState(() => _showLongPressHint = false);
     final prefs = ref.read(appDependenciesProvider).prefs;
     await prefs.setBool(_longPressHintHiddenPrefKey, true);
+  }
+
+  Future<void> _setFlowNoUncalledPopupEnabled(bool enabled) async {
+    setState(() => _flowNoUncalledPopupEnabled = enabled);
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    await prefs.setBool(_flowNoUncalledPopupPrefKey, enabled);
   }
 
   @override
@@ -2133,6 +2187,40 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         onTapFirstResponse: () => _openQualityPicker(
                           forUncalledRate: false,
                           scope: scope,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest.withValues(
+                            alpha: 0.35,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: scheme.outlineVariant.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '흐름 미통화 0건 팝업',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            Switch(
+                              value: _flowNoUncalledPopupEnabled,
+                              onChanged: _setFlowNoUncalledPopupEnabled,
+                            ),
+                          ],
                         ),
                       ),
                       if (_showLongPressHint) ...[

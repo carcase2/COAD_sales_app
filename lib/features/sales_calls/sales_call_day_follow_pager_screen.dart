@@ -85,6 +85,11 @@ class _SalesCallDayFollowPagerScreenState
     );
   }
 
+  void _goToToday() {
+    final todayIndex = _ymdToPageIndex(todayYmdSeoul());
+    _goToPage(todayIndex);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -98,6 +103,16 @@ class _SalesCallDayFollowPagerScreenState
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
         actions: [
+          TextButton(
+            onPressed: _goToToday,
+            child: Text(
+              '오늘',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: scheme.onPrimary,
+              ),
+            ),
+          ),
           IconButton(
             tooltip: '이전 날짜 (${_shortMd(prevYmd)})',
             onPressed: () => _goToPage(_pageIndex - 1),

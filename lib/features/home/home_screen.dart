@@ -992,7 +992,8 @@ class _HomeIncompleteBreakdownState
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _openIncompleteListForAssignee(name),
+        onTap: () =>
+            _openIncompleteListForAssignee(name, incompleteCount: incomplete),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
           child: Column(
@@ -1114,7 +1115,8 @@ class _HomeIncompleteBreakdownState
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(11),
-        onTap: () => _openIncompleteListForAssignee(name),
+        onTap: () =>
+            _openIncompleteListForAssignee(name, incompleteCount: incomplete),
         child: SizedBox.expand(
           child: Stack(
             fit: StackFit.expand,
@@ -1301,7 +1303,45 @@ class _HomeIncompleteBreakdownState
     };
   }
 
-  void _openIncompleteListForAssignee(String name) {
+  Future<void> _showAutoCloseInfoDialog(
+    String message, {
+    Duration duration = const Duration(seconds: 2),
+  }) async {
+    if (!mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    Future.delayed(duration, () {
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+    });
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          content: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurface,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openIncompleteListForAssignee(
+    String name, {
+    required int incompleteCount,
+  }) {
+    if (incompleteCount == 0) {
+      _showAutoCloseInfoDialog('미통화가 없습니다.');
+      return;
+    }
     HapticFeedback.lightImpact();
     final range = _incompleteListDateArgs();
     Navigator.of(context).push(
@@ -2389,15 +2429,7 @@ class _HomeFollowCalendarPanelState
         onDaySelected: (selectedDay, focusedDay) {
           setState(() => _focusedDay = focusedDay);
           final dateStr = selectedDay.toIso8601String().substring(0, 10);
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SalesCallListScreen(
-                mode: ListQueryMode.incompleteByDate,
-                date: dateStr,
-                initialAssignee: _selectedAssignee,
-              ),
-            ),
-          );
+          _openDayFollowList(dateStr);
         },
         onPageChanged: (focusedDay) {
           setState(() => _focusedDay = focusedDay);
@@ -3139,15 +3171,7 @@ class _HomeFollowCalendarPanelState
                       0,
                       10,
                     );
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => SalesCallListScreen(
-                          mode: ListQueryMode.incompleteByDate,
-                          date: dateStr,
-                          initialAssignee: _selectedAssignee,
-                        ),
-                      ),
-                    );
+                    _openDayFollowList(dateStr);
                   },
                   onPageChanged: (focusedDay) {
                     setState(() {
