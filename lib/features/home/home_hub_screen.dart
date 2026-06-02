@@ -91,6 +91,8 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
+  static const String _longPressHintHiddenPrefKey =
+      'home_flow_longpress_hint_hidden_v1';
   static const List<HomeHubSection> _sectionOrder = [
     HomeHubSection.flow,
     HomeHubSection.incomplete,
@@ -104,6 +106,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   CalendarFormat _launchCalendarFormat = CalendarFormat.week;
   int _calendarKeyNonce = 0;
   int _pendingSyncCount = 0;
+  bool _showLongPressHint = true;
   ProviderSubscription<HubNavStep>? _hubNavStepSub;
   ProviderSubscription<String>? _hubAnchorSub;
   ProviderSubscription<dynamic>? _pendingLaunchSub;
@@ -939,6 +942,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     HubPeriod scope, {
     bool forcePicker = false,
   }) async {
+    if (forcePicker && _showLongPressHint) {
+      _dismissLongPressHint();
+    }
     final repo = ref.read(salesCallsRepositoryProvider);
     List<dynamic> rows;
     try {
@@ -992,6 +998,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     HubPeriod scope, {
     bool forcePicker = false,
   }) async {
+    if (forcePicker && _showLongPressHint) {
+      _dismissLongPressHint();
+    }
     final repo = ref.read(salesCallsRepositoryProvider);
     List<dynamic> rows;
     try {
@@ -1051,6 +1060,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     HubPeriod scope, {
     bool forcePicker = false,
   }) async {
+    if (forcePicker && _showLongPressHint) {
+      _dismissLongPressHint();
+    }
     final repo = ref.read(salesCallsRepositoryProvider);
     List<dynamic> rows;
     try {
@@ -1456,6 +1468,20 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     ref.read(homeHubFlowAnchorYmdProvider.notifier).state = _hubFlowAnchorYmd;
   }
 
+  Future<void> _loadLongPressHintVisibility() async {
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    final hidden = prefs.getBool(_longPressHintHiddenPrefKey) ?? false;
+    if (!mounted) return;
+    setState(() => _showLongPressHint = !hidden);
+  }
+
+  Future<void> _dismissLongPressHint() async {
+    if (!_showLongPressHint) return;
+    setState(() => _showLongPressHint = false);
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    await prefs.setBool(_longPressHintHiddenPrefKey, true);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1466,6 +1492,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       ref.read(bottomBarVisibilityProvider.notifier).state = true;
       _checkAndSyncPending();
       _consumePendingLaunch();
+      _loadLongPressHintVisibility();
     });
     _homeFlowResetSub = ref.listenManual<int>(homeHubFlowResetTickProvider, (
       previous,
@@ -2069,6 +2096,47 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           scope: scope,
                         ),
                       ),
+                      if (_showLongPressHint) ...[
+                        const SizedBox(height: 6),
+                        Material(
+                          color: scheme.secondaryContainer.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.touch_app_rounded,
+                                  size: 16,
+                                  color: scheme.onSecondaryContainer,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '카드를 길게 누르면 담당자 선택이 열립니다.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.onSecondaryContainer,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: '힌트 닫기',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: _dismissLongPressHint,
+                                  icon: Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                    color: scheme.onSecondaryContainer
+                                        .withValues(alpha: 0.75),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

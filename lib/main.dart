@@ -4,8 +4,8 @@ import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/core/network/sales_api_transport.dart';
 import 'package:coad_customer_calls/providers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +21,10 @@ Future<void> main() async {
   // 앱 시작 시 예기치 않은 중단을 방지하기 위해 전체를 보호합니다.
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
     
     try {
       // 1. 필수 로컬 설정 (빠른 작업)
@@ -50,11 +54,23 @@ Future<void> main() async {
 
       // Supabase와 Notification은 각각 독립적으로 초기화 시도
       await Future.wait([
-        Supabase.initialize(
-          url: supabaseUrl,
-          anonKey: supabaseKey,
-        ).catchError((e) => debugPrint("Supabase 초기화 실패: $e")),
-        NotificationService.init().catchError((e) => debugPrint("알림 서비스 초기화 실패: $e")),
+        () async {
+          try {
+            await Supabase.initialize(
+              url: supabaseUrl,
+              anonKey: supabaseKey,
+            );
+          } catch (e) {
+            debugPrint("Supabase 초기화 실패: $e");
+          }
+        }(),
+        () async {
+          try {
+            await NotificationService.init();
+          } catch (e) {
+            debugPrint("알림 서비스 초기화 실패: $e");
+          }
+        }(),
       ]);
 
       // 4. 앱 의존성 및 세션 복구

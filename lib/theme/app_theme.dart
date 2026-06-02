@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 class AppTheme {
   AppTheme._();
 
-  // 조금 더 세련된 네이비 코발트 톤
-  static const Color _seed = Color(0xFF2B5C92);
+  // 세련된 슬레이트-인디고 베이스 톤
+  static const Color _seed = Color(0xFF4F46E5);
 
   static TextStyle? _scaled(TextStyle? style, double factor) {
     if (style == null) return null;
@@ -39,7 +39,7 @@ class AppTheme {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: _seed,
       brightness: Brightness.light,
-      surface: const Color(0xFFF8F9FA),
+      surface: const Color(0xFFF6F8FC),
       surfaceContainerLowest: const Color(0xFFFFFFFF),
     );
 
@@ -47,7 +47,7 @@ class AppTheme {
         .black
         .apply(
           fontFamily: null, // Keep default for performance, or specify like 'Pretendard' if imported
-          bodyColor: const Color(0xFF1F2937), // 덜 까만 회검색
+          bodyColor: const Color(0xFF1E2430),
           displayColor: const Color(0xFF111827),
         )
         .copyWith(
@@ -73,7 +73,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        backgroundColor: colorScheme.surface,
+        backgroundColor: colorScheme.surfaceContainerLowest,
         foregroundColor: colorScheme.onSurface,
         titleTextStyle: textTheme.titleMedium?.copyWith(
           fontSize: 17,
@@ -85,7 +85,7 @@ class AppTheme {
         elevation: 0,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
         ),
         color: colorScheme.surfaceContainerLowest,
         margin: EdgeInsets.zero,
@@ -96,12 +96,14 @@ class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.2),
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.5)),
+          side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
@@ -114,9 +116,9 @@ class AppTheme {
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.35)),
-        backgroundColor: colorScheme.surfaceContainerHighest.withOpacity(0.45),
-        selectedColor: colorScheme.primaryContainer.withOpacity(0.55),
+        side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.35)),
+        backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        selectedColor: colorScheme.primaryContainer.withValues(alpha: 0.55),
         labelStyle: textTheme.labelMedium?.copyWith(
           color: colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w600,
@@ -135,7 +137,7 @@ class AppTheme {
             textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           side: WidgetStatePropertyAll(
-            BorderSide(color: colorScheme.outlineVariant.withOpacity(0.45)),
+            BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.45)),
           ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -158,14 +160,14 @@ class AppTheme {
         enabledBorder: inputBorder,
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.primary.withOpacity(0.5), width: 1.5),
+          borderSide: BorderSide(color: colorScheme.primary.withValues(alpha: 0.5), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.error.withOpacity(0.5), width: 1.5),
+          borderSide: BorderSide(color: colorScheme.error.withValues(alpha: 0.5), width: 1.5),
         ),
         labelStyle: TextStyle(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500),
-        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.6), fontSize: 14),
+        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 14),
         floatingLabelStyle: WidgetStateTextStyle.resolveWith((states) {
           return TextStyle(
             color: states.contains(WidgetState.focused) ? colorScheme.primary : colorScheme.onSurfaceVariant,
@@ -175,9 +177,9 @@ class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
-        backgroundColor: colorScheme.surfaceContainerLowest,
+        backgroundColor: colorScheme.surfaceContainerLow,
         height: 64,
-        indicatorColor: colorScheme.primaryContainer.withOpacity(0.6),
+        indicatorColor: colorScheme.primaryContainer.withValues(alpha: 0.62),
         labelTextStyle: WidgetStateTextStyle.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return TextStyle(
@@ -193,7 +195,7 @@ class AppTheme {
         elevation: 4,
       ),
       dividerTheme: DividerThemeData(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         thickness: 1,
         space: 1,
       ),

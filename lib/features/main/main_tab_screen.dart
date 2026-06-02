@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
@@ -282,6 +283,63 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     );
   }
 
+  Future<void> _openReceptionQuickActions() async {
+    if (_isOpeningReception || !mounted) return;
+    HapticFeedback.mediumImpact();
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.add_ic_call_rounded),
+                title: const Text('일반 접수 등록'),
+                onTap: () => Navigator.of(context).pop('create'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.list_alt_rounded),
+                title: const Text('금일 접수 목록'),
+                onTap: () => Navigator.of(context).pop('today'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.phone_missed_rounded),
+                title: const Text('금일 미통화 목록'),
+                onTap: () => Navigator.of(context).pop('incomplete'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || selected == null) return;
+    switch (selected) {
+      case 'create':
+        unawaited(_openReceptionCreate());
+      case 'today':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.today,
+              date: todayYmdSeoul(),
+            ),
+          ),
+        );
+      case 'incomplete':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.incomplete,
+              date: todayYmdSeoul(),
+            ),
+          ),
+        );
+    }
+  }
+
   List<Widget> _buildScreens() => [
     const HomeHubScreen(),
     _loadedIndices.contains(_issuanceTabIndex)
@@ -460,38 +518,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               ),
           ],
         ),
-        bottomNavigationBar: NavigationBar(
+        bottomNavigationBar: _MainBottomNavBar(
           selectedIndex: _navSelectedIndex,
-          onDestinationSelected: _onNavDestinationSelected,
-          destinations: [
-            const NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: '홈',
-            ),
-            NavigationDestination(
-              icon: Icon(
-                Icons.add_ic_call_rounded,
-                color: scheme.tertiary,
-              ),
-              selectedIcon: Icon(
-                Icons.add_ic_call_rounded,
-                color: scheme.tertiary,
-              ),
-              label: '접수',
-              tooltip: '접수 등록',
-            ),
-            NavigationDestination(
-              icon: _IssuanceNavIcon(
-                badgeAsync: ref.watch(issuanceRequestBadgeCountProvider),
-              ),
-              selectedIcon: _IssuanceNavIcon(
-                badgeAsync: ref.watch(issuanceRequestBadgeCountProvider),
-                selected: true,
-              ),
-              label: '발급요청 (TEST)',
-            ),
-          ],
+          issuanceBadgeAsync: ref.watch(issuanceRequestBadgeCountProvider),
+          onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
+          onLongPressHome: _openHomeFlowToday,
+          onTapReception: () => _onNavDestinationSelected(_navReceptionIndex),
+          onLongPressReception: _openReceptionQuickActions,
+          onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
         ),
       ),
     );
@@ -774,5 +808,186 @@ class _IssuanceNavIcon extends StatelessWidget {
     final count = badgeAsync.valueOrNull ?? 0;
     if (count <= 0) return icon;
     return Badge(label: Text(count > 99 ? '99+' : '$count'), child: icon);
+  }
+}
+
+class _MainBottomNavBar extends StatelessWidget {
+  const _MainBottomNavBar({
+    required this.selectedIndex,
+    required this.issuanceBadgeAsync,
+    required this.onTapHome,
+    required this.onLongPressHome,
+    required this.onTapReception,
+    required this.onLongPressReception,
+    required this.onTapIssuance,
+  });
+
+  final int selectedIndex;
+  final AsyncValue<int> issuanceBadgeAsync;
+  final VoidCallback onTapHome;
+  final VoidCallback onLongPressHome;
+  final VoidCallback onTapReception;
+  final VoidCallback onLongPressReception;
+  final VoidCallback onTapIssuance;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border(
+            top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35)),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: _BottomNavItem(
+                label: '홈',
+                selected: selectedIndex == 0,
+                selectedIcon: Icons.home_rounded,
+                unselectedIcon: Icons.home_outlined,
+                onTap: onTapHome,
+                onLongPress: onLongPressHome,
+              ),
+            ),
+            Expanded(
+              child: _BottomNavItem(
+                label: '접수',
+                selected: selectedIndex == 1,
+                selectedIcon: Icons.add_ic_call_rounded,
+                unselectedIcon: Icons.add_ic_call_rounded,
+                accentColor: scheme.tertiary,
+                onTap: onTapReception,
+                onLongPress: onLongPressReception,
+              ),
+            ),
+            Expanded(
+              child: _BottomNavItem(
+                label: '발급요청',
+                tag: 'TEST',
+                selected: selectedIndex == 2,
+                customIcon: _IssuanceNavIcon(
+                  badgeAsync: issuanceBadgeAsync,
+                  selected: selectedIndex == 2,
+                ),
+                onTap: onTapIssuance,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavItem extends StatelessWidget {
+  const _BottomNavItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.onLongPress,
+    this.selectedIcon,
+    this.unselectedIcon,
+    this.customIcon,
+    this.accentColor,
+    this.tag,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final IconData? selectedIcon;
+  final IconData? unselectedIcon;
+  final Widget? customIcon;
+  final Color? accentColor;
+  final String? tag;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fg = selected
+        ? (accentColor ?? scheme.primary)
+        : scheme.onSurfaceVariant.withValues(alpha: 0.9);
+    final bg = selected
+        ? (accentColor ?? scheme.primary).withValues(alpha: 0.12)
+        : Colors.transparent;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                height: 2,
+                width: selected ? 18 : 0,
+                margin: const EdgeInsets.only(bottom: 4),
+                decoration: BoxDecoration(
+                  color: fg,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              customIcon ??
+                  Icon(
+                    selected ? selectedIcon : unselectedIcon,
+                    color: fg,
+                    size: selected ? 24 : 22,
+                  ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: fg,
+                  height: 1.1,
+                ),
+              ),
+              if (tag != null) ...[
+                const SizedBox(height: 2),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    tag!,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onTertiaryContainer,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
