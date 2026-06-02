@@ -15,7 +15,6 @@ import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -36,6 +35,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   static const int _navIssuanceIndex = 2;
   int _currentIndex = 0;
   int _navSelectedIndex = _navHomeIndex;
+  bool _isOpeningReception = false;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
@@ -242,7 +242,22 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _onNavDestinationSelected(int navIndex) {
     if (navIndex == _navReceptionIndex) {
-      unawaited(_openReceptionCreate());
+      if (_isOpeningReception) return;
+      setState(() {
+        _isOpeningReception = true;
+        _navSelectedIndex = _navReceptionIndex;
+      });
+      unawaited(
+        _openReceptionCreate().whenComplete(() {
+          if (!mounted) return;
+          setState(() {
+            _isOpeningReception = false;
+            _navSelectedIndex = _currentIndex == _homeTabIndex
+                ? _navHomeIndex
+                : _navIssuanceIndex;
+          });
+        }),
+      );
       return;
     }
     if (navIndex == _navHomeIndex) {
@@ -259,17 +274,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         builder: (_) => const SalesCallCreateScreen(),
       ),
     );
-  }
-
-  bool _handleGlobalScroll(UserScrollNotification n) {
-    if (n.metrics.axis != Axis.vertical) return false;
-    final notifier = ref.read(bottomBarVisibilityProvider.notifier);
-    if (n.direction == ScrollDirection.reverse) {
-      notifier.state = false;
-    } else if (n.direction == ScrollDirection.forward) {
-      notifier.state = true;
-    }
-    return false;
   }
 
   List<Widget> _buildScreens() => [
@@ -438,7 +442,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 right: 0,
                 child: _buildUpdateAvailableBanner(
                   scheme: scheme,
-                  latestVersion: latestRemote!,
+                  latestVersion: latestRemote,
                   onUpdate: () => AppUpdateService.checkAndUpdateIfNeeded(
                     context,
                     forceRecheck: true,
@@ -707,7 +711,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: scheme.primary.withOpacity(0.7),
+          color: scheme.primary.withValues(alpha: 0.7),
           letterSpacing: 1.2,
         ),
       ),

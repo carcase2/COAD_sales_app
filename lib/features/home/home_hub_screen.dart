@@ -104,6 +104,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   CalendarFormat _launchCalendarFormat = CalendarFormat.week;
   int _calendarKeyNonce = 0;
   int _pendingSyncCount = 0;
+  ProviderSubscription<HubNavStep>? _hubNavStepSub;
+  ProviderSubscription<String>? _hubAnchorSub;
+  ProviderSubscription<dynamic>? _pendingLaunchSub;
+  ProviderSubscription<int>? _homeFlowResetSub;
   static const int _followPickerFetchLimit = 1000;
   static const int _receptionPickerFetchLimit = 1000;
 
@@ -1463,10 +1467,42 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       _checkAndSyncPending();
       _consumePendingLaunch();
     });
+    _homeFlowResetSub = ref.listenManual<int>(homeHubFlowResetTickProvider, (
+      previous,
+      next,
+    ) {
+      if (!mounted || previous == next) return;
+      setState(() {
+        _hubNavStep = HubNavStep.day;
+        _hubFlowAnchorYmd = todayYmdSeoul();
+        _section = HomeHubSection.flow;
+      });
+      _publishHubPeriod();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _jumpSectionPage(0);
+      });
+    });
+    _pendingLaunchSub = ref.listenManual(
+      pendingConsultationLaunchProvider,
+      (_, _) => _consumePendingLaunch(),
+    );
+    _hubNavStepSub = ref.listenManual(homeHubNavStepProvider, (prev, next) {
+      if (_hubNavStep == next) return;
+      setState(() => _hubNavStep = next);
+    });
+    _hubAnchorSub = ref.listenManual(homeHubFlowAnchorYmdProvider, (prev, next) {
+      if (_hubFlowAnchorYmd == next) return;
+      setState(() => _hubFlowAnchorYmd = next);
+    });
   }
 
   @override
   void dispose() {
+    _hubNavStepSub?.close();
+    _hubAnchorSub?.close();
+    _pendingLaunchSub?.close();
+    _homeFlowResetSub?.close();
     _sectionPageController.dispose();
     super.dispose();
   }
@@ -2070,33 +2106,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(homeHubFlowResetTickProvider, (previous, next) {
-      if (!mounted || previous == next) return;
-      setState(() {
-        _hubNavStep = HubNavStep.day;
-        _hubFlowAnchorYmd = todayYmdSeoul();
-        _section = HomeHubSection.flow;
-      });
-      _publishHubPeriod();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _jumpSectionPage(0);
-      });
-    });
-    ref.listen(pendingConsultationLaunchProvider, (_, __) {
-      _consumePendingLaunch();
-    });
-
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
-    ref.listen(homeHubNavStepProvider, (prev, next) {
-      if (_hubNavStep == next) return;
-      setState(() => _hubNavStep = next);
-    });
-    ref.listen(homeHubFlowAnchorYmdProvider, (prev, next) {
-      if (_hubFlowAnchorYmd == next) return;
-      setState(() => _hubFlowAnchorYmd = next);
-    });
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 280),
@@ -2472,18 +2483,3 @@ class _FlowErrorPanel extends StatelessWidget {
   }
 }
 
-class _HeaderDecoCircle extends StatelessWidget {
-  const _HeaderDecoCircle({required this.size, required this.color});
-
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-}
