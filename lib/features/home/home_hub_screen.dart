@@ -271,9 +271,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   String _homeTopDateLine() => formatTodayGreetingSentenceKo();
 
   Widget _buildUnifiedHomeTop(ColorScheme scheme, AppUser? user) {
-    final name = user?.name.trim();
-    final initial = (name != null && name.isNotEmpty) ? name[0] : '?';
-
     final compact = _section != HomeHubSection.flow;
     return Container(
       width: double.infinity,
@@ -285,66 +282,21 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: scheme.onPrimary.withValues(alpha: 0.18),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: scheme.onPrimary.withValues(alpha: 0.35),
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  initial,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: scheme.onPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
-                child: Row(
-                  children: [
-                    Text(
-                      'COAD',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: scheme.onPrimary.withValues(alpha: 0.75),
-                        letterSpacing: 0.4,
-                      ),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    _homeTopDateLine(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onPrimary.withValues(alpha: 0.95),
+                      height: 1.2,
                     ),
-                    if (name != null && name.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        '$name님',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onPrimary.withValues(alpha: 0.92),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _homeTopDateLine(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: scheme.onPrimary.withValues(alpha: 0.95),
-                          height: 1.2,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -362,9 +314,164 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           ),
           if (_section == HomeHubSection.flow) ...[
             const SizedBox(height: 8),
-            _buildEmbeddedFlowDateControls(scheme),
+            _buildCompactFlowControls(scheme),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompactFlowControls(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      decoration: BoxDecoration(
+        color: scheme.onPrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.onPrimary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              _buildMiniPeriodChip(
+                scheme: scheme,
+                step: HubNavStep.day,
+                label: '금일',
+              ),
+              const SizedBox(width: 4),
+              _buildMiniPeriodChip(
+                scheme: scheme,
+                step: HubNavStep.week,
+                label: '금주',
+              ),
+              const SizedBox(width: 4),
+              _buildMiniPeriodChip(
+                scheme: scheme,
+                step: HubNavStep.month,
+                label: '금월',
+              ),
+              const Spacer(),
+              _buildTodayJumpButton(scheme),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => _shiftHubNav(-1),
+                icon: const Icon(Icons.chevron_left_rounded, size: 18),
+                style: IconButton.styleFrom(
+                  foregroundColor: scheme.onPrimary,
+                  visualDensity: VisualDensity.compact,
+                  minimumSize: const Size(28, 28),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+              Expanded(
+                flex: 8,
+                child: Text(
+                  _hubFlowNavigatedPeriodLabel(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                    color: scheme.onPrimary,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _canShiftHubNavNewer() ? () => _shiftHubNav(1) : null,
+                icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                style: IconButton.styleFrom(
+                  foregroundColor: scheme.onPrimary,
+                  disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.35),
+                  visualDensity: VisualDensity.compact,
+                  minimumSize: const Size(28, 28),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniPeriodChip({
+    required ColorScheme scheme,
+    required HubNavStep step,
+    required String label,
+  }) {
+    final selected = _hubNavStep == step;
+    return Material(
+      color: selected
+          ? scheme.surface
+          : scheme.onPrimary.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _selectHubNavStep(step),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+              color: selected ? scheme.primary : scheme.onPrimary,
+              height: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTodayJumpButton(ColorScheme scheme) {
+    final enabled = !_isHubFlowOnCurrentPeriod();
+    final borderColor = enabled
+        ? scheme.surface.withValues(alpha: 0.9)
+        : scheme.onPrimary.withValues(alpha: 0.25);
+    final bgColor = enabled
+        ? scheme.surface
+        : scheme.onPrimary.withValues(alpha: 0.1);
+    final fgColor = enabled ? scheme.primary : scheme.onPrimary.withValues(alpha: 0.45);
+    return Tooltip(
+      message: enabled ? _hubJumpPeriodTooltip() : '이미 현재 기준',
+      child: Material(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: enabled ? _resetHubFlowAnchorToCurrent : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: borderColor, width: enabled ? 1.5 : 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.my_location_rounded, size: 14, color: fgColor),
+                const SizedBox(width: 4),
+                Text(
+                  '오늘',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                    color: fgColor,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -442,6 +549,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildEmbeddedFlowDateControls(ColorScheme scheme) {
     return Container(
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
@@ -547,7 +655,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
-  Widget _buildHubFlowJumpChip(ColorScheme scheme, {required bool onPrimary}) {
+  Widget _buildHubFlowJumpChip(
+    ColorScheme scheme, {
+    required bool onPrimary,
+    bool compact = false,
+  }) {
     final enabled = !_isHubFlowOnCurrentPeriod();
     final label = _hubJumpPeriodLabel();
     final icon = _hubJumpPeriodIcon();
@@ -571,37 +683,43 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       message: enabled ? tip : '현재 $label 기준으로 보는 중',
       child: Material(
         color: bg,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(compact ? 8 : 10),
         elevation: enabled && onPrimary ? 2 : 0,
         shadowColor: Colors.black.withValues(alpha: 0.2),
         child: InkWell(
           onTap: enabled ? _resetHubFlowAnchorToCurrent : null,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(compact ? 8 : 10),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            constraints: BoxConstraints(
+              minHeight: compact ? 27 : 0,
+            ),
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 10 : 10,
+              vertical: compact ? 7 : 7,
+            ),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(compact ? 8 : 10),
               border: Border.all(color: border, width: enabled ? 1.5 : 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 16, color: fg),
-                const SizedBox(width: 5),
+                Icon(icon, size: compact ? 14 : 16, color: fg),
+                SizedBox(width: compact ? 3 : 5),
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: compact ? 12.5 : 12,
                     fontWeight: FontWeight.w900,
                     color: fg,
                     letterSpacing: -0.2,
                   ),
                 ),
                 if (enabled) ...[
-                  const SizedBox(width: 2),
+                  SizedBox(width: compact ? 1 : 2),
                   Icon(
                     Icons.north_west_rounded,
-                    size: 14,
+                    size: compact ? 12 : 14,
                     color: fg.withValues(alpha: 0.85),
                   ),
                 ],
@@ -1631,36 +1749,51 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       child: Row(
         children: [
           for (final (section, label, icon) in sections)
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _goToSection(section, fromPill: true),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  decoration: BoxDecoration(
+            Builder(
+              builder: (context) {
+                final accent = _HubVisual.sectionTone(section, scheme).accent;
+                final selectedBg = embedded
+                    ? accent.withValues(alpha: 0.22)
+                    : accent.withValues(alpha: 0.14);
+                final selectedFg = embedded
+                    ? scheme.onPrimary
+                    : scheme.onSurface;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => _goToSection(section, fromPill: true),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      // 섹션별 고유 톤으로 선택 상태를 분리해 시인성을 높인다.
+                      decoration: BoxDecoration(
                     color: _section == section
-                        ? scheme.surface
+                        ? selectedBg
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(9),
+                    border: _section == section
+                        ? Border.all(
+                            color: accent.withValues(alpha: embedded ? 0.55 : 0.45),
+                          )
+                        : null,
                     boxShadow: _section == section
                         ? [
                             BoxShadow(
-                              color: scheme.shadow.withValues(alpha: 0.14),
+                              color: accent.withValues(alpha: embedded ? 0.24 : 0.16),
                               blurRadius: 5,
                               offset: const Offset(0, 1),
                             ),
                           ]
                         : null,
                   ),
-                  child: Row(
+                      child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         icon,
                         size: 15,
                         color: _section == section
-                            ? scheme.onSurface
+                            ? selectedFg
                             : (embedded
                                   ? scheme.onPrimary.withValues(alpha: 0.9)
                                   : scheme.onSurfaceVariant),
@@ -1677,7 +1810,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                                 ? FontWeight.w800
                                 : FontWeight.w600,
                             color: _section == section
-                                ? scheme.onSurface
+                                ? selectedFg
                                 : (embedded
                                       ? scheme.onPrimary.withValues(alpha: 0.92)
                                       : scheme.onSurfaceVariant),
@@ -1697,9 +1830,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         ),
                       ],
                     ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
         ],
       ),
@@ -1866,12 +2001,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     return d > 0 ? '+$d' : '$d';
   }
 
-  String _comparePeriodShortLabel() => switch (_hubNavStep) {
-    HubNavStep.day => '전일',
-    HubNavStep.week => '전주',
-    HubNavStep.month => '전월',
-  };
-
   Widget _buildFlowReceptionCompareBanner({
     required ColorScheme scheme,
     required String compareLabel,
@@ -1883,136 +2012,47 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final deltaColor = delta == 0
         ? scheme.onSurfaceVariant
         : delta > 0
-        ? scheme.tertiary
-        : scheme.error;
-    final trendIcon = delta > 0
-        ? Icons.trending_up_rounded
-        : delta < 0
-        ? Icons.trending_down_rounded
-        : Icons.trending_flat_rounded;
-    final periodShort = _comparePeriodShortLabel();
+            ? scheme.tertiary
+            : scheme.error;
 
     return Container(
       width: double.infinity,
-      decoration: _HubVisual.elevatedCard(scheme),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text.rich(
+        TextSpan(
           children: [
-            Container(
-              width: 3,
-              margin: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: scheme.primary.withValues(alpha: 0.65),
-                borderRadius: BorderRadius.circular(2),
+            TextSpan(
+              text: '$compareLabel 접수 ',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
               ),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '$compareLabel 접수',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: scheme.onSurfaceVariant,
-                              letterSpacing: -0.1,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Flexible(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    '$reception',
-                                    style: TextStyle(
-                                      fontSize: 26,
-                                      fontWeight: FontWeight.w800,
-                                      color: scheme.onSurface,
-                                      height: 1,
-                                      letterSpacing: -0.8,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                '건',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  '$periodShort $prevReception건',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: scheme.onSurfaceVariant.withValues(
-                                      alpha: 0.85,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: deltaColor.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(trendIcon, size: 16, color: deltaColor),
-                          const SizedBox(width: 3),
-                          Text(
-                            deltaText,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              color: deltaColor,
-                              height: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+            TextSpan(
+              text: deltaText,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w900,
+                color: deltaColor,
+              ),
+            ),
+            TextSpan(
+              text: ' (현재 $reception건 / 이전 $prevReception건)',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -2041,7 +2081,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         final incomplete = s.incompleteCount ?? 0;
         final followCount = followOverviewAsync.valueOrNull?.total ?? 0;
         final quality = qualityAsync.valueOrNull;
-
         final prevReception = prevStatsAsync.valueOrNull?.todayCount ?? 0;
 
         return LayoutBuilder(
@@ -2316,7 +2355,7 @@ class _MiniStatsWidget extends StatelessWidget {
               children: [
                 Expanded(
                   child: _InsightItem(
-                    label: '미통화 비율',
+                    label: '미통화율',
                     value: uncalledRateText,
                     color: scheme.error,
                     onTap: onTapUncalledRate,
@@ -2326,7 +2365,7 @@ class _MiniStatsWidget extends StatelessWidget {
                 SizedBox(width: compact ? 6 : 8),
                 Expanded(
                   child: _InsightItem(
-                    label: '초기응답 평균',
+                    label: '초기응답평균',
                     value: avgFirstResponseText,
                     color: scheme.secondary,
                     onTap: onTapFirstResponse,
@@ -2430,7 +2469,7 @@ class _InsightItem extends StatelessWidget {
               Text(
                 label,
                 textAlign: TextAlign.center,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: compact ? 10 : 11,

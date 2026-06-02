@@ -36,7 +36,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   static const int _navIssuanceIndex = 2;
   int _currentIndex = 0;
   int _navSelectedIndex = _navHomeIndex;
-  bool _isOpeningReception = false;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
@@ -243,22 +242,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _onNavDestinationSelected(int navIndex) {
     if (navIndex == _navReceptionIndex) {
-      if (_isOpeningReception) return;
-      setState(() {
-        _isOpeningReception = true;
-        _navSelectedIndex = _navReceptionIndex;
-      });
-      unawaited(
-        _openReceptionCreate().whenComplete(() {
-          if (!mounted) return;
-          setState(() {
-            _isOpeningReception = false;
-            _navSelectedIndex = _currentIndex == _homeTabIndex
-                ? _navHomeIndex
-                : _navIssuanceIndex;
-          });
-        }),
-      );
+      unawaited(_openReceptionCreate());
       return;
     }
     if (navIndex == _navHomeIndex) {
@@ -284,7 +268,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   Future<void> _openReceptionQuickActions() async {
-    if (_isOpeningReception || !mounted) return;
+    if (!mounted) return;
     HapticFeedback.mediumImpact();
     final selected = await showModalBottomSheet<String>(
       context: context,
@@ -320,24 +304,32 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       case 'create':
         unawaited(_openReceptionCreate());
       case 'today':
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => SalesCallListScreen(
-              mode: ListQueryMode.today,
-              date: todayYmdSeoul(),
-            ),
-          ),
-        );
+        await _openTodayReceptionList();
       case 'incomplete':
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => SalesCallListScreen(
-              mode: ListQueryMode.incomplete,
-              date: todayYmdSeoul(),
-            ),
-          ),
-        );
+        await _openTodayIncompleteList();
     }
+  }
+
+  Future<void> _openTodayReceptionList() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.today,
+          date: todayYmdSeoul(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTodayIncompleteList() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.incomplete,
+          date: todayYmdSeoul(),
+        ),
+      ),
+    );
   }
 
   List<Widget> _buildScreens() => [
@@ -359,6 +351,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     });
 
     final scheme = Theme.of(context).colorScheme;
+    final tabAccent = switch (_navSelectedIndex) {
+      _navHomeIndex => scheme.primary,
+      _navReceptionIndex => scheme.tertiary,
+      _ => Colors.teal.shade700,
+    };
+    final appBarBg = Color.lerp(tabAccent, Colors.black, 0.12)!;
     final user = ref.watch(authControllerProvider);
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
@@ -418,7 +416,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             child: _buildBrandTitle(),
           ),
           centerTitle: true,
-          backgroundColor: scheme.primary,
+          backgroundColor: appBarBg,
           foregroundColor: Colors.white,
           leading: IconButton(
             icon: const Icon(Icons.menu_rounded),
@@ -440,7 +438,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                   decoration: BoxDecoration(
                     color: updateStatus?.hasUpdate == true
                         ? Colors.amber.shade700.withValues(alpha: 0.35)
-                        : Colors.white.withValues(alpha: 0.14),
+                        : Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(999),
                     border: updateStatus?.hasUpdate == true
                         ? Border.all(
@@ -495,6 +493,23 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             ),
             const SizedBox(width: 8),
           ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(3),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              height: 3,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    tabAccent.withValues(alpha: 0.35),
+                    tabAccent,
+                    tabAccent.withValues(alpha: 0.35),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
         body: Stack(
           children: [
@@ -795,15 +810,21 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 }
 
 class _IssuanceNavIcon extends StatelessWidget {
-  const _IssuanceNavIcon({required this.badgeAsync, this.selected = false});
+  const _IssuanceNavIcon({
+    required this.badgeAsync,
+    this.selected = false,
+    this.selectedColor,
+  });
 
   final AsyncValue<int> badgeAsync;
   final bool selected;
+  final Color? selectedColor;
 
   @override
   Widget build(BuildContext context) {
     final icon = Icon(
       selected ? Icons.receipt_long_rounded : Icons.receipt_long_outlined,
+      color: selected ? selectedColor : null,
     );
     final count = badgeAsync.valueOrNull ?? 0;
     if (count <= 0) return icon;
@@ -833,6 +854,9 @@ class _MainBottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final homeAccent = scheme.primary;
+    final receptionAccent = scheme.tertiary;
+    final issuanceAccent = Colors.teal.shade700;
     return SafeArea(
       top: false,
       child: Container(
@@ -851,6 +875,7 @@ class _MainBottomNavBar extends StatelessWidget {
                 selected: selectedIndex == 0,
                 selectedIcon: Icons.home_rounded,
                 unselectedIcon: Icons.home_outlined,
+                accentColor: homeAccent,
                 onTap: onTapHome,
                 onLongPress: onLongPressHome,
               ),
@@ -861,7 +886,7 @@ class _MainBottomNavBar extends StatelessWidget {
                 selected: selectedIndex == 1,
                 selectedIcon: Icons.add_ic_call_rounded,
                 unselectedIcon: Icons.add_ic_call_rounded,
-                accentColor: scheme.tertiary,
+                accentColor: receptionAccent,
                 onTap: onTapReception,
                 onLongPress: onLongPressReception,
               ),
@@ -874,7 +899,9 @@ class _MainBottomNavBar extends StatelessWidget {
                 customIcon: _IssuanceNavIcon(
                   badgeAsync: issuanceBadgeAsync,
                   selected: selectedIndex == 2,
+                  selectedColor: issuanceAccent,
                 ),
+                accentColor: issuanceAccent,
                 onTap: onTapIssuance,
               ),
             ),
@@ -915,7 +942,7 @@ class _BottomNavItem extends StatelessWidget {
         ? (accentColor ?? scheme.primary)
         : scheme.onSurfaceVariant.withValues(alpha: 0.9);
     final bg = selected
-        ? (accentColor ?? scheme.primary).withValues(alpha: 0.12)
+        ? (accentColor ?? scheme.primary).withValues(alpha: 0.22)
         : Colors.transparent;
 
     return Material(
@@ -960,7 +987,7 @@ class _BottomNavItem extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
                   color: fg,
                   height: 1.1,
                 ),

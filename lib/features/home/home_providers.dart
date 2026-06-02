@@ -77,12 +77,20 @@ final todayStatsProvider = FutureProvider<TodayStats>((ref) async {
 
 /// 담당자별 건수 한 줄 (팔로우·미통화 등 공통)
 typedef AssigneeCountRow = ({String assignee, int count});
+typedef RegionCountRow = ({String region, int count});
 
 class AssigneeOverview {
   const AssigneeOverview({required this.total, required this.byAssignee});
 
   final int total;
   final List<AssigneeCountRow> byAssignee;
+}
+
+class RegionOverview {
+  const RegionOverview({required this.total, required this.topRegions});
+
+  final int total;
+  final List<RegionCountRow> topRegions;
 }
 
 class AssigneeQualityMetric {
@@ -132,6 +140,25 @@ List<AssigneeCountRow> _groupByAssignee(List<SalesCall> rows) {
     return a.assignee.compareTo(b.assignee);
   });
   return list;
+}
+
+List<RegionCountRow> _topRegionsFromRows(List<SalesCall> rows, {int topN = 3}) {
+  final counts = <String, int>{};
+  for (final c in rows) {
+    final region = (c.regionLabel ?? c.regionName ?? c.regionSido ?? '').trim();
+    final key = region.isEmpty ? '미지정 지역' : region;
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  final list = counts.entries
+      .map((e) => (region: e.key, count: e.value))
+      .toList()
+    ..sort((a, b) {
+      final c = b.count.compareTo(a.count);
+      if (c != 0) return c;
+      return a.region.compareTo(b.region);
+    });
+  if (list.length <= topN) return list;
+  return list.sublist(0, topN);
 }
 
 DateTime? _toLocalDateTime(String? raw) {
@@ -302,6 +329,34 @@ final hubPeriodFollowOverviewProvider =
   }
 });
 
+final hubPeriodTopRegionsProvider =
+    FutureProvider.family<RegionOverview, HubPeriodKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  late final List<SalesCall> rows;
+  switch (key.period) {
+    case HubPeriod.day:
+      rows = await repo.fetchCallsAllPages(
+        date: key.anchorYmd,
+        includeCallHistory: false,
+      );
+    case HubPeriod.week:
+      final range = seoulWeekRangeContaining(key.anchorYmd);
+      rows = await repo.fetchCallsAllPages(
+        dateRangeStart: range.$1,
+        dateRangeEndInclusive: range.$2,
+        includeCallHistory: false,
+      );
+    case HubPeriod.month:
+      final range = seoulMonthRangeContaining(key.anchorYmd);
+      rows = await repo.fetchCallsAllPages(
+        dateRangeStart: range.$1,
+        dateRangeEndInclusive: range.$2,
+        includeCallHistory: false,
+      );
+  }
+  return RegionOverview(total: rows.length, topRegions: _topRegionsFromRows(rows));
+});
+
 final hubPeriodQualityOverviewProvider =
     FutureProvider.family<CallQualityOverview, HubPeriodKey>((ref, key) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
@@ -433,9 +488,37 @@ List<String> weekYmdKeysContaining(String anchorYmd) {
   return keys;
 }
 
-/// 홈 [미통화] 탭 배지 — 금일 미통화, 로그인 담당자 우선.
+/// 홈 [미통화] 탭 배지 — 흐름 기간(금일/금주/금월) 기준 미통화, 로그인 담당자 우선.
 final hubSegmentIncompleteBadgeProvider = FutureProvider<int>((ref) async {
-  final overview = await ref.watch(todayIncompleteOverviewProvider.future);
+  final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
+  final navStep = ref.watch(homeHubNavStepProvider);
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  late final List<SalesCall> rows;
+  switch (navStep) {
+    case HubNavStep.day:
+      rows = await repo.fetchCallsAllPages(
+        date: anchor,
+        uncalledOnly: true,
+        includeCallHistory: false,
+      );
+    case HubNavStep.week:
+      final r = seoulWeekRangeContaining(anchor);
+      rows = await repo.fetchCallsAllPages(
+        dateRangeStart: r.$1,
+        dateRangeEndInclusive: r.$2,
+        uncalledOnly: true,
+        includeCallHistory: false,
+      );
+    case HubNavStep.month:
+      final r = seoulMonthRangeContaining(anchor);
+      rows = await repo.fetchCallsAllPages(
+        dateRangeStart: r.$1,
+        dateRangeEndInclusive: r.$2,
+        uncalledOnly: true,
+        includeCallHistory: false,
+      );
+  }
+  final overview = AssigneeOverview(total: rows.length, byAssignee: _groupByAssignee(rows));
   final loginName = ref.watch(authControllerProvider)?.name;
   return segmentBadgeCountForUser(overview, loginName);
 });
@@ -447,8 +530,9 @@ final hubSegmentCalendarBadgeProvider = FutureProvider<int>((ref) async {
   final loginName = ref.watch(authControllerProvider)?.name.trim();
 
   final range = switch (navStep) {
+    HubNavStep.day => (anchor, anchor),
     HubNavStep.month => seoulMonthRangeContaining(anchor),
-    _ => seoulWeekRangeContaining(anchor),
+    HubNavStep.week => seoulWeekRangeContaining(anchor),
   };
   final calls = await ref.watch(
     calendarFollowRangeProvider((startYmd: range.$1, endYmd: range.$2)).future,
