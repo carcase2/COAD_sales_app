@@ -261,6 +261,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       return;
     }
     if (navIndex == _navHomeIndex) {
+      // 홈 재탭 시 금일 흐름으로 빠르게 복귀
+      if (_currentIndex == _homeTabIndex &&
+          _navSelectedIndex == _navHomeIndex) {
+        _openHomeFlowToday();
+        return;
+      }
       _selectHomeTab();
     } else if (navIndex == _navIssuanceIndex) {
       _selectIssuanceTab();
