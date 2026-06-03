@@ -172,26 +172,45 @@ class _UpdateHistoryCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              '제안: ${item.proposer}',
-              style: TextStyle(
-                fontSize: 12.5,
-                color: scheme.secondary,
-                fontWeight: FontWeight.w700,
+            if (!item.hasPerItemProposer) ...[
+              const SizedBox(height: 8),
+              Text(
+                '제안: ${item.proposer}',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: scheme.secondary,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
+              const SizedBox(height: 6),
+            ] else
+              const SizedBox(height: 8),
             ...item.changes.map(
               (change) => Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  '• $change',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: scheme.onSurfaceVariant,
-                    height: 1.35,
-                  ),
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '• ${change.text}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (item.hasPerItemProposer) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '제안: ${change.proposer}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: scheme.secondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

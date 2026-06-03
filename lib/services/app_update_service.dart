@@ -286,12 +286,16 @@ class AppUpdateService {
 
         final dateLabel = _dateOnlyLabel(map['created_at']);
         final proposer = _firstNonEmptyString([map['proposer']]);
-        final changes = _normalizeReleaseNotes(map['release_notes']);
+        final fallbackProposer = proposer.isEmpty ? '미기재' : proposer;
+        final changes = _normalizeReleaseNotes(
+          map['release_notes'],
+          fallbackProposer: fallbackProposer,
+        );
         parsed.add(
           UpdateHistoryEntry(
             version: version,
             dateLabel: dateLabel.isEmpty ? '-' : dateLabel,
-            proposer: proposer.isEmpty ? '미기재' : proposer,
+            proposer: fallbackProposer,
             changes: changes,
           ),
         );
@@ -324,21 +328,61 @@ class AppUpdateService {
     return '';
   }
 
-  static List<String> _normalizeReleaseNotes(dynamic raw) {
+  static List<UpdateHistoryChangeItem> _normalizeReleaseNotes(
+    dynamic raw, {
+    required String fallbackProposer,
+  }) {
     if (raw == null) return const [];
+
+    String resolveProposer(Map<dynamic, dynamic> map) {
+      final fromItem = _firstNonEmptyString([
+        map['proposer'],
+        map['proposed_by'],
+        map['requested_by'],
+      ]);
+      return fromItem.isEmpty ? fallbackProposer : fromItem;
+    }
+
     if (raw is List) {
-      return raw
-          .map((e) => (e ?? '').toString().trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
+      final items = <UpdateHistoryChangeItem>[];
+      for (final entry in raw) {
+        if (entry is Map) {
+          final map = Map<dynamic, dynamic>.from(entry);
+          final text = _firstNonEmptyString([
+            map['note'],
+            map['text'],
+            map['change'],
+            map['summary'],
+          ]);
+          if (text.isEmpty) continue;
+          items.add(
+            UpdateHistoryChangeItem(
+              text: text,
+              proposer: resolveProposer(map),
+            ),
+          );
+          continue;
+        }
+        final text = (entry ?? '').toString().trim();
+        if (text.isEmpty) continue;
+        items.add(
+          UpdateHistoryChangeItem(text: text, proposer: fallbackProposer),
+        );
+      }
+      return items;
     }
     if (raw is Map) {
-      final items = <String>[];
+      final items = <UpdateHistoryChangeItem>[];
       for (final entry in raw.entries) {
         final key = entry.key.toString().trim();
         final value = (entry.value ?? '').toString().trim();
         if (value.isEmpty) continue;
-        items.add(key.isEmpty ? value : '$key: $value');
+        items.add(
+          UpdateHistoryChangeItem(
+            text: key.isEmpty ? value : '$key: $value',
+            proposer: fallbackProposer,
+          ),
+        );
       }
       return items;
     }
@@ -348,6 +392,12 @@ class AppUpdateService {
         .split(RegExp(r'\r?\n'))
         .map((line) => line.replaceFirst(RegExp(r'^\s*[-•]\s*'), '').trim())
         .where((line) => line.isNotEmpty)
+        .map(
+          (line) => UpdateHistoryChangeItem(
+            text: line,
+            proposer: fallbackProposer,
+          ),
+        )
         .toList();
   }
 
@@ -529,6 +579,16 @@ class AppUpdateStatus {
   bool get isUpToDate => !hasUpdate;
 }
 
+class UpdateHistoryChangeItem {
+  const UpdateHistoryChangeItem({
+    required this.text,
+    required this.proposer,
+  });
+
+  final String text;
+  final String proposer;
+}
+
 class UpdateHistoryEntry {
   const UpdateHistoryEntry({
     required this.version,
@@ -540,7 +600,11 @@ class UpdateHistoryEntry {
   final String version;
   final String dateLabel;
   final String proposer;
-  final List<String> changes;
+  final List<UpdateHistoryChangeItem> changes;
+
+  bool get hasPerItemProposer =>
+      changes.isNotEmpty &&
+      changes.any((change) => change.proposer != proposer);
 }
 
 class _UpdatePolicy {
