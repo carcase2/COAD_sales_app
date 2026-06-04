@@ -90,9 +90,9 @@ String? resolveNextScheduledDateForSave(int statusId, String? nextScheduledDateY
   return emptyToNull(nextScheduledDateYmd);
 }
 
-/// 미수주는 `unsuccessful_reason`만 필수, 상담내용은 선택.
+/// 미수주·수주(종료)는 상담내용 선택 — 미수주는 `unsuccessful_reason`만 필수.
 bool consultationContentRequiredForStatus(int statusId) =>
-    statusId != CallStatusIds.lost;
+    statusId != CallStatusIds.lost && statusId != CallStatusIds.won;
 
 void validateConsultationSubmit({
   required String consultationContent,

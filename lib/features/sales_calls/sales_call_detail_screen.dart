@@ -1504,9 +1504,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            (_statusId == CallStatusIds.lost)
-                                ? '${_inputStageLabel(m)} 미수주 등록'
-                                : '${_inputStageLabel(m)} 상담내용 입력',
+                            switch (_statusId) {
+                              CallStatusIds.lost =>
+                                '${_inputStageLabel(m)} 미수주 등록',
+                              CallStatusIds.won =>
+                                '${_inputStageLabel(m)} 수주 등록',
+                              _ => '${_inputStageLabel(m)} 상담내용 입력',
+                            },
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -1576,7 +1580,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       const Text('상담 결과 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 12),
                       _buildStatusGrid(scheme, setModalState),
-                      if (_statusId != CallStatusIds.lost) ...[
+                      if (consultationContentRequiredForStatus(
+                        _statusId ?? CallStatusIds.undecided,
+                      )) ...[
                         const SizedBox(height: 24),
                         const Text('상담내용 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         const SizedBox(height: 8),
@@ -1693,9 +1699,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         child: Text(
                           _saving
                               ? '저장 중...'
-                              : (_statusId == CallStatusIds.lost)
-                              ? '미수주 저장'
-                              : '상담내용 저장',
+                              : switch (_statusId) {
+                                  CallStatusIds.lost => '미수주 저장',
+                                  CallStatusIds.won => '수주 저장',
+                                  _ => '상담내용 저장',
+                                },
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                       ),

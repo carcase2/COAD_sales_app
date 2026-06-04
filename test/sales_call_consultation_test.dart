@@ -29,6 +29,18 @@ void main() {
     );
   });
 
+  test('validate — 수주 상담내용 선택', () {
+    expect(
+      () => validateConsultationSubmit(
+        consultationContent: '',
+        statusId: CallStatusIds.won,
+        nextScheduledDateYmd: null,
+        unsuccessfulReason: null,
+      ),
+      returnsNormally,
+    );
+  });
+
   test('validate — 미수주 사유 필수, 상담내용 선택', () {
     expect(
       () => validateConsultationSubmit(
