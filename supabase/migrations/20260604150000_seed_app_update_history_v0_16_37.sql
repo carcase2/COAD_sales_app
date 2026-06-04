@@ -1,4 +1,4 @@
--- v0.16.37: 수주 상담 상담내용 선택 (제안: 김경덕 이사)
+-- v0.16.37: 수주 상담 상담내용 선택 (제안: 이상수 팀장)
 
 insert into public.app_update_history (
   version,
@@ -9,19 +9,19 @@ insert into public.app_update_history (
 )
 select
   '0.16.37',
-  '김경덕 이사',
+  '이상수 팀장',
   jsonb_build_array(
     jsonb_build_object(
       'note',
       '상담 결과 「수주」 선택 시 상담내용 없이도 저장 가능',
       'proposer',
-      '김경덕 이사'
+      '이상수 팀장'
     ),
     jsonb_build_object(
       'note',
       '수주 등록 화면·저장 버튼 문구 정리',
       'proposer',
-      '김경덕 이사'
+      '이상수 팀장'
     )
   ),
   now(),

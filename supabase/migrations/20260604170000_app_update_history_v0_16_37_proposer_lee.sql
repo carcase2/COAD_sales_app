@@ -1,4 +1,4 @@
--- v0.16.37 업데이트 내역 제안자: 이상수 팀장 (정정)
+-- v0.16.37 업데이트 내역 제안자: 이상수 팀장
 
 update public.app_update_history
 set
