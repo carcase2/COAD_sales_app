@@ -1,4 +1,4 @@
--- v0.16.34: 홈 섹션·달력 스와이프·오늘 표시 개선 (제안: 개발팀)
+-- v0.16.34: 홈 섹션·달력 스와이프·오늘 표시 개선 (제안: 이상수 팀장)
 
 insert into public.app_update_history (
   version,
@@ -9,25 +9,25 @@ insert into public.app_update_history (
 )
 select
   '0.16.34',
-  '개발팀',
+  '이상수 팀장',
   jsonb_build_array(
     jsonb_build_object(
       'note',
       '흐름·미통화·달력 좌우 스와이프로 섹션 전환 제거(상단 탭만 사용)',
       'proposer',
-      '개발팀'
+      '이상수 팀장'
     ),
     jsonb_build_object(
       'note',
       '달력 주간·월간에서 좌우 스와이프로 전주/다음주·전월/다음월 이동',
       'proposer',
-      '개발팀'
+      '이상수 팀장'
     ),
     jsonb_build_object(
       'note',
       '달력 오늘 날짜 강조로 한눈에 구분',
       'proposer',
-      '개발팀'
+      '이상수 팀장'
     )
   ),
   now(),
