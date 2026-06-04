@@ -463,6 +463,9 @@ final issuanceAllTabRowsProvider =
       );
     });
 
+/// false면 배지 API 미조회(앱 시작 부하 완화). 발급 탭·지연 후 true.
+final issuanceBadgeLoadEnabledProvider = StateProvider<bool>((ref) => false);
+
 final issuanceRequestBadgeCountProvider = FutureProvider<int>((ref) async {
   final taxRows = await ref.watch(
     issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future,
@@ -471,4 +474,14 @@ final issuanceRequestBadgeCountProvider = FutureProvider<int>((ref) async {
     issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
   );
   return taxRows.length + bondRows.length;
+});
+
+/// [issuanceBadgeLoadEnabledProvider]가 켜진 뒤에만 실제 건수를 조회.
+final issuanceRequestBadgeCountVisibleProvider = Provider<AsyncValue<int>>((
+  ref,
+) {
+  if (!ref.watch(issuanceBadgeLoadEnabledProvider)) {
+    return const AsyncValue.data(0);
+  }
+  return ref.watch(issuanceRequestBadgeCountProvider);
 });

@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
+import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
+import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -93,8 +99,6 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   static const String _longPressHintHiddenPrefKey =
       'home_flow_longpress_hint_hidden_v1';
-  static const String _flowNoUncalledPopupPrefKey =
-      'home_flow_no_uncalled_popup_v2';
   static const List<HomeHubSection> _sectionOrder = [
     HomeHubSection.flow,
     HomeHubSection.incomplete,
@@ -105,11 +109,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   late String _hubFlowAnchorYmd;
   HubNavStep _hubNavStep = HubNavStep.day;
   HomeHubSection _section = HomeHubSection.flow;
+  final Set<HomeHubSection> _materializedSections = {HomeHubSection.flow};
   CalendarFormat _launchCalendarFormat = CalendarFormat.week;
   int _calendarKeyNonce = 0;
   int _pendingSyncCount = 0;
   bool _showLongPressHint = true;
-  bool _flowNoUncalledPopupEnabled = false;
+  bool _flowNoUncalledPopupEnabled = true;
   ProviderSubscription<HubNavStep>? _hubNavStepSub;
   ProviderSubscription<String>? _hubAnchorSub;
   ProviderSubscription<dynamic>? _pendingLaunchSub;
@@ -1177,6 +1182,51 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     await _pushFollowList(scope, selected);
   }
 
+  Future<T?> _withFreshDataLoading<T>(Future<T> Function() load) async {
+    if (!mounted) return null;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return Center(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 22,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 14),
+                    Text(
+                      '미통화 최신 확인 중…',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    try {
+      return await load();
+    } finally {
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+    }
+  }
+
   Future<void> _openIncompletePicker(
     HubPeriod scope, {
     bool forcePicker = false,
@@ -1184,33 +1234,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     if (forcePicker && _showLongPressHint) {
       _dismissLongPressHint();
     }
-    final repo = ref.read(salesCallsRepositoryProvider);
-    List<dynamic> rows;
+    final periodKey = (period: scope, anchorYmd: _hubFlowAnchorYmd);
+    List<SalesCall> rows;
     try {
-      switch (scope) {
-        case HubPeriod.day:
-          rows = await repo.fetchCallsAllPages(
-            date: _hubFlowAnchorYmd,
-            uncalledOnly: true,
-            includeCallHistory: false,
-          );
-        case HubPeriod.week:
-          final w = seoulWeekRangeContaining(_hubFlowAnchorYmd);
-          rows = await repo.fetchCallsAllPages(
-            dateRangeStart: w.$1,
-            dateRangeEndInclusive: w.$2,
-            uncalledOnly: true,
-            includeCallHistory: false,
-          );
-        case HubPeriod.month:
-          final m = seoulMonthRangeContaining(_hubFlowAnchorYmd);
-          rows = await repo.fetchCallsAllPages(
-            dateRangeStart: m.$1,
-            dateRangeEndInclusive: m.$2,
-            uncalledOnly: true,
-            includeCallHistory: false,
-          );
-      }
+      final bundle = await _withFreshDataLoading(
+        () => refreshHubPeriodUncalledBundle(ref, periodKey),
+      );
+      if (bundle == null || !mounted) return;
+      rows = bundle.uncalledCalls;
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1221,14 +1252,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
     if (!mounted) return;
 
-    final counts = _countsFromRows(rows, _callAssigneeOf);
-    final loginName = ref.read(authControllerProvider)?.name.trim();
-    final loginHasNoUncalled = !forcePicker &&
-        _flowNoUncalledPopupEnabled &&
-        loginName != null &&
-        loginName.isNotEmpty &&
-        (counts[loginName] ?? 0) == 0;
-    if (loginHasNoUncalled) {
+    final overrides =
+        await ref.read(tempManagerOverridesProvider.future);
+    final counts = _countsFromRows(
+      rows,
+      (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
+    );
+    if (!forcePicker && _flowNoUncalledPopupEnabled && rows.isEmpty) {
       await _showAutoCloseInfoDialog('미통화가 없습니다.');
       return;
     }
@@ -1559,6 +1589,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   void _goToSection(HomeHubSection section, {bool fromPill = false}) {
+    _materializeSection(section);
     if (_section == section && !fromPill) return;
     HapticFeedback.selectionClick();
     setState(() {
@@ -1582,6 +1613,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   void _onSectionPageChanged(int index) {
     final next = _sectionAt(index);
+    _materializeSection(next);
     if (_section == next) return;
     HapticFeedback.selectionClick();
     if (next == HomeHubSection.calendar) {
@@ -1598,6 +1630,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   void _consumePendingLaunch() {
     final next = ref.read(pendingConsultationLaunchProvider);
     if (next == null || !mounted) return;
+    _materializeSection(next.section);
     setState(() {
       _section = next.section;
       _launchCalendarFormat = next.calendarFormat;
@@ -1628,12 +1661,30 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   void _publishHubPeriod() {
     ref.read(homeHubNavStepProvider.notifier).state = _hubNavStep;
     ref.read(homeHubFlowAnchorYmdProvider.notifier).state = _hubFlowAnchorYmd;
+    prefetchHubPeriodFlow(
+      ref,
+      _activeFlowPeriodKey,
+      previousKey: _previousPeriodKey,
+    );
   }
 
-  Future<void> _loadLongPressHintVisibility() async {
+  void _materializeSection(HomeHubSection section) {
+    if (_materializedSections.contains(section)) return;
+    setState(() => _materializedSections.add(section));
+  }
+
+  Widget _lazySectionPage(HomeHubSection section, Widget child) {
+    if (!_materializedSections.contains(section)) {
+      return const SizedBox.expand();
+    }
+    return _KeepAliveSection(child: child);
+  }
+
+  Future<void> _loadHomeFlowPrefs() async {
     final prefs = ref.read(appDependenciesProvider).prefs;
     final hidden = prefs.getBool(_longPressHintHiddenPrefKey) ?? false;
-    final noUncalledPopup = prefs.getBool(_flowNoUncalledPopupPrefKey) ?? false;
+    final noUncalledPopup =
+        prefs.getBool(homeFlowUncalledPopupPrefKey) ?? true;
     if (!mounted) return;
     setState(() {
       _showLongPressHint = !hidden;
@@ -1648,12 +1699,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     await prefs.setBool(_longPressHintHiddenPrefKey, true);
   }
 
-  Future<void> _setFlowNoUncalledPopupEnabled(bool enabled) async {
-    setState(() => _flowNoUncalledPopupEnabled = enabled);
-    final prefs = ref.read(appDependenciesProvider).prefs;
-    await prefs.setBool(_flowNoUncalledPopupPrefKey, enabled);
-  }
-
   @override
   void initState() {
     super.initState();
@@ -1664,7 +1709,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       ref.read(bottomBarVisibilityProvider.notifier).state = true;
       _checkAndSyncPending();
       _consumePendingLaunch();
-      _loadLongPressHintVisibility();
+      _loadHomeFlowPrefs();
     });
     _homeFlowResetSub = ref.listenManual<int>(homeHubFlowResetTickProvider, (
       previous,
@@ -1724,11 +1769,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   Future<void> _refreshActiveFlowPeriod() async {
     final active = _activeFlowPeriodKey;
     final previous = _previousPeriodKey;
+    ref.invalidate(hubPeriodReceptionBundleProvider(active));
     ref.invalidate(hubPeriodStatsProvider(active));
     ref.invalidate(hubPeriodStatsProvider(previous));
     ref.invalidate(hubPeriodFollowOverviewProvider(active));
     ref.invalidate(hubPeriodQualityOverviewProvider(active));
     await Future.wait([
+      ref.read(hubPeriodReceptionBundleProvider(active).future),
       ref.read(hubPeriodStatsProvider(active).future),
       ref.read(hubPeriodStatsProvider(previous).future),
       ref.read(hubPeriodFollowOverviewProvider(active).future),
@@ -1737,7 +1784,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   void _invalidateSegmentBadges() {
-    ref.invalidate(todayIncompleteOverviewProvider);
     ref.invalidate(hubSegmentIncompleteBadgeProvider);
     ref.invalidate(hubSegmentCalendarBadgeProvider);
   }
@@ -1751,7 +1797,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         ref.invalidate(incompleteBreakdownCallsProvider);
         await ref.read(hubSegmentIncompleteBadgeProvider.future);
       case HomeHubSection.calendar:
-        ref.invalidate(rankingCallsProvider);
         final calKey = _calendarRangeKeyForHub();
         ref.invalidate(calendarFollowRangeProvider(calKey));
         await Future.wait([
@@ -2189,38 +2234,35 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           scope: scope,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest.withValues(
-                            alpha: 0.35,
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: scheme.outlineVariant.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '흐름 미통화 0건 팝업',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: scheme.onSurface,
-                                ),
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const SettingsScreen(),
                               ),
+                            );
+                            if (mounted) await _loadHomeFlowPrefs();
+                          },
+                          icon: Icon(
+                            Icons.tune_rounded,
+                            size: 15,
+                            color: scheme.primary,
+                          ),
+                          label: Text(
+                            '미통화 탭 동작 · 설정',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.primary,
                             ),
-                            Switch(
-                              value: _flowNoUncalledPopupEnabled,
-                              onChanged: _setFlowNoUncalledPopupEnabled,
-                            ),
-                          ],
+                          ),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                          ),
                         ),
                       ),
                       if (_showLongPressHint) ...[
@@ -2334,9 +2376,18 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 controller: _sectionPageController,
                 onPageChanged: _onSectionPageChanged,
                 children: [
-                  _buildFlowBody(scheme, user),
-                  _buildIncompleteBody(scheme),
-                  _buildCalendarBody(),
+                  _lazySectionPage(
+                    HomeHubSection.flow,
+                    _buildFlowBody(scheme, user),
+                  ),
+                  _lazySectionPage(
+                    HomeHubSection.incomplete,
+                    _buildIncompleteBody(scheme),
+                  ),
+                  _lazySectionPage(
+                    HomeHubSection.calendar,
+                    _buildCalendarBody(),
+                  ),
                 ],
               ),
             ),
@@ -2414,6 +2465,7 @@ class _MiniStatsWidget extends StatelessWidget {
                   child: _FlowStatTile(
                     icon: Icons.phone_missed_rounded,
                     label: incompleteLabel,
+                    hint: '미통화 탭과 동일',
                     value: incomplete.toString(),
                     color: scheme.error,
                     onTap: onTapIncomplete,
@@ -2476,12 +2528,14 @@ class _FlowStatTile extends StatelessWidget {
     required this.value,
     required this.color,
     required this.onTap,
+    this.hint,
     this.onLongPress,
     this.compact = false,
   });
 
   final IconData icon;
   final String label;
+  final String? hint;
   final String value;
   final Color color;
   final VoidCallback onTap;
@@ -2507,6 +2561,7 @@ class _FlowStatTile extends StatelessWidget {
           child: _StatItem(
             icon: icon,
             label: label,
+            hint: hint,
             value: value,
             color: color,
             compact: compact,
@@ -2594,11 +2649,13 @@ class _StatItem extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
+    this.hint,
     this.compact = false,
   });
 
   final IconData icon;
   final String label;
+  final String? hint;
   final String value;
   final Color color;
   final bool compact;
@@ -2639,6 +2696,20 @@ class _StatItem extends StatelessWidget {
             color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
           ),
         ),
+        if (hint != null && hint!.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            hint!,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2675,6 +2746,28 @@ class _FlowErrorPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// 홈 섹션 스와이프 후 상태 유지 — 재방문 시 재빌드 비용 절감.
+class _KeepAliveSection extends StatefulWidget {
+  const _KeepAliveSection({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveSection> createState() => _KeepAliveSectionState();
+}
+
+class _KeepAliveSectionState extends State<_KeepAliveSection>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 

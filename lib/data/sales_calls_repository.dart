@@ -23,6 +23,97 @@ class SalesCallsRepository {
   final SupabaseClient _client = Supabase.instance.client;
   final DatabaseHelper _db = DatabaseHelper.instance;
 
+  static const Duration _revertExpiredThrottle = Duration(minutes: 10);
+  static const Duration _tempOverridesCacheTtl = Duration(minutes: 2);
+
+  DateTime? _lastRevertExpiredAt;
+  Future<int>? _revertInFlight;
+  List<TempManagerOverride>? _cachedOverrides;
+  DateTime? _overridesCachedAt;
+  Future<List<TempManagerOverride>>? _overridesInFlight;
+
+  /// 접수 저장·동기화 후 임시 담당 캐시를 비웁니다.
+  void invalidateTempManagerCache({bool forceRevertOnNextFetch = false}) {
+    _cachedOverrides = null;
+    _overridesCachedAt = null;
+    if (forceRevertOnNextFetch) {
+      _lastRevertExpiredAt = null;
+    }
+  }
+
+  Future<void> _maybeRevertExpired({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force &&
+        _lastRevertExpiredAt != null &&
+        now.difference(_lastRevertExpiredAt!) < _revertExpiredThrottle) {
+      return;
+    }
+    if (_revertInFlight != null) {
+      await _revertInFlight;
+      return;
+    }
+    final future = revertExpiredTempManagerCalls().then((reverted) {
+      _lastRevertExpiredAt = DateTime.now();
+      if (reverted > 0) {
+        invalidateTempManagerCache();
+      }
+      return reverted;
+    });
+    _revertInFlight = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_revertInFlight, future)) {
+        _revertInFlight = null;
+      }
+    }
+  }
+
+  Future<List<TempManagerOverride>> _fetchTempOverridesRemote() async {
+    final res = await _client
+        .from('temp_manager_overrides')
+        .select(
+          'id,region_name,original_manager,temp_manager,start_date,end_date,memo,is_active,created_at,updated_at',
+        )
+        .order('updated_at', ascending: false);
+    return res
+        .whereType<Map>()
+        .map((e) => TempManagerOverride.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<List<TempManagerOverride>> _getOverridesCached({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force &&
+        _cachedOverrides != null &&
+        _overridesCachedAt != null &&
+        now.difference(_overridesCachedAt!) < _tempOverridesCacheTtl) {
+      return _cachedOverrides!;
+    }
+    if (_overridesInFlight != null) {
+      return _overridesInFlight!;
+    }
+    final future = _fetchTempOverridesRemote().then((rows) {
+      _cachedOverrides = rows;
+      _overridesCachedAt = DateTime.now();
+      return rows;
+    });
+    _overridesInFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_overridesInFlight, future)) {
+        _overridesInFlight = null;
+      }
+    }
+  }
+
+  /// 목록·검색 조회 전 — 만료 원복(스로틀) + 오버라이드 캐시 1회.
+  Future<List<TempManagerOverride>> _prepareListFetchContext({bool force = false}) async {
+    await _maybeRevertExpired(force: force);
+    return _getOverridesCached(force: force);
+  }
+
   /// PostgREST/Supabase `api.max_rows` (see `supabase/config.toml`).
   static const int postgrestMaxPageSize = 1000;
   static const String _regionSelect =
@@ -76,17 +167,9 @@ class SalesCallsRepository {
         .toList();
   }
 
-  Future<List<TempManagerOverride>> fetchTempOverrides() async {
-    final res = await _client
-        .from('temp_manager_overrides')
-        .select(
-          'id,region_name,original_manager,temp_manager,start_date,end_date,memo,is_active,created_at,updated_at',
-        )
-        .order('updated_at', ascending: false);
-    return res
-        .whereType<Map>()
-        .map((e) => TempManagerOverride.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
+  Future<List<TempManagerOverride>> fetchTempOverrides({bool force = false}) async {
+    await _maybeRevertExpired(force: force);
+    return _getOverridesCached(force: force);
   }
 
   /// 기간 만료된 임시 담당 접수 건을 original_manager로 DB 원복 (웹 revert-expired API와 동일).
@@ -118,7 +201,7 @@ class SalesCallsRepository {
 
   Future<int> _revertExpiredViaSupabase() async {
     final todayYmd = todayYmdSeoul();
-    final overrides = await fetchTempOverrides();
+    final overrides = await _fetchTempOverridesRemote();
     final expired = overrides.where((o) => isTempOverrideExpired(o, todayYmd)).toList();
     if (expired.isEmpty) return 0;
 
@@ -276,6 +359,7 @@ class SalesCallsRepository {
     bool calendarFull = false,
     int pageSize = postgrestMaxPageSize,
   }) async {
+    final overrides = await _prepareListFetchContext();
     final merged = <SalesCall>[];
     var offset = 0;
     while (true) {
@@ -295,6 +379,7 @@ class SalesCallsRepository {
         completedOnly: completedOnly,
         excludeSimpleInquiries: excludeSimpleInquiries,
         calendarFull: calendarFull,
+        overrides: overrides,
       );
       merged.addAll(batch.items);
       if (batch.rawRowCount < pageSize) break;
@@ -319,10 +404,11 @@ class SalesCallsRepository {
     bool? completedOnly,
     bool excludeSimpleInquiries = false,
     bool calendarFull = false,
+    List<TempManagerOverride>? overrides,
   }) async {
     try {
-      await revertExpiredTempManagerCalls();
-      final overrides = await fetchTempOverrides();
+      final resolvedOverrides =
+          overrides ?? await _prepareListFetchContext();
 
       String selectStr = '''
         *,
@@ -403,7 +489,11 @@ class SalesCallsRepository {
         parsed = parsed.where((c) => c.statusId != 4).toList();
       }
       return (
-        items: applyCallDisplayOverrides(parsed, overrides, DateTime.now()),
+        items: applyCallDisplayOverrides(
+          parsed,
+          resolvedOverrides,
+          DateTime.now(),
+        ),
         rawRowCount: rawRowCount,
       );
     } catch (e) {
@@ -413,8 +503,7 @@ class SalesCallsRepository {
 
   Future<SalesCall> fetchCallById(String id) async {
     try {
-      await revertExpiredTempManagerCalls();
-      final overrides = await fetchTempOverrides();
+      final overrides = await _prepareListFetchContext();
 
       final res = await _client.from('sales_calls').select('''
         *,
@@ -582,8 +671,7 @@ class SalesCallsRepository {
       .order('created_at', ascending: false)
       .limit(limit);
 
-      await revertExpiredTempManagerCalls();
-      final overrides = await fetchTempOverrides();
+      final overrides = await _prepareListFetchContext();
       final parsed = parseSalesCallList(res);
       return applyCallDisplayOverrides(parsed, overrides, DateTime.now());
     } catch (e) {

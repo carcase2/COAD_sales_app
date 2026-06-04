@@ -10,6 +10,8 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_create_scree
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
+import 'package:coad_customer_calls/navigation/app_menu.dart';
+import 'package:coad_customer_calls/navigation/app_menu_drawer.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
@@ -19,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 class MainTabScreen extends ConsumerStatefulWidget {
   const MainTabScreen({super.key});
@@ -34,6 +37,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   static const int _navHomeIndex = 0;
   static const int _navReceptionIndex = 1;
   static const int _navIssuanceIndex = 2;
+  static const int _navMenuIndex = 3;
   int _currentIndex = 0;
   int _navSelectedIndex = _navHomeIndex;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
@@ -41,8 +45,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   DateTime? _lastBackExitHintAt;
   RealtimeChannel? _issuanceCompletionWatchChannel;
   Timer? _issuanceCompletionDebounce;
-  String? _dismissedUpdateBannerVersion;
-
   @override
   void initState() {
     super.initState();
@@ -50,26 +52,42 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     // 1. Handle deep link if app was opened via notification (Cold Start)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       unawaited(NotificationService.handleInitialMessage());
-      await AppUpdateService.checkAndUpdateIfNeeded(context);
+      await AppUpdateService.checkAndUpdateIfNeeded(
+        context,
+        promptOptionalUpdate: false,
+      );
       if (mounted) {
         ref.invalidate(appUpdateStatusProvider);
       }
     });
 
-    // 홈(미통화·달력)이 쓰는 대량 목록을 백그라운드로 미리 불러 전환 시 빨리 표시
+    // 흐름 프리페치 후 여유 있을 때 미통화 breakdown·발급 감시 (첫 화면 네트워크 혼잡 완화)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(
-        ref.read(
-          incompleteBreakdownCallsProvider((
-            period: IncompleteSummaryPeriod.today,
-            anchorYmd: todayYmdSeoul(),
-          )).future,
-        ),
-      );
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        unawaited(
+          ref.read(
+            incompleteBreakdownCallsProvider((
+              period: IncompleteSummaryPeriod.today,
+              anchorYmd: todayYmdSeoul(),
+            )).future,
+          ),
+        );
+      });
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startIssuanceCompletionWatcher();
+      Future<void>.delayed(const Duration(seconds: 3), () {
+        if (!mounted) return;
+        _startIssuanceCompletionWatcher();
+      });
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(seconds: 4), () {
+        if (!mounted) return;
+        ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
+      });
     });
 
     // 2. Sync FCM token with Supabase for the current user
@@ -228,6 +246,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   void _selectIssuanceTab() {
+    ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
     if (_navSelectedIndex == _navIssuanceIndex &&
         _currentIndex == _issuanceTabIndex) {
       return;
@@ -240,9 +259,36 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     });
   }
 
+  void _syncNavFromCurrentTab() {
+    setState(() {
+      _navSelectedIndex = _currentIndex == _issuanceTabIndex
+          ? _navIssuanceIndex
+          : _navHomeIndex;
+    });
+  }
+
+  void _openMenuDrawer() {
+    HapticFeedback.lightImpact();
+    setState(() => _navSelectedIndex = _navMenuIndex);
+    ref.read(mainScaffoldKeyProvider).currentState?.openDrawer();
+  }
+
   void _onNavDestinationSelected(int navIndex) {
+    if (navIndex == _navMenuIndex) {
+      _openMenuDrawer();
+      return;
+    }
     if (navIndex == _navReceptionIndex) {
-      unawaited(_openReceptionCreate());
+      final prevNav = _navSelectedIndex;
+      setState(() => _navSelectedIndex = _navReceptionIndex);
+      unawaited(
+        _openReceptionCreate().whenComplete(() {
+          if (!mounted) return;
+          if (_currentIndex == _homeTabIndex) {
+            setState(() => _navSelectedIndex = prevNav);
+          }
+        }),
+      );
       return;
     }
     if (navIndex == _navHomeIndex) {
@@ -351,21 +397,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     });
 
     final scheme = Theme.of(context).colorScheme;
-    final tabAccent = switch (_navSelectedIndex) {
-      _navHomeIndex => scheme.primary,
-      _navReceptionIndex => scheme.tertiary,
-      _ => Colors.teal.shade700,
-    };
-    final appBarBg = Color.lerp(tabAccent, Colors.black, 0.12)!;
+    final tabAccent = scheme.primary;
+    final appBarBg = Color.lerp(scheme.primary, Colors.black, 0.12)!;
     final user = ref.watch(authControllerProvider);
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final latestRemote = updateStatus?.latestVersion;
-    final showUpdateBanner = updateStatus?.hasUpdate == true &&
-        updateStatus?.forceUpdate != true &&
-        latestRemote != null &&
-        latestRemote != _dismissedUpdateBannerVersion;
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
@@ -408,12 +445,33 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       },
       child: Scaffold(
         key: scaffoldKey,
-        drawer: _buildDrawer(context, user, scheme, updateStatus),
+        onDrawerChanged: (isOpen) {
+          if (!isOpen && _navSelectedIndex == _navMenuIndex) {
+            _syncNavFromCurrentTab();
+          }
+        },
+        drawer: _buildAppMenuDrawer(context, user, scheme, updateStatus),
         appBar: AppBar(
-          title: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: _openHomeFlowToday,
-            child: _buildBrandTitle(),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: _openHomeFlowToday,
+                child: _buildBrandTitle(),
+              ),
+              if (updateStatus?.hasUpdate == true && latestRemote != null) ...[
+                const SizedBox(width: 8),
+                _buildLogoUpdateChip(
+                  latestVersion: latestRemote,
+                  forceUpdate: updateStatus?.forceUpdate == true,
+                  onTap: () => AppUpdateService.checkAndUpdateIfNeeded(
+                    context,
+                    forceRecheck: true,
+                  ),
+                ),
+              ],
+            ],
           ),
           centerTitle: true,
           backgroundColor: appBarBg,
@@ -424,54 +482,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             tooltip: '메뉴 열기',
           ),
           actions: [
-            Center(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: updateStatus?.hasUpdate == true
-                    ? () => AppUpdateService.checkAndUpdateIfNeeded(
-                        context,
-                        forceRecheck: true,
-                      )
-                    : null,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: updateStatus?.hasUpdate == true
-                        ? Colors.amber.shade700.withValues(alpha: 0.35)
-                        : Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(999),
-                    border: updateStatus?.hasUpdate == true
-                        ? Border.all(
-                            color: Colors.amber.shade200.withValues(alpha: 0.7),
-                          )
-                        : null,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (updateStatus?.hasUpdate == true) ...[
-                        Icon(
-                          Icons.system_update_alt_rounded,
-                          size: 14,
-                          color: Colors.amber.shade100,
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        updateStatus?.hasUpdate == true && latestRemote != null
-                            ? 'v$kAppVersion → $latestRemote'
-                            : 'v$kAppVersion',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withValues(alpha: 0.95),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             IconButton(
               icon: const Icon(Icons.search_rounded),
               style: IconButton.styleFrom(
@@ -511,202 +521,264 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             ),
           ),
         ),
-        body: Stack(
-          children: [
-            IndexedStack(index: _currentIndex, children: _buildScreens()),
-            if (showUpdateBanner)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: _buildUpdateAvailableBanner(
-                  scheme: scheme,
-                  latestVersion: latestRemote,
-                  onUpdate: () => AppUpdateService.checkAndUpdateIfNeeded(
-                    context,
-                    forceRecheck: true,
-                  ),
-                  onDismiss: () => setState(
-                    () => _dismissedUpdateBannerVersion = latestRemote,
-                  ),
-                ),
-              ),
-          ],
-        ),
+        body: IndexedStack(index: _currentIndex, children: _buildScreens()),
         bottomNavigationBar: _MainBottomNavBar(
           selectedIndex: _navSelectedIndex,
-          issuanceBadgeAsync: ref.watch(issuanceRequestBadgeCountProvider),
+          issuanceBadgeAsync: ref.watch(issuanceRequestBadgeCountVisibleProvider),
           onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
           onLongPressHome: _openHomeFlowToday,
           onTapReception: () => _onNavDestinationSelected(_navReceptionIndex),
           onLongPressReception: _openReceptionQuickActions,
           onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
+          onTapMenu: () => _onNavDestinationSelected(_navMenuIndex),
         ),
       ),
     );
   }
 
-  Widget _buildUpdateAvailableBanner({
-    required ColorScheme scheme,
-    required String latestVersion,
-    required VoidCallback onUpdate,
-    required VoidCallback onDismiss,
-  }) {
-    return Material(
-      elevation: 3,
-      color: scheme.tertiaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-        child: Row(
-          children: [
-            Icon(Icons.system_update_alt_rounded, color: scheme.onTertiaryContainer),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '새 버전 v$latestVersion 사용 가능',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onTertiaryContainer,
-                ),
+  AppMenuCatalog _buildMenuCatalog(
+    BuildContext context,
+    AppUpdateStatus? updateStatus,
+  ) {
+    void closeDrawerThen(VoidCallback action) {
+      Navigator.pop(context);
+      action();
+    }
+
+    return AppMenuCatalog(
+      sections: const [
+        AppMenuSection(id: 'main', title: '업무'),
+        AppMenuSection(id: 'lists', title: '목록·검색'),
+        AppMenuSection(id: 'system', title: '시스템'),
+      ],
+      entries: [
+        AppMenuEntry(
+          id: 'home',
+          sectionId: 'main',
+          icon: Icons.home_rounded,
+          title: '홈 · 업무 흐름',
+          subtitle: '금일·금주·금월 통계',
+          keywords: const ['흐름', '통계', '상담'],
+          onTap: () => closeDrawerThen(() {
+            _selectHomeTab();
+            requestHomeHubSection(ref, HomeHubSection.flow);
+          }),
+        ),
+        AppMenuEntry(
+          id: 'home_incomplete',
+          sectionId: 'main',
+          icon: Icons.phone_missed_rounded,
+          title: '미통화 현황',
+          subtitle: '담당자별 미통화·비율',
+          quickAccess: true,
+          quickLabel: '미통화',
+          keywords: const ['미통화', '미결', '콜'],
+          onTap: () => closeDrawerThen(() {
+            _selectHomeTab();
+            requestHomeHubSection(ref, HomeHubSection.incomplete);
+          }),
+        ),
+        AppMenuEntry(
+          id: 'home_calendar',
+          sectionId: 'main',
+          icon: Icons.calendar_month_rounded,
+          title: '상담 달력',
+          subtitle: '주간·월간 팔로우 일정',
+          quickAccess: true,
+          quickLabel: '달력',
+          keywords: const ['달력', '일정', '팔로우'],
+          onTap: () => closeDrawerThen(() {
+            _selectHomeTab();
+            requestHomeHubSection(
+              ref,
+              HomeHubSection.calendar,
+              calendarFormat: CalendarFormat.week,
+            );
+          }),
+        ),
+        AppMenuEntry(
+          id: 'reception_create',
+          sectionId: 'main',
+          icon: Icons.add_ic_call_rounded,
+          title: '접수 등록',
+          quickAccess: true,
+          quickLabel: '접수',
+          keywords: const ['신규', '전화', '접수'],
+          onTap: () => closeDrawerThen(() => unawaited(_openReceptionCreate())),
+        ),
+        AppMenuEntry(
+          id: 'issuance',
+          sectionId: 'main',
+          icon: Icons.receipt_long_rounded,
+          title: '발급요청',
+          subtitle: '세금계산서·이행증권',
+          keywords: const ['세금', '이행', '발급'],
+          onTap: () => closeDrawerThen(_selectIssuanceTab),
+        ),
+        AppMenuEntry(
+          id: 'reception_today',
+          sectionId: 'lists',
+          icon: Icons.list_alt_rounded,
+          title: '금일 접수 목록',
+          keywords: const ['목록', '오늘', '접수'],
+          onTap: () => closeDrawerThen(() => unawaited(_openTodayReceptionList())),
+        ),
+        AppMenuEntry(
+          id: 'reception_incomplete_today',
+          sectionId: 'lists',
+          icon: Icons.phone_callback_rounded,
+          title: '금일 미통화 목록',
+          keywords: const ['미통화', '목록'],
+          onTap: () =>
+              closeDrawerThen(() => unawaited(_openTodayIncompleteList())),
+        ),
+        AppMenuEntry(
+          id: 'search',
+          sectionId: 'lists',
+          icon: Icons.search_rounded,
+          title: '통합 검색',
+          subtitle: '고객·접수 건 검색',
+          quickAccess: true,
+          quickLabel: '검색',
+          keywords: const ['검색', '고객', '찾기'],
+          onTap: () => closeDrawerThen(() {
+            final repository = ref.read(salesCallsRepositoryProvider);
+            final calls = ref.read(todayCallsContentProvider).value ?? [];
+            showSearch(
+              context: context,
+              delegate: SalesCallSearchDelegate(
+                initialItems: calls,
+                repository: repository,
               ),
-            ),
-            TextButton(
-              onPressed: onUpdate,
-              child: const Text('업데이트'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.close_rounded, size: 20),
-              onPressed: onDismiss,
-              tooltip: '닫기',
-            ),
-          ],
+            );
+          }),
         ),
-      ),
+        AppMenuEntry(
+          id: 'settings',
+          sectionId: 'system',
+          icon: Icons.settings_outlined,
+          title: '설정',
+          badge: updateStatus?.hasUpdate == true ? '업데이트' : null,
+          keywords: const ['환경', '업데이트', '미통화 안내'],
+          onTap: () => closeDrawerThen(() {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            );
+          }),
+        ),
+        AppMenuEntry(
+          id: 'logout',
+          sectionId: 'system',
+          icon: Icons.logout,
+          title: '로그아웃',
+          onTap: () async {
+            Navigator.pop(context);
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('로그아웃'),
+                content: const Text('정말 로그아웃 하시겠습니까?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('취소'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('로그아웃'),
+                  ),
+                ],
+              ),
+            );
+            if (confirm == true) {
+              await ref.read(authControllerProvider.notifier).logout();
+            }
+          },
+        ),
+      ],
     );
   }
 
-  Widget _buildDrawer(
+  Widget _buildAppMenuDrawer(
     BuildContext context,
     AppUser? user,
     ColorScheme scheme,
     AppUpdateStatus? updateStatus,
   ) {
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          UserAccountsDrawerHeader(
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: scheme.primaryContainer,
-              child: Icon(
-                Icons.person,
-                size: 40,
-                color: scheme.onPrimaryContainer,
-              ),
-            ),
-            accountName: Text(
-              '${user?.name ?? '사용자'} 님',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            accountEmail: Text(
-              '사번/ID: ${user?.id ?? '-'}',
-              style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8)),
-            ),
+    return AppMenuDrawer(
+      catalog: _buildMenuCatalog(context, updateStatus),
+      accountName: '${user?.name ?? '사용자'} 님',
+      accountSubtitle: '사번/ID: ${user?.id ?? '-'}',
+      headerDecoration: BoxDecoration(
+        color: scheme.primary,
+        image: const DecorationImage(
+          image: NetworkImage(
+            'https://www.transparenttextures.com/patterns/cubes.png',
+          ),
+          repeat: ImageRepeat.repeat,
+          opacity: 0.05,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogoUpdateChip({
+    required String latestVersion,
+    required bool forceUpdate,
+    required VoidCallback onTap,
+  }) {
+    final bg = forceUpdate
+        ? Colors.red.shade700.withValues(alpha: 0.92)
+        : Colors.amber.shade700.withValues(alpha: 0.92);
+    final border = forceUpdate
+        ? Colors.red.shade200.withValues(alpha: 0.85)
+        : Colors.amber.shade200.withValues(alpha: 0.85);
+    final label = forceUpdate ? '업데이트 필요' : 'v$latestVersion';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Tooltip(
+          message: forceUpdate
+              ? '필수 업데이트: v$latestVersion 설치'
+              : '새 버전 v$latestVersion · 탭하여 업데이트',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: scheme.primary,
-              image: const DecorationImage(
-                image: NetworkImage(
-                  'https://www.transparenttextures.com/patterns/cubes.png',
+              color: bg,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
                 ),
-                repeat: ImageRepeat.repeat,
-                opacity: 0.05,
-              ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.system_update_alt_rounded,
+                  size: 14,
+                  color: Colors.white.withValues(alpha: 0.95),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white.withValues(alpha: 0.98),
+                  ),
+                ),
+              ],
             ),
           ),
-          _buildDrawerSectionTitle('메인 메뉴', scheme),
-          _buildDrawerItem(
-            icon: Icons.home_rounded,
-            title: '홈',
-            onTap: () {
-              Navigator.pop(context);
-              _selectHomeTab();
-              requestHomeHubSection(ref, HomeHubSection.flow);
-            },
-            scheme: scheme,
-          ),
-          _buildDrawerItem(
-            icon: Icons.add_ic_call_rounded,
-            title: '접수 등록',
-            onTap: () {
-              Navigator.pop(context);
-              unawaited(_openReceptionCreate());
-            },
-            scheme: scheme,
-          ),
-          _buildDrawerItem(
-            icon: Icons.receipt_long_rounded,
-            title: '발급요청 (TEST)',
-            onTap: () {
-              Navigator.pop(context);
-              _selectIssuanceTab();
-            },
-            scheme: scheme,
-          ),
-          const Divider(indent: 20, endIndent: 20),
-          _buildDrawerSectionTitle('시스템', scheme),
-          _buildDrawerItem(
-            icon: Icons.settings_outlined,
-            title: '설정',
-            menuBadge: updateStatus?.hasUpdate == true ? '업데이트' : null,
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-              );
-            },
-            scheme: scheme,
-          ),
-          const Divider(),
-          _buildDrawerItem(
-            icon: Icons.logout,
-            title: '로그아웃',
-            color: scheme.error,
-            onTap: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('로그아웃'),
-                  content: const Text('정말 로그아웃 하시겠습니까?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('취소'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('로그아웃'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                await ref.read(authControllerProvider.notifier).logout();
-              }
-            },
-            scheme: scheme,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 10, 24, 24),
-            child: Text(
-              'COAD Sales App v$kAppVersion',
-              style: TextStyle(
-                fontSize: 11,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -758,55 +830,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     );
   }
 
-  Widget _buildDrawerSectionTitle(String title, ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: scheme.primary.withValues(alpha: 0.7),
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDrawerItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    required ColorScheme scheme,
-    Color? color,
-    String? menuBadge,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: color ?? scheme.onSecondaryContainer),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: color ?? scheme.onSurface,
-        ),
-      ),
-      trailing: menuBadge == null
-          ? null
-          : Text(
-              menuBadge,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: scheme.primary,
-              ),
-            ),
-      onTap: onTap,
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-    );
-  }
 }
 
 class _IssuanceNavIcon extends StatelessWidget {
@@ -841,6 +864,7 @@ class _MainBottomNavBar extends StatelessWidget {
     required this.onTapReception,
     required this.onLongPressReception,
     required this.onTapIssuance,
+    required this.onTapMenu,
   });
 
   final int selectedIndex;
@@ -850,6 +874,7 @@ class _MainBottomNavBar extends StatelessWidget {
   final VoidCallback onTapReception;
   final VoidCallback onLongPressReception;
   final VoidCallback onTapIssuance;
+  final VoidCallback onTapMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -893,7 +918,7 @@ class _MainBottomNavBar extends StatelessWidget {
             ),
             Expanded(
               child: _BottomNavItem(
-                label: '발급요청',
+                label: '발급',
                 tag: 'TEST',
                 selected: selectedIndex == 2,
                 customIcon: _IssuanceNavIcon(
@@ -903,6 +928,16 @@ class _MainBottomNavBar extends StatelessWidget {
                 ),
                 accentColor: issuanceAccent,
                 onTap: onTapIssuance,
+              ),
+            ),
+            Expanded(
+              child: _BottomNavItem(
+                label: '메뉴',
+                selected: selectedIndex == 3,
+                selectedIcon: Icons.menu_rounded,
+                unselectedIcon: Icons.menu_open_rounded,
+                accentColor: scheme.secondary,
+                onTap: onTapMenu,
               ),
             ),
           ],

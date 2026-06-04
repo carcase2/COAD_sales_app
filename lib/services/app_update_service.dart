@@ -15,7 +15,7 @@ class AppUpdateService {
   static bool _alreadyChecked = false;
   static bool _optionalDialogShown = false;
   static DateTime? _lastInUsePromptAt;
-  static const Duration _inUsePromptCooldown = Duration(hours: 4);
+  static const Duration _inUsePromptCooldown = Duration(hours: 24);
 
   /// Supabase `app_update_policy` 기준으로 업데이트 필요 여부만 조회 (UI 배지·배너용).
   static Future<AppUpdateStatus> fetchUpdateStatus() async {
@@ -79,6 +79,7 @@ class AppUpdateService {
     BuildContext context, {
     bool forceRecheck = false,
     bool showUpToDateMessage = false,
+    bool promptOptionalUpdate = true,
     String? preferredStoreUrl,
   }) async {
     if ((!forceRecheck && _alreadyChecked) ||
@@ -123,7 +124,8 @@ class AppUpdateService {
       if (context.mounted &&
           policy != null &&
           shouldRecommend &&
-          !_optionalDialogShown) {
+          !_optionalDialogShown &&
+          promptOptionalUpdate) {
         _optionalDialogShown = true;
         await _showOptionalUpdateDialog(
           context,
@@ -132,7 +134,9 @@ class AppUpdateService {
         );
       }
 
-      await _tryImmediateInAppUpdate();
+      if (promptOptionalUpdate) {
+        await _tryImmediateInAppUpdate();
+      }
     } catch (e) {
       debugPrint('앱 업데이트 체크 실패: $e');
       if (showUpToDateMessage && context.mounted) {

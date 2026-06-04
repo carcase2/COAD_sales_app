@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,14 +10,17 @@ typedef HomeSalesCacheInvalidator = void Function(ProviderOrFamily provider);
 
 /// 홈·상담현황에 쓰이는 통화 목록·통계 캐시 무효화.
 void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
-  invalidate(todayStatsProvider);
   invalidate(todayCallsContentProvider);
-  invalidate(todayFollowOverviewProvider);
-  invalidate(todayIncompleteOverviewProvider);
-  invalidate(todayCallQualityOverviewProvider);
+  invalidate(hubDayReceptionCallsProvider);
+  invalidate(hubDayUncalledCallsProvider);
   invalidate(incompleteBreakdownCallsProvider);
-  invalidate(rankingCallsProvider);
   invalidate(calendarFollowRangeProvider);
+  invalidate(hubPeriodReceptionBundleProvider);
+  invalidate(hubPeriodStatsProvider);
+  invalidate(hubPeriodFollowOverviewProvider);
+  invalidate(hubPeriodQualityOverviewProvider);
+  invalidate(hubSegmentIncompleteBadgeProvider);
+  invalidate(hubSegmentCalendarBadgeProvider);
 }
 
 /// 다른 화면에서 메인 탭 **홈**으로 돌아가며 [흐름|미통화|달력] 구역을 연다.
@@ -36,6 +40,9 @@ void navigateToHomeAndRefresh(
   WidgetRef ref, {
   String? message,
 }) {
+  ref.read(salesCallsRepositoryProvider).invalidateTempManagerCache(
+        forceRevertOnNextFetch: true,
+      );
   invalidateHomeSalesCaches(ref.invalidate);
   ref.read(homeHubFlowResetTickProvider.notifier).state++;
   Navigator.of(context).pushAndRemoveUntil(

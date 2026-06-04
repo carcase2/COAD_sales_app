@@ -593,7 +593,11 @@ class NotificationService {
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return;
     try {
-      invalidateHomeSalesCaches(ProviderScope.containerOf(ctx).invalidate);
+      final container = ProviderScope.containerOf(ctx);
+      container.read(salesCallsRepositoryProvider).invalidateTempManagerCache(
+            forceRevertOnNextFetch: true,
+          );
+      invalidateHomeSalesCaches(container.invalidate);
     } catch (_) {
       // ProviderScope 미연결(테스트 등) 시 무시
     }

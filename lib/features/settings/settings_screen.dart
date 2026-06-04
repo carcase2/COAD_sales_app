@@ -1,4 +1,6 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:flutter/material.dart';
@@ -12,10 +14,33 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  bool? _flowUncalledPopupEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFlowUncalledPref();
+  }
+
+  Future<void> _loadFlowUncalledPref() async {
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    final enabled = prefs.getBool(homeFlowUncalledPopupPrefKey) ?? true;
+    if (!mounted) return;
+    setState(() => _flowUncalledPopupEnabled = enabled);
+  }
+
+  Future<void> _setFlowUncalledPopupEnabled(bool enabled) async {
+    setState(() => _flowUncalledPopupEnabled = enabled);
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    await prefs.setBool(homeFlowUncalledPopupPrefKey, enabled);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
+    final loginName = ref.watch(authControllerProvider)?.name.trim();
+    final flowPopupOn = _flowUncalledPopupEnabled ?? true;
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
@@ -52,6 +77,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ref.invalidate(appUpdateStatusProvider);
               }
             },
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '흐름 · 미통화',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: flowPopupOn,
+            onChanged: _flowUncalledPopupEnabled == null
+                ? null
+                : _setFlowUncalledPopupEnabled,
+            title: const Text(
+              '흐름에서 내 미통화 0건 안내',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              flowPopupOn
+                  ? '켜짐 · 선택 기간에 미통화가 0건이면 안내 팝업(새로고침과 무관)'
+                  : '꺼짐 · 미통화 0건이어도 담당자 선택 화면으로 이동',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: scheme.onSurfaceVariant,
+                height: 1.35,
+              ),
+            ),
           ),
           const SizedBox(height: 20),
           Text(

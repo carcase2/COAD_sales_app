@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
@@ -119,12 +121,14 @@ class _HomeIncompleteBreakdownState
       incompleteBreakdownCallsProvider(breakdownKey),
     );
     final masterAsync = ref.watch(masterDataProvider);
+    final overridesAsync = ref.watch(tempManagerOverridesProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return asyncCalls.when(
       data: (calls) {
         Widget buildWithMaster(MasterDataBundle? master) {
           final filteredCalls = calls;
+          final overrides = overridesAsync.valueOrNull ?? const [];
 
           if (filteredCalls.isEmpty) {
             if (widget.fitSingleScreen) {
@@ -162,9 +166,7 @@ class _HomeIncompleteBreakdownState
 
           // Add counts from filtered calls
           for (var c in filteredCalls) {
-            final a = (c.assignedTo == null || c.assignedTo!.isEmpty)
-                ? '미지정'
-                : c.assignedTo!;
+            final a = displayAssigneeForCall(c, overrides, DateTime.now());
             totalCounts[a] = (totalCounts[a] ?? 0) + 1;
             if (c.isMissed) {
               incompleteCounts[a] = (incompleteCounts[a] ?? 0) + 1;
@@ -992,8 +994,7 @@ class _HomeIncompleteBreakdownState
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () =>
-            _openIncompleteListForAssignee(name, incompleteCount: incomplete),
+        onTap: () => unawaited(_openIncompleteListForAssignee(name)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
           child: Column(
@@ -1115,8 +1116,7 @@ class _HomeIncompleteBreakdownState
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(11),
-        onTap: () =>
-            _openIncompleteListForAssignee(name, incompleteCount: incomplete),
+        onTap: () => unawaited(_openIncompleteListForAssignee(name)),
         child: SizedBox.expand(
           child: Stack(
             fit: StackFit.expand,
@@ -1334,26 +1334,93 @@ class _HomeIncompleteBreakdownState
     );
   }
 
-  void _openIncompleteListForAssignee(
-    String name, {
-    required int incompleteCount,
-  }) {
-    if (incompleteCount == 0) {
-      _showAutoCloseInfoDialog('미통화가 없습니다.');
-      return;
-    }
-    HapticFeedback.lightImpact();
-    final range = _incompleteListDateArgs();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SalesCallListScreen(
-          mode: ListQueryMode.incomplete,
-          initialAssignee: name,
-          date: range.date,
-          dateEndInclusive: range.dateEndInclusive,
-        ),
+  Future<void> _withFreshDataLoading(Future<void> Function() load) async {
+    if (!mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return Center(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 22,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 14),
+                    Text(
+                      '미통화 최신 확인 중…',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
+    try {
+      await load();
+    } finally {
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+    }
+  }
+
+  Future<void> _openIncompleteListForAssignee(String name) async {
+    final anchorYmd = ref.read(homeHubFlowAnchorYmdProvider);
+    final breakdownKey = (
+      period: _toBreakdownPeriod(_currentFilter),
+      anchorYmd: anchorYmd,
+    );
+    try {
+      await _withFreshDataLoading(() async {
+        final calls = await refreshIncompleteBreakdownCalls(ref, breakdownKey);
+        final overrides =
+            await ref.read(tempManagerOverridesProvider.future);
+        var count = 0;
+        for (final c in calls) {
+          if (!c.isMissed) continue;
+          if (displayAssigneeForCall(c, overrides, DateTime.now()) == name) {
+            count++;
+          }
+        }
+        if (!mounted) return;
+        if (count == 0) {
+          await _showAutoCloseInfoDialog('미통화가 없습니다.');
+          return;
+        }
+        HapticFeedback.lightImpact();
+        final range = _incompleteListDateArgs();
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.incomplete,
+              initialAssignee: name,
+              date: range.date,
+              dateEndInclusive: range.dateEndInclusive,
+            ),
+          ),
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('미통화 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')),
+      );
+    }
   }
 
   Widget _buildEmptyContent(ColorScheme scheme) {
@@ -2438,19 +2505,23 @@ class _HomeFollowCalendarPanelState
     );
   }
 
-  Color _strongColorForAssignee(String assignee) {
-    if (assignee == '전체') return Colors.blueGrey.shade700;
-    if (assignee == '미지정') return Colors.grey.shade700;
-    final colors = [
-      Colors.blue.shade700,
-      Colors.red.shade700,
-      Colors.green.shade700,
-      Colors.orange.shade800,
-      Colors.purple.shade700,
-      Colors.teal.shade700,
-      Colors.indigo.shade700,
-    ];
-    return colors[assignee.hashCode.abs() % colors.length];
+  Map<String, Color> _assigneeColorMap(
+    ColorScheme scheme,
+    Iterable<String> assignees,
+  ) {
+    final sorted = assignees.toList();
+    final individuals =
+        sorted.where((a) => a != '전체' && a != '미지정').toList();
+    final cache = <String, Color>{};
+    for (final a in sorted) {
+      hubAssigneeColor(
+        scheme,
+        a,
+        cache: cache,
+        orderedAssignees: individuals,
+      );
+    }
+    return cache;
   }
 
   String _calendarAssignee(SalesCall c, List<TempManagerOverride> overrides) {
@@ -2557,35 +2628,16 @@ class _HomeFollowCalendarPanelState
         return a.compareTo(b);
       });
 
-    // 담당자별 색상 충돌 방지: 화면 내 팔레트 맵을 고정 생성
-    final palette = <Color>[
-      Colors.blue.shade700,
-      Colors.red.shade700,
-      Colors.green.shade700,
-      Colors.orange.shade800,
-      Colors.purple.shade700,
-      Colors.teal.shade700,
-      Colors.indigo.shade700,
-      Colors.pink.shade700,
-      Colors.cyan.shade700,
-      Colors.brown.shade700,
-    ];
-    final assigneeColorMap = <String, Color>{};
-    var paletteIdx = 0;
-    for (final a in sortedAssignees) {
-      if (a == '전체') {
-        assigneeColorMap[a] = Colors.blueGrey.shade700;
-        continue;
-      }
-      if (a == '미지정') {
-        assigneeColorMap[a] = Colors.grey.shade700;
-        continue;
-      }
-      assigneeColorMap[a] = palette[paletteIdx % palette.length];
-      paletteIdx += 1;
-    }
+    final assigneeColorMap = _assigneeColorMap(scheme, sortedAssignees);
     Color colorForAssignee(String name) =>
-        assigneeColorMap[name] ?? _strongColorForAssignee(name);
+        assigneeColorMap[name] ?? hubAssigneeColor(
+          scheme,
+          name,
+          cache: assigneeColorMap,
+          orderedAssignees: sortedAssignees
+              .where((a) => a != '전체' && a != '미지정')
+              .toList(),
+        );
 
     // 최초 진입 시에만 로그인 담당자로 기본 선택 (이후 '전체' 탭은 유지)
     final user = ref.watch(authControllerProvider);
@@ -2754,17 +2806,14 @@ class _HomeFollowCalendarPanelState
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? _strongColorForAssignee(
-                                assignee,
-                              ).withValues(alpha: 0.18)
+                            ? colorForAssignee(assignee).withValues(alpha: 0.18)
                             : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                  color: _strongColorForAssignee(
-                                    assignee,
-                                  ).withValues(alpha: 0.25),
+                                  color: colorForAssignee(assignee)
+                                      .withValues(alpha: 0.25),
                                   blurRadius: 10,
                                   offset: const Offset(0, 3),
                                 ),
@@ -2772,9 +2821,7 @@ class _HomeFollowCalendarPanelState
                             : [],
                         border: Border.all(
                           color: isSelected
-                              ? _strongColorForAssignee(
-                                  assignee,
-                                ).withValues(alpha: 0.45)
+                              ? colorForAssignee(assignee).withValues(alpha: 0.45)
                               : scheme.outlineVariant.withValues(alpha: 0.3),
                           width: isSelected ? 1.6 : 1.2,
                         ),
