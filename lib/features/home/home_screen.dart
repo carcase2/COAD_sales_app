@@ -1764,6 +1764,116 @@ class _HomeFollowCalendarPanelState
     _publishHubWeekAnchor(nextMon);
   }
 
+  void _shiftFocusedMonth(int dir) {
+    final dt = _focusedDay;
+    final next = DateTime(dt.year, dt.month + dir, 1);
+    final ymd =
+        '${next.year}-${next.month.toString().padLeft(2, '0')}-${next.day.toString().padLeft(2, '0')}';
+    setState(() => _focusedDay = next);
+    _publishHubMonthAnchor(firstDayOfMonthYmd(ymd));
+  }
+
+  void _onCalendarPageChanged(DateTime focusedDay) {
+    setState(() => _focusedDay = focusedDay);
+    final ymd = _ymdFromDateTime(focusedDay);
+    if (_calendarFormat == CalendarFormat.week) {
+      _publishHubWeekAnchor(seoulWeekRangeContaining(ymd).$1);
+    } else {
+      _publishHubMonthAnchor(firstDayOfMonthYmd(ymd));
+    }
+  }
+
+  String _ymdFromDateTime(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+
+  bool _isCalendarToday(DateTime day) =>
+      _ymdFromDateTime(day) == todayYmdSeoul();
+
+  Widget _wrapCalendarHorizontalSwipe({required Widget child}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity.abs() < 280) return;
+        HapticFeedback.selectionClick();
+        if (_calendarFormat == CalendarFormat.week) {
+          _shiftFocusedWeek(velocity > 0 ? -1 : 1);
+        } else {
+          _shiftFocusedMonth(velocity > 0 ? -1 : 1);
+        }
+      },
+      child: child,
+    );
+  }
+
+  Widget _buildTableCalendarDayCell({
+    required ColorScheme scheme,
+    required DateTime day,
+    required bool isOutside,
+    required bool isToday,
+    required double fontSize,
+  }) {
+    Color color = isOutside
+        ? scheme.onSurfaceVariant.withValues(alpha: 0.45)
+        : scheme.onSurface;
+    if (!isOutside) {
+      if (day.weekday == DateTime.saturday) color = Colors.blueAccent;
+      if (day.weekday == DateTime.sunday) color = Colors.redAccent;
+    } else {
+      if (day.weekday == DateTime.saturday) {
+        color = Colors.blueAccent.withValues(alpha: 0.5);
+      }
+      if (day.weekday == DateTime.sunday) {
+        color = Colors.redAccent.withValues(alpha: 0.5);
+      }
+    }
+
+    if (isToday) {
+      final size = fontSize >= 13 ? 34.0 : 28.0;
+      return Center(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: scheme.onPrimary.withValues(alpha: 0.35),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.primary.withValues(alpha: 0.38),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '${day.day}',
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w900,
+              color: scheme.onPrimary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: Text(
+        '${day.day}',
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: isOutside ? FontWeight.w500 : FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   void _openDayFollowList(String dateKey) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -1867,10 +1977,12 @@ class _HomeFollowCalendarPanelState
           const SizedBox(height: 3),
           Expanded(
             child: _calendarFormat == CalendarFormat.week
-                ? _buildVerticalWeekBoard(
-                    scheme: scheme,
-                    weekAssigneeCounts: weekAssigneeCounts,
-                    colorForAssignee: colorForAssignee,
+                ? _wrapCalendarHorizontalSwipe(
+                    child: _buildVerticalWeekBoard(
+                      scheme: scheme,
+                      weekAssigneeCounts: weekAssigneeCounts,
+                      colorForAssignee: colorForAssignee,
+                    ),
                   )
                 : _buildCompactCalendar(
                     scheme: scheme,
@@ -1993,7 +2105,7 @@ class _HomeFollowCalendarPanelState
 
     return Material(
       color: isToday
-          ? scheme.primaryContainer.withValues(alpha: 0.22)
+          ? scheme.primaryContainer.withValues(alpha: 0.32)
           : Colors.transparent,
       child: InkWell(
         onTap: () {
@@ -2001,15 +2113,21 @@ class _HomeFollowCalendarPanelState
           _openDayFollowList(dateKey);
         },
         child: Container(
-          decoration: showBottomBorder
-              ? BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: isToday
+                    ? scheme.primary
+                    : Colors.transparent,
+                width: isToday ? 4 : 0,
+              ),
+              bottom: showBottomBorder
+                  ? BorderSide(
                       color: scheme.outlineVariant.withValues(alpha: 0.22),
-                    ),
-                  ),
-                )
-              : null,
+                    )
+                  : BorderSide.none,
+            ),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -2024,16 +2142,43 @@ class _HomeFollowCalendarPanelState
                     ),
                   ),
                 ),
-                child: Text(
-                  '$month/$dayNum(${_weekdayKo(weekday)})',
-                  maxLines: 1,
-                  softWrap: false,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: isToday ? scheme.primary : weekdayColor,
-                    height: 1.1,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isToday)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.primary,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '오늘',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                            color: scheme.onPrimary,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    Text(
+                      '$month/$dayNum(${_weekdayKo(weekday)})',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: isToday ? scheme.primary : weekdayColor,
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               if (total > 0)
@@ -2410,7 +2555,7 @@ class _HomeFollowCalendarPanelState
         locale: 'ko_KR',
         daysOfWeekHeight: isWeek ? 18 : 22,
         rowHeight: isWeek ? 26 : 32,
-        availableGestures: AvailableGestures.none,
+        availableGestures: AvailableGestures.horizontalSwipe,
         headerStyle: HeaderStyle(
           formatButtonVisible: false,
           titleCentered: true,
@@ -2428,11 +2573,12 @@ class _HomeFollowCalendarPanelState
             fontSize: 10,
           ),
         ),
-        calendarStyle: const CalendarStyle(
-          holidayTextStyle: TextStyle(
+        calendarStyle: CalendarStyle(
+          holidayTextStyle: const TextStyle(
             color: Colors.redAccent,
             fontWeight: FontWeight.w700,
           ),
+          todayDecoration: const BoxDecoration(shape: BoxShape.circle),
         ),
         calendarBuilders: CalendarBuilders(
           dowBuilder: (context, day) {
@@ -2452,18 +2598,30 @@ class _HomeFollowCalendarPanelState
             );
           },
           defaultBuilder: (context, day, focusedDay) {
-            Color color = scheme.onSurface;
-            if (day.weekday == DateTime.saturday) color = Colors.blueAccent;
-            if (day.weekday == DateTime.sunday) color = Colors.redAccent;
-            return Center(
-              child: Text(
-                '${day.day}',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
-              ),
+            return _buildTableCalendarDayCell(
+              scheme: scheme,
+              day: day,
+              isOutside: false,
+              isToday: _isCalendarToday(day),
+              fontSize: 11,
+            );
+          },
+          outsideBuilder: (context, day, focusedDay) {
+            return _buildTableCalendarDayCell(
+              scheme: scheme,
+              day: day,
+              isOutside: true,
+              isToday: _isCalendarToday(day),
+              fontSize: 11,
+            );
+          },
+          todayBuilder: (context, day, focusedDay) {
+            return _buildTableCalendarDayCell(
+              scheme: scheme,
+              day: day,
+              isOutside: false,
+              isToday: true,
+              fontSize: 11,
             );
           },
           markerBuilder: (context, date, events) {
@@ -2498,9 +2656,7 @@ class _HomeFollowCalendarPanelState
           final dateStr = selectedDay.toIso8601String().substring(0, 10);
           _openDayFollowList(dateStr);
         },
-        onPageChanged: (focusedDay) {
-          setState(() => _focusedDay = focusedDay);
-        },
+        onPageChanged: _onCalendarPageChanged,
       ),
     );
   }
@@ -3101,7 +3257,7 @@ class _HomeFollowCalendarPanelState
                   locale: 'ko_KR',
                   daysOfWeekHeight: isWeekView ? 20 : 34,
                   rowHeight: isWeekView ? 28 : 46,
-                  availableGestures: AvailableGestures.none,
+                  availableGestures: AvailableGestures.horizontalSwipe,
                   headerStyle: HeaderStyle(
                     formatButtonVisible: false,
                     titleCentered: true,
@@ -3124,6 +3280,7 @@ class _HomeFollowCalendarPanelState
                       color: Colors.redAccent,
                       fontWeight: FontWeight.w700,
                     ),
+                    todayDecoration: const BoxDecoration(shape: BoxShape.circle),
                   ),
                   calendarBuilders: CalendarBuilders(
                     dowBuilder: (context, day) {
@@ -3145,39 +3302,30 @@ class _HomeFollowCalendarPanelState
                       );
                     },
                     defaultBuilder: (context, day, focusedDay) {
-                      Color color = scheme.onSurface;
-                      if (day.weekday == DateTime.saturday)
-                        color = Colors.blueAccent;
-                      if (day.weekday == DateTime.sunday)
-                        color = Colors.redAccent;
-                      return Center(
-                        child: Text(
-                          '${day.day}',
-                          style: TextStyle(
-                            fontSize: isWeekView ? 12 : 14,
-                            fontWeight: FontWeight.w600,
-                            color: color,
-                          ),
-                        ),
+                      return _buildTableCalendarDayCell(
+                        scheme: scheme,
+                        day: day,
+                        isOutside: false,
+                        isToday: _isCalendarToday(day),
+                        fontSize: isWeekView ? 12 : 14,
                       );
                     },
                     outsideBuilder: (context, day, focusedDay) {
-                      Color color = scheme.onSurfaceVariant.withValues(
-                        alpha: 0.45,
+                      return _buildTableCalendarDayCell(
+                        scheme: scheme,
+                        day: day,
+                        isOutside: true,
+                        isToday: _isCalendarToday(day),
+                        fontSize: isWeekView ? 12 : 14,
                       );
-                      if (day.weekday == DateTime.saturday)
-                        color = Colors.blueAccent.withValues(alpha: 0.5);
-                      if (day.weekday == DateTime.sunday)
-                        color = Colors.redAccent.withValues(alpha: 0.5);
-                      return Center(
-                        child: Text(
-                          '${day.day}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: color,
-                          ),
-                        ),
+                    },
+                    todayBuilder: (context, day, focusedDay) {
+                      return _buildTableCalendarDayCell(
+                        scheme: scheme,
+                        day: day,
+                        isOutside: false,
+                        isToday: true,
+                        fontSize: isWeekView ? 12 : 14,
                       );
                     },
                     markerBuilder: (context, date, events) {
@@ -3220,11 +3368,7 @@ class _HomeFollowCalendarPanelState
                     );
                     _openDayFollowList(dateStr);
                   },
-                  onPageChanged: (focusedDay) {
-                    setState(() {
-                      _focusedDay = focusedDay;
-                    });
-                  },
+                  onPageChanged: _onCalendarPageChanged,
                 ),
               );
             },

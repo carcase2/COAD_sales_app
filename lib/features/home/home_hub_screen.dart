@@ -2374,6 +2374,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               ),
               child: PageView(
                 controller: _sectionPageController,
+                physics: const NeverScrollableScrollPhysics(),
                 onPageChanged: _onSectionPageChanged,
                 children: [
                   _lazySectionPage(
