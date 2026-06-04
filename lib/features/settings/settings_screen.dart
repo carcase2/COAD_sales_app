@@ -58,9 +58,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: Icon(Icons.system_update_alt_rounded, color: scheme.primary),
             title: const Text('업데이트 확인'),
             subtitle: Text(
-              updateStatus?.hasUpdate == true &&
-                      updateStatus?.latestVersion != null
-                  ? '새 버전 v${updateStatus!.latestVersion} 사용 가능 · 탭하여 업데이트'
+              updateStatus?.hasUpdate == true
+                  ? (updateStatus?.latestVersion != null
+                      ? '새 버전 v${updateStatus!.latestVersion} 사용 가능 · 탭하여 업데이트'
+                      : '새 버전 사용 가능 · 탭하여 업데이트')
                   : 'Play 스토어에서 최신 버전으로 업데이트를 시도합니다.',
             ),
             trailing: updateStatus?.hasUpdate == true
@@ -73,9 +74,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 forceRecheck: true,
                 showUpToDateMessage: true,
               );
-              if (context.mounted) {
-                ref.invalidate(appUpdateStatusProvider);
-              }
+              if (!context.mounted) return;
+              ref.invalidate(appUpdateStatusProvider);
+              await ref.read(appUpdateStatusProvider.future);
             },
           ),
           const SizedBox(height: 16),

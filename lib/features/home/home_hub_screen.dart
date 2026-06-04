@@ -282,7 +282,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   Widget _buildHomeUpdatePrompt({
     required ColorScheme scheme,
-    required String latestVersion,
+    required String? latestVersion,
     required bool forceUpdate,
   }) {
     return Material(
@@ -332,8 +332,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   Widget _buildUnifiedHomeTop(ColorScheme scheme, AppUser? user) {
     final compact = _section != HomeHubSection.flow;
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
-    final showUpdatePrompt = updateStatus?.hasUpdate == true &&
-        updateStatus?.latestVersion != null;
+    final showUpdatePrompt = updateStatus?.hasUpdate == true;
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(14, compact ? 6 : 8, 14, compact ? 8 : 10),
@@ -347,8 +346,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               if (showUpdatePrompt) ...[
                 _buildHomeUpdatePrompt(
                   scheme: scheme,
-                  latestVersion: updateStatus!.latestVersion!,
-                  forceUpdate: updateStatus.forceUpdate,
+                  latestVersion: updateStatus?.latestVersion,
+                  forceUpdate: updateStatus?.forceUpdate == true,
                 ),
                 const SizedBox(width: 8),
               ],

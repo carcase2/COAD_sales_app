@@ -17,27 +17,60 @@ class AppUpdateService {
   static DateTime? _lastInUsePromptAt;
   static const Duration _inUsePromptCooldown = Duration(hours: 24);
 
-  /// Supabase `app_update_policy` 기준으로 업데이트 필요 여부만 조회 (UI 배지·배너용).
+  /// Supabase `app_update_policy` + Play 인앱 업데이트로 필요 여부 조회 (홈·설정 배지용).
   static Future<AppUpdateStatus> fetchUpdateStatus() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return const AppUpdateStatus();
     }
     try {
       final policy = await _fetchUpdatePolicy();
-      if (policy == null) return const AppUpdateStatus();
-      final shouldForce = policy.forceUpdate ||
-          _compareVersion(kAppVersion, policy.minVersion) < 0;
-      final shouldRecommend =
-          _compareVersion(kAppVersion, policy.latestVersion) < 0;
+      var shouldForce = false;
+      var shouldRecommend = false;
+      String? latestVersion;
+      String? storeUrl;
+
+      if (policy != null) {
+        latestVersion = policy.latestVersion;
+        if (policy.storeUrl.isNotEmpty) storeUrl = policy.storeUrl;
+        shouldForce = policy.forceUpdate ||
+            _compareVersion(kAppVersion, policy.minVersion) < 0;
+        shouldRecommend =
+            _compareVersion(kAppVersion, policy.latestVersion) < 0;
+      }
+
+      // 정책과 무관하게 스토어에 더 새 빌드가 있으면 안내 (설정 > 업데이트 확인과 동일 기준)
+      if (!shouldForce && !shouldRecommend) {
+        final playAvailable = await _isPlayUpdateAvailable();
+        if (playAvailable) {
+          shouldRecommend = true;
+          latestVersion ??= policy?.latestVersion;
+          if (storeUrl == null &&
+              policy != null &&
+              policy.storeUrl.isNotEmpty) {
+            storeUrl = policy.storeUrl;
+          }
+        }
+      }
+
       return AppUpdateStatus(
         hasUpdate: shouldForce || shouldRecommend,
         forceUpdate: shouldForce,
-        latestVersion: policy.latestVersion,
-        storeUrl: policy.storeUrl,
+        latestVersion: latestVersion,
+        storeUrl: storeUrl,
       );
     } catch (e) {
       debugPrint('업데이트 상태 조회 실패: $e');
       return const AppUpdateStatus();
+    }
+  }
+
+  static Future<bool> _isPlayUpdateAvailable() async {
+    try {
+      final info = await InAppUpdate.checkForUpdate();
+      return info.updateAvailability == UpdateAvailability.updateAvailable;
+    } catch (e) {
+      debugPrint('Play 업데이트 가능 여부 조회 실패: $e');
+      return false;
     }
   }
 

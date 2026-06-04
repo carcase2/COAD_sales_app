@@ -60,6 +60,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       );
       if (mounted) {
         ref.invalidate(appUpdateStatusProvider);
+        await ref.read(appUpdateStatusProvider.future);
       }
     });
 
@@ -110,7 +111,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       }
       ref.invalidate(appUpdateStatusProvider);
       if (mounted) {
-        unawaited(AppUpdateService.checkWhileInUse(context));
+        unawaited(() async {
+          await ref.read(appUpdateStatusProvider.future);
+          if (!mounted) return;
+          await AppUpdateService.checkWhileInUse(context);
+        }());
       }
     }
   }
@@ -406,13 +411,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final latestRemote = updateStatus?.latestVersion;
+    final hasOptionalUpdate = updateStatus?.hasUpdate == true &&
+        updateStatus?.forceUpdate != true;
     final onHomeTab =
         _currentIndex == _homeTabIndex && _navSelectedIndex == _navHomeIndex;
+    final bannerDismissKey = latestRemote ?? '__play_update__';
     final showUpdateBanner = onHomeTab &&
-        updateStatus?.hasUpdate == true &&
-        updateStatus?.forceUpdate != true &&
-        latestRemote != null &&
-        latestRemote != _dismissedUpdateBannerVersion;
+        hasOptionalUpdate &&
+        bannerDismissKey != _dismissedUpdateBannerVersion;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
@@ -470,7 +476,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 onTap: _openHomeFlowToday,
                 child: _buildBrandTitle(),
               ),
-              if (updateStatus?.hasUpdate == true && latestRemote != null) ...[
+              if (updateStatus?.hasUpdate == true) ...[
                 const SizedBox(width: 8),
                 _buildLogoUpdateChip(
                   latestVersion: latestRemote,
@@ -547,7 +553,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                     forceRecheck: true,
                   ),
                   onDismiss: () => setState(
-                    () => _dismissedUpdateBannerVersion = latestRemote,
+                    () => _dismissedUpdateBannerVersion = bannerDismissKey,
                   ),
                 ),
               ),
@@ -755,7 +761,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   Widget _buildUpdateAvailableBanner({
     required ColorScheme scheme,
-    required String latestVersion,
+    required String? latestVersion,
     required VoidCallback onUpdate,
     required VoidCallback onDismiss,
   }) {
@@ -773,7 +779,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '새 버전 v$latestVersion 사용 가능 (현재 v$kAppVersion)',
+                latestVersion != null
+                    ? '새 버전 v$latestVersion 사용 가능 (현재 v$kAppVersion)'
+                    : '새 버전 사용 가능 (현재 v$kAppVersion)',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -797,7 +805,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   Widget _buildLogoUpdateChip({
-    required String latestVersion,
+    required String? latestVersion,
     required bool forceUpdate,
     required VoidCallback onTap,
   }) {
@@ -807,7 +815,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final border = forceUpdate
         ? Colors.red.shade200.withValues(alpha: 0.85)
         : Colors.amber.shade200.withValues(alpha: 0.85);
-    final label = forceUpdate ? '업데이트 필요' : 'v$latestVersion';
+    final label = forceUpdate
+        ? '업데이트 필요'
+        : (latestVersion != null ? 'v$latestVersion' : '업데이트');
 
     return Material(
       color: Colors.transparent,
@@ -816,8 +826,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         borderRadius: BorderRadius.circular(999),
         child: Tooltip(
           message: forceUpdate
-              ? '필수 업데이트: v$latestVersion 설치'
-              : '새 버전 v$latestVersion · 탭하여 업데이트',
+              ? '필수 업데이트: ${latestVersion ?? '최신'} 설치'
+              : latestVersion != null
+                  ? '새 버전 v$latestVersion · 탭하여 업데이트'
+                  : '새 버전 · 탭하여 업데이트',
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
