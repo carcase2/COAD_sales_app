@@ -1664,6 +1664,8 @@ class _HomeFollowCalendarPanelState
 
   /// 사용자가 담당자 칩을 직접 탭한 뒤에는 '전체'를 로그인 담당자로 되돌리지 않음.
   bool _userPickedAssigneeFilter = false;
+  List<SalesCall>? _cachedFollowCalls;
+  List<TempManagerOverride>? _cachedOverrides;
 
   DateTime _ymdToDateTime(String ymd) {
     final parts = ymd.split('-');
@@ -1707,16 +1709,6 @@ class _HomeFollowCalendarPanelState
     return labels[(weekday - 1).clamp(0, 6)];
   }
 
-  void _publishHubWeekAnchor(String anchorYmd) {
-    ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.week;
-    ref.read(homeHubFlowAnchorYmdProvider.notifier).state = anchorYmd;
-  }
-
-  void _publishHubMonthAnchor(String anchorYmd) {
-    ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.month;
-    ref.read(homeHubFlowAnchorYmdProvider.notifier).state = anchorYmd;
-  }
-
   bool _isViewingCurrentWeek() {
     final focused = seoulWeekRangeContaining(_focusedDayYmd());
     final current = seoulWeekRangeContaining(todayYmdSeoul());
@@ -1738,17 +1730,14 @@ class _HomeFollowCalendarPanelState
       _calendarFormat = CalendarFormat.month;
       _focusedDay = _ymdToDateTime(today);
     });
-    _publishHubMonthAnchor(firstDayOfMonthYmd(today));
   }
 
   void _jumpToThisWeek() {
     final today = todayYmdSeoul();
-    final mon = seoulWeekRangeContaining(today).$1;
     setState(() {
       _calendarFormat = CalendarFormat.week;
       _focusedDay = _ymdToDateTime(today);
     });
-    _publishHubWeekAnchor(mon);
   }
 
   void _shiftFocusedWeek(int dir) {
@@ -1761,26 +1750,21 @@ class _HomeFollowCalendarPanelState
     final d = int.tryParse(parts[2]);
     if (y == null || m == null || d == null) return;
     setState(() => _focusedDay = DateTime(y, m, d));
-    _publishHubWeekAnchor(nextMon);
   }
 
   void _shiftFocusedMonth(int dir) {
     final dt = _focusedDay;
     final next = DateTime(dt.year, dt.month + dir, 1);
-    final ymd =
-        '${next.year}-${next.month.toString().padLeft(2, '0')}-${next.day.toString().padLeft(2, '0')}';
     setState(() => _focusedDay = next);
-    _publishHubMonthAnchor(firstDayOfMonthYmd(ymd));
   }
 
   void _onCalendarPageChanged(DateTime focusedDay) {
-    setState(() => _focusedDay = focusedDay);
-    final ymd = _ymdFromDateTime(focusedDay);
-    if (_calendarFormat == CalendarFormat.week) {
-      _publishHubWeekAnchor(seoulWeekRangeContaining(ymd).$1);
-    } else {
-      _publishHubMonthAnchor(firstDayOfMonthYmd(ymd));
+    if (_focusedDay.year == focusedDay.year &&
+        _focusedDay.month == focusedDay.month &&
+        _focusedDay.day == focusedDay.day) {
+      return;
     }
+    setState(() => _focusedDay = focusedDay);
   }
 
   String _ymdFromDateTime(DateTime dt) =>
@@ -1978,10 +1962,18 @@ class _HomeFollowCalendarPanelState
           Expanded(
             child: _calendarFormat == CalendarFormat.week
                 ? _wrapCalendarHorizontalSwipe(
-                    child: _buildVerticalWeekBoard(
-                      scheme: scheme,
-                      weekAssigneeCounts: weekAssigneeCounts,
-                      colorForAssignee: colorForAssignee,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: KeyedSubtree(
+                        key: ValueKey(_weekYmdKeys().first),
+                        child: _buildVerticalWeekBoard(
+                          scheme: scheme,
+                          weekAssigneeCounts: weekAssigneeCounts,
+                          colorForAssignee: colorForAssignee,
+                        ),
+                      ),
                     ),
                   )
                 : _buildCompactCalendar(
@@ -2556,6 +2548,8 @@ class _HomeFollowCalendarPanelState
         daysOfWeekHeight: isWeek ? 18 : 22,
         rowHeight: isWeek ? 26 : 32,
         availableGestures: AvailableGestures.horizontalSwipe,
+        pageAnimationEnabled: true,
+        pageJumpingEnabled: false,
         headerStyle: HeaderStyle(
           formatButtonVisible: false,
           titleCentered: true,
@@ -2733,12 +2727,131 @@ class _HomeFollowCalendarPanelState
 
     return asyncCalls.when(
       data: (calls) => overridesAsync.when(
-        data: (overrides) => _buildCalendarBody(calls, overrides, scheme),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+        data: (overrides) {
+          _cachedFollowCalls = calls;
+          _cachedOverrides = overrides;
+          return _buildCalendarShell(
+            calls: calls,
+            overrides: overrides,
+            scheme: scheme,
+            rangeKey: rangeKey,
+            isRefreshing: false,
+          );
+        },
+        loading: () => _buildCalendarLoadingShell(scheme, rangeKey),
+        error: (e, _) => _buildCalendarErrorShell(e, scheme, rangeKey),
       ),
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+      loading: () => _buildCalendarLoadingShell(scheme, rangeKey),
+      error: (e, _) => _buildCalendarErrorShell(e, scheme, rangeKey),
+    );
+  }
+
+  Widget _buildCalendarLoadingShell(ColorScheme scheme, CalendarFollowRangeKey rangeKey) {
+    final cachedCalls = _cachedFollowCalls;
+    final cachedOverrides = _cachedOverrides;
+    if (cachedCalls != null && cachedOverrides != null) {
+      return _buildCalendarShell(
+        calls: cachedCalls,
+        overrides: cachedOverrides,
+        scheme: scheme,
+        rangeKey: rangeKey,
+        isRefreshing: true,
+      );
+    }
+    return const Center(child: CircularProgressIndicator());
+  }
+
+  Widget _buildCalendarErrorShell(
+    Object error,
+    ColorScheme scheme,
+    CalendarFollowRangeKey rangeKey,
+  ) {
+    final cachedCalls = _cachedFollowCalls;
+    final cachedOverrides = _cachedOverrides;
+    if (cachedCalls != null && cachedOverrides != null) {
+      return _buildCalendarShell(
+        calls: cachedCalls,
+        overrides: cachedOverrides,
+        scheme: scheme,
+        rangeKey: rangeKey,
+        isRefreshing: false,
+        errorBanner: koreanErrorMessage(error),
+      );
+    }
+    return Center(child: Text(koreanErrorMessage(error)));
+  }
+
+  Widget _buildCalendarShell({
+    required List<SalesCall> calls,
+    required List<TempManagerOverride> overrides,
+    required ColorScheme scheme,
+    required CalendarFollowRangeKey rangeKey,
+    required bool isRefreshing,
+    String? errorBanner,
+  }) {
+    final onRefresh = widget.onRefresh ?? _refreshCalendarData;
+    final body = _buildCalendarBody(calls, overrides, scheme);
+    final stacked = Stack(
+      children: [
+        body,
+        if (isRefreshing)
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+        if (errorBanner != null)
+          Positioned(
+            top: isRefreshing ? 2 : 0,
+            left: 8,
+            right: 8,
+            child: Material(
+              elevation: 1,
+              borderRadius: BorderRadius.circular(8),
+              color: scheme.errorContainer,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Text(
+                  errorBanner,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+
+    if (widget.fitSingleScreen) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return RefreshIndicator(
+            onRefresh: onRefresh,
+            color: scheme.secondary,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: constraints.maxHeight,
+                width: constraints.maxWidth,
+                child: stacked,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        controller: widget.scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 200),
+        child: stacked,
+      ),
     );
   }
 
@@ -2841,7 +2954,7 @@ class _HomeFollowCalendarPanelState
     }
 
     if (widget.fitSingleScreen) {
-      final panel = _buildFitSingleScreenLayout(
+      return _buildFitSingleScreenLayout(
         scheme: scheme,
         sortedAssignees: sortedAssignees,
         counts: counts,
@@ -2849,32 +2962,11 @@ class _HomeFollowCalendarPanelState
         dateMarkers: dateMarkers,
         weekAssigneeCounts: weekAssigneeCounts,
       );
-      final onRefresh = widget.onRefresh ?? _refreshCalendarData;
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          return RefreshIndicator(
-            onRefresh: onRefresh,
-            color: scheme.secondary,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: SizedBox(
-                height: constraints.maxHeight,
-                width: constraints.maxWidth,
-                child: panel,
-              ),
-            ),
-          );
-        },
-      );
     }
 
-    return RefreshIndicator(
-      onRefresh: widget.onRefresh ?? _refreshCalendarData,
-      child: ListView(
-        controller: widget.scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 200),
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
           Container(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             margin: const EdgeInsets.only(bottom: 10),
@@ -3258,6 +3350,8 @@ class _HomeFollowCalendarPanelState
                   daysOfWeekHeight: isWeekView ? 20 : 34,
                   rowHeight: isWeekView ? 28 : 46,
                   availableGestures: AvailableGestures.horizontalSwipe,
+                  pageAnimationEnabled: true,
+                  pageJumpingEnabled: false,
                   headerStyle: HeaderStyle(
                     formatButtonVisible: false,
                     titleCentered: true,
@@ -3569,7 +3663,6 @@ class _HomeFollowCalendarPanelState
             ),
           ],
         ],
-      ),
     );
   }
 }
