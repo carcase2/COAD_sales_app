@@ -1,4 +1,4 @@
--- v0.16.38: 홈 업데이트 안내 동기화 (제안: 이상수 팀장)
+-- v0.16.38: 홈 업데이트 안내 동기화 (제안: 김경덕 이사)
 
 insert into public.app_update_history (
   version,
@@ -9,25 +9,25 @@ insert into public.app_update_history (
 )
 select
   '0.16.38',
-  '이상수 팀장',
+  '김경덕 이사',
   jsonb_build_array(
     jsonb_build_object(
       'note',
       '홈 「업데이트 있음」·상단 배너가 Play 스토어·업데이트 정책과 같이 표시',
       'proposer',
-      '이상수 팀장'
+      '김경덕 이사'
     ),
     jsonb_build_object(
       'note',
       '설정에서 업데이트 확인 후 홈에도 바로 반영',
       'proposer',
-      '이상수 팀장'
+      '김경덕 이사'
     ),
     jsonb_build_object(
       'note',
       '앱 실행·백그라운드 복귀 시 업데이트 상태 자동 갱신',
       'proposer',
-      '이상수 팀장'
+      '김경덕 이사'
     )
   ),
   now(),
