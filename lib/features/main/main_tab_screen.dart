@@ -43,6 +43,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
+  /// 홈 상단 배너 [닫기] 시 해당 원격 버전은 다시 띄우지 않음.
+  String? _dismissedUpdateBannerVersion;
   RealtimeChannel? _issuanceCompletionWatchChannel;
   Timer? _issuanceCompletionDebounce;
   @override
@@ -239,6 +241,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     if (_currentIndex != _homeTabIndex) {
       ref.read(homeHubFlowResetTickProvider.notifier).state++;
     }
+    ref.invalidate(appUpdateStatusProvider);
     setState(() {
       _navSelectedIndex = _navHomeIndex;
       _currentIndex = _homeTabIndex;
@@ -403,6 +406,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final latestRemote = updateStatus?.latestVersion;
+    final onHomeTab =
+        _currentIndex == _homeTabIndex && _navSelectedIndex == _navHomeIndex;
+    final showUpdateBanner = onHomeTab &&
+        updateStatus?.hasUpdate == true &&
+        updateStatus?.forceUpdate != true &&
+        latestRemote != null &&
+        latestRemote != _dismissedUpdateBannerVersion;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
@@ -521,7 +531,28 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             ),
           ),
         ),
-        body: IndexedStack(index: _currentIndex, children: _buildScreens()),
+        body: Stack(
+          children: [
+            IndexedStack(index: _currentIndex, children: _buildScreens()),
+            if (showUpdateBanner)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _buildUpdateAvailableBanner(
+                  scheme: scheme,
+                  latestVersion: latestRemote,
+                  onUpdate: () => AppUpdateService.checkAndUpdateIfNeeded(
+                    context,
+                    forceRecheck: true,
+                  ),
+                  onDismiss: () => setState(
+                    () => _dismissedUpdateBannerVersion = latestRemote,
+                  ),
+                ),
+              ),
+          ],
+        ),
         bottomNavigationBar: _MainBottomNavBar(
           selectedIndex: _navSelectedIndex,
           issuanceBadgeAsync: ref.watch(issuanceRequestBadgeCountVisibleProvider),
@@ -717,6 +748,49 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           ),
           repeat: ImageRepeat.repeat,
           opacity: 0.05,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpdateAvailableBanner({
+    required ColorScheme scheme,
+    required String latestVersion,
+    required VoidCallback onUpdate,
+    required VoidCallback onDismiss,
+  }) {
+    return Material(
+      elevation: 3,
+      color: scheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        child: Row(
+          children: [
+            Icon(
+              Icons.system_update_alt_rounded,
+              color: scheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '새 버전 v$latestVersion 사용 가능 (현재 v$kAppVersion)',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onUpdate,
+              child: const Text('업데이트'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20),
+              onPressed: onDismiss,
+              tooltip: '닫기',
+            ),
+          ],
         ),
       ),
     );
