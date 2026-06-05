@@ -203,7 +203,6 @@ class SalesCall {
       if (nextScheduledDate != null) 'next_scheduled_date': nextScheduledDate,
       if (regionSido != null) 'region_sido': regionSido,
       if (regionName != null) 'region_name': regionName,
-      if (regionManager != null) 'region_manager': regionManager,
       if (regionBranchType != null) 'region_branch_type': regionBranchType,
       'images': images,
     };
@@ -251,7 +250,10 @@ String? _regionLabel(Map<String, dynamic> json) {
   final direct = _pick(json, const ['region_display', 'region_label', 'regionLabel']);
   final s = _pick(json, const ['region_sido', 'regionSido'])?.trim() ?? '';
   final r = _pick(json, const ['region_name', 'region_region', 'regionName', 'regionRegion'])?.trim() ?? '';
-  final m = _pick(json, const ['region_manager', 'regionManager'])?.trim() ?? '';
+  final m = (_pick(json, const ['assigned_to', 'assignedTo']) ??
+          _pick(json, const ['region_manager', 'regionManager']))
+      ?.trim() ??
+      '';
   final b = _pick(json, const ['region_branch_type', 'regionBranchType'])?.trim() ?? '';
 
   String label = s.isNotEmpty ? '[$s] ' : '';

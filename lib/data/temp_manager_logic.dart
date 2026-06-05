@@ -57,8 +57,7 @@ bool shouldRevertCallToOriginal(
   if (temp.isEmpty || original.isEmpty) return false;
 
   final a = (call.assignedTo ?? '').trim();
-  final r = (call.regionManager ?? '').trim();
-  return a == temp || r == temp;
+  return a == temp;
 }
 
 /// 웹 `applyCallOverrides` — 기간 중 목록·상세 표시용 (DB 미수정)
@@ -103,7 +102,7 @@ List<SalesCall> applyCallDisplayOverrides(
       nextScheduledDate: call.nextScheduledDate,
       regionSido: call.regionSido,
       regionName: call.regionName,
-      regionManager: temp,
+      regionManager: call.regionManager,
       regionBranchType: call.regionBranchType,
       createdAt: call.createdAt,
       updatedAt: call.updatedAt,
@@ -126,7 +125,44 @@ String displayAssigneeForCall(
   final applied = applyCallDisplayOverrides([call], overrides, nowKst).first;
   final a = (applied.assignedTo ?? '').trim();
   if (a.isNotEmpty) return a;
-  final r = (applied.regionManager ?? '').trim();
-  if (r.isNotEmpty) return r;
   return '미지정';
+}
+
+/// 기간 중 “임시 담당 변경” 여부 및 상세 정보를 찾는다.
+/// - 목록/상세 표시용: DB 저장은 `assigned_to`만 사용한다.
+/// - `SalesCall.assignedTo`는 이미 오버레이가 적용된 값일 수 있어,
+///   매칭 기준은 `temp_manager`(=변경 후) 및 `original_manager`(=변경 전) 모두 허용한다.
+TempManagerOverride? findActiveTempOverrideForCall(
+  SalesCall call,
+  List<TempManagerOverride> overrides,
+  DateTime nowKst,
+) {
+  if (overrides.isEmpty) return null;
+  final todayYmd = ymdSeoulFromDateTime(nowKst);
+
+  final regionName = (call.regionName ?? '').trim();
+  if (regionName.isEmpty) return null;
+
+  final assigned = (call.assignedTo ?? '').trim();
+  final original = (call.regionManager ?? '').trim();
+
+  for (final o in overrides) {
+    if (!isTempOverrideActive(o, todayYmd)) continue;
+    if (o.regionName.trim() != regionName) continue;
+
+    final oOriginal = o.originalManager.trim();
+    final oTemp = o.tempManager.trim();
+    if (oTemp.isEmpty || oOriginal.isEmpty) continue;
+
+    // (1) 이미 오버레이가 적용된 경우: assigned_to == temp_manager
+    if (assigned.isNotEmpty && assigned == oTemp) return o;
+
+    // (2) 오버레이 미적용/레거시: assigned_to == original_manager
+    if (assigned.isNotEmpty && assigned == oOriginal) return o;
+
+    // (3) 지역 원담당(=DB region_manager)을 기준으로 매칭
+    if (original.isNotEmpty && original == oOriginal) return o;
+  }
+
+  return null;
 }

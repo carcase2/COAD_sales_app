@@ -816,7 +816,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   String _regionAssigneeOf(dynamic row) {
-    final manager = (row.regionManager ?? '').toString().trim();
+    final manager = (row.assignedTo ?? '').toString().trim();
     if (manager.isNotEmpty) return manager;
     return '미지정';
   }

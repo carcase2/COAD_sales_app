@@ -6,9 +6,7 @@ class SalesCallDraft {
     required this.regionId,
     required this.regionSido,
     required this.regionName,
-    required this.regionManager,
     required this.assignedTo,
-    this.originalRegionManager,
     this.productCategoryId,
     this.inquiryMethodId,
     this.statusId = 1,
@@ -23,9 +21,7 @@ class SalesCallDraft {
   final String regionId;
   final String regionSido;
   final String regionName;
-  final String regionManager;
   final String assignedTo;
-  final String? originalRegionManager;
   final String? productCategoryId;
   final String? inquiryMethodId;
   final int statusId;
@@ -42,9 +38,7 @@ class SalesCallDraft {
       'region_id': regionId,
       'region_sido': regionSido,
       'region_name': regionName,
-      'region_manager': regionManager,
       'assigned_to': assignedTo,
-      // original_region_manager: DB 컬럼 없음 — 임시변경 시 inquiry_content에 메모로 남김
       if (productCategoryId != null) 'product_category_id': productCategoryId,
       if (inquiryMethodId != null) 'inquiry_method_id': inquiryMethodId,
       'status_id': statusId,

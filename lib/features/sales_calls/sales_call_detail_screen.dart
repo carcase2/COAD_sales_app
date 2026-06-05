@@ -7,10 +7,12 @@ import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
+import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
+import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -191,18 +193,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       final e = regionRow.extra;
       if (e['sido'] != null) body['region_sido'] = e['sido'];
       if (e['region'] != null) body['region_name'] = e['region'];
-      // 상세 수정은 원본 지역 마스터 담당자를 유지한다.
-      // (등록 화면의 임시 오버라이드 규칙과 분리)
-      final originalManager =
-          e['original_manager'] ?? e['manager'] ?? e['region_manager'];
-      if (originalManager != null) body['region_manager'] = originalManager;
       if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
     } else {
       final m = _model;
       if (m != null) {
         if (m.regionSido != null) body['region_sido'] = m.regionSido;
         if (m.regionName != null) body['region_name'] = m.regionName;
-        if (m.regionManager != null) body['region_manager'] = m.regionManager;
         if (m.regionBranchType != null) {
           body['region_branch_type'] = m.regionBranchType;
         }
@@ -417,6 +413,34 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return 0;
   }
 
+  String _managerFromRegionId(MasterDataBundle master, String? regionId) {
+    if (regionId == null || regionId.isEmpty) return '';
+    for (final region in master.regions) {
+      if (region.id != regionId) continue;
+      final manager =
+          (region.extra['manager'] ??
+                  region.extra['original_manager'] ??
+                  region.extra['effective_manager'] ??
+                  '')
+              .toString()
+              .trim();
+      return manager;
+    }
+    return '';
+  }
+
+  List<String> _managerOptionsFromMaster(MasterDataBundle master) {
+    final set = <String>{};
+    for (final region in master.regions) {
+      final manager = (region.extra['manager'] ?? '').toString().trim();
+      final original = (region.extra['original_manager'] ?? '').toString().trim();
+      if (manager.isNotEmpty) set.add(manager);
+      if (original.isNotEmpty) set.add(original);
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
   /// 웹과 동일: 다음 상담 차수 = 기존 이력 건수 + 1.
   /// 목록 `initial`에 이력이 비어 있어도 `call_stage`로 차수를 추정해 라벨 깜빡임을 줄임.
   int _nextConsultationStageNumber(SalesCall? call) {
@@ -536,6 +560,68 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return colors[hash % colors.length];
   }
 
+  void _showTempOverrideInfoDialog(TempManagerOverride o) {
+    final memo = (o.memo ?? '').trim();
+    final start = (o.startDate ?? '').trim();
+    final end = (o.endDate ?? '').trim();
+    final period = (start.isNotEmpty || end.isNotEmpty)
+        ? '${start.isNotEmpty ? start : '—'} ~ ${end.isNotEmpty ? end : '—'}'
+        : '—';
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('임시 담당 변경 상세'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '이유',
+                style: Theme.of(ctx)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Text(memo.isNotEmpty ? memo : '—',
+                  style: Theme.of(ctx).textTheme.bodyMedium),
+              const SizedBox(height: 14),
+              Text(
+                '기간',
+                style: Theme.of(ctx)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Text(period, style: Theme.of(ctx).textTheme.bodyMedium),
+              const SizedBox(height: 14),
+              Text(
+                '담당자 변경',
+                style: Theme.of(ctx)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${o.originalManager} → ${o.tempManager}',
+                style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final masterAsync = ref.watch(salesCallCreateMasterDataProvider);
@@ -613,6 +699,50 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               label: Text('${_inputStageLabel(_model)} 상담내용 입력'),
             )
           : null,
+      bottomNavigationBar: _isEditMode
+          ? masterAsync.maybeWhen(
+              data: (master) => SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 10,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: SizedBox(
+                    height: 56,
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : () => _save(master),
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.save_as_rounded),
+                      label: Text(
+                        _saving ? '저장 중...' : '전체 정보 수정 저장',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              orElse: () => null,
+            )
+          : null,
       body: masterAsync.when(
         data: (master) => _buildScrollable(master),
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -626,6 +756,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     final scheme = Theme.of(context).colorScheme;
     final assigneeLabel = (m?.assignedTo == null || m!.assignedTo!.trim().isEmpty) ? '미지정' : m.assignedTo!.trim();
     final assigneeColor = _colorForAssignee(assigneeLabel, scheme);
+    final overrides = ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
+    final activeOverride = m == null
+        ? null
+        : findActiveTempOverrideForCall(m, overrides, DateTime.now());
 
     Widget sectionTitle(String title, IconData icon) {
       return Padding(
@@ -653,7 +787,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          if (m != null) _buildHeroHeader(m, scheme, assigneeColor),
+          if (m != null)
+            _buildHeroHeader(
+              m,
+              scheme,
+              assigneeColor,
+              activeOverride,
+            ),
 
           if (_isEditMode) ...[
             _buildEditFormSection(master, scheme),
@@ -804,24 +944,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
           ),
 
-          if (_isEditMode)
-            Padding(
-              padding: const EdgeInsets.only(top: 24, bottom: 48),
-              child: SizedBox(
-                height: 58,
-                child: FilledButton.icon(
-                  onPressed: _saving ? null : () => _save(master),
-                  icon: _saving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.save_as_rounded),
-                  label: Text(
-                    _saving ? '저장 중...' : '전체 정보 수정 저장', 
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(height: 50),
+          SizedBox(height: _isEditMode ? 110 : 50),
         ],
       ),
     );
@@ -900,9 +1023,44 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             regions: master.regions,
             value: _regionId,
             decoration: _editInputDecoration('지역 검색 · 선택', scheme),
-            onChanged: (v) => setState(() => _regionId = v),
+            onChanged: (v) {
+              setState(() {
+                _regionId = v;
+                final manager = _managerFromRegionId(master, v);
+                if (manager.isNotEmpty) {
+                  _assignedCtrl.text = manager;
+                }
+              });
+            },
             validator: (v) => v == null ? '지역을 선택해주세요' : null,
           ),
+          const SizedBox(height: 16),
+          _buildEditFieldLabel('담당자', scheme),
+          Builder(builder: (ctx) {
+            final managerOptions = _managerOptionsFromMaster(master);
+            final current = _assignedCtrl.text.trim();
+            final selectedValue =
+                managerOptions.contains(current) ? current : null;
+            return DropdownButtonFormField<String>(
+              value: selectedValue,
+              isExpanded: true,
+              decoration: _editInputDecoration('담당자 선택', scheme),
+              hint: const Text('담당자를 선택하세요'),
+              items: managerOptions
+                  .map(
+                    (m) => DropdownMenuItem<String>(
+                      value: m,
+                      child: Text(m),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) {
+                setState(() {
+                  _assignedCtrl.text = (v ?? '').trim();
+                });
+              },
+            );
+          }),
           const SizedBox(height: 16),
           _buildEditFieldLabel('문의 내용 *', scheme),
           TextFormField(
@@ -984,7 +1142,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
-  Widget _buildHeroHeader(SalesCall m, ColorScheme scheme, Color assigneeColor) {
+  Widget _buildHeroHeader(
+    SalesCall m,
+    ColorScheme scheme,
+    Color assigneeColor,
+    TempManagerOverride? activeOverride,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1036,6 +1199,20 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       m.assignedTo ?? '담당 미지정',
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                     ),
+                    if (activeOverride != null) ...[
+                      const SizedBox(width: 6),
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        tooltip: '임시 담당 변경 상세',
+                        icon: const Icon(
+                          Icons.info_outline_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        onPressed: () => _showTempOverrideInfoDialog(activeOverride),
+                      ),
+                    ],
                   ],
                 ),
               ),

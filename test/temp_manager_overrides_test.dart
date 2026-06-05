@@ -137,7 +137,7 @@ void main() {
       ],
       now,
     ).first;
-    expect(displayed.regionManager, 'B');
+    expect(displayed.regionManager, 'A');
     expect(displayed.assignedTo, 'B');
   });
 

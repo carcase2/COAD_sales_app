@@ -33,7 +33,7 @@ async function resolveTempManagerNameForPush(
   if (!record) return null
 
   const regionName = (record.region_name ?? '').toString().trim()
-  const regionManager = (record.region_manager ?? '').toString().trim()
+  const assignedTo = (record.assigned_to ?? '').toString().trim()
   if (!regionName) return null
 
   const today = todayKstYmd()
@@ -50,9 +50,12 @@ async function resolveTempManagerNameForPush(
 
   for (const o of overrides ?? []) {
     if (!isYmdInInclusiveRange(today, o.start_date, o.end_date)) continue
-    if (regionManager && o.original_manager !== regionManager) continue
     const temp = (o.temp_manager ?? '').toString().trim()
     if (temp) {
+      if (assignedTo) {
+        const original = (o.original_manager ?? '').toString().trim()
+        if (assignedTo !== original && assignedTo !== temp) continue
+      }
       console.log(
         `Active temp override for push: region=${regionName} original=${o.original_manager} temp=${temp}`,
       )
@@ -163,7 +166,7 @@ serve(async (req) => {
 
     // 푸시 제목: 당일 처리 담당(대행 중이면 assigned_to = 임시 담당)
     const assigneeName = (
-      (activeRecord?.assigned_to ?? activeRecord?.region_manager ?? '') as string
+      (activeRecord?.assigned_to ?? '') as string
     ).toString().trim() || '미지정'
 
     const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'

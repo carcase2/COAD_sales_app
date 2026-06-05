@@ -141,7 +141,6 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       };
 
       NamedMasterRow? regionRow;
-      var originalManager = '';
       if (_regionId != null) {
         for (final r in master.regions) {
           if (r.id == _regionId) { regionRow = r; break; }
@@ -154,12 +153,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         final effectiveManager = (e['effective_manager'] ?? e['manager'] ?? '')
             .toString()
             .trim();
-        originalManager = (e['original_manager'] ?? e['manager'] ?? '')
-            .toString()
-            .trim();
-        // 웹과 동일: 기간 중 assigned_to · region_manager 모두 현재(임시) 담당자
+        // 임시 담당 오버레이는 표시 전용이며 저장은 assigned_to만 사용한다.
         if (effectiveManager.isNotEmpty) {
-          body['region_manager'] = effectiveManager;
           body['assigned_to'] = effectiveManager;
         }
         if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
@@ -176,9 +171,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         regionId: (body['region_id'] ?? '').toString(),
         regionSido: (body['region_sido'] ?? '').toString(),
         regionName: (body['region_name'] ?? '').toString(),
-        regionManager: (body['region_manager'] ?? '').toString(),
         assignedTo: (body['assigned_to'] ?? '').toString(),
-        originalRegionManager: originalManager.isNotEmpty ? originalManager : null,
         productCategoryId: body['product_category_id']?.toString(),
         inquiryMethodId: body['inquiry_method_id']?.toString(),
         statusId: reg.statusId,
@@ -213,7 +206,6 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               'product_category_id': created.productCategoryId,
               'region_sido': created.regionSido,
               'region_name': created.regionName,
-              'region_manager': (body['region_manager'] ?? created.assignedTo),
               'assigned_to': created.assignedTo,
             },
           },

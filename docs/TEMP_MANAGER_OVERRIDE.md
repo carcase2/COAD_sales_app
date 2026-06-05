@@ -37,7 +37,7 @@
 | 만료 DB 원복 | `SalesCallsRepository.revertExpiredTempManagerCalls()` |
 | 목록/상세 fetch 시 | `fetchCalls` · `fetchCallById` · `searchCalls` |
 | Provider | `tempManagerOverridesProvider` (fetch 전 revert) |
-| 접수 저장 | `SalesCallCreateScreen` — `region_manager`·`assigned_to` = **effective(임시)** |
+| 접수 저장 | `SalesCallCreateScreen` — `assigned_to` = **effective(임시)** |
 | 목록 담당 칩 | `displayAssigneeForCall()` (= 웹 `applyCallOverrides`) |
 | 테스트 | `test/temp_manager_overrides_test.dart` |
 
@@ -48,7 +48,7 @@
 | 항목 | 동작 |
 |------|------|
 | 지역 선택 | `effectiveRegions` → **임시 담당** |
-| 접수 저장 | `assigned_to` · `region_manager` = **임시 담당** (웹 동일) |
+| 접수 저장 | `assigned_to` = **임시 담당** |
 | 목록 표시 | `applyCallDisplayOverrides` — DB가 원담당이어도 기간 중 **임시로 표시** |
 | 푸시 | `notify-new-call` — 대행 기간 중 **임시 담당만** (Edge Function) |
 
@@ -63,7 +63,7 @@
 | 원복 API | `BASE_URL` 있으면 `POST /api/temp-manager/revert-expired`, 없으면 Supabase 직접 UPDATE |
 | 목록 표시 | 오버레이 없음 + DB 원담당 |
 
-원복 대상: `assigned_to` 또는 `region_manager`가 `temp_manager`이고, 접수일이 override 기간 안인 건.
+원복 대상: `assigned_to`가 `temp_manager`이고, 접수일이 override 기간 안인 건.
 
 ---
 

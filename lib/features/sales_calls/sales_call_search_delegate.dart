@@ -165,7 +165,11 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
                           child: SearchHighlightText(
                             text: c.customerName ?? '(이름 없음)',
                             query: query,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: scheme.onSurface,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),

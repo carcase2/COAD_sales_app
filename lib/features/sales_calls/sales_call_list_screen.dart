@@ -855,7 +855,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                     inquiryContent: c.inquiryContent,
                     regionLabel: c.regionLabel,
                     productCategoryName: c.productCategoryName,
-                    extra: c.regionManager,
+                    extra: c.assignedTo,
                   ),
                 );
               }

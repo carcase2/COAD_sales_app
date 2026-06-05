@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'package:gal/gal.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -103,22 +104,37 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
     final bytes = await _downloadBytes(context, url);
     if (bytes == null) return false;
     final ext = _extOfUrl(url);
-    final baseName = _baseNameFor(
-      kind: kind == AttachmentKind.unsupported && ext == 'pdf' ? AttachmentKind.pdf : kind,
-      sequence: sequence,
-    );
+    final resolvedKind =
+        kind == AttachmentKind.unsupported && ext == 'pdf' ? AttachmentKind.pdf : kind;
+    final baseName = _baseNameFor(kind: resolvedKind, sequence: sequence);
     try {
-      await FileSaver.instance.saveFile(
-        name: baseName,
-        bytes: bytes,
-        fileExtension: ext,
-        mimeType: _mimeTypeFor(ext, kind),
-      );
+      if (resolvedKind == AttachmentKind.image) {
+        if (!await Gal.hasAccess()) {
+          final granted = await Gal.requestAccess();
+          if (!granted) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('갤러리 접근 권한이 필요합니다.')),
+              );
+            }
+            return false;
+          }
+        }
+        await Gal.putImageBytes(bytes, name: '$baseName.$ext');
+      } else {
+        await FileSaver.instance.saveFile(
+          name: baseName,
+          bytes: bytes,
+          fileExtension: ext,
+          mimeType: _mimeTypeFor(ext, resolvedKind),
+        );
+      }
       return true;
     } catch (_) {
       if (context.mounted) {
+        final target = resolvedKind == AttachmentKind.image ? '갤러리' : '저장소';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$baseName 저장에 실패했습니다.')),
+          SnackBar(content: Text('$baseName을(를) $target에 저장하지 못했습니다.')),
         );
       }
       return false;
@@ -155,7 +171,11 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
                 );
                 if (!context.mounted || !done) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('파일을 저장했습니다.')),
+                  SnackBar(
+                    content: Text(
+                      kind == AttachmentKind.image ? '갤러리에 저장했습니다.' : '파일을 저장했습니다.',
+                    ),
+                  ),
                 );
               },
             ),
@@ -396,6 +416,7 @@ class _ImagePreviewPagerScreen extends StatefulWidget {
 class _ImagePreviewPagerScreenState extends State<_ImagePreviewPagerScreen> {
   late final PageController _controller;
   late int _currentIndex;
+  bool _pageScrollEnabled = true;
 
   @override
   void initState() {
@@ -408,6 +429,11 @@ class _ImagePreviewPagerScreenState extends State<_ImagePreviewPagerScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onZoomChanged(bool zoomed) {
+    if (_pageScrollEnabled == !zoomed) return;
+    setState(() => _pageScrollEnabled = !zoomed);
   }
 
   void _goPrev() {
@@ -431,11 +457,14 @@ class _ImagePreviewPagerScreenState extends State<_ImagePreviewPagerScreen> {
     final scheme = Theme.of(context).colorScheme;
     final total = widget.imageUrls.length;
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
         title: const Text('이미지'),
         actions: [
           IconButton(
-            tooltip: '저장',
+            tooltip: '갤러리에 저장',
             onPressed: () async {
               await showModalBottomSheet<void>(
                 context: context,
@@ -447,24 +476,26 @@ class _ImagePreviewPagerScreenState extends State<_ImagePreviewPagerScreen> {
                       ListTile(
                         leading: const Icon(Icons.download_for_offline_outlined),
                         title: const Text('한 장 저장'),
+                        subtitle: const Text('사진 앱(갤러리)에 저장'),
                         onTap: () async {
                           Navigator.of(ctx).pop();
                           final done = await widget.saveCurrent(_currentIndex);
                           if (!mounted || !done) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('현재 이미지를 저장했습니다.')),
+                            const SnackBar(content: Text('현재 이미지를 갤러리에 저장했습니다.')),
                           );
                         },
                       ),
                       ListTile(
                         leading: const Icon(Icons.download_done_rounded),
                         title: const Text('모두 저장'),
+                        subtitle: const Text('사진 앱(갤러리)에 저장'),
                         onTap: () async {
                           Navigator.of(ctx).pop();
                           final ok = await widget.saveAll();
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('저장 완료: $ok/${widget.imageUrls.length}개')),
+                            SnackBar(content: Text('갤러리 저장 완료: $ok/${widget.imageUrls.length}개')),
                           );
                         },
                       ),
@@ -480,7 +511,7 @@ class _ImagePreviewPagerScreenState extends State<_ImagePreviewPagerScreen> {
             child: Center(
               child: Text(
                 '${_currentIndex + 1}/$total',
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white),
               ),
             ),
           ),
@@ -491,29 +522,19 @@ class _ImagePreviewPagerScreenState extends State<_ImagePreviewPagerScreen> {
           PageView.builder(
             controller: _controller,
             itemCount: total,
-            onPageChanged: (idx) => setState(() => _currentIndex = idx),
+            physics: _pageScrollEnabled
+                ? const BouncingScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
+            onPageChanged: (idx) => setState(() {
+              _currentIndex = idx;
+              _pageScrollEnabled = true;
+            }),
             itemBuilder: (context, index) {
               final url = widget.imageUrls[index];
-              return Center(
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4,
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (c, child, prog) {
-                      if (prog == null) return child;
-                      return const Padding(
-                        padding: EdgeInsets.all(48),
-                        child: CircularProgressIndicator(),
-                      );
-                    },
-                    errorBuilder: (_, _, _) => const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('이미지를 불러올 수 없습니다.\n네트워크를 확인해 주세요.'),
-                    ),
-                  ),
-                ),
+              return _ZoomableNetworkImage(
+                key: ValueKey(url),
+                url: url,
+                onZoomChanged: _onZoomChanged,
               );
             },
           ),
@@ -548,6 +569,133 @@ class _ImagePreviewPagerScreenState extends State<_ImagePreviewPagerScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ZoomableNetworkImage extends StatefulWidget {
+  const _ZoomableNetworkImage({
+    super.key,
+    required this.url,
+    this.onZoomChanged,
+  });
+
+  final String url;
+  final ValueChanged<bool>? onZoomChanged;
+
+  @override
+  State<_ZoomableNetworkImage> createState() => _ZoomableNetworkImageState();
+}
+
+class _ZoomableNetworkImageState extends State<_ZoomableNetworkImage>
+    with SingleTickerProviderStateMixin {
+  static const double _doubleTapScale = 2.5;
+
+  final TransformationController _transformController = TransformationController();
+  late final AnimationController _animationController;
+  Animation<Matrix4>? _zoomAnimation;
+  TapDownDetails? _doubleTapDetails;
+  bool _wasZoomed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    )..addListener(_onZoomAnimationTick);
+    _transformController.addListener(_notifyZoomChanged);
+  }
+
+  @override
+  void dispose() {
+    _transformController.removeListener(_notifyZoomChanged);
+    _transformController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _onZoomAnimationTick() {
+    final animation = _zoomAnimation;
+    if (animation == null) return;
+    _transformController.value = animation.value;
+  }
+
+  void _notifyZoomChanged() {
+    final zoomed = _transformController.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed == _wasZoomed) return;
+    _wasZoomed = zoomed;
+    widget.onZoomChanged?.call(zoomed);
+  }
+
+  void _onDoubleTapDown(TapDownDetails details) {
+    _doubleTapDetails = details;
+  }
+
+  void _onDoubleTap() {
+    final tap = _doubleTapDetails?.localPosition;
+    if (tap == null) return;
+
+    final begin = _transformController.value;
+    final currentScale = begin.getMaxScaleOnAxis();
+    final endScale = currentScale > 1.05 ? 1.0 : _doubleTapScale;
+    final end = Matrix4.identity();
+
+    if (endScale > 1.0) {
+      final dx = -tap.dx * (endScale - 1);
+      final dy = -tap.dy * (endScale - 1);
+      end
+        ..translate(dx, dy)
+        ..scale(endScale);
+    }
+
+    _zoomAnimation = Matrix4Tween(begin: begin, end: end).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+    _animationController
+      ..reset()
+      ..forward();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return GestureDetector(
+      onDoubleTapDown: _onDoubleTapDown,
+      onDoubleTap: _onDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _transformController,
+        constrained: false,
+        boundaryMargin: const EdgeInsets.all(double.infinity),
+        minScale: 0.5,
+        maxScale: 5,
+        clipBehavior: Clip.none,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: Center(
+            child: Image.network(
+              widget.url,
+              fit: BoxFit.contain,
+              loadingBuilder: (c, child, prog) {
+                if (prog == null) return child;
+                return const Padding(
+                  padding: EdgeInsets.all(48),
+                  child: CircularProgressIndicator(color: Colors.white),
+                );
+              },
+              errorBuilder: (_, _, _) => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  '이미지를 불러올 수 없습니다.\n네트워크를 확인해 주세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

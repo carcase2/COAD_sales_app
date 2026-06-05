@@ -5,6 +5,8 @@ import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_pag
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/issue_request/presentation/pages/issue_request_list_page.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -81,6 +83,65 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       setState(() => _domain = selected);
       await _refreshIssuanceData();
     }
+  }
+
+  Future<int?> _promptIssueRequestUserId() async {
+    final loginId = ref.read(authControllerProvider)?.id.trim() ?? '';
+    final parsed = int.tryParse(loginId);
+    if (parsed != null) return parsed;
+
+    final controller = TextEditingController(text: loginId);
+    final entered = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('user_id 입력'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'REST API는 숫자 user_id가 필요합니다.\n'
+              '테스트용 ID를 입력해 주세요.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'user_id',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = int.tryParse(controller.text.trim());
+              if (value == null) return;
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return entered;
+  }
+
+  Future<void> _openIssueRequestApiList() async {
+    final userId = await _promptIssueRequestUserId();
+    if (userId == null || !mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => IssueRequestListPage(userId: userId),
+      ),
+    );
   }
 
   @override
@@ -276,6 +337,15 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     count: count(completedAsync),
                     accent: Colors.teal.shade700,
                     onTap: _openCompletedListPage,
+                  ),
+                  const SizedBox(height: 10),
+                  _HubMenuTile(
+                    icon: Icons.api_rounded,
+                    title: 'REST API 발급요청',
+                    subtitle: 'issue_request 테이블 (Next API)',
+                    count: 0,
+                    accent: Colors.purple.shade700,
+                    onTap: () => unawaited(_openIssueRequestApiList()),
                   ),
                 ],
               ),

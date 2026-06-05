@@ -210,7 +210,7 @@ class SalesCallsRepository {
 
     final callRes = await _client
         .from('sales_calls')
-        .select('id, assigned_to, region_manager, call_date, created_at, region_name')
+        .select('id, assigned_to, call_date, created_at, region_name')
         .inFilter('region_name', regionNames);
 
     final revertTargets = <String, String>{};
@@ -235,7 +235,6 @@ class SalesCallsRepository {
     for (final entry in byManager.entries) {
       await _client.from('sales_calls').update({
         'assigned_to': entry.key,
-        'region_manager': entry.key,
         'updated_at': now,
       }).inFilter('id', entry.value);
     }
