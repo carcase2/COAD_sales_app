@@ -1,16 +1,17 @@
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/issuance/tax_invoice_issue_service.dart';
 import 'package:flutter/material.dart';
 
 class IssuanceRequestCard extends StatelessWidget {
   const IssuanceRequestCard({
     required this.row,
     required this.onTap,
+    this.isOwn = false,
     super.key,
   });
 
   final IssuanceRequestRow row;
   final VoidCallback onTap;
+  final bool isOwn;
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +79,9 @@ class IssuanceRequestCard extends StatelessWidget {
     final assignee = (textOf('requester').isEmpty
         ? textOf('created_by')
         : textOf('requester'));
-    final status = row.isPartial
+    final status = row.kind == IssuanceRowKind.cancelled
+        ? '취소'
+        : row.isPartial
         ? '부분발급'
         : statusLabel(textOf('status'), isCompleted: row.isCompleted);
     final extra = isTax
@@ -100,6 +103,8 @@ class IssuanceRequestCard extends StatelessWidget {
           return Colors.orange.shade800;
         case '완료':
           return Colors.teal.shade700;
+        case '취소':
+          return Colors.grey.shade700;
         case '진행중':
           return Colors.blue.shade700;
         case '임시저장':
@@ -126,7 +131,12 @@ class IssuanceRequestCard extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: accent.withValues(alpha: 0.35)),
+            border: Border.all(
+              color: isOwn
+                  ? accent.withValues(alpha: 0.55)
+                  : accent.withValues(alpha: 0.35),
+              width: isOwn ? 1.6 : 1,
+            ),
             boxShadow: [
               BoxShadow(
                 color: accent.withValues(alpha: 0.10),
@@ -210,6 +220,26 @@ class IssuanceRequestCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (isOwn)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '내 요청',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: accent,
+                        ),
+                      ),
+                    ),
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 18,
@@ -284,67 +314,70 @@ class IssuanceRequestCard extends StatelessWidget {
   }
 }
 
-/// 세금계산서 발급/발급요청 액션 버튼.
-class IssuanceTaxRowActions extends StatelessWidget {
-  const IssuanceTaxRowActions({
+/// 발급대기·부분발급 행 액션 버튼.
+class IssuanceRowActions extends StatelessWidget {
+  const IssuanceRowActions({
     required this.row,
     required this.onIssue,
+    required this.onCancel,
+    this.onOpenDetail,
     super.key,
   });
 
   final IssuanceRequestRow row;
-  final Future<void> Function(IssuanceRequestRow row, TaxIssueSheetMode mode)
-  onIssue;
+  final Future<void> Function(IssuanceRequestRow row) onIssue;
+  final Future<void> Function(IssuanceRequestRow row) onCancel;
+  final VoidCallback? onOpenDetail;
 
   @override
   Widget build(BuildContext context) {
-    if (row.domain != IssuanceDomain.taxInvoice) {
-      return const SizedBox.shrink();
-    }
     if (row.kind == IssuanceRowKind.request) {
+      final isTax = row.domain == IssuanceDomain.taxInvoice;
+      if (!isTax) {
+        final accent = Colors.deepOrange.shade700;
+        return Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FilledButton.icon(
+                onPressed: onOpenDetail,
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                icon: const Icon(Icons.visibility_outlined, size: 18),
+                label: const Text('상세 보기'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => onCancel(row),
+                child: const Text('취소'),
+              ),
+            ],
+          ),
+        );
+      }
       return Padding(
         padding: const EdgeInsets.only(top: 6),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () => onIssue(row, TaxIssueSheetMode.fulfillRequest),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.blue.shade700,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-            icon: const Icon(Icons.receipt_rounded, size: 18),
-            label: const Text('발급'),
-          ),
+        child: OutlinedButton(
+          onPressed: () => onCancel(row),
+          child: const Text('취소'),
         ),
       );
     }
-    if (row.kind == IssuanceRowKind.partial) {
+    if (row.kind == IssuanceRowKind.partial &&
+        row.domain == IssuanceDomain.taxInvoice) {
       final remaining = row.remainingPct.round();
       return Padding(
         padding: const EdgeInsets.only(top: 6),
-        child: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: remaining <= 0
-                    ? null
-                    : () => onIssue(row, TaxIssueSheetMode.insertRequest),
-                child: Text('발급요청 ($remaining%)'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton(
-                onPressed: remaining <= 0
-                    ? null
-                    : () => onIssue(row, TaxIssueSheetMode.remainderIssue),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.orange.shade800,
-                ),
-                child: const Text('잔금 발급'),
-              ),
-            ),
-          ],
+        child: FilledButton(
+          onPressed: remaining <= 0 ? null : () => onIssue(row),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.orange.shade800,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+          child: Text('발급요청 ($remaining%)'),
         ),
       );
     }

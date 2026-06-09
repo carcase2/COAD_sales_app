@@ -33,7 +33,9 @@ void _onBackgroundLocalNotificationTap(NotificationResponse response) {
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   if (kDebugMode) {
-    print('[FCM] background message: ${message.messageId} data=${message.data}');
+    print(
+      '[FCM] background message: ${message.messageId} data=${message.data}',
+    );
   }
   try {
     await NotificationService.showRemoteMessageNotification(
@@ -53,10 +55,12 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   static const String _androidChannelId = 'high_importance_channel';
   static const String _androidChannelName = 'High Importance Notifications';
-  static const String _androidChannelDescription = 'This channel is used for important notifications.';
+  static const String _androidChannelDescription =
+      'This channel is used for important notifications.';
 
   /// Navigation key to support navigation without context
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   /// Cold start / 로그인 대기 payload. [MainTabScreen]에서 [handleInitialMessage]로 처리.
   static Map<String, dynamic>? _pendingMessageData;
@@ -140,10 +144,12 @@ class NotificationService {
       onDidReceiveNotificationResponse: (NotificationResponse details) {
         _onForegroundLocalNotificationTap(details);
       },
-      onDidReceiveBackgroundNotificationResponse: _onBackgroundLocalNotificationTap,
+      onDidReceiveBackgroundNotificationResponse:
+          _onBackgroundLocalNotificationTap,
     );
 
-    final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
+    final launchDetails = await _localNotifications
+        .getNotificationAppLaunchDetails();
     final launchPayload = launchDetails?.notificationResponse?.payload;
     if (launchDetails?.didNotificationLaunchApp == true &&
         launchPayload != null &&
@@ -158,16 +164,22 @@ class NotificationService {
       importance: Importance.max,
     );
 
-    final androidPlugin =
-        _localNotifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidPlugin?.createNotificationChannel(channel);
     await androidPlugin?.requestNotificationsPermission();
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      _log('onMessage id=${message.messageId} dataKeys=${message.data.keys.toList()}');
+      _log(
+        'onMessage id=${message.messageId} dataKeys=${message.data.keys.toList()}',
+      );
       // Android 포그라운드: 알림만 표시하고, 상세 이동은 사용자 탭 시에만 처리합니다.
       // (수신 즉시 자동 이동하면 탭 이벤트·pending 재시도와 겹쳐 다른 접수로 가거나 이동이 무시됨)
-      unawaited(showRemoteMessageNotification(message, plugin: _localNotifications));
+      unawaited(
+        showRemoteMessageNotification(message, plugin: _localNotifications),
+      );
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
@@ -188,11 +200,15 @@ class NotificationService {
         launchPayload.isNotEmpty) {
       _coldStartLaunchHandled = true;
       _pendingLaunchPayload = null;
-      _scheduleNotificationHandling(() => _handleNotificationClick(launchPayload));
+      _scheduleNotificationHandling(
+        () => _handleNotificationClick(launchPayload),
+      );
     }
 
     if (_pendingMessageData != null) {
-      _scheduleNotificationHandling(() => _handleMessageData(_pendingMessageData!));
+      _scheduleNotificationHandling(
+        () => _handleMessageData(_pendingMessageData!),
+      );
     }
 
     for (var attempt = 0; attempt < 8; attempt++) {
@@ -202,7 +218,9 @@ class NotificationService {
       final initial = await FirebaseMessaging.instance.getInitialMessage();
       if (initial == null || initial.data.isEmpty) continue;
       if (kDebugMode) {
-        print('[FCM] getInitialMessage (attempt $attempt) data=${initial.data}');
+        print(
+          '[FCM] getInitialMessage (attempt $attempt) data=${initial.data}',
+        );
       }
       _scheduleNotificationHandling(
         () => _handleMessageData(Map<String, dynamic>.from(initial.data)),
@@ -227,7 +245,9 @@ class NotificationService {
     final payload = details.payload;
     if (payload == null || payload.isEmpty) return;
     if (kDebugMode) {
-      print('[FCM] local notification tap payload=$payload action=${details.actionId}');
+      print(
+        '[FCM] local notification tap payload=$payload action=${details.actionId}',
+      );
     }
     // Android 포그라운드 탭은 콜백 누락 가능성을 대비해 백업 저장
     // (실제 이동은 schedule 흐름 하나로만 처리해 경합을 줄임)
@@ -285,15 +305,20 @@ class NotificationService {
     }
 
     if (initializePlugin) {
-      const androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/launcher_icon',
+      );
       await plugin.initialize(
         settings: const InitializationSettings(android: androidSettings),
-        onDidReceiveBackgroundNotificationResponse: _onBackgroundLocalNotificationTap,
+        onDidReceiveBackgroundNotificationResponse:
+            _onBackgroundLocalNotificationTap,
       );
     }
 
-    final androidPlugin =
-        plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (androidPlugin != null) {
       const channel = AndroidNotificationChannel(
         _androidChannelId,
@@ -305,7 +330,9 @@ class NotificationService {
     }
 
     final callId = _extractCallIdFromData(data);
-    _log('showRemoteMessageNotification callId=$callId titleLen=${title.length} bodyLen=${body.length}');
+    _log(
+      'showRemoteMessageNotification callId=$callId titleLen=${title.length} bodyLen=${body.length}',
+    );
     await plugin.show(
       id: _notificationIdFor(callId, message),
       title: title,
@@ -339,17 +366,35 @@ class NotificationService {
   static String? _buildLocalPayload(Map<String, dynamic> data) {
     if (_isAppUpdateNotification(data)) {
       final storeUrl = (data['store_url'] ?? '').toString().trim();
-      return jsonEncode({
-        'type': 'app_update',
-        'store_url': storeUrl,
-      });
+      return jsonEncode({'type': 'app_update', 'store_url': storeUrl});
+    }
+    if (_isIssuanceCompletedNotification(data)) {
+      return jsonEncode(_issuancePayloadFromData(data, completed: true));
+    }
+    if (_isIssuanceRequestNotification(data)) {
+      return jsonEncode(_issuancePayloadFromData(data, completed: false));
     }
     final callId = _extractCallIdFromData(data);
     if (callId == null) return null;
-    return jsonEncode({
-      'type': 'sales_call',
-      'call_id': callId,
-    });
+    return jsonEncode({'type': 'sales_call', 'call_id': callId});
+  }
+
+  static Map<String, dynamic> _issuancePayloadFromData(
+    Map<String, dynamic> data, {
+    required bool completed,
+  }) {
+    final domain = _parseIssuanceDomain(
+      data['issuance_domain'] ?? data['domain'],
+    );
+    final masterId = (data['master_id'] ?? data['masterId'] ?? '').toString();
+    final issueId = (data['issue_id'] ?? data['issueId'] ?? '').toString();
+    return {
+      'type': completed ? 'issuance_completed' : 'issuance_request',
+      'issuance_domain': domain.name,
+      'show_completed': completed,
+      if (masterId.isNotEmpty) 'master_id': masterId,
+      if (issueId.isNotEmpty) 'issue_id': issueId,
+    };
   }
 
   static String? _extractCallIdFromData(Map<String, dynamic> data) {
@@ -416,7 +461,9 @@ class NotificationService {
         return;
       }
       if (decoded is Map) {
-        _handleMessageData(decoded.map((key, value) => MapEntry('$key', value)));
+        _handleMessageData(
+          decoded.map((key, value) => MapEntry('$key', value)),
+        );
         return;
       }
     } catch (_) {
@@ -437,6 +484,10 @@ class NotificationService {
       _openIssuanceCompleted(data);
       return;
     }
+    if (_isIssuanceRequestNotification(data)) {
+      _openIssuanceRequest(data);
+      return;
+    }
     final id = _extractCallIdFromData(data);
     if (id != null) {
       _navigateToCallDetail(id);
@@ -454,6 +505,15 @@ class NotificationService {
     return type == 'issuance_completed' || action == 'open_issuance_completed';
   }
 
+  static bool _isIssuanceRequestNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'issuance_request' || action == 'open_issuance_request';
+  }
+
   static IssuanceDomain _parseIssuanceDomain(Object? raw) {
     final value = (raw ?? '').toString().trim().toLowerCase();
     if (value == 'performancebond' ||
@@ -466,42 +526,63 @@ class NotificationService {
   }
 
   static void _openIssuanceCompleted(Map<String, dynamic> data) {
-    final domain = _parseIssuanceDomain(data['issuance_domain'] ?? data['domain']);
+    _openIssuanceHub(
+      data,
+      showCompleted: true,
+      queueType: 'issuance_completed',
+    );
+  }
+
+  static void _openIssuanceRequest(Map<String, dynamic> data) {
+    _openIssuanceHub(data, showCompleted: false, queueType: 'issuance_request');
+  }
+
+  static void _openIssuanceHub(
+    Map<String, dynamic> data, {
+    required bool showCompleted,
+    required String queueType,
+  }) {
+    final domain = _parseIssuanceDomain(
+      data['issuance_domain'] ?? data['domain'],
+    );
+    final masterId = (data['master_id'] ?? data['masterId'] ?? '').toString();
+    final issueId = (data['issue_id'] ?? data['issueId'] ?? '').toString();
+    final payload = {
+      'type': queueType,
+      'issuance_domain': domain.name,
+      'show_completed': showCompleted,
+      if (masterId.isNotEmpty) 'master_id': masterId,
+      if (issueId.isNotEmpty) 'issue_id': issueId,
+    };
     final ctx = navigatorKey.currentContext;
     if (ctx == null) {
-      _queuePendingData({
-        'type': 'issuance_completed',
-        'issuance_domain': domain.name,
-        'show_completed': true,
-      });
+      _queuePendingData(payload);
       return;
     }
     try {
       final container = ProviderScope.containerOf(ctx);
       final user = container.read(authControllerProvider);
       if (user == null) {
-        _queuePendingData({
-          'type': 'issuance_completed',
-          'issuance_domain': domain.name,
-          'show_completed': true,
-        });
+        _queuePendingData(payload);
         return;
       }
       container.read(pendingIssuanceLaunchProvider.notifier).state = (
         domain: domain,
-        showCompleted: true,
+        showCompleted: showCompleted,
+        masterId: masterId.isEmpty ? null : masterId,
+        issueId: issueId.isEmpty ? null : issueId,
+        listKind: null,
       );
     } catch (_) {
-      _queuePendingData({
-        'type': 'issuance_completed',
-        'issuance_domain': domain.name,
-        'show_completed': true,
-      });
+      _queuePendingData(payload);
     }
   }
 
   static bool _isAppUpdateNotification(Map<String, dynamic> data) {
-    final type = (data['type'] ?? data['notification_type'] ?? '').toString().trim().toLowerCase();
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
     final action = (data['action'] ?? '').toString().trim().toLowerCase();
     return type == 'app_update' || action == 'open_update';
   }
@@ -551,36 +632,32 @@ class NotificationService {
     final ctx = navigatorKey.currentContext;
     if (ctx != null) {
       try {
-        final user = ProviderScope.containerOf(ctx).read(authControllerProvider);
+        final user = ProviderScope.containerOf(
+          ctx,
+        ).read(authControllerProvider);
         if (user == null) {
           if (authAttempt < 12) {
             final ms = 200 + authAttempt * 150;
-            Future<void>.delayed(
-              Duration(milliseconds: ms),
-              () {
-                _navigateToCallDetailInternal(
-                  id,
-                  authAttempt: authAttempt + 1,
-                  requestSeq: requestSeq,
-                );
-              },
-            );
+            Future<void>.delayed(Duration(milliseconds: ms), () {
+              _navigateToCallDetailInternal(
+                id,
+                authAttempt: authAttempt + 1,
+                requestSeq: requestSeq,
+              );
+            });
           }
           return;
         }
       } catch (_) {
         if (authAttempt < 12) {
           final ms = 200 + authAttempt * 150;
-          Future<void>.delayed(
-            Duration(milliseconds: ms),
-            () {
-              _navigateToCallDetailInternal(
-                id,
-                authAttempt: authAttempt + 1,
-                requestSeq: requestSeq,
-              );
-            },
-          );
+          Future<void>.delayed(Duration(milliseconds: ms), () {
+            _navigateToCallDetailInternal(
+              id,
+              authAttempt: authAttempt + 1,
+              requestSeq: requestSeq,
+            );
+          });
         }
         return;
       }
@@ -594,9 +671,9 @@ class NotificationService {
     if (ctx == null) return;
     try {
       final container = ProviderScope.containerOf(ctx);
-      container.read(salesCallsRepositoryProvider).invalidateTempManagerCache(
-            forceRevertOnNextFetch: true,
-          );
+      container
+          .read(salesCallsRepositoryProvider)
+          .invalidateTempManagerCache(forceRevertOnNextFetch: true);
       invalidateHomeSalesCaches(container.invalidate);
     } catch (_) {
       // ProviderScope 미연결(테스트 등) 시 무시
@@ -640,14 +717,13 @@ class NotificationService {
       final ms = 50 + attempt * 40;
       Future<void>.delayed(
         Duration(milliseconds: ms),
-        () => _pushDetailRoute(
-          id,
-          attempt: attempt + 1,
-          requestSeq: requestSeq,
-        ),
+        () =>
+            _pushDetailRoute(id, attempt: attempt + 1, requestSeq: requestSeq),
       );
     } else if (kDebugMode) {
-      print('[FCM] NavigatorState still null after retries; keeping pending payload');
+      print(
+        '[FCM] NavigatorState still null after retries; keeping pending payload',
+      );
     }
   }
 
@@ -661,30 +737,77 @@ class NotificationService {
     return top?.settings.name;
   }
 
+  /// 에뮬레이터·GMS 미설치 등으로 FCM 토큰을 받을 수 없을 때 true.
+  static bool _fcmUnavailable = false;
+  static Future<void>? _tokenSyncInFlight;
+  static String? _tokenSyncUserId;
+
+  static bool _isFcmUnavailableError(Object e) {
+    final message = e.toString();
+    return message.contains('SERVICE_NOT_AVAILABLE') ||
+        message.contains('MISSING_INSTANCEID_SERVICE') ||
+        message.contains('AUTHENTICATION_FAILED');
+  }
+
   static Future<String?> getToken() async {
+    if (_fcmUnavailable) return null;
     try {
       return await FirebaseMessaging.instance.getToken();
     } catch (e) {
+      if (_isFcmUnavailableError(e)) {
+        _fcmUnavailable = true;
+        if (kDebugMode) {
+          print(
+            '[NotificationService] FCM unavailable on this device (emulator/no GMS); push token sync skipped',
+          );
+        }
+        return null;
+      }
       if (kDebugMode) {
-        print("Error getting FCM token: $e");
+        print('Error getting FCM token: $e');
       }
       return null;
     }
   }
 
   static Future<void> updateTokenInSupabase(String userId) async {
-    const retryDelaysMs = <int>[0, 600, 1200, 2000, 3500, 5000];
+    if (_fcmUnavailable) return;
+    final inFlight = _tokenSyncInFlight;
+    if (inFlight != null && _tokenSyncUserId == userId) {
+      return inFlight;
+    }
+    final sync = _updateTokenInSupabaseImpl(userId);
+    _tokenSyncUserId = userId;
+    _tokenSyncInFlight = sync;
+    try {
+      await sync;
+    } finally {
+      if (identical(_tokenSyncInFlight, sync)) {
+        _tokenSyncInFlight = null;
+        _tokenSyncUserId = null;
+      }
+    }
+  }
+
+  static Future<void> _updateTokenInSupabaseImpl(String userId) async {
+    if (_fcmUnavailable) return;
+    const retryDelaysMs = <int>[0, 1200, 3000];
     for (var i = 0; i < retryDelaysMs.length; i++) {
+      if (_fcmUnavailable) return;
       final delayMs = retryDelaysMs[i];
       if (delayMs > 0) {
         await Future<void>.delayed(Duration(milliseconds: delayMs));
       }
       final token = await getToken();
       if (token == null || token.isEmpty) {
+        if (_fcmUnavailable) return;
         continue;
       }
       try {
-        await Supabase.instance.client.from('users').update({'fcm_token': token}).eq('id', userId);
+        await Supabase.instance.client
+            .from('users')
+            .update({'fcm_token': token})
+            .eq('id', userId);
         _log('FCM token sync success user=$userId attempt=${i + 1}');
         return;
       } catch (e) {
@@ -700,9 +823,14 @@ class NotificationService {
         print("[NotificationService] FCM Token refreshed: $token");
       }
       try {
-        await Supabase.instance.client.from('users').update({'fcm_token': token}).eq('id', userId);
+        await Supabase.instance.client
+            .from('users')
+            .update({'fcm_token': token})
+            .eq('id', userId);
         if (kDebugMode) {
-          print("[NotificationService] Refreshed FCM Token synced with Supabase");
+          print(
+            "[NotificationService] Refreshed FCM Token synced with Supabase",
+          );
         }
       } catch (e) {
         if (kDebugMode) {
@@ -719,18 +847,142 @@ class NotificationService {
     String? masterId,
     String? issueId,
   }) async {
-    final payload = jsonEncode({
-      'type': 'issuance_completed',
-      'issuance_domain': domain.name,
-      'show_completed': true,
-      'master_id': masterId,
-      'issue_id': issueId,
-    });
+    await _showIssuanceAlert(
+      title: title,
+      body: body,
+      payload: {
+        'type': 'issuance_completed',
+        'issuance_domain': domain.name,
+        'show_completed': true,
+        if (masterId != null) 'master_id': masterId,
+        if (issueId != null) 'issue_id': issueId,
+      },
+    );
+  }
+
+  static Future<void> showIssuanceRequestAlert({
+    required String title,
+    required String body,
+    required IssuanceDomain domain,
+    String? masterId,
+    String? issueId,
+  }) async {
+    await _showIssuanceAlert(
+      title: title,
+      body: body,
+      payload: {
+        'type': 'issuance_request',
+        'issuance_domain': domain.name,
+        'show_completed': false,
+        if (masterId != null) 'master_id': masterId,
+        if (issueId != null) 'issue_id': issueId,
+      },
+    );
+  }
+
+  static const _issuanceRequestWatchInitKey =
+      'issuance_request_watch_initialized_v1';
+  static const _issuanceRequestSeenKey = 'issuance_request_seen_keys_v1';
+
+  static String issuanceRequestRowKey({
+    required IssuanceDomain domain,
+    required String masterId,
+    String? issueId,
+  }) => '${domain.name}:$masterId:${issueId ?? ''}';
+
+  static Future<void> markIssuanceRequestSeen({
+    required SharedPreferences prefs,
+    required IssuanceDomain domain,
+    required String masterId,
+    String? issueId,
+  }) async {
+    final rowKey = issuanceRequestRowKey(
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+    );
+    if (!(prefs.getBool(_issuanceRequestWatchInitKey) ?? false)) {
+      await prefs.setBool(_issuanceRequestWatchInitKey, true);
+    }
+    final seen = (prefs.getStringList(_issuanceRequestSeenKey) ?? const <String>[])
+        .toSet();
+    seen.add(rowKey);
+    await prefs.setStringList(_issuanceRequestSeenKey, seen.toList());
+  }
+
+  static String _issuanceRequestTitle({
+    required IssuanceDomain domain,
+    required bool isUrgent,
+    required bool isPartialRequest,
+  }) {
+    final urgent = isUrgent ? '🚨 [긴급] ' : '';
+    final isTax = domain == IssuanceDomain.taxInvoice;
+    if (isPartialRequest) {
+      return '${urgent}${isTax ? '세금계산서' : '이행증권'} 부분 발급요청';
+    }
+    return '${urgent}${isTax ? '세금계산서' : '이행증권'} 발급요청';
+  }
+
+  static String _issuanceRequestBody({
+    required String displayName,
+    required bool isPartialRequest,
+    double? issuePercentage,
+  }) {
+    final name = displayName.trim().isEmpty ? '요청 건' : displayName.trim();
+    if (isPartialRequest && issuePercentage != null) {
+      return '$name · ${issuePercentage.round()}% 발급요청이 등록되었습니다.';
+    }
+    return '$name 건의 발급요청이 등록되었습니다.';
+  }
+
+  /// 앱/감시에서 발급요청 알림 + seen 키 저장.
+  static Future<void> showIssuanceRequestCreatedAlert({
+    required SharedPreferences prefs,
+    required IssuanceDomain domain,
+    required String masterId,
+    String? issueId,
+    required String displayName,
+    bool isUrgent = false,
+    bool isPartialRequest = false,
+    double? issuePercentage,
+    bool markSeen = true,
+  }) async {
+    await showIssuanceRequestAlert(
+      title: _issuanceRequestTitle(
+        domain: domain,
+        isUrgent: isUrgent,
+        isPartialRequest: isPartialRequest,
+      ),
+      body: _issuanceRequestBody(
+        displayName: displayName,
+        isPartialRequest: isPartialRequest,
+        issuePercentage: issuePercentage,
+      ),
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+    );
+
+    if (markSeen) {
+      await markIssuanceRequestSeen(
+        prefs: prefs,
+        domain: domain,
+        masterId: masterId,
+        issueId: issueId,
+      );
+    }
+  }
+
+  static Future<void> _showIssuanceAlert({
+    required String title,
+    required String body,
+    required Map<String, dynamic> payload,
+  }) async {
     await _localNotifications.show(
       id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
       title: title,
       body: body,
-      payload: payload,
+      payload: jsonEncode(payload),
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           _androidChannelId,
@@ -753,10 +1005,7 @@ class NotificationService {
     final phoneText = phone.trim().isEmpty ? '' : ' ($phone)';
     final rawAssignee = (assigneeName ?? '').trim();
     final assignee = rawAssignee.isEmpty ? '미지정' : rawAssignee;
-    final payload = jsonEncode({
-      'type': 'sales_call',
-      'call_id': callId,
-    });
+    final payload = jsonEncode({'type': 'sales_call', 'call_id': callId});
     await _localNotifications.show(
       id: callId.hashCode & 0x7fffffff,
       title: '[$assignee] 새 통화 등록 완료',

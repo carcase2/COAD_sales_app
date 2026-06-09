@@ -5,8 +5,6 @@ import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_pag
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/issue_request/presentation/pages/issue_request_list_page.dart';
-import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,7 +24,12 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   Future<void> _refreshIssuanceData() async {
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(
+      issuanceCancelledRowsProvider(IssuanceDomain.performanceBond),
+    );
     ref.invalidate(issuanceRequestBadgeCountProvider);
+    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
     await Future.wait([
       ref.read(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
       ref.read(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
@@ -43,7 +46,14 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       if (next.showCompleted) {
         unawaited(_openCompletedListPage());
       } else {
-        unawaited(_openListPage(IssuanceListKind.request, domain: next.domain));
+        unawaited(
+          _openListPage(
+            next.listKind ?? IssuanceListKind.request,
+            domain: next.domain,
+            openMasterId: next.masterId,
+            openIssueId: next.issueId,
+          ),
+        );
       }
     });
   }
@@ -51,11 +61,18 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   Future<void> _openListPage(
     IssuanceListKind kind, {
     IssuanceDomain? domain,
+    String? openMasterId,
+    String? openIssueId,
   }) async {
     final d = domain ?? _domain;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => IssuanceFilteredListPage(domain: d, kind: kind),
+        builder: (_) => IssuanceFilteredListPage(
+          domain: d,
+          kind: kind,
+          openMasterId: openMasterId,
+          openIssueId: openIssueId,
+        ),
       ),
     );
     if (!mounted) return;
@@ -85,65 +102,6 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     }
   }
 
-  Future<int?> _promptIssueRequestUserId() async {
-    final loginId = ref.read(authControllerProvider)?.id.trim() ?? '';
-    final parsed = int.tryParse(loginId);
-    if (parsed != null) return parsed;
-
-    final controller = TextEditingController(text: loginId);
-    final entered = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('user_id 입력'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'REST API는 숫자 user_id가 필요합니다.\n'
-              '테스트용 ID를 입력해 주세요.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'user_id',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = int.tryParse(controller.text.trim());
-              if (value == null) return;
-              Navigator.of(context).pop(value);
-            },
-            child: const Text('확인'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return entered;
-  }
-
-  Future<void> _openIssueRequestApiList() async {
-    final userId = await _promptIssueRequestUserId();
-    if (userId == null || !mounted) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => IssueRequestListPage(userId: userId),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!_isListeningLaunch) {
@@ -160,14 +118,19 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
     final scheme = Theme.of(context).colorScheme;
     final pendingAsync = ref.watch(issuanceRequestRowsProvider(_domain));
+    final myPendingAsync = ref.watch(issuanceMyRequestRowsProvider(_domain));
     final partialAsync = ref.watch(issuancePartialRowsProvider(_domain));
+    final fullyCompletedAsync = ref.watch(
+      issuanceFullyCompletedRowsProvider(_domain),
+    );
     final allAsync = ref.watch(issuanceAllTabRowsProvider(_domain));
     final completedAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
+    final cancelledAsync = ref.watch(issuanceCancelledRowsProvider(_domain));
     final taxPendingAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+      issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
     final bondPendingAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+      issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
     );
     final taxCount = taxPendingAsync.valueOrNull?.length;
     final bondCount = bondPendingAsync.valueOrNull?.length;
@@ -215,7 +178,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          '발급요청 (TEST)',
+                          '발급요청',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 17,
@@ -283,7 +246,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('발급하기'),
+                label: const Text('발급 요청하기'),
               ),
             ),
           ),
@@ -297,55 +260,71 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   Text(
                     '목록 보기',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w800,
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: IssuanceListKind.request.icon,
-                    title: IssuanceListKind.request.title,
-                    subtitle: '미발급 요청 · 처리 필요',
-                    count: count(pendingAsync),
-                    accent: Colors.blue.shade700,
-                    onTap: () => _openListPage(IssuanceListKind.request),
-                  ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: IssuanceListKind.partial.icon,
-                    title: IssuanceListKind.partial.title,
-                    subtitle: '일부 발급 후 남은 %',
-                    count: count(partialAsync),
-                    accent: Colors.orange.shade800,
-                    onTap: () => _openListPage(IssuanceListKind.partial),
-                  ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: IssuanceListKind.all.icon,
-                    title: IssuanceListKind.all.title,
-                    subtitle: '진행 중인 모든 건',
-                    count: count(allAsync),
-                    accent: scheme.onSurface,
-                    onTap: () => _openListPage(IssuanceListKind.all),
-                  ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: Icons.check_circle_outline_rounded,
-                    title: '발급완료',
-                    subtitle: '실제 발급된 이력',
-                    count: count(completedAsync),
-                    accent: Colors.teal.shade700,
-                    onTap: _openCompletedListPage,
-                  ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: Icons.api_rounded,
-                    title: 'REST API 발급요청',
-                    subtitle: 'issue_request 테이블 (Next API)',
-                    count: 0,
-                    accent: Colors.purple.shade700,
-                    onTap: () => unawaited(_openIssueRequestApiList()),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 2.1,
+                    children: [
+                      _HubMenuTile(
+                        icon: IssuanceListKind.request.icon,
+                        title: IssuanceListKind.request.title,
+                        count: count(myPendingAsync),
+                        subtitle: pendingAsync.valueOrNull == null
+                            ? null
+                            : '전체 ${pendingAsync.value!.length}',
+                        accent: Colors.blue.shade700,
+                        onTap: () => _openListPage(IssuanceListKind.request),
+                      ),
+                      if (isTax)
+                        _HubMenuTile(
+                          icon: IssuanceListKind.partial.icon,
+                          title: IssuanceListKind.partial.title,
+                          count: count(partialAsync),
+                          accent: Colors.orange.shade800,
+                          onTap: () => _openListPage(IssuanceListKind.partial),
+                        ),
+                      if (isTax)
+                        _HubMenuTile(
+                          icon: IssuanceListKind.fullyCompleted.icon,
+                          title: IssuanceListKind.fullyCompleted.title,
+                          count: count(fullyCompletedAsync),
+                          accent: Colors.green.shade700,
+                          onTap: () => _openListPage(
+                            IssuanceListKind.fullyCompleted,
+                          ),
+                        ),
+                      _HubMenuTile(
+                        icon: Icons.check_circle_outline_rounded,
+                        title: '발급완료',
+                        count: count(completedAsync),
+                        accent: Colors.teal.shade700,
+                        onTap: _openCompletedListPage,
+                      ),
+                      _HubMenuTile(
+                        icon: IssuanceListKind.cancelled.icon,
+                        title: IssuanceListKind.cancelled.title,
+                        count: count(cancelledAsync),
+                        accent: Colors.grey.shade700,
+                        onTap: () =>
+                            _openListPage(IssuanceListKind.cancelled),
+                      ),
+                      _HubMenuTile(
+                        icon: IssuanceListKind.all.icon,
+                        title: IssuanceListKind.all.title,
+                        count: count(allAsync),
+                        accent: scheme.onSurface,
+                        onTap: () => _openListPage(IssuanceListKind.all),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -417,88 +396,87 @@ class _HubMenuTile extends StatelessWidget {
   const _HubMenuTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.count,
     required this.accent,
     required this.onTap,
+    this.subtitle,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final int count;
   final Color accent;
   final VoidCallback onTap;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(16),
+      color: scheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accent.withValues(alpha: 0.28)),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: accent.withValues(alpha: 0.22)),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: accent, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
+              Row(
+                children: [
+                  Icon(icon, color: accent, size: 18),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$count',
                       style: TextStyle(
-                        fontSize: 16,
                         fontWeight: FontWeight.w900,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
+                        color: accent,
                         fontSize: 12,
-                        color: scheme.onSurfaceVariant,
                       ),
                     ),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                  letterSpacing: -0.2,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '$count건',
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: accent,
-                    fontSize: 13,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right_rounded, color: accent),
+              ],
             ],
           ),
         ),

@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/data/auth_controller.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
@@ -61,6 +62,7 @@ class _IssuanceCompletedListPageState
   Future<void> _refresh() async {
     ref.invalidate(issuanceAllRowsProvider(_domain));
     ref.invalidate(issuanceRequestBadgeCountProvider);
+    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
     await ref.read(issuanceAllRowsProvider(_domain).future);
   }
 
@@ -446,7 +448,11 @@ class _IssuanceCompletedListPageState
           ),
         ),
         data: (allCompleted) {
-          final filtered = _applyListFilters(allCompleted);
+          final user = ref.watch(authControllerProvider);
+          final filtered = sortIssuanceRowsOwnFirst(
+            _applyListFilters(allCompleted),
+            user?.name,
+          );
           final todayRows = filtered.where(_isTodayRow).toList();
           final olderRows = filtered.where((r) => !_isTodayRow(r)).toList();
           _syncOlderExpanded(
