@@ -1009,17 +1009,15 @@ class NotificationService {
           },
         },
       );
-      if (kDebugMode) {
-        print(
-          '[notify-issuance-request] status=${res.status} data=${res.data}',
-        );
-      }
-      if (res.status >= 400 && kDebugMode) {
-        print('[notify-issuance-request] push invoke returned error status');
+      _log(
+        'notify-issuance-request status=${res.status} data=${res.data}',
+      );
+      if (res.status >= 400) {
+        _log('notify-issuance-request push invoke returned error status');
       }
     } catch (e, st) {
+      _log('notify-issuance-request invoke failed: $e');
       if (kDebugMode) {
-        print('[notify-issuance-request] invoke failed: $e');
         print(st);
       }
     }
@@ -1030,18 +1028,33 @@ class NotificationService {
     required String body,
     required Map<String, dynamic> payload,
   }) async {
+    final masterId = (payload['master_id'] ?? '').toString();
+    final issueId = (payload['issue_id'] ?? '').toString();
+    final tag = masterId.isEmpty
+        ? null
+        : issueId.isEmpty
+        ? masterId
+        : '$masterId:$issueId';
+    final notificationId = tag == null
+        ? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31)
+        : tag.hashCode & 0x7fffffff;
+
     await _localNotifications.show(
-      id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      id: notificationId,
       title: title,
       body: body,
       payload: jsonEncode(payload),
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _androidChannelId,
           _androidChannelName,
           channelDescription: _androidChannelDescription,
           importance: Importance.max,
           priority: Priority.high,
+          styleInformation: BigTextStyleInformation(body),
+          category: AndroidNotificationCategory.message,
+          tag: tag,
+          autoCancel: true,
         ),
       ),
     );

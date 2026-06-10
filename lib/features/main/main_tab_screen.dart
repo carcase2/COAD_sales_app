@@ -324,6 +324,18 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           masterId: (row.master['id'] ?? '').toString(),
           issueId: (row.issue?['id'] ?? '').toString(),
         );
+        final me = ref.read(authControllerProvider)?.name;
+        if (!issuanceIsOwnRequest(row, me)) {
+          await NotificationService.invokeIssuanceRequestPush(
+            domain: row.domain,
+            masterId: (row.master['id'] ?? '').toString(),
+            issueId: (row.issue?['id'] ?? '').toString(),
+            displayName: name,
+            isUrgent: isUrgent,
+            isPartialRequest: isPartialFollowUp,
+            issuePercentage: pct,
+          );
+        }
       }
 
       final merged = seenKeys.union(currentKeys).toList();
