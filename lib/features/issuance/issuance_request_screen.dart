@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,6 +23,7 @@ class IssuanceRequestScreen extends ConsumerStatefulWidget {
 class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   IssuanceDomain _domain = IssuanceDomain.taxInvoice;
   bool _isListeningLaunch = false;
+  bool _consumingLaunch = false;
   bool _refreshing = false;
 
   Future<void> _reloadIssuanceData() async {
@@ -53,7 +55,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     required String masterId,
     String? issueId,
   }) async {
-    for (var attempt = 0; attempt < 3; attempt++) {
+    for (var attempt = 0; attempt < 8; attempt++) {
       if (attempt > 0) {
         await Future<void>.delayed(Duration(milliseconds: 350 * attempt));
         if (!mounted) return false;
@@ -76,13 +78,14 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     return false;
   }
 
-  void _consumePendingLaunch() {
+  Future<void> _consumePendingLaunch() async {
+    if (_consumingLaunch) return;
     final next = ref.read(pendingIssuanceLaunchProvider);
-    if (next == null) return;
-    setState(() => _domain = next.domain);
-    ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
+    if (next == null || !mounted) return;
+    _consumingLaunch = true;
+    try {
+      setState(() => _domain = next.domain);
+
       final masterId = next.masterId?.trim() ?? '';
       if (masterId.isNotEmpty) {
         final opened = await _tryOpenDetailByIds(
@@ -90,8 +93,14 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
           masterId: masterId,
           issueId: next.issueId,
         );
-        if (opened) return;
+        if (opened && mounted) {
+          ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
+          NotificationService.clearPendingIssuanceNavigation();
+          return;
+        }
       }
+
+      if (!mounted) return;
       if (next.showCompleted) {
         await _openCompletedListPage(
           openMasterId: next.masterId,
@@ -105,7 +114,12 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
           openIssueId: next.issueId,
         );
       }
-    });
+      if (!mounted) return;
+      ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
+      NotificationService.clearPendingIssuanceNavigation();
+    } finally {
+      _consumingLaunch = false;
+    }
   }
 
   Future<void> _openListPage(
@@ -165,11 +179,11 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       _isListeningLaunch = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _consumePendingLaunch();
+        unawaited(_consumePendingLaunch());
       });
-      ref.listen<IssuanceLaunchTarget?>(pendingIssuanceLaunchProvider, (_, _) {
-        if (!mounted) return;
-        _consumePendingLaunch();
+      ref.listen<IssuanceLaunchTarget?>(pendingIssuanceLaunchProvider, (_, next) {
+        if (!mounted || next == null) return;
+        unawaited(_consumePendingLaunch());
       });
     }
 

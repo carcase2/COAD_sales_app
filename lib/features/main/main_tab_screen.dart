@@ -324,18 +324,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           masterId: (row.master['id'] ?? '').toString(),
           issueId: (row.issue?['id'] ?? '').toString(),
         );
-        final me = ref.read(authControllerProvider)?.name;
-        if (!issuanceIsOwnRequest(row, me)) {
-          await NotificationService.invokeIssuanceRequestPush(
-            domain: row.domain,
-            masterId: (row.master['id'] ?? '').toString(),
-            issueId: (row.issue?['id'] ?? '').toString(),
-            displayName: name,
-            isUrgent: isUrgent,
-            isPartialRequest: isPartialFollowUp,
-            issuePercentage: pct,
-          );
-        }
       }
 
       final merged = seenKeys.union(currentKeys).toList();
@@ -367,6 +355,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _selectIssuanceTab() {
     ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
+    _loadedIndices.add(_issuanceTabIndex);
     if (_navSelectedIndex == _navIssuanceIndex &&
         _currentIndex == _issuanceTabIndex) {
       return;
@@ -514,6 +503,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
       if (next == null || !context.mounted) return;
       _selectIssuanceTab();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        NotificationService.retryPendingNavigation();
+      });
     });
 
     final scheme = Theme.of(context).colorScheme;

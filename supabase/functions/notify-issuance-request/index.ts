@@ -183,7 +183,10 @@ serve(async (req) => {
       })
     }
 
-    const dedupeKey = `${notify.domain}:${notify.masterId}:${notify.issueId}`
+    const dedupeKey =
+      notify.domain === 'taxInvoice'
+        ? `${notify.domain}:${notify.masterId}`
+        : `${notify.domain}:${notify.masterId}:${notify.issueId}`
     if (await shouldSkipDuplicate(supabaseAdmin, dedupeKey)) {
       return new Response(JSON.stringify({ success: true, skipped: true, dedupeKey }), {
         status: 200,

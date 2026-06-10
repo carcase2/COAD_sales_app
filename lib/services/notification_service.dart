@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
@@ -238,6 +239,14 @@ class NotificationService {
     final data = _pendingMessageData;
     if (data == null) return;
     _scheduleNotificationHandling(() => _handleMessageData(data));
+  }
+
+  /// 발급 알림 deep link 소비 완료 시 pending 제거.
+  static void clearPendingIssuanceNavigation() {
+    final type = (_pendingMessageData?['type'] ?? '').toString();
+    if (type == 'issuance_request' || type == 'issuance_completed') {
+      _pendingMessageData = null;
+    }
   }
 
   /// Android 포그라운드 로컬 알림 탭.
@@ -571,9 +580,12 @@ class NotificationService {
         showCompleted: showCompleted,
         masterId: masterId.isEmpty ? null : masterId,
         issueId: issueId.isEmpty ? null : issueId,
-        listKind: null,
+        listKind: showCompleted ? null : IssuanceListKind.request,
       );
-      _pendingMessageData = null;
+      _pendingMessageData = payload;
+      _log(
+        'queue issuance launch domain=${domain.name} masterId=$masterId issueId=$issueId',
+      );
     } catch (_) {
       _queuePendingData(payload);
     }

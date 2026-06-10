@@ -90,29 +90,14 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
         itemName: _itemName.text.trim(),
       );
       try {
-        await NotificationService.showIssuanceRequestCreatedAlert(
+        await NotificationService.markIssuanceRequestSeen(
           prefs: ref.read(appDependenciesProvider).prefs,
           domain: IssuanceDomain.taxInvoice,
           masterId: invoiceId,
           issueId: issueId,
-          displayName: customer,
-          isPartialRequest: true,
-          issuePercentage: pct,
         );
       } catch (e) {
-        debugPrint('[partial-issuance-request-alert] failed: $e');
-      }
-      try {
-        await NotificationService.invokeIssuanceRequestPush(
-          domain: IssuanceDomain.taxInvoice,
-          masterId: invoiceId,
-          issueId: issueId,
-          displayName: customer,
-          isPartialRequest: true,
-          issuePercentage: pct,
-        );
-      } catch (e) {
-        debugPrint('[notify-issuance-request] failed: $e');
+        debugPrint('[partial-issuance-request-seen] failed: $e');
       }
       if (!mounted) return;
       Navigator.of(context).pop(true);
