@@ -6,12 +6,14 @@ class IssuanceRequestCard extends StatelessWidget {
     required this.row,
     required this.onTap,
     this.isOwn = false,
+    this.large = false,
     super.key,
   });
 
   final IssuanceRequestRow row;
   final VoidCallback onTap;
   final bool isOwn;
+  final bool large;
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +59,8 @@ class IssuanceRequestCard extends StatelessWidget {
     final isTax = row.domain == IssuanceDomain.taxInvoice;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
     final bg = isTax
-        ? Colors.indigo.withValues(alpha: 0.05)
-        : Colors.deepOrange.withValues(alpha: 0.06);
+        ? Colors.indigo.withValues(alpha: isOwn ? 0.14 : 0.05)
+        : Colors.deepOrange.withValues(alpha: isOwn ? 0.16 : 0.06);
 
     String compactTitle(String raw) {
       var t = raw.trim();
@@ -116,59 +118,115 @@ class IssuanceRequestCard extends StatelessWidget {
     }
 
     final statusAccent = statusColor(status);
+    final radius = large ? 16.0 : 14.0;
+    final padH = large ? 16.0 : 12.0;
+    final padV = large ? 14.0 : 10.0;
+    final titleSize = large ? 16.0 : 14.0;
+    final bodySize = large ? 12.5 : 12.0;
+    final metaSize = large ? 12.0 : 11.5;
+    final chipSize = large ? 11.0 : 10.5;
+    final ownBarWidth = large ? 6.0 : 5.0;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(radius),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [bg, Colors.white],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(radius),
             border: Border.all(
               color: isOwn
-                  ? accent.withValues(alpha: 0.55)
-                  : accent.withValues(alpha: 0.35),
-              width: isOwn ? 1.6 : 1,
+                  ? accent.withValues(alpha: 0.72)
+                  : accent.withValues(alpha: 0.28),
+              width: isOwn ? (large ? 2.5 : 2) : 1,
             ),
             boxShadow: [
               BoxShadow(
-                color: accent.withValues(alpha: 0.10),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: accent.withValues(alpha: isOwn ? 0.18 : 0.08),
+                blurRadius: isOwn ? (large ? 16 : 14) : 10,
+                offset: Offset(0, large ? 5 : 4),
               ),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (isOwn)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    margin: const EdgeInsets.only(right: 8),
+                    width: ownBarWidth,
                     decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      isTax ? '세금' : '이행',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: accent,
+                      color: accent,
+                      borderRadius: BorderRadius.horizontal(
+                        left: Radius.circular(radius - 1),
                       ),
                     ),
                   ),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(padH, padV, padH, padV),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (isOwn) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: accent,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.person_rounded,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '내 요청',
+                                      style: TextStyle(
+                                        fontSize: chipSize,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                isTax ? '세금' : '이행',
+                                style: TextStyle(
+                                  fontSize: chipSize,
+                                  fontWeight: FontWeight.w800,
+                                  color: accent,
+                                ),
+                              ),
+                            ),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -194,7 +252,7 @@ class IssuanceRequestCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: titleSize,
                         fontWeight: FontWeight.w800,
                         color: scheme.onSurface,
                       ),
@@ -220,93 +278,91 @@ class IssuanceRequestCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (isOwn)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      margin: const EdgeInsets.only(right: 6),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '내 요청',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: accent,
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '담당: ${assignee.isEmpty ? '미지정' : assignee}',
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                '$extra$partialExtra',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.92),
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Icon(
-                    Icons.schedule_rounded,
-                    size: 13,
-                    color: accent.withValues(alpha: 0.7),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      '$requestStepText · ${row.createdAtText}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                        fontSize: 11.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (!row.isCompleted && row.issue == null) ...[
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '요청 접수 후 처리 대기건',
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
+                        const SizedBox(height: 4),
+                        Text(
+                          '담당: ${assignee.isEmpty ? '미지정' : assignee}',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: bodySize,
+                            fontWeight:
+                                isOwn ? FontWeight.w700 : FontWeight.w400,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$extra$partialExtra',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: isOwn ? 0.95 : 0.92,
+                            ),
+                            fontSize: metaSize,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: large ? 8 : 6),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.schedule_rounded,
+                              size: large ? 14 : 13,
+                              color: accent.withValues(alpha: 0.7),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                '$requestStepText · ${row.createdAtText}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant.withValues(
+                                    alpha: 0.8,
+                                  ),
+                                  fontSize: metaSize,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (!row.isCompleted && row.issue == null) ...[
+                          SizedBox(height: large ? 8 : 6),
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: large ? 10 : 8,
+                              vertical: large ? 4 : 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(
+                                alpha: isOwn ? 0.2 : 0.12,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              isOwn
+                                  ? '내 요청 · 처리 대기 중'
+                                  : '요청 접수 후 처리 대기건',
+                              style: TextStyle(
+                                color: accent,
+                                fontSize: chipSize,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
               ],
-            ],
+            ),
           ),
         ),
       ),

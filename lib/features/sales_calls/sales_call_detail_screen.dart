@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1171,17 +1172,39 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.25),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  _displayStatusLabel(m),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+              Flexible(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _displayStatusLabel(m),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
+                    ),
+                    if (m.displayInquiryMethod != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white.withOpacity(0.35)),
+                        ),
+                        child: Text(
+                          m.displayInquiryMethod!,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11),
+                        ),
+                      ),
+                  ],
                 ),
               ),
+              const SizedBox(width: 8),
               // 담당자 명시 (색상 적용)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

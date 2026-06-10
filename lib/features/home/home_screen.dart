@@ -33,14 +33,14 @@ class HomeIncompleteBreakdown extends ConsumerStatefulWidget {
       _HomeIncompleteBreakdownState();
 }
 
-enum _SummaryFilter { today, week, month, year, total }
+enum _SummaryFilter { pending, today, week, month, year, total }
 
 class _HomeIncompleteBreakdownState
     extends ConsumerState<HomeIncompleteBreakdown> {
   static const double _incompleteGridTileH = 52.0;
   static const double _incompleteGridGap = 8.0;
 
-  _SummaryFilter _currentFilter = _SummaryFilter.today;
+  _SummaryFilter _currentFilter = _SummaryFilter.pending;
 
   @override
   void initState() {
@@ -56,8 +56,9 @@ class _HomeIncompleteBreakdownState
 
   void _syncFilterFromHub() {
     if (!mounted) return;
-    // 금년·전체는 미통화 탭 전용 — 흐름 탭 일/주/월과 동기화하지 않음.
-    if (_currentFilter == _SummaryFilter.year ||
+    // 처리대기·금년·전체는 미통화 탭 전용 — 흐름 탭 일/주/월과 동기화하지 않음.
+    if (_currentFilter == _SummaryFilter.pending ||
+        _currentFilter == _SummaryFilter.year ||
         _currentFilter == _SummaryFilter.total) {
       return;
     }
@@ -69,6 +70,8 @@ class _HomeIncompleteBreakdownState
   void _publishFilterToHub(_SummaryFilter filter) {
     final today = todayYmdSeoul();
     switch (filter) {
+      case _SummaryFilter.pending:
+        break;
       case _SummaryFilter.today:
         ref.read(homeHubNavStepProvider.notifier).state = HubNavStep.day;
         ref.read(homeHubFlowAnchorYmdProvider.notifier).state = today;
@@ -91,6 +94,7 @@ class _HomeIncompleteBreakdownState
 
   IncompleteSummaryPeriod _toBreakdownPeriod(_SummaryFilter filter) =>
       switch (filter) {
+        _SummaryFilter.pending => IncompleteSummaryPeriod.pending,
         _SummaryFilter.today => IncompleteSummaryPeriod.today,
         _SummaryFilter.week => IncompleteSummaryPeriod.week,
         _SummaryFilter.month => IncompleteSummaryPeriod.month,
@@ -100,6 +104,7 @@ class _HomeIncompleteBreakdownState
 
   Color _filterAccent(_SummaryFilter filter, ColorScheme scheme) =>
       switch (filter) {
+        _SummaryFilter.pending => scheme.error,
         _SummaryFilter.today => scheme.primary,
         _SummaryFilter.week => scheme.tertiary,
         _SummaryFilter.month => scheme.secondary,
@@ -241,7 +246,9 @@ class _HomeIncompleteBreakdownState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '담당자별 미통화',
+                            _currentFilter == _SummaryFilter.pending
+                                ? '처리할 미통화'
+                                : '담당자별 미통화',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -249,7 +256,9 @@ class _HomeIncompleteBreakdownState
                             ),
                           ),
                           Text(
-                            '원본 담당자 기준 · ${_filterLabel(_currentFilter)}',
+                            _currentFilter == _SummaryFilter.pending
+                                ? '최근 $pendingUncalledLookbackDays일 · 원본 담당자 기준'
+                                : '원본 담당자 기준 · ${_filterLabel(_currentFilter)}',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -368,12 +377,12 @@ class _HomeIncompleteBreakdownState
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) {
-                              final range = _incompleteListDateArgs();
+                              final query = _incompleteListQueryArgs();
                               return SalesCallListScreen(
-                                mode: ListQueryMode.incomplete,
+                                mode: query.mode,
                                 initialAssignee: name,
-                                date: range.date,
-                                dateEndInclusive: range.dateEndInclusive,
+                                date: query.date,
+                                dateEndInclusive: query.dateEndInclusive,
                               );
                             },
                           ),
@@ -551,6 +560,7 @@ class _HomeIncompleteBreakdownState
   }
 
   String _filterLabel(_SummaryFilter f) => switch (f) {
+    _SummaryFilter.pending => '처리대기',
     _SummaryFilter.today => '금일',
     _SummaryFilter.week => '금주',
     _SummaryFilter.month => '금월',
@@ -559,6 +569,8 @@ class _HomeIncompleteBreakdownState
   };
 
   String _filterPeriodHint(_SummaryFilter f, String anchorYmd) => switch (f) {
+    _SummaryFilter.pending =>
+      '${pendingUncalledFromYmd(anchorYmd)} ~ $anchorYmd',
     _SummaryFilter.today => anchorYmd,
     _SummaryFilter.week => () {
       final w = seoulWeekRangeContaining(anchorYmd);
@@ -1283,9 +1295,34 @@ class _HomeIncompleteBreakdownState
     );
   }
 
+  ({
+    ListQueryMode mode,
+    String? date,
+    String? dateEndInclusive,
+  }) _incompleteListQueryArgs() {
+    final anchor = ref.read(homeHubFlowAnchorYmdProvider);
+    if (_currentFilter == _SummaryFilter.pending) {
+      return (
+        mode: ListQueryMode.pendingUncalled,
+        date: pendingUncalledFromYmd(anchor),
+        dateEndInclusive: null,
+      );
+    }
+    final range = _incompleteListDateArgs();
+    return (
+      mode: ListQueryMode.incomplete,
+      date: range.date,
+      dateEndInclusive: range.dateEndInclusive,
+    );
+  }
+
   ({String? date, String? dateEndInclusive}) _incompleteListDateArgs() {
     final anchor = ref.read(homeHubFlowAnchorYmdProvider);
     return switch (_currentFilter) {
+      _SummaryFilter.pending => (
+        date: pendingUncalledFromYmd(anchor),
+        dateEndInclusive: null,
+      ),
       _SummaryFilter.today => (date: anchor, dateEndInclusive: null),
       _SummaryFilter.week => () {
         final w = seoulWeekRangeContaining(anchor);
@@ -1403,14 +1440,14 @@ class _HomeIncompleteBreakdownState
           return;
         }
         HapticFeedback.lightImpact();
-        final range = _incompleteListDateArgs();
+        final query = _incompleteListQueryArgs();
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => SalesCallListScreen(
-              mode: ListQueryMode.incomplete,
+              mode: query.mode,
               initialAssignee: name,
-              date: range.date,
-              dateEndInclusive: range.dateEndInclusive,
+              date: query.date,
+              dateEndInclusive: query.dateEndInclusive,
             ),
           ),
         );
@@ -1452,6 +1489,10 @@ class _HomeIncompleteBreakdownState
                 String label;
 
                 switch (filter) {
+                  case _SummaryFilter.pending:
+                    filterColor = scheme.error;
+                    label = '처리대기';
+                    break;
                   case _SummaryFilter.today:
                     filterColor = scheme.primary;
                     label = '금일';
@@ -1476,7 +1517,10 @@ class _HomeIncompleteBreakdownState
 
                 return Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _currentFilter = filter),
+                    onTap: () {
+                      setState(() => _currentFilter = filter);
+                      _publishFilterToHub(filter);
+                    },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.symmetric(horizontal: 2),
@@ -1514,7 +1558,9 @@ class _HomeIncompleteBreakdownState
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  '선택한 기간에 미통화 건이 없습니다.',
+                  _currentFilter == _SummaryFilter.pending
+                      ? '처리할 미통화가 없습니다.'
+                      : '선택한 기간에 미통화 건이 없습니다.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: scheme.onSurfaceVariant,

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/features/issuance/issuance_completed_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_page.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
@@ -20,8 +21,9 @@ class IssuanceRequestScreen extends ConsumerStatefulWidget {
 class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   IssuanceDomain _domain = IssuanceDomain.taxInvoice;
   bool _isListeningLaunch = false;
+  bool _refreshing = false;
 
-  Future<void> _refreshIssuanceData() async {
+  Future<void> _reloadIssuanceData() async {
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
     ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
@@ -34,6 +36,15 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       ref.read(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
       ref.read(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
     ]);
+  }
+
+  Future<void> _refreshIssuanceData({bool showCompletionSnackBar = false}) {
+    return runIssuanceRefresh(
+      context: context,
+      onLoadingChanged: (loading) => setState(() => _refreshing = loading),
+      showCompletionSnackBar: showCompletionSnackBar,
+      action: _reloadIssuanceData,
+    );
   }
 
   void _consumePendingLaunch() {
@@ -188,14 +199,24 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         ),
                       ),
                       IconButton(
-                        tooltip: '새로고침',
+                        tooltip: _refreshing ? '새로고침 중…' : '새로고침',
                         visualDensity: VisualDensity.compact,
                         style: IconButton.styleFrom(
                           backgroundColor: Colors.white.withValues(alpha: 0.2),
                           foregroundColor: Colors.white,
                         ),
-                        onPressed: () => unawaited(_refreshIssuanceData()),
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        onPressed: _refreshing
+                            ? null
+                            : () => unawaited(
+                                  _refreshIssuanceData(
+                                    showCompletionSnackBar: true,
+                                  ),
+                                ),
+                        icon: issuanceRefreshButtonIcon(
+                          loading: _refreshing,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                       ),
                     ],
                   ),
@@ -266,6 +287,18 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  _HubMenuTile(
+                    icon: IssuanceListKind.request.icon,
+                    title: IssuanceListKind.request.title,
+                    count: count(myPendingAsync),
+                    subtitle: pendingAsync.valueOrNull == null
+                        ? null
+                        : '전체 ${pendingAsync.value!.length}',
+                    accent: Colors.blue.shade700,
+                    large: true,
+                    onTap: () => _openListPage(IssuanceListKind.request),
+                  ),
+                  const SizedBox(height: 8),
                   GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -274,16 +307,6 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     crossAxisSpacing: 8,
                     childAspectRatio: 2.1,
                     children: [
-                      _HubMenuTile(
-                        icon: IssuanceListKind.request.icon,
-                        title: IssuanceListKind.request.title,
-                        count: count(myPendingAsync),
-                        subtitle: pendingAsync.valueOrNull == null
-                            ? null
-                            : '전체 ${pendingAsync.value!.length}',
-                        accent: Colors.blue.shade700,
-                        onTap: () => _openListPage(IssuanceListKind.request),
-                      ),
                       if (isTax)
                         _HubMenuTile(
                           icon: IssuanceListKind.partial.icon,
@@ -400,6 +423,7 @@ class _HubMenuTile extends StatelessWidget {
     required this.accent,
     required this.onTap,
     this.subtitle,
+    this.large = false,
   });
 
   final IconData icon;
@@ -408,77 +432,151 @@ class _HubMenuTile extends StatelessWidget {
   final Color accent;
   final VoidCallback onTap;
   final String? subtitle;
+  final bool large;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: scheme.surfaceContainerLowest,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(large ? 14 : 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(large ? 14 : 12),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: accent.withValues(alpha: 0.22)),
+          padding: EdgeInsets.symmetric(
+            horizontal: large ? 14 : 10,
+            vertical: large ? 14 : 8,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, color: accent, size: 18),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(large ? 14 : 12),
+            border: Border.all(
+              color: accent.withValues(alpha: large ? 0.35 : 0.22),
+              width: large ? 1.5 : 1,
+            ),
+            boxShadow: large
+                ? [
+                    BoxShadow(
                       color: accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
-                    child: Text(
+                  ]
+                : null,
+          ),
+          child: large
+              ? Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(icon, color: accent, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle == null
+                                ? '내 발급요청 확인'
+                                : '내 $count건 · $subtitle',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
                       '$count',
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         color: accent,
-                        fontSize: 12,
+                        fontSize: 30,
+                        height: 1,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
-                  letterSpacing: -0.2,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, color: accent, size: 18),
+                        const Spacer(),
+                        if (subtitle != null) ...[
+                          Flexible(
+                            child: Text(
+                              subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: accent,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurface,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  subtitle!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
-          ),
         ),
       ),
     );

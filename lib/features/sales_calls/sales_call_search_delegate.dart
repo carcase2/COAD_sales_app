@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -124,6 +125,8 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
 
   Widget _buildSearchItem(BuildContext context, SalesCall c, ColorScheme scheme) {
     final statusLabel = c.effectiveStatusLabel();
+    final stageLabel = c.displayStageLabel;
+    final inquiryMethod = c.displayInquiryMethod;
     final inquiry = (c.inquiryContent ?? '').trim();
     return Container(
       margin: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
@@ -180,20 +183,16 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: scheme.primaryContainer.withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          statusLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: scheme.onPrimaryContainer,
-                          ),
-                        ),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          _searchBadge(stageLabel, scheme.secondaryContainer, scheme.onSecondaryContainer),
+                          _searchBadge(statusLabel, scheme.primaryContainer, scheme.onPrimaryContainer, bold: true),
+                          if (inquiryMethod != null)
+                            _searchBadge(inquiryMethod, scheme.tertiaryContainer, scheme.onTertiaryContainer),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -308,6 +307,24 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _searchBadge(String label, Color bg, Color fg, {bool bold = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
+          color: fg,
         ),
       ),
     );

@@ -106,10 +106,22 @@ String issuanceRequestOwnerName(IssuanceRequestRow row) {
   return (row.master['created_by'] ?? '').toString().trim();
 }
 
+/// 이름 비교용 정규화 — 공백 차이("김경덕 " vs "김경덕")·연속 공백·대소문자 무시.
+String _normalizeOwnerName(String raw) =>
+    raw.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+/// 내 요청 판별.
+///
+/// DB(웹 포함)가 requester/created_by에 이름만 저장하므로 이름 기반 비교가
+/// 한계지만, 정규화 후 requester·created_by 둘 다 확인해 누락을 줄인다.
 bool issuanceIsOwnRequest(IssuanceRequestRow row, String? userName) {
-  final me = (userName ?? '').trim();
+  final me = _normalizeOwnerName(userName ?? '');
   if (me.isEmpty) return false;
-  return issuanceRequestOwnerName(row) == me;
+  final requester =
+      _normalizeOwnerName((row.master['requester'] ?? '').toString());
+  final createdBy =
+      _normalizeOwnerName((row.master['created_by'] ?? '').toString());
+  return requester == me || createdBy == me;
 }
 
 List<IssuanceRequestRow> sortIssuanceRowsOwnFirst(
@@ -179,13 +191,25 @@ class IssuanceRequestService {
     final invoices = List<Map<String, dynamic>>.from(invoicesRes);
     if (invoices.isEmpty) return 0;
 
+    final invoiceIds =
+        invoices.map((e) => e['id']).where((id) => id != null).toList();
+    final issuesRes = invoiceIds.isEmpty
+        ? <dynamic>[]
+        : await _client
+              .from('tax_invoice_issues')
+              .select('tax_invoice_id, invoice_image_url')
+              .inFilter('tax_invoice_id', invoiceIds);
+    final issuesByInvoice = <dynamic, List<Map<String, dynamic>>>{};
+    for (final issue in List<Map<String, dynamic>>.from(issuesRes)) {
+      final id = issue['tax_invoice_id'];
+      issuesByInvoice.putIfAbsent(id, () => []);
+      issuesByInvoice[id]!.add(issue);
+    }
+
     var count = 0;
     for (final invoice in invoices) {
-      final issuesRes = await _client
-          .from('tax_invoice_issues')
-          .select('id, invoice_image_url')
-          .eq('tax_invoice_id', invoice['id']);
-      final issues = List<Map<String, dynamic>>.from(issuesRes);
+      final issues =
+          issuesByInvoice[invoice['id']] ?? const <Map<String, dynamic>>[];
       final hasIssuedIssue = issues.any(
         (i) => _hasText(i['invoice_image_url']),
       );
@@ -544,8 +568,13 @@ class IssuanceRequestService {
     return rows;
   }
 
+  /// [isCancelledStatus]와 동일한 취소 상태 값 (서버 필터용).
+  static const _cancelledStatusValues = ['cancelled', 'canceled', 'cancel', '취소'];
+
   Future<List<IssuanceRequestRow>> _fetchCancelledTaxInvoices() async {
-    final invoicesRes = await _client.from('tax_invoices').select('''
+    final invoicesRes = await _client
+        .from('tax_invoices')
+        .select('''
       id,
       created_at,
       status,
@@ -559,10 +588,10 @@ class IssuanceRequestService {
       cancel_reason,
       cancelled_at,
       cancelled_by
-    ''');
+    ''')
+        .inFilter('status', _cancelledStatusValues);
     final rows = <IssuanceRequestRow>[];
     for (final invoice in List<Map<String, dynamic>>.from(invoicesRes)) {
-      if (!isCancelledStatus((invoice['status'] ?? '').toString())) continue;
       rows.add(
         IssuanceRequestRow(
           master: invoice,
@@ -577,7 +606,9 @@ class IssuanceRequestService {
   }
 
   Future<List<IssuanceRequestRow>> _fetchCancelledPerformanceBonds() async {
-    final bondsRes = await _client.from('performance_bonds').select('''
+    final bondsRes = await _client
+        .from('performance_bonds')
+        .select('''
       id,
       created_at,
       status,
@@ -590,10 +621,10 @@ class IssuanceRequestService {
       cancel_reason,
       cancelled_at,
       cancelled_by
-    ''');
+    ''')
+        .inFilter('status', _cancelledStatusValues);
     final rows = <IssuanceRequestRow>[];
     for (final bond in List<Map<String, dynamic>>.from(bondsRes)) {
-      if (!isCancelledStatus((bond['status'] ?? '').toString())) continue;
       rows.add(
         IssuanceRequestRow(
           master: bond,

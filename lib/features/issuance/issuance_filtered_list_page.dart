@@ -34,6 +34,11 @@ class _IssuanceFilteredListPageState
   late IssuanceDomain _domain;
 
   bool _openedPendingDetail = false;
+  bool _refreshing = false;
+
+  /// 부분발급 담당자 필터 — null이면 전체.
+  String? _assigneeFilter;
+  bool _assigneeFilterInitialized = false;
 
   @override
   void initState() {
@@ -75,12 +80,21 @@ class _IssuanceFilteredListPageState
 
   bool get _isTax => _domain == IssuanceDomain.taxInvoice;
 
-  Future<void> _refresh() async {
+  Future<void> _reloadRows() async {
     ref.invalidate(issuanceAllRowsProvider(_domain));
     ref.invalidate(issuanceCancelledRowsProvider(_domain));
     ref.invalidate(issuanceRequestBadgeCountProvider);
     ref.invalidate(issuanceRequestTotalBadgeCountProvider);
     await ref.read(issuanceAllRowsProvider(_domain).future);
+  }
+
+  Future<void> _refresh({bool showCompletionSnackBar = false}) {
+    return runIssuanceRefresh(
+      context: context,
+      onLoadingChanged: (loading) => setState(() => _refreshing = loading),
+      showCompletionSnackBar: showCompletionSnackBar,
+      action: _reloadRows,
+    );
   }
 
   AsyncValue<List<IssuanceRequestRow>> _rowsAsync() {
@@ -148,7 +162,112 @@ class _IssuanceFilteredListPageState
 
   void _switchDomain(IssuanceDomain domain) {
     if (_domain == domain) return;
-    setState(() => _domain = domain);
+    setState(() {
+      _domain = domain;
+      _assigneeFilterInitialized = false;
+      _assigneeFilter = null;
+    });
+  }
+
+  /// 기본값: 로그인 사용자에게 부분발급 건이 있으면 본인, 없으면 전체.
+  void _initAssigneeFilterIfNeeded(List<IssuanceRequestRow> rows) {
+    if (widget.kind != IssuanceListKind.partial) return;
+    if (_assigneeFilterInitialized) return;
+    _assigneeFilterInitialized = true;
+    final user = ref.read(authControllerProvider);
+    if (user == null) return;
+    final hasMine = rows.any((r) => issuanceIsOwnRequest(r, user.name));
+    _assigneeFilter = hasMine ? user.name.trim() : null;
+  }
+
+  List<IssuanceRequestRow> _applyAssigneeFilter(
+    List<IssuanceRequestRow> rows,
+  ) {
+    if (widget.kind != IssuanceListKind.partial) return rows;
+    final filter = _assigneeFilter?.trim();
+    if (filter == null || filter.isEmpty) return rows;
+    return rows
+        .where((r) => issuanceRequestOwnerName(r).trim() == filter)
+        .toList();
+  }
+
+  Widget _buildAssigneeFilterBar(
+    List<IssuanceRequestRow> rows,
+    ColorScheme scheme,
+  ) {
+    final user = ref.watch(authControllerProvider);
+    final myName = user?.name.trim() ?? '';
+    final accent = _isTax
+        ? Colors.indigo.shade600
+        : Colors.deepOrange.shade700;
+
+    final owners = <String>{
+      for (final r in rows)
+        if (issuanceRequestOwnerName(r).trim().isNotEmpty)
+          issuanceRequestOwnerName(r).trim(),
+    }.toList()..sort();
+    // 본인을 맨 앞으로.
+    if (owners.remove(myName)) owners.insert(0, myName);
+
+    Widget chip({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+    }) {
+      return FilterChip(
+        label: Text(label),
+        selected: selected,
+        showCheckmark: false,
+        onSelected: (_) => onTap(),
+        selectedColor: accent.withValues(alpha: 0.16),
+        labelStyle: TextStyle(
+          fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+          color: selected ? accent : scheme.onSurfaceVariant,
+          fontSize: 12,
+        ),
+        visualDensity: VisualDensity.compact,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 0, 0),
+      child: Row(
+        children: [
+          Text(
+            '담당자',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(right: 16),
+              child: Row(
+                children: [
+                  chip(
+                    label: '전체',
+                    selected: _assigneeFilter == null,
+                    onTap: () => setState(() => _assigneeFilter = null),
+                  ),
+                  for (final owner in owners) ...[
+                    const SizedBox(width: 6),
+                    chip(
+                      label: owner == myName ? '$owner (나)' : owner,
+                      selected: _assigneeFilter == owner,
+                      onTap: () => setState(() => _assigneeFilter = owner),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildDomainSwitcher(ColorScheme scheme) {
@@ -183,33 +302,153 @@ class _IssuanceFilteredListPageState
     );
   }
 
-  Widget _sectionHeader(String title, int count, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 2),
+  Widget _buildMyRequestsBanner({
+    required int myCount,
+    required int totalCount,
+    required Color accent,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [accent, accent.withValues(alpha: 0.82)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.28),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
       child: Row(
         children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.person_pin_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '내 발급요청',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '확인할 건 $myCount건 · 전체 $totalCount건',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
           Text(
-            title,
+            '$myCount',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(
+    String title,
+    int count,
+    Color color, {
+    bool highlight = false,
+  }) {
+    if (highlight) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 16,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              color: color.withValues(alpha: 0.35),
+              endIndent: 8,
+            ),
+          ),
+          Text(
+            '$title $count',
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
               color: color,
             ),
           ),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
+          Expanded(
+            child: Divider(
+              color: color.withValues(alpha: 0.35),
+              indent: 8,
             ),
           ),
         ],
@@ -224,6 +463,7 @@ class _IssuanceFilteredListPageState
         IssuanceRequestCard(
           row: row,
           isOwn: isOwn,
+          large: widget.kind == IssuanceListKind.request,
           onTap: () => showIssuanceRequestDetail(context, row),
         ),
         if (widget.kind == IssuanceListKind.request ||
@@ -250,7 +490,9 @@ class _IssuanceFilteredListPageState
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         itemCount: displayRows.length,
-        separatorBuilder: (_, index) => const SizedBox(height: 10),
+        separatorBuilder: (_, index) => SizedBox(
+          height: widget.kind == IssuanceListKind.request ? 12 : 10,
+        ),
         itemBuilder: (context, index) {
           final row = displayRows[index];
           return _buildRowTile(
@@ -262,12 +504,29 @@ class _IssuanceFilteredListPageState
     }
 
     final split = splitIssuanceRowsByOwner(rows, user?.name);
+    final ownAccent = _isTax
+        ? Colors.indigo.shade600
+        : Colors.deepOrange.shade700;
     final children = <Widget>[];
     if (split.mine.isNotEmpty) {
-      children.add(_sectionHeader('내 발급요청', split.mine.length, Colors.blue.shade700));
+      children.add(
+        _buildMyRequestsBanner(
+          myCount: split.mine.length,
+          totalCount: rows.length,
+          accent: ownAccent,
+        ),
+      );
+      children.add(
+        _sectionHeader(
+          '내 요청 목록',
+          split.mine.length,
+          ownAccent,
+          highlight: true,
+        ),
+      );
       for (final row in split.mine) {
         children.add(_buildRowTile(row, isOwn: true));
-        children.add(const SizedBox(height: 10));
+        children.add(const SizedBox(height: 12));
       }
     }
     if (split.others.isNotEmpty) {
@@ -279,7 +538,12 @@ class _IssuanceFilteredListPageState
         ),
       );
       for (var i = 0; i < split.others.length; i++) {
-        children.add(_buildRowTile(split.others[i], isOwn: false));
+        children.add(
+          Opacity(
+            opacity: 0.88,
+            child: _buildRowTile(split.others[i], isOwn: false),
+          ),
+        );
         if (i < split.others.length - 1) {
           children.add(const SizedBox(height: 10));
         }
@@ -315,6 +579,33 @@ class _IssuanceFilteredListPageState
     };
   }
 
+  Widget _emptyScrollable(String message, ColorScheme scheme) {
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -327,9 +618,11 @@ class _IssuanceFilteredListPageState
         title: Text(meta.title),
         actions: [
           IconButton(
-            tooltip: '새로고침',
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh_rounded),
+            tooltip: _refreshing ? '새로고침 중…' : '새로고침',
+            onPressed: _refreshing
+                ? null
+                : () => _refresh(showCompletionSnackBar: true),
+            icon: issuanceRefreshButtonIcon(loading: _refreshing),
           ),
         ],
       ),
@@ -337,27 +630,28 @@ class _IssuanceFilteredListPageState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildDomainSwitcher(scheme),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-            child: rowsAsync.maybeWhen(
-              data: (rows) => Text(
-                _listSubtitle(rows),
-                style: TextStyle(
-                  fontSize: 13,
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+          if (widget.kind != IssuanceListKind.request)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+              child: rowsAsync.maybeWhen(
+                data: (rows) => Text(
+                  _listSubtitle(rows),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              orElse: () => Text(
-                meta.subtitle,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+                orElse: () => Text(
+                  meta.subtitle,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ),
           Expanded(
             child: rowsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -371,37 +665,29 @@ class _IssuanceFilteredListPageState
               ),
               data: (rows) {
                 _maybeOpenPendingDetail(rows);
+                _initAssigneeFilterIfNeeded(rows);
                 if (rows.isEmpty) {
-                  return RefreshIndicator(
-                    onRefresh: _refresh,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) => SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minHeight: constraints.maxHeight,
-                          ),
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Text(
-                                _emptyMessage(),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: scheme.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
+                  return _emptyScrollable(_emptyMessage(), scheme);
                 }
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: _buildListBody(rows, scheme),
+                final filtered = _applyAssigneeFilter(rows);
+                final showFilterBar =
+                    widget.kind == IssuanceListKind.partial && _isTax;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (showFilterBar) _buildAssigneeFilterBar(rows, scheme),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? _emptyScrollable(
+                              '선택한 담당자의 부분발급 건이 없습니다.',
+                              scheme,
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _refresh,
+                              child: _buildListBody(filtered, scheme),
+                            ),
+                    ),
+                  ],
                 );
               },
             ),

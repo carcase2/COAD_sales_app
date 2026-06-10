@@ -90,3 +90,58 @@ Future<String?> showIssuanceCancelDialog(
   controller.dispose();
   return result;
 }
+
+/// AppBar 새로고침 버튼용 — 진행 중이면 스피너, 아니면 새로고침 아이콘.
+Widget issuanceRefreshButtonIcon({
+  required bool loading,
+  double size = 24,
+  Color? color,
+}) {
+  if (!loading) {
+    return Icon(Icons.refresh_rounded, size: size, color: color);
+  }
+  return SizedBox(
+    width: size,
+    height: size,
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      color: color,
+    ),
+  );
+}
+
+/// 새로고침 실행 + 로딩 상태·완료/실패 스낵바.
+Future<void> runIssuanceRefresh({
+  required BuildContext context,
+  required Future<void> Function() action,
+  required void Function(bool loading) onLoadingChanged,
+  bool showCompletionSnackBar = true,
+}) async {
+  onLoadingChanged(true);
+  try {
+    await action();
+    if (!context.mounted) return;
+    if (showCompletionSnackBar) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('새로고침 완료'),
+            duration: Duration(milliseconds: 1600),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    // 에러는 스낵바로 안내 완료 — 호출부(onPressed 등)에서 await하지 않으므로
+    // rethrow하면 unhandled async exception이 된다.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(issuanceUserErrorMessage(e))),
+      );
+  } finally {
+    if (context.mounted) onLoadingChanged(false);
+  }
+}
