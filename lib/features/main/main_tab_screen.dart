@@ -182,11 +182,23 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     _issuanceCompletionDebounce?.cancel();
     _issuanceCompletionDebounce = Timer(const Duration(milliseconds: 500), () {
       if (!mounted) return;
-      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-      unawaited(_checkIssuanceCompletionAndNotify());
-      unawaited(_checkIssuanceRequestAndNotify());
+      unawaited(_runIssuanceWatchCheck());
     });
+  }
+
+  Future<void> _runIssuanceWatchCheck() async {
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    try {
+      await Future.wait([
+        ref.refresh(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
+        ref.refresh(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
+      ]);
+    } catch (_) {
+      // refetch 실패 시에도 감시 로직은 한 번 시도
+    }
+    await _checkIssuanceCompletionAndNotify();
+    await _checkIssuanceRequestAndNotify();
   }
 
   Future<void> _checkIssuanceCompletionAndNotify() async {

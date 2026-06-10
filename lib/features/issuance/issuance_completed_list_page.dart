@@ -8,9 +8,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 발급완료 전용 화면 — 오늘 완료 건 강조, 담당자 칩으로 바로 필터.
 class IssuanceCompletedListPage extends ConsumerStatefulWidget {
-  const IssuanceCompletedListPage({required this.domain, super.key});
+  const IssuanceCompletedListPage({
+    required this.domain,
+    this.openMasterId,
+    this.openIssueId,
+    super.key,
+  });
 
   final IssuanceDomain domain;
+  final String? openMasterId;
+  final String? openIssueId;
 
   @override
   ConsumerState<IssuanceCompletedListPage> createState() =>
@@ -25,6 +32,7 @@ class _IssuanceCompletedListPageState
     extends ConsumerState<IssuanceCompletedListPage> {
   late IssuanceDomain _domain;
   bool _olderExpanded = false;
+  bool _openedPendingDetail = false;
   bool _refreshing = false;
   _CompletedDateFilter _dateFilter = _CompletedDateFilter.all;
   _MesFilter _mesFilter = _MesFilter.all;
@@ -45,6 +53,23 @@ class _IssuanceCompletedListPageState
   void initState() {
     super.initState();
     _domain = widget.domain;
+  }
+
+  void _maybeOpenPendingDetail(List<IssuanceRequestRow> rows) {
+    if (_openedPendingDetail || !mounted) return;
+    final masterId = widget.openMasterId;
+    if (masterId == null || masterId.isEmpty) return;
+    final target = findIssuanceRowByIds(
+      rows,
+      masterId: masterId,
+      issueId: widget.openIssueId,
+    );
+    if (target == null) return;
+    _openedPendingDetail = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showIssuanceRequestDetail(context, target);
+    });
   }
 
   bool get _isTax => _domain == IssuanceDomain.taxInvoice;
@@ -461,6 +486,7 @@ class _IssuanceCompletedListPageState
           ),
         ),
         data: (allCompleted) {
+          _maybeOpenPendingDetail(allCompleted);
           final user = ref.watch(authControllerProvider);
           final filtered = sortIssuanceRowsOwnFirst(
             _applyListFilters(allCompleted),

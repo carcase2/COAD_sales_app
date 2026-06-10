@@ -573,6 +573,7 @@ class NotificationService {
         issueId: issueId.isEmpty ? null : issueId,
         listKind: null,
       );
+      _pendingMessageData = null;
     } catch (_) {
       _queuePendingData(payload);
     }
@@ -970,6 +971,57 @@ class NotificationService {
         masterId: masterId,
         issueId: issueId,
       );
+    }
+  }
+
+  /// 발급요청 등록 후 FCM 브로드캐스트 (접수 `notify-new-call`과 동일 패턴).
+  static Future<void> invokeIssuanceRequestPush({
+    required IssuanceDomain domain,
+    required String masterId,
+    String? issueId,
+    required String displayName,
+    bool isUrgent = false,
+    bool isPartialRequest = false,
+    double? issuePercentage,
+  }) async {
+    final title = _issuanceRequestTitle(
+      domain: domain,
+      isUrgent: isUrgent,
+      isPartialRequest: isPartialRequest,
+    );
+    final body = _issuanceRequestBody(
+      displayName: displayName,
+      isPartialRequest: isPartialRequest,
+      issuePercentage: issuePercentage,
+    );
+    try {
+      final res = await Supabase.instance.client.functions.invoke(
+        'notify-issuance-request',
+        body: {
+          'type': 'INSERT',
+          'record': {
+            'notification_type': 'issuance_request',
+            'issuance_domain': domain.name,
+            'master_id': masterId,
+            if (issueId != null && issueId.isNotEmpty) 'issue_id': issueId,
+            'title': title,
+            'body': body,
+          },
+        },
+      );
+      if (kDebugMode) {
+        print(
+          '[notify-issuance-request] status=${res.status} data=${res.data}',
+        );
+      }
+      if (res.status >= 400 && kDebugMode) {
+        print('[notify-issuance-request] push invoke returned error status');
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        print('[notify-issuance-request] invoke failed: $e');
+        print(st);
+      }
     }
   }
 

@@ -1,4 +1,38 @@
+import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
+
+/// 알림 deep link용 — master/issue id로 발급 행 검색.
+IssuanceRequestRow? findIssuanceRowByIds(
+  List<IssuanceRequestRow> rows, {
+  required String masterId,
+  String? issueId,
+}) {
+  final mid = masterId.trim();
+  if (mid.isEmpty) return null;
+  final iid = issueId?.trim() ?? '';
+  IssuanceRequestRow? fallback;
+  for (final row in rows) {
+    if (row.master['id']?.toString() != mid) continue;
+    fallback ??= row;
+    if (iid.isNotEmpty) {
+      if (row.issue?['id']?.toString() == iid) return row;
+    } else {
+      return row;
+    }
+  }
+  return fallback;
+}
+
+IssuanceListKind issuanceListKindForRow(IssuanceRequestRow row) {
+  return switch (row.kind) {
+    IssuanceRowKind.request => IssuanceListKind.request,
+    IssuanceRowKind.partial => IssuanceListKind.partial,
+    IssuanceRowKind.completed || IssuanceRowKind.issued =>
+      IssuanceListKind.fullyCompleted,
+    IssuanceRowKind.cancelled => IssuanceListKind.cancelled,
+  };
+}
 
 /// Supabase/네트워크 예외를 사용자용 한글 메시지로 변환.
 String issuanceUserErrorMessage(Object error) {

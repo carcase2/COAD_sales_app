@@ -576,12 +576,31 @@ class _IssuanceRequestCreateScreenState
         result = await _submitBond(userName);
       }
       if (!mounted) return;
-      await NotificationService.markIssuanceRequestSeen(
-        prefs: ref.read(appDependenciesProvider).prefs,
-        domain: result.domain,
-        masterId: result.masterId,
-        issueId: result.issueId,
-      );
+      final isUrgent =
+          result.domain == IssuanceDomain.taxInvoice && result.issueId != null;
+      try {
+        await NotificationService.showIssuanceRequestCreatedAlert(
+          prefs: ref.read(appDependenciesProvider).prefs,
+          domain: result.domain,
+          masterId: result.masterId,
+          issueId: result.issueId,
+          displayName: result.displayName,
+          isUrgent: isUrgent,
+        );
+      } catch (e) {
+        debugPrint('[issuance-request-alert] failed: $e');
+      }
+      try {
+        await NotificationService.invokeIssuanceRequestPush(
+          domain: result.domain,
+          masterId: result.masterId,
+          issueId: result.issueId,
+          displayName: result.displayName,
+          isUrgent: isUrgent,
+        );
+      } catch (e) {
+        debugPrint('[notify-issuance-request] failed: $e');
+      }
       ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
       ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
       ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));

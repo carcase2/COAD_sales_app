@@ -102,6 +102,18 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
       } catch (e) {
         debugPrint('[partial-issuance-request-alert] failed: $e');
       }
+      try {
+        await NotificationService.invokeIssuanceRequestPush(
+          domain: IssuanceDomain.taxInvoice,
+          masterId: invoiceId,
+          issueId: issueId,
+          displayName: customer,
+          isPartialRequest: true,
+          issuePercentage: pct,
+        );
+      } catch (e) {
+        debugPrint('[notify-issuance-request] failed: $e');
+      }
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {

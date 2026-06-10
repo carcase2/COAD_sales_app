@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_pag
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,23 +48,61 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     );
   }
 
+  Future<bool> _tryOpenDetailByIds({
+    required IssuanceDomain domain,
+    required String masterId,
+    String? issueId,
+  }) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(Duration(milliseconds: 350 * attempt));
+        if (!mounted) return false;
+      }
+      ref.invalidate(issuanceAllRowsProvider(domain));
+      try {
+        final rows = await ref.read(issuanceAllRowsProvider(domain).future);
+        final target = findIssuanceRowByIds(
+          rows,
+          masterId: masterId,
+          issueId: issueId,
+        );
+        if (target == null || !mounted) continue;
+        showIssuanceRequestDetail(context, target);
+        return true;
+      } catch (_) {
+        // 다음 시도에서 재조회
+      }
+    }
+    return false;
+  }
+
   void _consumePendingLaunch() {
     final next = ref.read(pendingIssuanceLaunchProvider);
     if (next == null) return;
     setState(() => _domain = next.domain);
     ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      final masterId = next.masterId?.trim() ?? '';
+      if (masterId.isNotEmpty) {
+        final opened = await _tryOpenDetailByIds(
+          domain: next.domain,
+          masterId: masterId,
+          issueId: next.issueId,
+        );
+        if (opened) return;
+      }
       if (next.showCompleted) {
-        unawaited(_openCompletedListPage());
+        await _openCompletedListPage(
+          openMasterId: next.masterId,
+          openIssueId: next.issueId,
+        );
       } else {
-        unawaited(
-          _openListPage(
-            next.listKind ?? IssuanceListKind.request,
-            domain: next.domain,
-            openMasterId: next.masterId,
-            openIssueId: next.issueId,
-          ),
+        await _openListPage(
+          next.listKind ?? IssuanceListKind.request,
+          domain: next.domain,
+          openMasterId: next.masterId,
+          openIssueId: next.issueId,
         );
       }
     });
@@ -90,10 +129,17 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     await _refreshIssuanceData();
   }
 
-  Future<void> _openCompletedListPage() async {
+  Future<void> _openCompletedListPage({
+    String? openMasterId,
+    String? openIssueId,
+  }) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => IssuanceCompletedListPage(domain: _domain),
+        builder: (_) => IssuanceCompletedListPage(
+          domain: _domain,
+          openMasterId: openMasterId,
+          openIssueId: openIssueId,
+        ),
       ),
     );
     if (!mounted) return;

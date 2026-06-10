@@ -50,31 +50,16 @@ class _IssuanceFilteredListPageState
     if (_openedPendingDetail || !mounted) return;
     final masterId = widget.openMasterId;
     if (masterId == null || masterId.isEmpty) return;
-    final issueId = widget.openIssueId;
-    IssuanceRequestRow? target;
-    for (final row in rows) {
-      if (row.master['id']?.toString() != masterId) continue;
-      if (issueId != null &&
-          issueId.isNotEmpty &&
-          row.issue?['id']?.toString() != issueId) {
-        continue;
-      }
-      target = row;
-      break;
-    }
-    if (target == null) {
-      for (final row in rows) {
-        if (row.master['id']?.toString() == masterId) {
-          target = row;
-          break;
-        }
-      }
-    }
+    final target = findIssuanceRowByIds(
+      rows,
+      masterId: masterId,
+      issueId: widget.openIssueId,
+    );
     if (target == null) return;
     _openedPendingDetail = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      showIssuanceRequestDetail(context, target!);
+      showIssuanceRequestDetail(context, target);
     });
   }
 
