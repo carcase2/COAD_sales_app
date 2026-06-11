@@ -146,7 +146,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           callback: (_) => _scheduleIssuanceWatchCheck(),
         )
         .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'tax_invoices',
+          callback: (_) => _scheduleIssuanceWatchCheck(),
+        )
+        .onPostgresChanges(
           event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'performance_bonds',
+          callback: (_) => _scheduleIssuanceWatchCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'performance_bonds',
           callback: (_) => _scheduleIssuanceWatchCheck(),
@@ -235,23 +247,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       final newKeys = currentKeys.difference(seenKeys);
       if (newKeys.isEmpty) return;
 
-      for (final row in allCompleted) {
-        final key = rowKey(row);
-        if (!newKeys.contains(key)) continue;
-        final isTax = row.domain == IssuanceDomain.taxInvoice;
-        final title = isTax ? '세금계산서 발급 완료' : '이행증권 발급 완료';
-        final name = isTax
-            ? (row.master['customer_name'] ?? '요청 건').toString()
-            : (row.master['company_name'] ?? row.master['bond_type'] ?? '요청 건')
-                  .toString();
-        await NotificationService.showIssuanceCompletedAlert(
-          title: title,
-          body: '$name 건이 발급 완료되었습니다.',
-          domain: row.domain,
-          masterId: (row.master['id'] ?? '').toString(),
-          issueId: (row.issue?['id'] ?? '').toString(),
-        );
-      }
+      // 로컬 알림은 FCM(또는 포그라운드 원격 알림)이 담당 — seen 키만 동기화.
 
       final merged = seenKeys.union(currentKeys).toList();
       await prefs.setStringList(seenKey, merged);
@@ -503,10 +499,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
       if (next == null || !context.mounted) return;
       _selectIssuanceTab();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted) return;
-        NotificationService.retryPendingNavigation();
-      });
     });
 
     final scheme = Theme.of(context).colorScheme;

@@ -50,34 +50,6 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     );
   }
 
-  Future<bool> _tryOpenDetailByIds({
-    required IssuanceDomain domain,
-    required String masterId,
-    String? issueId,
-  }) async {
-    for (var attempt = 0; attempt < 8; attempt++) {
-      if (attempt > 0) {
-        await Future<void>.delayed(Duration(milliseconds: 350 * attempt));
-        if (!mounted) return false;
-      }
-      ref.invalidate(issuanceAllRowsProvider(domain));
-      try {
-        final rows = await ref.read(issuanceAllRowsProvider(domain).future);
-        final target = findIssuanceRowByIds(
-          rows,
-          masterId: masterId,
-          issueId: issueId,
-        );
-        if (target == null || !mounted) continue;
-        showIssuanceRequestDetail(context, target);
-        return true;
-      } catch (_) {
-        // 다음 시도에서 재조회
-      }
-    }
-    return false;
-  }
-
   Future<void> _consumePendingLaunch() async {
     if (_consumingLaunch) return;
     final next = ref.read(pendingIssuanceLaunchProvider);
@@ -88,16 +60,11 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
       final masterId = next.masterId?.trim() ?? '';
       if (masterId.isNotEmpty) {
-        final opened = await _tryOpenDetailByIds(
-          domain: next.domain,
-          masterId: masterId,
-          issueId: next.issueId,
-        );
-        if (opened && mounted) {
+        // 상세 열기는 NotificationService가 담당 — 탭·도메인만 맞춘다.
+        if (mounted) {
           ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
-          NotificationService.clearPendingIssuanceNavigation();
-          return;
         }
+        return;
       }
 
       if (!mounted) return;

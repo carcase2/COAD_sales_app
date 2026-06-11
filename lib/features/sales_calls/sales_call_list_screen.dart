@@ -342,6 +342,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         if (widget.date == todayYmdSeoul()) {
           return '금일 미통화';
         }
+        if (widget.date == addDaysToYmd(todayYmdSeoul(), -1)) {
+          return '전일 미통화';
+        }
         return '미통화';
       case ListQueryMode.pendingUncalled:
         return '처리할 미통화';

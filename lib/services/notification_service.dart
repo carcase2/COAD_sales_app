@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
@@ -77,6 +79,9 @@ class NotificationService {
 
   /// 통화 상세 이동 요청의 최신성 보장을 위한 시퀀스.
   static int _callNavigationRequestSeq = 0;
+  static int _issuanceNavigationRequestSeq = 0;
+  static String? _lastOpenedIssuanceDetailKey;
+  static DateTime? _lastOpenedIssuanceDetailAt;
 
   static void _log(String message) {
     debugPrint('[NotificationService] $message');
@@ -238,6 +243,8 @@ class NotificationService {
     unawaited(_consumeStoredNotificationPayload());
     final data = _pendingMessageData;
     if (data == null) return;
+    final type = (data['type'] ?? '').toString();
+    if (type == 'issuance_request' || type == 'issuance_completed') return;
     _scheduleNotificationHandling(() => _handleMessageData(data));
   }
 
@@ -247,6 +254,48 @@ class NotificationService {
     if (type == 'issuance_request' || type == 'issuance_completed') {
       _pendingMessageData = null;
     }
+    unawaited(_clearStoredNotificationPayload());
+  }
+
+  static Future<void> _clearStoredNotificationPayload() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(StorageKeys.pendingNotificationPayload);
+    } catch (_) {}
+  }
+
+  static String _issuanceDetailKey({
+    required IssuanceDomain domain,
+    required String masterId,
+    required String issueId,
+  }) => '${domain.name}:$masterId:$issueId';
+
+  static bool _recentlyOpenedIssuanceDetail({
+    required IssuanceDomain domain,
+    required String masterId,
+    required String issueId,
+  }) {
+    final key = _issuanceDetailKey(
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+    );
+    final openedAt = _lastOpenedIssuanceDetailAt;
+    if (_lastOpenedIssuanceDetailKey != key || openedAt == null) return false;
+    return DateTime.now().difference(openedAt) < const Duration(seconds: 8);
+  }
+
+  static void _markIssuanceDetailOpened({
+    required IssuanceDomain domain,
+    required String masterId,
+    required String issueId,
+  }) {
+    _lastOpenedIssuanceDetailKey = _issuanceDetailKey(
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+    );
+    _lastOpenedIssuanceDetailAt = DateTime.now();
   }
 
   /// Android 포그라운드 로컬 알림 탭.
@@ -582,12 +631,192 @@ class NotificationService {
         issueId: issueId.isEmpty ? null : issueId,
         listKind: showCompleted ? null : IssuanceListKind.request,
       );
-      _pendingMessageData = payload;
       _log(
         'queue issuance launch domain=${domain.name} masterId=$masterId issueId=$issueId',
       );
     } catch (_) {
       _queuePendingData(payload);
+      return;
+    }
+    if (masterId.isEmpty) return;
+    if (_recentlyOpenedIssuanceDetail(
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+    )) {
+      clearPendingIssuanceNavigation();
+      return;
+    }
+    _scheduleIssuanceDetailNavigation(
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+    );
+  }
+
+  static void _scheduleIssuanceDetailNavigation({
+    required IssuanceDomain domain,
+    required String masterId,
+    required String issueId,
+  }) {
+    if (_recentlyOpenedIssuanceDetail(
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+    )) {
+      return;
+    }
+    final requestSeq = ++_issuanceNavigationRequestSeq;
+    _navigateToIssuanceDetailInternal(
+      domain: domain,
+      masterId: masterId,
+      issueId: issueId,
+      authAttempt: 0,
+      dataAttempt: 0,
+      requestSeq: requestSeq,
+    );
+  }
+
+  static void _navigateToIssuanceDetailInternal({
+    required IssuanceDomain domain,
+    required String masterId,
+    required String issueId,
+    required int authAttempt,
+    required int dataAttempt,
+    required int requestSeq,
+  }) {
+    if (requestSeq != _issuanceNavigationRequestSeq) return;
+
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null) {
+      try {
+        final user = ProviderScope.containerOf(
+          ctx,
+        ).read(authControllerProvider);
+        if (user == null) {
+          if (authAttempt < 20) {
+            final ms = 200 + authAttempt * 150;
+            Future<void>.delayed(Duration(milliseconds: ms), () {
+              _navigateToIssuanceDetailInternal(
+                domain: domain,
+                masterId: masterId,
+                issueId: issueId,
+                authAttempt: authAttempt + 1,
+                dataAttempt: dataAttempt,
+                requestSeq: requestSeq,
+              );
+            });
+          }
+          return;
+        }
+      } catch (_) {
+        if (authAttempt < 20) {
+          final ms = 200 + authAttempt * 150;
+          Future<void>.delayed(Duration(milliseconds: ms), () {
+            _navigateToIssuanceDetailInternal(
+              domain: domain,
+              masterId: masterId,
+              issueId: issueId,
+              authAttempt: authAttempt + 1,
+              dataAttempt: dataAttempt,
+              requestSeq: requestSeq,
+            );
+          });
+        }
+        return;
+      }
+    }
+
+    unawaited(
+      _openIssuanceDetailWithData(
+        domain: domain,
+        masterId: masterId,
+        issueId: issueId,
+        dataAttempt: dataAttempt,
+        requestSeq: requestSeq,
+      ),
+    );
+  }
+
+  static Future<void> _openIssuanceDetailWithData({
+    required IssuanceDomain domain,
+    required String masterId,
+    required String issueId,
+    required int dataAttempt,
+    required int requestSeq,
+  }) async {
+    if (requestSeq != _issuanceNavigationRequestSeq) return;
+
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) {
+      if (dataAttempt < 20) {
+        final ms = 100 + dataAttempt * 80;
+        Future<void>.delayed(Duration(milliseconds: ms), () {
+          _navigateToIssuanceDetailInternal(
+            domain: domain,
+            masterId: masterId,
+            issueId: issueId,
+            authAttempt: dataAttempt,
+            dataAttempt: dataAttempt + 1,
+            requestSeq: requestSeq,
+          );
+        });
+      }
+      return;
+    }
+
+    try {
+      final container = ProviderScope.containerOf(ctx);
+      if (dataAttempt == 0) {
+        container.invalidate(issuanceAllRowsProvider(domain));
+      }
+      final rows = await container.read(
+        issuanceAllRowsProvider(domain).future,
+      );
+      final target = findIssuanceRowByIds(
+        rows,
+        masterId: masterId,
+        issueId: issueId.isEmpty ? null : issueId,
+      );
+      if (target != null && ctx.mounted) {
+        if (_recentlyOpenedIssuanceDetail(
+          domain: domain,
+          masterId: masterId,
+          issueId: issueId,
+        )) {
+          clearPendingIssuanceNavigation();
+          container.read(pendingIssuanceLaunchProvider.notifier).state = null;
+          return;
+        }
+        _markIssuanceDetailOpened(
+          domain: domain,
+          masterId: masterId,
+          issueId: issueId,
+        );
+        showIssuanceRequestDetail(ctx, target);
+        clearPendingIssuanceNavigation();
+        container.read(pendingIssuanceLaunchProvider.notifier).state = null;
+        _log(
+          'opened issuance detail domain=${domain.name} masterId=$masterId issueId=$issueId',
+        );
+        return;
+      }
+    } catch (e) {
+      _log('issuance detail open failed attempt=$dataAttempt: $e');
+    }
+
+    if (dataAttempt < 6) {
+      final ms = 300 + dataAttempt * 250;
+      Future<void>.delayed(Duration(milliseconds: ms), () {
+        _navigateToIssuanceDetailInternal(
+          domain: domain,
+          masterId: masterId,
+          issueId: issueId,
+          authAttempt: 0,
+          dataAttempt: dataAttempt + 1,
+          requestSeq: requestSeq,
+        );
+      });
     }
   }
 

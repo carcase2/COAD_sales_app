@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
 
 type NotifyPayload = {
+  event: 'request' | 'completed'
   domain: string
   masterId: string
   issueId: string
@@ -17,13 +18,28 @@ function hasText(value: unknown): boolean {
 function buildFromAppRecord(record: Record<string, unknown>): NotifyPayload | null {
   const masterId = (record.master_id ?? '').toString().trim()
   if (!masterId) return null
+  const notificationType = (record.notification_type ?? record.type ?? '')
+    .toString()
+    .toLowerCase()
+  const isCompleted = notificationType.includes('completed')
   return {
+    event: isCompleted ? 'completed' : 'request',
     domain: (record.issuance_domain ?? 'taxInvoice').toString(),
     masterId,
     issueId: (record.issue_id ?? '').toString(),
-    title: (record.title ?? '발급요청').toString(),
-    body: (record.body ?? '새 발급요청이 등록되었습니다.').toString(),
+    title: (record.title ?? (isCompleted ? '발급 완료' : '발급요청')).toString(),
+    body: (record.body ?? (isCompleted
+      ? '발급이 완료되었습니다.'
+      : '새 발급요청이 등록되었습니다.')).toString(),
   }
+}
+
+function becameIssued(
+  oldRecord: Record<string, unknown>,
+  record: Record<string, unknown>,
+  field: string,
+): boolean {
+  return !hasText(oldRecord[field]) && hasText(record[field])
 }
 
 async function buildFromTaxInvoiceIssue(
@@ -57,6 +73,7 @@ async function buildFromTaxInvoiceIssue(
       : `${name} 건의 발급요청이 등록되었습니다.`
 
   return {
+    event: 'request',
     domain: 'taxInvoice',
     masterId,
     issueId: (issue.id ?? '').toString(),
@@ -74,6 +91,7 @@ function buildFromTaxInvoice(record: Record<string, unknown>): NotifyPayload | n
 
   const name = (record.customer_name ?? '요청 건').toString()
   return {
+    event: 'request',
     domain: 'taxInvoice',
     masterId,
     issueId: '',
@@ -91,6 +109,7 @@ function buildFromPerformanceBond(record: Record<string, unknown>): NotifyPayloa
 
   const name = (record.company_name ?? record.bond_type ?? '요청 건').toString()
   return {
+    event: 'request',
     domain: 'performanceBond',
     masterId,
     issueId: '',
@@ -108,11 +127,92 @@ async function buildFromBondIssue(
   if (!masterId) return null
 
   return {
+    event: 'request',
     domain: 'performanceBond',
     masterId,
     issueId: (issue.id ?? '').toString(),
     title: '이행증권 발급요청',
     body: '이행증권 건의 발급요청이 등록되었습니다.',
+  }
+}
+
+async function buildCompletedFromTaxInvoiceIssue(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  issue: Record<string, unknown>,
+): Promise<NotifyPayload | null> {
+  const masterId = (issue.tax_invoice_id ?? '').toString().trim()
+  if (!masterId) return null
+
+  const { data: invoice } = await supabaseAdmin
+    .from('tax_invoices')
+    .select('customer_name')
+    .eq('id', masterId)
+    .maybeSingle()
+
+  const name = (invoice?.customer_name ?? '요청 건').toString()
+  return {
+    event: 'completed',
+    domain: 'taxInvoice',
+    masterId,
+    issueId: (issue.id ?? '').toString(),
+    title: '세금계산서 발급 완료',
+    body: `${name} 건이 발급 완료되었습니다.`,
+  }
+}
+
+async function buildCompletedFromBondIssue(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  issue: Record<string, unknown>,
+): Promise<NotifyPayload | null> {
+  const masterId = (issue.performance_bond_id ?? '').toString().trim()
+  if (!masterId) return null
+
+  const { data: bond } = await supabaseAdmin
+    .from('performance_bonds')
+    .select('company_name, bond_type')
+    .eq('id', masterId)
+    .maybeSingle()
+
+  const name = (bond?.company_name ?? bond?.bond_type ?? '요청 건').toString()
+  return {
+    event: 'completed',
+    domain: 'performanceBond',
+    masterId,
+    issueId: (issue.id ?? '').toString(),
+    title: '이행증권 발급 완료',
+    body: `${name} 건이 발급 완료되었습니다.`,
+  }
+}
+
+function buildCompletedFromTaxInvoice(
+  record: Record<string, unknown>,
+): NotifyPayload | null {
+  const masterId = (record.id ?? '').toString().trim()
+  if (!masterId) return null
+  const name = (record.customer_name ?? '요청 건').toString()
+  return {
+    event: 'completed',
+    domain: 'taxInvoice',
+    masterId,
+    issueId: '',
+    title: '세금계산서 발급 완료',
+    body: `${name} 건이 발급 완료되었습니다.`,
+  }
+}
+
+function buildCompletedFromPerformanceBond(
+  record: Record<string, unknown>,
+): NotifyPayload | null {
+  const masterId = (record.id ?? '').toString().trim()
+  if (!masterId) return null
+  const name = (record.company_name ?? record.bond_type ?? '요청 건').toString()
+  return {
+    event: 'completed',
+    domain: 'performanceBond',
+    masterId,
+    issueId: '',
+    title: '이행증권 발급 완료',
+    body: `${name} 건이 발급 완료되었습니다.`,
   }
 }
 
@@ -127,6 +227,27 @@ async function resolveNotifyPayload(
 
   const table = (payload.table ?? '').toString()
   const type = (payload.type ?? '').toString().toUpperCase()
+  const oldRecord = (payload.old_record ?? {}) as Record<string, unknown>
+
+  if (type === 'UPDATE') {
+    switch (table) {
+      case 'tax_invoice_issues':
+        if (!becameIssued(oldRecord, record, 'invoice_image_url')) return null
+        return await buildCompletedFromTaxInvoiceIssue(supabaseAdmin, record)
+      case 'performance_bond_issues':
+        if (!becameIssued(oldRecord, record, 'bond_image_url')) return null
+        return await buildCompletedFromBondIssue(supabaseAdmin, record)
+      case 'tax_invoices':
+        if (!becameIssued(oldRecord, record, 'invoice_image_url')) return null
+        return buildCompletedFromTaxInvoice(record)
+      case 'performance_bonds':
+        if (!becameIssued(oldRecord, record, 'bond_image_url')) return null
+        return buildCompletedFromPerformanceBond(record)
+      default:
+        return null
+    }
+  }
+
   if (type !== 'INSERT') return null
 
   switch (table) {
@@ -183,10 +304,11 @@ serve(async (req) => {
       })
     }
 
-    const dedupeKey =
-      notify.domain === 'taxInvoice'
-        ? `${notify.domain}:${notify.masterId}`
-        : `${notify.domain}:${notify.masterId}:${notify.issueId}`
+    const dedupeKey = notify.event === 'completed'
+      ? `completed:${notify.domain}:${notify.masterId}:${notify.issueId || 'master'}`
+      : notify.domain === 'taxInvoice'
+      ? `request:${notify.domain}:${notify.masterId}`
+      : `request:${notify.domain}:${notify.masterId}:${notify.issueId}`
     if (await shouldSkipDuplicate(supabaseAdmin, dedupeKey)) {
       return new Response(JSON.stringify({ success: true, skipped: true, dedupeKey }), {
         status: 200,
@@ -235,8 +357,12 @@ serve(async (req) => {
 
     const dataBody = notify.body.replace(/\s+/g, ' ').trim()
 
+    const fcmType = notify.event === 'completed'
+      ? 'issuance_completed'
+      : 'issuance_request'
+
     console.log(
-      `Sending issuance request push: domain=${notify.domain} masterId=${notify.masterId} issueId=${notify.issueId}`,
+      `Sending issuance ${notify.event} push: domain=${notify.domain} masterId=${notify.masterId} issueId=${notify.issueId}`,
     )
 
     const results = await Promise.all(
@@ -254,12 +380,13 @@ serve(async (req) => {
                 message: {
                   token,
                   data: {
-                    type: 'issuance_request',
+                    type: fcmType,
                     issuance_domain: notify.domain,
                     master_id: notify.masterId,
                     issue_id: notify.issueId,
                     title: notify.title,
                     body: dataBody,
+                    show_completed: notify.event === 'completed' ? 'true' : 'false',
                     click_action: 'FLUTTER_NOTIFICATION_CLICK',
                   },
                   android: {
