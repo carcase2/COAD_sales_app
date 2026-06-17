@@ -386,27 +386,29 @@ class IssuanceRequestService {
       );
       final statusRaw = (invoice['status'] ?? '').toString().toLowerCase();
 
-      // §5-1 발급요청: 미발급 issue 1건=1행. 부분발급 중 추가 요청(pending issue)도 포함.
-      if (pendingIssues.isNotEmpty) {
-        for (final issue in pendingIssues) {
+      // §5-1 발급요청: 웹(coad_home)과 동일하게 "실제 발급 이력 없음"일 때만 요청 목록에 포함.
+      if (!hasAnyIssued) {
+        if (pendingIssues.isNotEmpty) {
+          for (final issue in pendingIssues) {
+            rows.add(
+              IssuanceRequestRow(
+                master: invoice,
+                issue: issue,
+                domain: IssuanceDomain.taxInvoice,
+                kind: IssuanceRowKind.request,
+              ),
+            );
+          }
+        } else if (statusRaw == 'pending') {
           rows.add(
             IssuanceRequestRow(
               master: invoice,
-              issue: issue,
+              issue: null,
               domain: IssuanceDomain.taxInvoice,
               kind: IssuanceRowKind.request,
             ),
           );
         }
-      } else if (!hasAnyIssued && statusRaw == 'pending') {
-        rows.add(
-          IssuanceRequestRow(
-            master: invoice,
-            issue: null,
-            domain: IssuanceDomain.taxInvoice,
-            kind: IssuanceRowKind.request,
-          ),
-        );
       }
 
       // §5-2 부분발급: invoice 1행, 발급했으나 100% 미만
@@ -499,7 +501,10 @@ class IssuanceRequestService {
             id,
             performance_bond_id,
             created_at,
-            bond_image_url
+            bond_image_url,
+            request_image_url,
+            construction_start_date,
+            construction_end_date
           ''')
               .inFilter('performance_bond_id', bondIds);
     final issues = List<Map<String, dynamic>>.from(issuesRes);
@@ -527,7 +532,7 @@ class IssuanceRequestService {
           issuedIssues.isNotEmpty || _hasText(bond['bond_image_url']);
       final statusRaw = (bond['status'] ?? '').toString().toLowerCase();
 
-      if (!hasAnyIssued) {
+      if (!hasAnyIssued && (statusRaw == 'pending' || statusRaw == 'draft')) {
         if (pendingIssues.isNotEmpty) {
           for (final issue in pendingIssues) {
             rows.add(
@@ -539,7 +544,7 @@ class IssuanceRequestService {
               ),
             );
           }
-        } else if (statusRaw == 'pending' || statusRaw == 'draft') {
+        } else {
           rows.add(
             IssuanceRequestRow(
               master: bond,

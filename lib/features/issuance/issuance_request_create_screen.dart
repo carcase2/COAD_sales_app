@@ -126,8 +126,10 @@ class _IssuanceRequestCreateScreenState
     if (rate <= 0 || rate > 100) {
       return '보증금율은 0~100 사이로 입력하세요.';
     }
-    if (_parseGuaranteePeriodMonths(_bondGuaranteePeriod.text) <= 0) {
-      return '보증기간(달)을 입력하세요. (예: 1, 6, 12)';
+    if (_parseGuaranteePeriodValue(_bondGuaranteePeriod.text) <= 0) {
+      return _bondType == '하자이행'
+          ? '보증기간(년)을 입력하세요. (예: 1, 2)'
+          : '보증기간(달)을 입력하세요. (예: 1, 6, 12)';
     }
     if (_bondContractDate.text.trim().isEmpty) {
       return '시공 시작일을 선택하세요.';
@@ -210,8 +212,29 @@ class _IssuanceRequestCreateScreenState
     return _branchChipPalette[index % _branchChipPalette.length];
   }
 
-  String _safe(String input) =>
-      input.trim().replaceAll(RegExp(r'[^a-zA-Z0-9가-힣._-]'), '_');
+  String _safe(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return 'unknown';
+    final normalized = trimmed
+        // Supabase Storage object key 호환을 위해 ASCII 안전 문자만 허용.
+        .replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^[_\-.]+|[_\-.]+$'), '');
+    return normalized.isEmpty ? 'unknown' : normalized;
+  }
+
+  String _safeFileName(String originalName) {
+    final dot = originalName.lastIndexOf('.');
+    final hasExt = dot > 0 && dot < originalName.length - 1;
+    final rawBase = hasExt ? originalName.substring(0, dot) : originalName;
+    final rawExt = hasExt ? originalName.substring(dot + 1) : '';
+
+    final safeBase = _safe(rawBase);
+    final safeExt = _safe(rawExt).toLowerCase();
+
+    if (safeExt.isEmpty) return safeBase;
+    return '$safeBase.$safeExt';
+  }
 
   Future<List<PlatformFile>> _pickFiles({required bool imageOnly}) async {
     final result = await FilePicker.pickFiles(
@@ -256,7 +279,7 @@ class _IssuanceRequestCreateScreenState
       final p = f.path;
       if (p == null) continue;
       final bytes = await File(p).readAsBytes();
-      final original = _safe(f.name);
+      final original = _safeFileName(f.name);
       final stamp = DateTime.now().millisecondsSinceEpoch;
       final rand = _rand.nextInt(999999).toString().padLeft(6, '0');
       final objectPath =
@@ -291,21 +314,15 @@ class _IssuanceRequestCreateScreenState
     );
   }
 
-  /// DB `guarantee_period`는 **달(months) 정수** 컬럼.
-  int _parseGuaranteePeriodMonths(String raw) {
+  /// coad_home과 동일: 계약이행/선급금=달, 하자이행=년 (입력값 그대로 정수 저장)
+  int _parseGuaranteePeriodValue(String raw) {
     final text = raw.trim().toLowerCase().replaceAll(' ', '');
     if (text.isEmpty) return 0;
-    if (text.endsWith('개월')) {
-      return (double.tryParse(text.replaceAll('개월', '')) ?? 0).round();
-    }
-    if (text.endsWith('달')) {
-      return (double.tryParse(text.replaceAll('달', '')) ?? 0).round();
-    }
-    if (text.endsWith('년')) {
-      final years = double.tryParse(text.replaceAll('년', '')) ?? 0;
-      return (years * 12).round();
-    }
-    return (double.tryParse(text) ?? 0).round();
+    final numeric = text
+        .replaceAll('개월', '')
+        .replaceAll('달', '')
+        .replaceAll('년', '');
+    return (double.tryParse(numeric) ?? 0).round();
   }
 
   /// 웹 `generateInvoiceNumber` 와 동일: `TAX-YYYYMM-랜덤4자리`.
@@ -509,7 +526,10 @@ class _IssuanceRequestCreateScreenState
         title: '보증/기간',
         rows: [
           ('보증금율', '${_bondGuaranteeRate.text.trim()}%'),
-          ('보증기간', '${_bondGuaranteePeriod.text.trim()}달'),
+          (
+            '보증기간',
+            '${_bondGuaranteePeriod.text.trim()}${_bondType == '하자이행' ? '년' : '달'}',
+          ),
           ('시공 시작일', _bondContractDate.text.trim()),
           ('시공 종료일', _bondConstructionEndDate.text.trim()),
           (
@@ -559,6 +579,9 @@ class _IssuanceRequestCreateScreenState
           domain: _domain,
           accent: accent,
           sections: _buildReviewSections(),
+          taxBizFiles: _taxBizFiles,
+          bondBizFiles: _bondBizFiles,
+          bondContractFiles: _bondContractFiles,
         ),
       ),
     );
@@ -709,7 +732,7 @@ class _IssuanceRequestCreateScreenState
 
     final contractAmount = _parseMoney(_bondContractAmount.text);
     final guaranteeRate = double.tryParse(_bondGuaranteeRate.text.trim()) ?? 0;
-    final guaranteePeriod = _parseGuaranteePeriodMonths(
+    final guaranteePeriod = _parseGuaranteePeriodValue(
       _bondGuaranteePeriod.text.trim(),
     );
     if (contractAmount <= 0) throw Exception('계약금액을 올바르게 입력해주세요.');
@@ -717,7 +740,11 @@ class _IssuanceRequestCreateScreenState
       throw Exception('보증금율은 0~100 사이여야 합니다.');
     }
     if (guaranteePeriod <= 0) {
-      throw Exception('보증기간을 올바르게 입력해주세요. (예: 1, 6, 12달)');
+      throw Exception(
+        _bondType == '하자이행'
+            ? '보증기간을 올바르게 입력해주세요. (예: 1년)'
+            : '보증기간을 올바르게 입력해주세요. (예: 1, 6, 12달)',
+      );
     }
 
     final contractDate = DateTime.tryParse(_bondContractDate.text.trim());
@@ -1499,14 +1526,17 @@ class _IssuanceRequestCreateScreenState
                 TextFormField(
                   controller: _bondGuaranteePeriod,
                   textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(
-                    labelText: '보증기간(달) *',
-                    hintText: '예: 1, 6, 12',
+                  decoration: InputDecoration(
+                    labelText: _bondType == '하자이행' ? '보증기간(년) *' : '보증기간(달) *',
+                    hintText: _bondType == '하자이행' ? '예: 1, 2' : '예: 1, 6, 12',
                   ),
                   keyboardType: TextInputType.number,
-                  validator: (v) => _parseGuaranteePeriodMonths(v ?? '') <= 0
-                      ? '보증기간(달)을 입력하세요. (예: 1)'
-                      : null,
+                  validator: (v) {
+                    if (_parseGuaranteePeriodValue(v ?? '') > 0) return null;
+                    return _bondType == '하자이행'
+                        ? '보증기간(년)을 입력하세요. (예: 1)'
+                        : '보증기간(달)을 입력하세요. (예: 1)';
+                  },
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -1699,11 +1729,156 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
     required this.domain,
     required this.accent,
     required this.sections,
+    required this.taxBizFiles,
+    required this.bondBizFiles,
+    required this.bondContractFiles,
   });
 
   final IssuanceDomain domain;
   final Color accent;
   final List<_ReviewSection> sections;
+  final List<PlatformFile> taxBizFiles;
+  final List<PlatformFile> bondBizFiles;
+  final List<PlatformFile> bondContractFiles;
+
+  bool _isImagePath(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.gif') ||
+        lower.endsWith('.webp') ||
+        lower.endsWith('.bmp') ||
+        lower.endsWith('.heic') ||
+        lower.endsWith('.heif');
+  }
+
+  void _openLocalImagePreview(
+    BuildContext context,
+    List<String> imagePaths,
+    int initialIndex,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _LocalImagePreviewScreen(
+          imagePaths: imagePaths,
+          initialIndex: initialIndex,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilePreviewSection(
+    BuildContext context, {
+    required String title,
+    required List<PlatformFile> files,
+    required String labelPrefix,
+  }) {
+    if (files.isEmpty) return const SizedBox.shrink();
+    final valid = files.where((f) => f.path != null && f.path!.trim().isNotEmpty).toList();
+    if (valid.isEmpty) return const SizedBox.shrink();
+    final imagePaths = valid
+        .map((f) => f.path!)
+        .where(_isImagePath)
+        .toList(growable: false);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: valid.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final f = entry.value;
+              final path = f.path!;
+              final isImage = _isImagePath(path);
+              return Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: !isImage
+                      ? null
+                      : () {
+                          final idx = imagePaths.indexOf(path);
+                          _openLocalImagePreview(context, imagePaths, idx < 0 ? 0 : idx);
+                        },
+                  child: SizedBox(
+                    width: 112,
+                    height: 128,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: isImage
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.file(
+                                    File(path),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => const Center(
+                                      child: Icon(Icons.broken_image_outlined),
+                                    ),
+                                  ),
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.picture_as_pdf, size: 28),
+                                    const SizedBox(height: 6),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      child: Text(
+                                        f.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+                          child: Text(
+                            '$labelPrefix ${idx + 1}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1814,6 +1989,27 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (domain == IssuanceDomain.taxInvoice)
+                  _buildFilePreviewSection(
+                    context,
+                    title: '사업자등록증 미리보기',
+                    files: taxBizFiles,
+                    labelPrefix: '사업자등록증',
+                  ),
+                if (domain == IssuanceDomain.performanceBond) ...[
+                  _buildFilePreviewSection(
+                    context,
+                    title: '사업자등록증 미리보기',
+                    files: bondBizFiles,
+                    labelPrefix: '사업자등록증',
+                  ),
+                  _buildFilePreviewSection(
+                    context,
+                    title: '계약서 미리보기',
+                    files: bondContractFiles,
+                    labelPrefix: '계약서',
+                  ),
+                ],
               ],
             ),
           ),
@@ -1850,6 +2046,82 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LocalImagePreviewScreen extends StatefulWidget {
+  const _LocalImagePreviewScreen({
+    required this.imagePaths,
+    required this.initialIndex,
+  });
+
+  final List<String> imagePaths;
+  final int initialIndex;
+
+  @override
+  State<_LocalImagePreviewScreen> createState() => _LocalImagePreviewScreenState();
+}
+
+class _LocalImagePreviewScreenState extends State<_LocalImagePreviewScreen> {
+  late final PageController _controller;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex.clamp(0, widget.imagePaths.length - 1);
+    _controller = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.imagePaths.length;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('이미지 미리보기'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Center(
+              child: Text(
+                '${_currentIndex + 1}/$total',
+                style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: PageView.builder(
+        controller: _controller,
+        itemCount: total,
+        onPageChanged: (idx) => setState(() => _currentIndex = idx),
+        itemBuilder: (_, i) {
+          return InteractiveViewer(
+            minScale: 0.6,
+            maxScale: 5,
+            child: Center(
+              child: Image.file(
+                File(widget.imagePaths[i]),
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const Text(
+                  '이미지를 불러올 수 없습니다.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

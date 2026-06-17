@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:coad_customer_calls/data/auth_controller.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_completed_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_card.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
@@ -155,8 +157,6 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     }
 
     final scheme = Theme.of(context).colorScheme;
-    final pendingAsync = ref.watch(issuanceRequestRowsProvider(_domain));
-    final myPendingAsync = ref.watch(issuanceMyRequestRowsProvider(_domain));
     final partialAsync = ref.watch(issuancePartialRowsProvider(_domain));
     final fullyCompletedAsync = ref.watch(
       issuanceFullyCompletedRowsProvider(_domain),
@@ -172,6 +172,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     );
     final taxCount = taxPendingAsync.valueOrNull?.length;
     final bondCount = bondPendingAsync.valueOrNull?.length;
+    final combinedMyPendingCount =
+        (taxPendingAsync.valueOrNull?.length ?? 0) +
+        (bondPendingAsync.valueOrNull?.length ?? 0);
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
 
@@ -316,14 +319,17 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   const SizedBox(height: 8),
                   _HubMenuTile(
                     icon: IssuanceListKind.request.icon,
-                    title: IssuanceListKind.request.title,
-                    count: count(myPendingAsync),
-                    subtitle: pendingAsync.valueOrNull == null
-                        ? null
-                        : '전체 ${pendingAsync.value!.length}',
+                    title: '발급대기',
+                    count: combinedMyPendingCount,
+                    subtitle:
+                        '세금 ${taxPendingAsync.valueOrNull?.length ?? 0}건 · 이행 ${bondPendingAsync.valueOrNull?.length ?? 0}건',
                     accent: Colors.blue.shade700,
                     large: true,
-                    onTap: () => _openListPage(IssuanceListKind.request),
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const _CombinedIssuancePendingPage(),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   GridView.count(
@@ -605,6 +611,149 @@ class _HubMenuTile extends StatelessWidget {
                   ],
                 ),
         ),
+      ),
+    );
+  }
+}
+
+class _CombinedIssuancePendingPage extends ConsumerWidget {
+  const _CombinedIssuancePendingPage();
+
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceRequestBadgeCountProvider);
+    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+    await Future.wait([
+      ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
+      ref.read(issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authControllerProvider);
+    final taxAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+    );
+
+    final taxRows = taxAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+    final bondRows = bondAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+    final taxMine = taxRows.where((r) => issuanceIsOwnRequest(r, user?.name)).toList();
+    final bondMine = bondRows.where((r) => issuanceIsOwnRequest(r, user?.name)).toList();
+
+    final loading = taxAsync.isLoading || bondAsync.isLoading;
+    final hasError = taxAsync.hasError || bondAsync.hasError;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('발급대기'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => _refresh(ref),
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : hasError
+            ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 140),
+                  Center(child: Text('발급대기 목록을 불러오지 못했습니다.')),
+                ],
+              )
+            : ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildSectionHeader(
+                    context,
+                    title: '세금계산서',
+                    mineCount: taxMine.length,
+                    totalCount: taxRows.length,
+                    color: Colors.indigo.shade600,
+                  ),
+                  ...taxRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: IssuanceRequestCard(
+                        row: row,
+                        isOwn: issuanceIsOwnRequest(row, user?.name),
+                        large: true,
+                        onTap: () => showIssuanceRequestDetail(context, row),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildSectionHeader(
+                    context,
+                    title: '이행증권',
+                    mineCount: bondMine.length,
+                    totalCount: bondRows.length,
+                    color: Colors.deepOrange.shade700,
+                  ),
+                  ...bondRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: IssuanceRequestCard(
+                        row: row,
+                        isOwn: issuanceIsOwnRequest(row, user?.name),
+                        large: true,
+                        onTap: () => showIssuanceRequestDetail(context, row),
+                      ),
+                    ),
+                  ),
+                  if (taxRows.isEmpty && bondRows.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 120),
+                      child: Center(child: Text('발급대기 건이 없습니다.')),
+                    ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required String title,
+    required int mineCount,
+    required int totalCount,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: color,
+              ),
+            ),
+          ),
+          Text(
+            '내 $mineCount건 · 전체 $totalCount건',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
