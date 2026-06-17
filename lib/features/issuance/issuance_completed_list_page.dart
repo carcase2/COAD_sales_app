@@ -1,4 +1,6 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/data/auth_controller.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
@@ -6,9 +8,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 발급완료 전용 화면 — 오늘 완료 건 강조, 담당자 칩으로 바로 필터.
 class IssuanceCompletedListPage extends ConsumerStatefulWidget {
-  const IssuanceCompletedListPage({required this.domain, super.key});
+  const IssuanceCompletedListPage({
+    required this.domain,
+    this.openMasterId,
+    this.openIssueId,
+    super.key,
+  });
 
   final IssuanceDomain domain;
+  final String? openMasterId;
+  final String? openIssueId;
 
   @override
   ConsumerState<IssuanceCompletedListPage> createState() =>
@@ -23,6 +32,8 @@ class _IssuanceCompletedListPageState
     extends ConsumerState<IssuanceCompletedListPage> {
   late IssuanceDomain _domain;
   bool _olderExpanded = false;
+  bool _openedPendingDetail = false;
+  bool _refreshing = false;
   _CompletedDateFilter _dateFilter = _CompletedDateFilter.all;
   _MesFilter _mesFilter = _MesFilter.all;
 
@@ -44,6 +55,23 @@ class _IssuanceCompletedListPageState
     _domain = widget.domain;
   }
 
+  void _maybeOpenPendingDetail(List<IssuanceRequestRow> rows) {
+    if (_openedPendingDetail || !mounted) return;
+    final masterId = widget.openMasterId;
+    if (masterId == null || masterId.isEmpty) return;
+    final target = findIssuanceRowByIds(
+      rows,
+      masterId: masterId,
+      issueId: widget.openIssueId,
+    );
+    if (target == null) return;
+    _openedPendingDetail = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showIssuanceRequestDetail(context, target);
+    });
+  }
+
   bool get _isTax => _domain == IssuanceDomain.taxInvoice;
 
   Color get _accent =>
@@ -58,10 +86,20 @@ class _IssuanceCompletedListPageState
     return '오늘 ${parts[1]}/${parts[2]}';
   }
 
-  Future<void> _refresh() async {
+  Future<void> _reloadRows() async {
     ref.invalidate(issuanceAllRowsProvider(_domain));
     ref.invalidate(issuanceRequestBadgeCountProvider);
+    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
     await ref.read(issuanceAllRowsProvider(_domain).future);
+  }
+
+  Future<void> _refresh({bool showCompletionSnackBar = false}) {
+    return runIssuanceRefresh(
+      context: context,
+      onLoadingChanged: (loading) => setState(() => _refreshing = loading),
+      showCompletionSnackBar: showCompletionSnackBar,
+      action: _reloadRows,
+    );
   }
 
   String _issueYmd(IssuanceRequestRow row) {
@@ -431,9 +469,11 @@ class _IssuanceCompletedListPageState
         title: const Text('발급완료'),
         actions: [
           IconButton(
-            tooltip: '새로고침',
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh_rounded),
+            tooltip: _refreshing ? '새로고침 중…' : '새로고침',
+            onPressed: _refreshing
+                ? null
+                : () => _refresh(showCompletionSnackBar: true),
+            icon: issuanceRefreshButtonIcon(loading: _refreshing),
           ),
         ],
       ),
@@ -446,7 +486,12 @@ class _IssuanceCompletedListPageState
           ),
         ),
         data: (allCompleted) {
-          final filtered = _applyListFilters(allCompleted);
+          _maybeOpenPendingDetail(allCompleted);
+          final user = ref.watch(authControllerProvider);
+          final filtered = sortIssuanceRowsOwnFirst(
+            _applyListFilters(allCompleted),
+            user?.name,
+          );
           final todayRows = filtered.where(_isTodayRow).toList();
           final olderRows = filtered.where((r) => !_isTodayRow(r)).toList();
           _syncOlderExpanded(

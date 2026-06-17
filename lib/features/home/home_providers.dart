@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
+import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,62 @@ import 'package:table_calendar/table_calendar.dart';
 
 /// 흐름 탭 · 미통화 0건 안내(설정) — `SettingsScreen`·`HomeHubScreen` 공유.
 const String homeFlowUncalledPopupPrefKey = 'home_flow_no_uncalled_popup_v2';
+
+/// 처리할 미통화 조회 기간 — 접수일 무관, 최근 N일.
+const int pendingUncalledLookbackDays = 60;
+
+String pendingUncalledFromYmd(String anchorYmd) =>
+    addDaysToYmd(anchorYmd, -pendingUncalledLookbackDays);
+
+/// 접수일 `call_date` (없으면 `created_at` 서울 기준).
+String salesCallReceptionYmd(SalesCall call) {
+  final raw = call.callDate?.trim();
+  if (raw != null && raw.length >= 10) return raw.substring(0, 10);
+  final created = call.createdAt?.trim();
+  if (created != null && created.isNotEmpty) {
+    final dt = DateTime.tryParse(created);
+    if (dt != null) return ymdSeoulFromDateTime(dt);
+  }
+  return '';
+}
+
+typedef PendingUncalledSummary = ({
+  int total,
+  int todayCount,
+  int carriedOverCount,
+  int userCount,
+});
+
+PendingUncalledSummary summarizePendingUncalled({
+  required List<SalesCall> calls,
+  required String todayYmd,
+  required List<TempManagerOverride> overrides,
+  String? loginName,
+}) {
+  final me = loginName?.trim() ?? '';
+  var todayCount = 0;
+  var carried = 0;
+  var userCount = 0;
+  final now = DateTime.now();
+  for (final call in calls) {
+    final ymd = salesCallReceptionYmd(call);
+    if (ymd == todayYmd) {
+      todayCount++;
+    } else {
+      carried++;
+    }
+    if (me.isNotEmpty &&
+        displayAssigneeForCall(call, overrides, now) == me) {
+      userCount++;
+    }
+  }
+  return (
+    total: calls.length,
+    todayCount: todayCount,
+    carriedOverCount: carried,
+    userCount: userCount,
+  );
+}
 
 /// 홈 통합 화면의 [흐름 | 미통화 | 달력] 구역 — `HomeHubScreen`이 소비.
 enum HomeHubSection { flow, incomplete, calendar }
@@ -48,7 +105,7 @@ void requestHomeHubSection(
     unawaited(
       ref.read(
         incompleteBreakdownCallsProvider((
-          period: IncompleteSummaryPeriod.today,
+          period: IncompleteSummaryPeriod.pending,
           anchorYmd: todayYmdSeoul(),
         )).future,
       ),
@@ -437,7 +494,7 @@ void prefetchHubPeriodFlow(
   if (previousKey != null) {
     futures.add(ref.read(hubPeriodStatsProvider(previousKey).future));
   }
-  unawaited(Future.wait(futures));
+  unawaited(Future.wait(futures).catchError((_) => <Object?>[]));
 }
 
 /// 미통화 탭·흐름 카드 탭 시 — 화면 숫자와 무관하게 서버에서 다시 조회.
@@ -468,13 +525,40 @@ Future<List<SalesCall>> refreshIncompleteBreakdownCalls(
     ref.invalidate(hubDayReceptionCallsProvider(key.anchorYmd));
     ref.invalidate(hubDayUncalledCallsProvider(key.anchorYmd));
   }
+  if (key.period == IncompleteSummaryPeriod.pending) {
+    ref.invalidate(hubPendingUncalledCallsProvider);
+  }
   ref.invalidate(incompleteBreakdownCallsProvider(key));
   ref.invalidate(hubSegmentIncompleteBadgeProvider);
   return ref.read(incompleteBreakdownCallsProvider(key).future);
 }
 
 /// 홈 미통화 탭 기간 필터 — `HomeIncompleteBreakdown`과 동일.
-enum IncompleteSummaryPeriod { today, week, month, year, all }
+enum IncompleteSummaryPeriod { pending, today, week, month, year, all }
+
+/// 최근 [pendingUncalledLookbackDays]일 내 미해결 미통화 — 접수일 무관.
+final hubPendingUncalledCallsProvider =
+    FutureProvider.autoDispose<List<SalesCall>>((ref) async {
+  final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  return repo.fetchCallsAllPages(
+    fromDate: pendingUncalledFromYmd(anchor),
+    uncalledOnly: true,
+    includeCallHistory: true,
+  );
+});
+
+final hubPendingUncalledSummaryProvider =
+    FutureProvider.autoDispose<PendingUncalledSummary>((ref) async {
+  final calls = await ref.watch(hubPendingUncalledCallsProvider.future);
+  final overrides = await ref.watch(tempManagerOverridesProvider.future);
+  return summarizePendingUncalled(
+    calls: calls,
+    todayYmd: todayYmdSeoul(),
+    overrides: overrides,
+    loginName: ref.watch(authControllerProvider)?.name,
+  );
+});
 
 typedef IncompleteBreakdownKey = ({
   IncompleteSummaryPeriod period,
@@ -486,6 +570,8 @@ final incompleteBreakdownCallsProvider =
     FutureProvider.family<List<SalesCall>, IncompleteBreakdownKey>((ref, key) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
   switch (key.period) {
+    case IncompleteSummaryPeriod.pending:
+      return ref.watch(hubPendingUncalledCallsProvider.future);
     case IncompleteSummaryPeriod.today:
       return ref.watch(hubDayReceptionCallsProvider(key.anchorYmd).future);
     case IncompleteSummaryPeriod.week:
@@ -566,16 +652,14 @@ List<String> weekYmdKeysContaining(String anchorYmd) {
   return keys;
 }
 
-/// 홈 [미통화] 탭 배지 — 흐름 기간(금일/금주/금월) 기준 미통화, 로그인 담당자 우선.
+/// 홈 [미통화] 탭 배지 — 처리할 미통화(최근 60일), 로그인 담당자 건수.
 final hubSegmentIncompleteBadgeProvider = FutureProvider<int>((ref) async {
-  final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
-  final navStep = ref.watch(homeHubNavStepProvider);
-  final periodKey = hubPeriodKeyFromNav(navStep, anchor);
-  final overview = await ref.watch(
-    hubPeriodReceptionBundleProvider(periodKey).future,
-  );
-  final loginName = ref.watch(authControllerProvider)?.name;
-  return segmentBadgeCountForUser(overview.uncalledOverview, loginName);
+  final summary = await ref.watch(hubPendingUncalledSummaryProvider.future);
+  final loginName = ref.watch(authControllerProvider)?.name?.trim();
+  if (loginName != null && loginName.isNotEmpty) {
+    return summary.userCount;
+  }
+  return summary.total;
 });
 
 /// 홈 [달력] 탭 배지 — 흐름 앵커 기준 주/월 구간 팔로우 건수, 로그인 담당자 우선.

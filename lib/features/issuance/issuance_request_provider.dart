@@ -1,3 +1,5 @@
+import 'package:coad_customer_calls/data/auth_controller.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/tax_invoice_calc.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,9 +7,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 enum IssuanceDomain { taxInvoice, performanceBond }
 
 /// 웹 `IssuanceInnerTab` 과 대응 (Flutter 메인 UI는 request / all / issued 만 사용).
-enum IssuanceRowKind { request, partial, completed, issued }
+enum IssuanceRowKind { request, partial, completed, issued, cancelled }
 
-typedef IssuanceLaunchTarget = ({IssuanceDomain domain, bool showCompleted});
+typedef IssuanceLaunchTarget = ({
+  IssuanceDomain domain,
+  bool showCompleted,
+  String? masterId,
+  String? issueId,
+  IssuanceListKind? listKind,
+});
 final pendingIssuanceLaunchProvider = StateProvider<IssuanceLaunchTarget?>(
   (ref) => null,
 );
@@ -92,17 +100,73 @@ class IssuanceRequestRow {
   );
 }
 
+String issuanceRequestOwnerName(IssuanceRequestRow row) {
+  final requester = (row.master['requester'] ?? '').toString().trim();
+  if (requester.isNotEmpty) return requester;
+  return (row.master['created_by'] ?? '').toString().trim();
+}
+
+/// 이름 비교용 정규화 — 공백 차이("김경덕 " vs "김경덕")·연속 공백·대소문자 무시.
+String _normalizeOwnerName(String raw) =>
+    raw.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+/// 내 요청 판별.
+///
+/// DB(웹 포함)가 requester/created_by에 이름만 저장하므로 이름 기반 비교가
+/// 한계지만, 정규화 후 requester·created_by 둘 다 확인해 누락을 줄인다.
+bool issuanceIsOwnRequest(IssuanceRequestRow row, String? userName) {
+  final me = _normalizeOwnerName(userName ?? '');
+  if (me.isEmpty) return false;
+  final requester =
+      _normalizeOwnerName((row.master['requester'] ?? '').toString());
+  final createdBy =
+      _normalizeOwnerName((row.master['created_by'] ?? '').toString());
+  return requester == me || createdBy == me;
+}
+
+List<IssuanceRequestRow> sortIssuanceRowsOwnFirst(
+  List<IssuanceRequestRow> rows,
+  String? userName,
+) {
+  final sorted = List<IssuanceRequestRow>.from(rows);
+  sorted.sort((a, b) {
+    final aOwn = issuanceIsOwnRequest(a, userName);
+    final bOwn = issuanceIsOwnRequest(b, userName);
+    if (aOwn != bOwn) return aOwn ? -1 : 1;
+    return b.createdAt.compareTo(a.createdAt);
+  });
+  return sorted;
+}
+
+({List<IssuanceRequestRow> mine, List<IssuanceRequestRow> others})
+splitIssuanceRowsByOwner(
+  List<IssuanceRequestRow> rows,
+  String? userName,
+) {
+  final mine = <IssuanceRequestRow>[];
+  final others = <IssuanceRequestRow>[];
+  for (final row in sortIssuanceRowsOwnFirst(rows, userName)) {
+    if (issuanceIsOwnRequest(row, userName)) {
+      mine.add(row);
+    } else {
+      others.add(row);
+    }
+  }
+  return (mine: mine, others: others);
+}
+
 class IssuanceRequestService {
   SupabaseClient get _client => Supabase.instance.client;
 
   static bool isCancelledStatus(String raw) {
-    switch (raw.trim().toLowerCase()) {
+    final normalized = raw.trim().toLowerCase();
+    switch (normalized) {
       case 'cancelled':
       case 'canceled':
       case 'cancel':
         return true;
       default:
-        return false;
+        return normalized == '취소';
     }
   }
 
@@ -112,14 +176,145 @@ class IssuanceRequestService {
         : _fetchPerformanceBondRequests();
   }
 
+  /// 웹 `issuanceRequestBadgeCounts.ts` 와 동일한 발급요청 건수.
+  Future<int> fetchRequestBadgeCount(IssuanceDomain domain) async {
+    return domain == IssuanceDomain.taxInvoice
+        ? _fetchTaxRequestBadgeCount()
+        : _fetchBondRequestBadgeCount();
+  }
+
+  Future<int> _fetchTaxRequestBadgeCount() async {
+    final invoicesRes = await _client
+        .from('tax_invoices')
+        .select('id, invoice_image_url, percentage, status')
+        .eq('status', 'pending');
+    final invoices = List<Map<String, dynamic>>.from(invoicesRes);
+    if (invoices.isEmpty) return 0;
+
+    final invoiceIds =
+        invoices.map((e) => e['id']).where((id) => id != null).toList();
+    final issuesRes = invoiceIds.isEmpty
+        ? <dynamic>[]
+        : await _client
+              .from('tax_invoice_issues')
+              .select('tax_invoice_id, invoice_image_url')
+              .inFilter('tax_invoice_id', invoiceIds);
+    final issuesByInvoice = <dynamic, List<Map<String, dynamic>>>{};
+    for (final issue in List<Map<String, dynamic>>.from(issuesRes)) {
+      final id = issue['tax_invoice_id'];
+      issuesByInvoice.putIfAbsent(id, () => []);
+      issuesByInvoice[id]!.add(issue);
+    }
+
+    var count = 0;
+    for (final invoice in invoices) {
+      final issues =
+          issuesByInvoice[invoice['id']] ?? const <Map<String, dynamic>>[];
+      final hasIssuedIssue = issues.any(
+        (i) => _hasText(i['invoice_image_url']),
+      );
+      if (hasIssuedIssue) continue;
+
+      final requestIssues =
+          issues.where((i) => !_hasText(i['invoice_image_url'])).toList();
+      if (requestIssues.isEmpty) {
+        final pct = _toNum(invoice['percentage']);
+        final masterIssued =
+            _hasText(invoice['invoice_image_url']) && pct >= 100;
+        if (!masterIssued) count += 1;
+        continue;
+      }
+      count += requestIssues.length;
+    }
+    return count;
+  }
+
+  Future<int> _fetchBondRequestBadgeCount() async {
+    final bondsRes = await _client
+        .from('performance_bonds')
+        .select('id, status, bond_image_url')
+        .inFilter('status', ['pending', 'draft']);
+    final bonds = List<Map<String, dynamic>>.from(bondsRes);
+    if (bonds.isEmpty) return 0;
+
+    final bondIds = bonds.map((b) => b['id']).where((id) => id != null).toList();
+    if (bondIds.isEmpty) return 0;
+
+    final issuesRes = await _client
+        .from('performance_bond_issues')
+        .select('performance_bond_id, bond_image_url')
+        .inFilter('performance_bond_id', bondIds);
+    final issues = List<Map<String, dynamic>>.from(issuesRes);
+    final issuesByBond = <dynamic, List<Map<String, dynamic>>>{};
+    for (final issue in issues) {
+      final id = issue['performance_bond_id'];
+      issuesByBond.putIfAbsent(id, () => []);
+      issuesByBond[id]!.add(issue);
+    }
+
+    var count = 0;
+    for (final bond in bonds) {
+      final bondIssues = issuesByBond[bond['id']] ?? const [];
+      final hasIssued =
+          bondIssues.any((i) => _hasText(i['bond_image_url'])) ||
+          _hasText(bond['bond_image_url']);
+      if (hasIssued) continue;
+      if (bondIssues.isEmpty) {
+        count += 1;
+      } else {
+        count += bondIssues
+            .where((i) => !_hasText(i['bond_image_url']))
+            .length;
+      }
+    }
+    return count;
+  }
+
+  double _toNum(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse((value ?? '').toString()) ?? 0;
+  }
+
+  Future<List<IssuanceRequestRow>> fetchCancelledRows(
+    IssuanceDomain domain,
+  ) async {
+    return domain == IssuanceDomain.taxInvoice
+        ? _fetchCancelledTaxInvoices()
+        : _fetchCancelledPerformanceBonds();
+  }
+
+  Future<void> cancelMaster({
+    required IssuanceDomain domain,
+    required String masterId,
+    required String cancelledBy,
+    required String cancelReason,
+  }) async {
+    final table = domain == IssuanceDomain.taxInvoice
+        ? 'tax_invoices'
+        : 'performance_bonds';
+    await _client
+        .from(table)
+        .update({
+          'status': 'cancelled',
+          'cancel_reason': cancelReason.trim(),
+          'cancelled_by': cancelledBy.trim(),
+          'cancelled_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', masterId);
+  }
+
   Future<List<IssuanceRequestRow>> _fetchTaxInvoiceRequests() async {
-    final invoicesRes = await _client.from('tax_invoices').select('''
+    final invoicesRes = await _client
+        .from('tax_invoices')
+        .select('''
       id,
       created_at,
       status,
       percentage,
       invoice_image_url,
+      invoice_number,
       customer_name,
+      customer_registration_number,
       item_name,
       item_type,
       total_amount,
@@ -132,9 +327,15 @@ class IssuanceRequestService {
       issue_date,
       issue_request_date,
       branch,
+      email,
       requester,
-      created_by
-    ''');
+      created_by,
+      business_registration_image_url,
+      cancel_reason,
+      cancelled_at,
+      cancelled_by
+    ''')
+        .neq('status', 'cancelled');
     final invoices = List<Map<String, dynamic>>.from(invoicesRes);
     if (invoices.isEmpty) return [];
 
@@ -185,7 +386,7 @@ class IssuanceRequestService {
       );
       final statusRaw = (invoice['status'] ?? '').toString().toLowerCase();
 
-      // §5-1 발급요청: 미발급 issue 1건=1행, 발급 이력 있으면 제외
+      // §5-1 발급요청: 웹(coad_home)과 동일하게 "실제 발급 이력 없음"일 때만 요청 목록에 포함.
       if (!hasAnyIssued) {
         if (pendingIssues.isNotEmpty) {
           for (final issue in pendingIssues) {
@@ -262,7 +463,9 @@ class IssuanceRequestService {
   }
 
   Future<List<IssuanceRequestRow>> _fetchPerformanceBondRequests() async {
-    final bondsRes = await _client.from('performance_bonds').select('''
+    final bondsRes = await _client
+        .from('performance_bonds')
+        .select('''
       id,
       created_at,
       status,
@@ -274,9 +477,15 @@ class IssuanceRequestService {
       guarantee_rate,
       guarantee_period,
       contract_date,
+      request_deadline,
+      email,
       requester,
-      created_by
-    ''');
+      created_by,
+      cancel_reason,
+      cancelled_at,
+      cancelled_by
+    ''')
+        .neq('status', 'cancelled');
     final bonds = List<Map<String, dynamic>>.from(bondsRes);
     if (bonds.isEmpty) return [];
 
@@ -292,7 +501,10 @@ class IssuanceRequestService {
             id,
             performance_bond_id,
             created_at,
-            bond_image_url
+            bond_image_url,
+            request_image_url,
+            construction_start_date,
+            construction_end_date
           ''')
               .inFilter('performance_bond_id', bondIds);
     final issues = List<Map<String, dynamic>>.from(issuesRes);
@@ -320,7 +532,7 @@ class IssuanceRequestService {
           issuedIssues.isNotEmpty || _hasText(bond['bond_image_url']);
       final statusRaw = (bond['status'] ?? '').toString().toLowerCase();
 
-      if (!hasAnyIssued) {
+      if (!hasAnyIssued && (statusRaw == 'pending' || statusRaw == 'draft')) {
         if (pendingIssues.isNotEmpty) {
           for (final issue in pendingIssues) {
             rows.add(
@@ -332,7 +544,7 @@ class IssuanceRequestService {
               ),
             );
           }
-        } else if (statusRaw == 'pending' || statusRaw == 'draft') {
+        } else {
           rows.add(
             IssuanceRequestRow(
               master: bond,
@@ -357,6 +569,76 @@ class IssuanceRequestService {
       }
     }
 
+    rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return rows;
+  }
+
+  /// [isCancelledStatus]와 동일한 취소 상태 값 (서버 필터용).
+  static const _cancelledStatusValues = ['cancelled', 'canceled', 'cancel', '취소'];
+
+  Future<List<IssuanceRequestRow>> _fetchCancelledTaxInvoices() async {
+    final invoicesRes = await _client
+        .from('tax_invoices')
+        .select('''
+      id,
+      created_at,
+      status,
+      invoice_number,
+      customer_name,
+      item_name,
+      item_type,
+      total_amount,
+      requester,
+      created_by,
+      cancel_reason,
+      cancelled_at,
+      cancelled_by
+    ''')
+        .inFilter('status', _cancelledStatusValues);
+    final rows = <IssuanceRequestRow>[];
+    for (final invoice in List<Map<String, dynamic>>.from(invoicesRes)) {
+      rows.add(
+        IssuanceRequestRow(
+          master: invoice,
+          issue: null,
+          domain: IssuanceDomain.taxInvoice,
+          kind: IssuanceRowKind.cancelled,
+        ),
+      );
+    }
+    rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return rows;
+  }
+
+  Future<List<IssuanceRequestRow>> _fetchCancelledPerformanceBonds() async {
+    final bondsRes = await _client
+        .from('performance_bonds')
+        .select('''
+      id,
+      created_at,
+      status,
+      bond_type,
+      bond_number,
+      company_name,
+      contract_amount,
+      requester,
+      created_by,
+      cancel_reason,
+      cancelled_at,
+      cancelled_by
+    ''')
+        .inFilter('status', _cancelledStatusValues);
+    final rows = <IssuanceRequestRow>[];
+    for (final bond in List<Map<String, dynamic>>.from(bondsRes)) {
+      rows.add(
+        IssuanceRequestRow(
+          master: bond,
+          issue: null,
+          domain: IssuanceDomain.performanceBond,
+          kind: IssuanceRowKind.cancelled,
+        ),
+      );
+    }
     rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return rows;
   }
@@ -390,6 +672,8 @@ int _rowKindPriority(IssuanceRowKind kind) {
       return 2;
     case IssuanceRowKind.completed:
       return 3;
+    case IssuanceRowKind.cancelled:
+      return 4;
   }
 }
 
@@ -431,6 +715,20 @@ final issuanceRequestRowsProvider =
       return rows.where((row) => row.kind == IssuanceRowKind.request).toList();
     });
 
+/// 내 발급대기 건 (정렬: 최신순).
+final issuanceMyRequestRowsProvider =
+    FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((
+      ref,
+      domain,
+    ) async {
+      final user = ref.watch(authControllerProvider);
+      final rows = await ref.watch(issuanceRequestRowsProvider(domain).future);
+      return rows
+          .where((row) => issuanceIsOwnRequest(row, user?.name))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    });
+
 /// 부분발급 탭 (웹 `partial`) — 추후 UI 확장용.
 final issuancePartialRowsProvider =
     FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((
@@ -439,6 +737,19 @@ final issuancePartialRowsProvider =
     ) async {
       final rows = await ref.watch(issuanceAllRowsProvider(domain).future);
       return rows.where((row) => row.kind == IssuanceRowKind.partial).toList();
+    });
+
+/// 완료 탭 (웹 `completed`) — 100% 발급 + status completed (세금계산서).
+final issuanceFullyCompletedRowsProvider =
+    FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((
+      ref,
+      domain,
+    ) async {
+      if (domain != IssuanceDomain.taxInvoice) return const [];
+      final rows = await ref.watch(issuanceAllRowsProvider(domain).future);
+      return rows
+          .where((row) => row.kind == IssuanceRowKind.completed)
+          .toList();
     });
 
 /// 발급완료 — 실제 발급 이력 1건 이상 (웹 `issued`, status·% 무관).
@@ -451,29 +762,59 @@ final issuanceCompletedRowsProvider =
       return rows.where((row) => row.kind == IssuanceRowKind.issued).toList();
     });
 
-/// 전체 탭 — invoice당 1행 (request > partial > issued 우선).
+/// 취소된 발급요청 건.
+final issuanceCancelledRowsProvider =
+    FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((
+      ref,
+      domain,
+    ) async {
+      return ref
+          .read(issuanceRequestServiceProvider)
+          .fetchCancelledRows(domain);
+    });
+
+/// 전체 탭 — 마스터당 1행 (request > partial > issued > cancelled).
 final issuanceAllTabRowsProvider =
     FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((
       ref,
       domain,
     ) async {
       final rows = await ref.watch(issuanceAllRowsProvider(domain).future);
-      return _dedupeRowsForAllTab(
-        rows.where((row) => !row.isCancelled).toList(),
+      final cancelled = await ref.watch(
+        issuanceCancelledRowsProvider(domain).future,
       );
+      return _dedupeRowsForAllTab([...rows, ...cancelled]);
     });
 
 /// false면 배지 API 미조회(앱 시작 부하 완화). 발급 탭·지연 후 true.
 final issuanceBadgeLoadEnabledProvider = StateProvider<bool>((ref) => false);
 
+/// 하단 탭 배지 — **내** 발급대기 건수 (본인 확인용).
 final issuanceRequestBadgeCountProvider = FutureProvider<int>((ref) async {
+  final user = ref.watch(authControllerProvider);
+  if (user == null) return 0;
   final taxRows = await ref.watch(
     issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future,
   );
   final bondRows = await ref.watch(
     issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
   );
-  return taxRows.length + bondRows.length;
+  return [
+    ...taxRows,
+    ...bondRows,
+  ].where((row) => issuanceIsOwnRequest(row, user.name)).length;
+});
+
+/// 허브 등 — 전체 발급대기 건수 (웹 배지 규칙).
+final issuanceRequestTotalBadgeCountProvider = FutureProvider<int>((ref) async {
+  final service = ref.read(issuanceRequestServiceProvider);
+  final taxCount = await service.fetchRequestBadgeCount(
+    IssuanceDomain.taxInvoice,
+  );
+  final bondCount = await service.fetchRequestBadgeCount(
+    IssuanceDomain.performanceBond,
+  );
+  return taxCount + bondCount;
 });
 
 /// [issuanceBadgeLoadEnabledProvider]가 켜진 뒤에만 실제 건수를 조회.

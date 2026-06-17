@@ -1047,20 +1047,79 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     }
   }
 
+  Future<void> _openPendingUncalledPicker({bool forcePicker = false}) async {
+    if (forcePicker && _showLongPressHint) {
+      _dismissLongPressHint();
+    }
+    List<SalesCall> rows;
+    try {
+      rows = await _withFreshDataLoading(() async {
+        ref.invalidate(hubPendingUncalledCallsProvider);
+        return ref.read(hubPendingUncalledCallsProvider.future);
+      }) ??
+          const [];
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('처리할 미통화 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final overrides =
+        await ref.read(tempManagerOverridesProvider.future);
+    final counts = _countsFromRows(
+      rows,
+      (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
+    );
+    if (!forcePicker && rows.isEmpty) {
+      await _showAutoCloseInfoDialog('처리할 미통화가 없습니다.');
+      return;
+    }
+    final selected = await _pickHubAssignee(
+      title: '처리할 미통화',
+      subtitle: '최근 $pendingUncalledLookbackDays일',
+      counts: counts,
+      forcePicker: forcePicker,
+    );
+    if (!mounted || selected == null) return;
+    await _pushPendingUncalledList(selected);
+  }
+
+  Future<void> _pushPendingUncalledList(String assignee) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.pendingUncalled,
+          date: pendingUncalledFromYmd(_hubFlowAnchorYmd),
+          initialAssignee: assignee,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pushIncompleteListForDate(String anchorYmd, String assignee) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.incomplete,
+          date: anchorYmd,
+          initialAssignee: assignee,
+        ),
+      ),
+    );
+  }
+
   Future<void> _pushIncompleteList(HubPeriod scope, String assignee) async {
     final weekR = seoulWeekRangeContaining(_hubFlowAnchorYmd);
     final monthR = seoulMonthRangeContaining(_hubFlowAnchorYmd);
     switch (scope) {
       case HubPeriod.day:
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => SalesCallListScreen(
-              mode: ListQueryMode.incomplete,
-              date: _hubFlowAnchorYmd,
-              initialAssignee: assignee,
-            ),
-          ),
-        );
+        await _pushIncompleteListForDate(_hubFlowAnchorYmd, assignee);
       case HubPeriod.week:
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
@@ -1331,6 +1390,50 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
     if (!mounted || selected == null) return;
     await _pushIncompleteList(scope, selected);
+  }
+
+  Future<void> _openPreviousDayIncompletePicker({bool forcePicker = false}) async {
+    if (forcePicker && _showLongPressHint) {
+      _dismissLongPressHint();
+    }
+    final periodKey = _previousPeriodKey;
+    if (periodKey.period != HubPeriod.day) return;
+
+    List<SalesCall> rows;
+    try {
+      final bundle = await _withFreshDataLoading(
+        () => refreshHubPeriodUncalledBundle(ref, periodKey),
+      );
+      if (bundle == null || !mounted) return;
+      rows = bundle.uncalledCalls;
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('전일 미통화 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final overrides =
+        await ref.read(tempManagerOverridesProvider.future);
+    final counts = _countsFromRows(
+      rows,
+      (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
+    );
+    if (!forcePicker && rows.isEmpty) {
+      await _showAutoCloseInfoDialog('전일 미통화가 없습니다.');
+      return;
+    }
+    final selected = await _pickHubAssignee(
+      title: '전일 미통화',
+      subtitle: '${formatYmdFlowLabelKo(periodKey.anchorYmd)} 접수',
+      counts: counts,
+      forcePicker: forcePicker,
+    );
+    if (!mounted || selected == null) return;
+    await _pushIncompleteListForDate(periodKey.anchorYmd, selected);
   }
 
   Future<void> _showAutoCloseInfoDialog(
@@ -1835,13 +1938,15 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     ref.invalidate(hubPeriodStatsProvider(previous));
     ref.invalidate(hubPeriodFollowOverviewProvider(active));
     ref.invalidate(hubPeriodQualityOverviewProvider(active));
+    ref.invalidate(hubPendingUncalledCallsProvider);
     await Future.wait([
       ref.read(hubPeriodReceptionBundleProvider(active).future),
       ref.read(hubPeriodStatsProvider(active).future),
       ref.read(hubPeriodStatsProvider(previous).future),
       ref.read(hubPeriodFollowOverviewProvider(active).future),
       ref.read(hubPeriodQualityOverviewProvider(active).future),
-    ]);
+      ref.read(hubPendingUncalledSummaryProvider.future),
+    ]).catchError((_) => <void>[]);
   }
 
   void _invalidateSegmentBadges() {
@@ -1856,6 +1961,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         await _refreshActiveFlowPeriod();
       case HomeHubSection.incomplete:
         ref.invalidate(incompleteBreakdownCallsProvider);
+        ref.invalidate(hubPendingUncalledCallsProvider);
         await ref.read(hubSegmentIncompleteBadgeProvider.future);
       case HomeHubSection.calendar:
         final calKey = _calendarRangeKeyForHub();
@@ -2161,6 +2267,139 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     return d > 0 ? '+$d' : '$d';
   }
 
+  Widget _buildPreviousDayUncalledBanner({
+    required ColorScheme scheme,
+    required int count,
+    required String anchorYmd,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: scheme.tertiaryContainer.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: () => _openPreviousDayIncompletePicker(),
+          onLongPress: () => _openPreviousDayIncompletePicker(forcePicker: true),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.history_rounded,
+                  size: 18,
+                  color: scheme.tertiary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '전일 미통화 $count',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onTertiaryContainer,
+                        ),
+                      ),
+                      Text(
+                        count > 0
+                            ? '${formatYmdFlowLabelKo(anchorYmd)} 접수 · 늦은 문의 확인'
+                            : '${formatYmdFlowLabelKo(anchorYmd)} 접수 · 미통화 없음',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onTertiaryContainer.withValues(
+                            alpha: 0.82,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: scheme.onTertiaryContainer.withValues(alpha: 0.7),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingUncalledBanner(ColorScheme scheme) {
+    final summaryAsync = ref.watch(hubPendingUncalledSummaryProvider);
+    return summaryAsync.when(
+      data: (summary) {
+        final loginName = ref.watch(authControllerProvider)?.name?.trim();
+        final count = loginName != null && loginName.isNotEmpty
+            ? summary.userCount
+            : summary.total;
+        if (count == 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+          color: scheme.errorContainer.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: () => _openPendingUncalledPicker(),
+            onLongPress: () =>
+                _openPendingUncalledPicker(forcePicker: true),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.schedule_rounded,
+                    size: 18,
+                    color: scheme.error,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '처리할 미통화 $count',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.onErrorContainer,
+                          ),
+                        ),
+                        Text(
+                          '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onErrorContainer.withValues(
+                              alpha: 0.82,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: scheme.onErrorContainer.withValues(alpha: 0.7),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
   Widget _buildFlowReceptionCompareBanner({
     required ColorScheme scheme,
     required String compareLabel,
@@ -2242,6 +2481,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         final followCount = followOverviewAsync.valueOrNull?.total ?? 0;
         final quality = qualityAsync.valueOrNull;
         final prevReception = prevStatsAsync.valueOrNull?.todayCount ?? 0;
+        final prevIncomplete = prevStatsAsync.valueOrNull?.incompleteCount ?? 0;
+        final previousDayYmd = scope == HubPeriod.day
+            ? _previousPeriodKey.anchorYmd
+            : null;
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -2263,6 +2506,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         ),
                         const SizedBox(height: 8),
                       ],
+                      if (previousDayYmd != null)
+                        _buildPreviousDayUncalledBanner(
+                          scheme: scheme,
+                          count: prevIncomplete,
+                          anchorYmd: previousDayYmd,
+                        ),
+                      _buildPendingUncalledBanner(scheme),
                       _MiniStatsWidget(
                         compact: true,
                         receptionLabel: receptionLabel,

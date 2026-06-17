@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:coad_customer_calls/data/auth_controller.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_completed_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_page.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_card.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
-import 'package:coad_customer_calls/features/issue_request/presentation/pages/issue_request_list_page.dart';
-import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,50 +25,104 @@ class IssuanceRequestScreen extends ConsumerStatefulWidget {
 class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   IssuanceDomain _domain = IssuanceDomain.taxInvoice;
   bool _isListeningLaunch = false;
+  bool _consumingLaunch = false;
+  bool _refreshing = false;
 
-  Future<void> _refreshIssuanceData() async {
+  Future<void> _reloadIssuanceData() async {
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(
+      issuanceCancelledRowsProvider(IssuanceDomain.performanceBond),
+    );
     ref.invalidate(issuanceRequestBadgeCountProvider);
+    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
     await Future.wait([
       ref.read(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
       ref.read(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
     ]);
   }
 
-  void _consumePendingLaunch() {
+  Future<void> _refreshIssuanceData({bool showCompletionSnackBar = false}) {
+    return runIssuanceRefresh(
+      context: context,
+      onLoadingChanged: (loading) => setState(() => _refreshing = loading),
+      showCompletionSnackBar: showCompletionSnackBar,
+      action: _reloadIssuanceData,
+    );
+  }
+
+  Future<void> _consumePendingLaunch() async {
+    if (_consumingLaunch) return;
     final next = ref.read(pendingIssuanceLaunchProvider);
-    if (next == null) return;
-    setState(() => _domain = next.domain);
-    ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (next == null || !mounted) return;
+    _consumingLaunch = true;
+    try {
+      setState(() => _domain = next.domain);
+
+      final masterId = next.masterId?.trim() ?? '';
+      if (masterId.isNotEmpty) {
+        // 상세 열기는 NotificationService가 담당 — 탭·도메인만 맞춘다.
+        if (mounted) {
+          ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
+        }
+        return;
+      }
+
       if (!mounted) return;
       if (next.showCompleted) {
-        unawaited(_openCompletedListPage());
+        await _openCompletedListPage(
+          openMasterId: next.masterId,
+          openIssueId: next.issueId,
+        );
       } else {
-        unawaited(_openListPage(IssuanceListKind.request, domain: next.domain));
+        await _openListPage(
+          next.listKind ?? IssuanceListKind.request,
+          domain: next.domain,
+          openMasterId: next.masterId,
+          openIssueId: next.issueId,
+        );
       }
-    });
+      if (!mounted) return;
+      ref.read(pendingIssuanceLaunchProvider.notifier).state = null;
+      NotificationService.clearPendingIssuanceNavigation();
+    } finally {
+      _consumingLaunch = false;
+    }
   }
 
   Future<void> _openListPage(
     IssuanceListKind kind, {
     IssuanceDomain? domain,
+    String? openMasterId,
+    String? openIssueId,
   }) async {
     final d = domain ?? _domain;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => IssuanceFilteredListPage(domain: d, kind: kind),
+        builder: (_) => IssuanceFilteredListPage(
+          domain: d,
+          kind: kind,
+          openMasterId: openMasterId,
+          openIssueId: openIssueId,
+        ),
       ),
     );
     if (!mounted) return;
     await _refreshIssuanceData();
   }
 
-  Future<void> _openCompletedListPage() async {
+  Future<void> _openCompletedListPage({
+    String? openMasterId,
+    String? openIssueId,
+  }) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => IssuanceCompletedListPage(domain: _domain),
+        builder: (_) => IssuanceCompletedListPage(
+          domain: _domain,
+          openMasterId: openMasterId,
+          openIssueId: openIssueId,
+        ),
       ),
     );
     if (!mounted) return;
@@ -85,92 +142,67 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     }
   }
 
-  Future<int?> _promptIssueRequestUserId() async {
-    final loginId = ref.read(authControllerProvider)?.id.trim() ?? '';
-    final parsed = int.tryParse(loginId);
-    if (parsed != null) return parsed;
-
-    final controller = TextEditingController(text: loginId);
-    final entered = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('user_id 입력'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'REST API는 숫자 user_id가 필요합니다.\n'
-              '테스트용 ID를 입력해 주세요.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'user_id',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = int.tryParse(controller.text.trim());
-              if (value == null) return;
-              Navigator.of(context).pop(value);
-            },
-            child: const Text('확인'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return entered;
-  }
-
-  Future<void> _openIssueRequestApiList() async {
-    final userId = await _promptIssueRequestUserId();
-    if (userId == null || !mounted) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => IssueRequestListPage(userId: userId),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!_isListeningLaunch) {
       _isListeningLaunch = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _consumePendingLaunch();
+        unawaited(_consumePendingLaunch());
       });
-      ref.listen<IssuanceLaunchTarget?>(pendingIssuanceLaunchProvider, (_, _) {
-        if (!mounted) return;
-        _consumePendingLaunch();
+      ref.listen<IssuanceLaunchTarget?>(pendingIssuanceLaunchProvider, (_, next) {
+        if (!mounted || next == null) return;
+        unawaited(_consumePendingLaunch());
       });
     }
 
     final scheme = Theme.of(context).colorScheme;
-    final pendingAsync = ref.watch(issuanceRequestRowsProvider(_domain));
     final partialAsync = ref.watch(issuancePartialRowsProvider(_domain));
+    final fullyCompletedAsync = ref.watch(
+      issuanceFullyCompletedRowsProvider(_domain),
+    );
     final allAsync = ref.watch(issuanceAllTabRowsProvider(_domain));
     final completedAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
-    final taxPendingAsync = ref.watch(
+    final cancelledAsync = ref.watch(issuanceCancelledRowsProvider(_domain));
+    final taxCompletedAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondCompletedAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
+    );
+    final taxPendingAllAsync = ref.watch(
       issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
-    final bondPendingAsync = ref.watch(
+    final bondPendingAllAsync = ref.watch(
       issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
     );
-    final taxCount = taxPendingAsync.valueOrNull?.length;
-    final bondCount = bondPendingAsync.valueOrNull?.length;
+    final taxPendingAsync = ref.watch(
+      issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondPendingAsync = ref.watch(
+      issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
+    );
+    final taxCount = taxPendingAllAsync.valueOrNull?.length;
+    final bondCount = bondPendingAllAsync.valueOrNull?.length;
+    final combinedMyPendingCount =
+        (taxPendingAsync.valueOrNull?.length ?? 0) +
+        (bondPendingAsync.valueOrNull?.length ?? 0);
+    bool isToday(DateTime dt) {
+      final local = dt.toLocal();
+      final now = DateTime.now();
+      return local.year == now.year &&
+          local.month == now.month &&
+          local.day == now.day;
+    }
+
+    final todayTaxIssued = (taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+        .where((row) => isToday(row.createdAt))
+        .length;
+    final todayBondIssued =
+        (bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+            .where((row) => isToday(row.createdAt))
+            .length;
+    final todayIssuedCount = todayTaxIssued + todayBondIssued;
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
 
@@ -215,7 +247,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          '발급요청 (TEST)',
+                          '발급요청',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 17,
@@ -225,14 +257,24 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         ),
                       ),
                       IconButton(
-                        tooltip: '새로고침',
+                        tooltip: _refreshing ? '새로고침 중…' : '새로고침',
                         visualDensity: VisualDensity.compact,
                         style: IconButton.styleFrom(
                           backgroundColor: Colors.white.withValues(alpha: 0.2),
                           foregroundColor: Colors.white,
                         ),
-                        onPressed: () => unawaited(_refreshIssuanceData()),
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        onPressed: _refreshing
+                            ? null
+                            : () => unawaited(
+                                  _refreshIssuanceData(
+                                    showCompletionSnackBar: true,
+                                  ),
+                                ),
+                        icon: issuanceRefreshButtonIcon(
+                          loading: _refreshing,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                       ),
                     ],
                   ),
@@ -283,7 +325,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('발급하기'),
+                label: const Text('발급 요청하기'),
               ),
             ),
           ),
@@ -297,55 +339,90 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   Text(
                     '목록 보기',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w800,
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   _HubMenuTile(
                     icon: IssuanceListKind.request.icon,
-                    title: IssuanceListKind.request.title,
-                    subtitle: '미발급 요청 · 처리 필요',
-                    count: count(pendingAsync),
+                    title: '발급대기',
+                    count: combinedMyPendingCount,
+                    subtitle:
+                        '세금 ${taxPendingAsync.valueOrNull?.length ?? 0}건 · 이행 ${bondPendingAsync.valueOrNull?.length ?? 0}건',
                     accent: Colors.blue.shade700,
-                    onTap: () => _openListPage(IssuanceListKind.request),
+                    large: true,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const _CombinedIssuancePendingPage(),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   _HubMenuTile(
-                    icon: IssuanceListKind.partial.icon,
-                    title: IssuanceListKind.partial.title,
-                    subtitle: '일부 발급 후 남은 %',
-                    count: count(partialAsync),
-                    accent: Colors.orange.shade800,
-                    onTap: () => _openListPage(IssuanceListKind.partial),
-                  ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: IssuanceListKind.all.icon,
-                    title: IssuanceListKind.all.title,
-                    subtitle: '진행 중인 모든 건',
-                    count: count(allAsync),
-                    accent: scheme.onSurface,
-                    onTap: () => _openListPage(IssuanceListKind.all),
-                  ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: Icons.check_circle_outline_rounded,
-                    title: '발급완료',
-                    subtitle: '실제 발급된 이력',
-                    count: count(completedAsync),
+                    icon: Icons.task_alt_rounded,
+                    title: '금일 발급완료',
+                    count: todayIssuedCount,
+                    subtitle: '세금 $todayTaxIssued건 · 이행 $todayBondIssued건',
                     accent: Colors.teal.shade700,
-                    onTap: _openCompletedListPage,
+                    large: true,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const _CombinedTodayIssuedPage(),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                  _HubMenuTile(
-                    icon: Icons.api_rounded,
-                    title: 'REST API 발급요청',
-                    subtitle: 'issue_request 테이블 (Next API)',
-                    count: 0,
-                    accent: Colors.purple.shade700,
-                    onTap: () => unawaited(_openIssueRequestApiList()),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 2.1,
+                    children: [
+                      if (isTax)
+                        _HubMenuTile(
+                          icon: IssuanceListKind.partial.icon,
+                          title: IssuanceListKind.partial.title,
+                          count: count(partialAsync),
+                          accent: Colors.orange.shade800,
+                          onTap: () => _openListPage(IssuanceListKind.partial),
+                        ),
+                      if (isTax)
+                        _HubMenuTile(
+                          icon: IssuanceListKind.fullyCompleted.icon,
+                          title: IssuanceListKind.fullyCompleted.title,
+                          count: count(fullyCompletedAsync),
+                          accent: Colors.green.shade700,
+                          onTap: () => _openListPage(
+                            IssuanceListKind.fullyCompleted,
+                          ),
+                        ),
+                      _HubMenuTile(
+                        icon: Icons.check_circle_outline_rounded,
+                        title: '발급완료',
+                        count: count(completedAsync),
+                        accent: Colors.teal.shade700,
+                        onTap: _openCompletedListPage,
+                      ),
+                      _HubMenuTile(
+                        icon: IssuanceListKind.cancelled.icon,
+                        title: IssuanceListKind.cancelled.title,
+                        count: count(cancelledAsync),
+                        accent: Colors.grey.shade700,
+                        onTap: () =>
+                            _openListPage(IssuanceListKind.cancelled),
+                      ),
+                      _HubMenuTile(
+                        icon: IssuanceListKind.all.icon,
+                        title: IssuanceListKind.all.title,
+                        count: count(allAsync),
+                        accent: scheme.onSurface,
+                        onTap: () => _openListPage(IssuanceListKind.all),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -417,91 +494,527 @@ class _HubMenuTile extends StatelessWidget {
   const _HubMenuTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.count,
     required this.accent,
     required this.onTap,
+    this.subtitle,
+    this.large = false,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final int count;
   final Color accent;
   final VoidCallback onTap;
+  final String? subtitle;
+  final bool large;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(16),
+      color: scheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(large ? 14 : 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(large ? 14 : 12),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accent.withValues(alpha: 0.28)),
+          padding: EdgeInsets.symmetric(
+            horizontal: large ? 14 : 10,
+            vertical: large ? 14 : 8,
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: accent, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(large ? 14 : 12),
+            border: Border.all(
+              color: accent.withValues(alpha: large ? 0.35 : 0.22),
+              width: large ? 1.5 : 1,
+            ),
+            boxShadow: large
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.12),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: large
+              ? Row(
                   children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: scheme.onSurface,
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(icon, color: accent, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle == null
+                                ? '내 발급요청 확인'
+                                : '내 $count건 · $subtitle',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(width: 8),
                     Text(
-                      subtitle,
+                      '$count',
                       style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w900,
+                        color: accent,
+                        fontSize: 30,
+                        height: 1,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, color: accent, size: 18),
+                        const Spacer(),
+                        if (subtitle != null) ...[
+                          Flexible(
+                            child: Text(
+                              subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: accent,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurface,
+                        letterSpacing: -0.2,
                       ),
                     ),
                   ],
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '$count건',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: accent,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right_rounded, color: accent),
-            ],
-          ),
         ),
+      ),
+    );
+  }
+}
+
+class _CombinedIssuancePendingPage extends ConsumerStatefulWidget {
+  const _CombinedIssuancePendingPage();
+
+  @override
+  ConsumerState<_CombinedIssuancePendingPage> createState() =>
+      _CombinedIssuancePendingPageState();
+}
+
+class _CombinedIssuancePendingPageState
+    extends ConsumerState<_CombinedIssuancePendingPage> {
+
+  Future<void> _cancelRow(IssuanceRequestRow row) async {
+    final user = ref.read(authControllerProvider);
+    if (user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그인이 필요합니다.')));
+      return;
+    }
+    final reason = await showIssuanceCancelDialog(
+      context,
+      targetName: row.title,
+    );
+    if (reason == null || reason.trim().isEmpty) return;
+    try {
+      await ref
+          .read(issuanceRequestServiceProvider)
+          .cancelMaster(
+            domain: row.domain,
+            masterId: row.master['id'].toString(),
+            cancelledBy: user.name,
+            cancelReason: reason,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('발급요청이 취소되었습니다.')));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+        ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+        ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
+        ref.invalidate(
+          issuanceCancelledRowsProvider(IssuanceDomain.performanceBond),
+        );
+        ref.invalidate(issuanceRequestBadgeCountProvider);
+        ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(issuanceUserErrorMessage(e))));
+    }
+  }
+
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceRequestBadgeCountProvider);
+    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = ref.watch(authControllerProvider);
+    final taxAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+    );
+
+    final taxRows = taxAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+    final bondRows = bondAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+    final taxMine = taxRows.where((r) => issuanceIsOwnRequest(r, user?.name)).toList();
+    final bondMine = bondRows.where((r) => issuanceIsOwnRequest(r, user?.name)).toList();
+
+    final loading = taxAsync.isLoading || bondAsync.isLoading;
+    final hasError = taxAsync.hasError || bondAsync.hasError;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('발급대기'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => _refresh(ref),
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : hasError
+            ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 140),
+                  Center(child: Text('발급대기 목록을 불러오지 못했습니다.')),
+                ],
+              )
+            : ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildSectionHeader(
+                    context,
+                    title: '세금계산서',
+                    mineCount: taxMine.length,
+                    totalCount: taxRows.length,
+                    color: Colors.indigo.shade600,
+                  ),
+                  ...taxRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          IssuanceRequestCard(
+                            row: row,
+                            isOwn: issuanceIsOwnRequest(row, user?.name),
+                            large: true,
+                            onTap: () => showIssuanceRequestDetail(context, row),
+                          ),
+                          IssuanceRowActions(
+                            row: row,
+                            onIssue: (_) async {},
+                            onCancel: (r) => _cancelRow(r),
+                            onOpenDetail: null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildSectionHeader(
+                    context,
+                    title: '이행증권',
+                    mineCount: bondMine.length,
+                    totalCount: bondRows.length,
+                    color: Colors.deepOrange.shade700,
+                  ),
+                  ...bondRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          IssuanceRequestCard(
+                            row: row,
+                            isOwn: issuanceIsOwnRequest(row, user?.name),
+                            large: true,
+                            onTap: () => showIssuanceRequestDetail(context, row),
+                          ),
+                          IssuanceRowActions(
+                            row: row,
+                            onIssue: (_) async {},
+                            onCancel: (r) => _cancelRow(r),
+                            onOpenDetail: null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (taxRows.isEmpty && bondRows.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 120),
+                      child: Center(child: Text('발급대기 건이 없습니다.')),
+                    ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required String title,
+    required int mineCount,
+    required int totalCount,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: color,
+              ),
+            ),
+          ),
+          Text(
+            '내 $mineCount건 · 전체 $totalCount건',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CombinedTodayIssuedPage extends ConsumerWidget {
+  const _CombinedTodayIssuedPage();
+
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+  }
+
+  bool _isToday(DateTime dt) {
+    final local = dt.toLocal();
+    final now = DateTime.now();
+    return local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authControllerProvider);
+    final taxAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
+    );
+
+    final taxRows = (taxAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+        .where((r) => _isToday(r.createdAt))
+        .toList();
+    final bondRows = (bondAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+        .where((r) => _isToday(r.createdAt))
+        .toList();
+    final loading = taxAsync.isLoading || bondAsync.isLoading;
+    final hasError = taxAsync.hasError || bondAsync.hasError;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('금일 발급완료')),
+      body: RefreshIndicator(
+        onRefresh: () => _refresh(ref),
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : hasError
+            ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 140),
+                  Center(child: Text('금일 발급완료 목록을 불러오지 못했습니다.')),
+                ],
+              )
+            : ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildSectionHeader(
+                    context,
+                    title: '세금계산서',
+                    mineCount: taxRows
+                        .where((r) => issuanceIsOwnRequest(r, user?.name))
+                        .length,
+                    totalCount: taxRows.length,
+                    color: Colors.indigo.shade600,
+                  ),
+                  ...taxRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: IssuanceRequestCard(
+                        row: row,
+                        isOwn: issuanceIsOwnRequest(row, user?.name),
+                        large: true,
+                        onTap: () => showIssuanceRequestDetail(context, row),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildSectionHeader(
+                    context,
+                    title: '이행증권',
+                    mineCount: bondRows
+                        .where((r) => issuanceIsOwnRequest(r, user?.name))
+                        .length,
+                    totalCount: bondRows.length,
+                    color: Colors.deepOrange.shade700,
+                  ),
+                  ...bondRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: IssuanceRequestCard(
+                        row: row,
+                        isOwn: issuanceIsOwnRequest(row, user?.name),
+                        large: true,
+                        onTap: () => showIssuanceRequestDetail(context, row),
+                      ),
+                    ),
+                  ),
+                  if (taxRows.isEmpty && bondRows.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 120),
+                      child: Center(child: Text('오늘 발급완료 건이 없습니다.')),
+                    ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required String title,
+    required int mineCount,
+    required int totalCount,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: color,
+              ),
+            ),
+          ),
+          Text(
+            '내 $mineCount건 · 전체 $totalCount건',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

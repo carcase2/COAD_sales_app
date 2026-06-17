@@ -7,14 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final issueRequestDioProvider = Provider<Dio>((ref) {
-  final baseUrl = ref.watch(appDependenciesProvider).effectiveBaseUrl;
-  if (baseUrl.trim().isEmpty) {
-    throw const IssueRequestApiException('서버 주소가 설정되지 않았습니다. BASE_URL 확인 필요');
-  }
-
   final dio = Dio(
     BaseOptions(
-      baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 10),
       sendTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),
@@ -25,6 +19,27 @@ final issueRequestDioProvider = Provider<Dio>((ref) {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) {
+        final deps = ref.read(appDependenciesProvider);
+        final baseUrl = deps.effectiveBaseUrl.trim();
+        if (baseUrl.isEmpty) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              type: DioExceptionType.unknown,
+              error: const IssueRequestApiException(
+                '서버 주소가 설정되지 않았습니다. BASE_URL 확인 필요',
+              ),
+            ),
+          );
+          return;
+        }
+        options.baseUrl = baseUrl;
+
+        final cookie = deps.transport.cookieHeader;
+        if (cookie != null && cookie.isNotEmpty) {
+          options.headers['Cookie'] = cookie;
+        }
+
         if (kDebugMode) {
           debugPrint('[IssueRequest][REQ] ${options.method} ${options.uri}');
         }
@@ -153,6 +168,9 @@ class IssueRequestRepository {
   }
 
   IssueRequestApiException _mapDioError(DioException error) {
+    final nested = error.error;
+    if (nested is IssueRequestApiException) return nested;
+
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.sendTimeout ||
         error.type == DioExceptionType.receiveTimeout) {

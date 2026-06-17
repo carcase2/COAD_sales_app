@@ -43,6 +43,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
+
   /// 홈 상단 배너 [닫기] 시 해당 원격 버전은 다시 띄우지 않음.
   String? _dismissedUpdateBannerVersion;
   RealtimeChannel? _issuanceCompletionWatchChannel;
@@ -96,7 +97,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     // 2. Sync FCM token with Supabase for the current user
     final user = ref.read(authControllerProvider);
     if (user != null) {
-      NotificationService.updateTokenInSupabase(user.id);
+      unawaited(NotificationService.updateTokenInSupabase(user.id));
       NotificationService.listenToTokenRefresh(user.id);
     }
   }
@@ -134,44 +135,82 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _startIssuanceCompletionWatcher() {
     unawaited(_checkIssuanceCompletionAndNotify());
+    unawaited(_checkIssuanceRequestAndNotify());
     _issuanceCompletionWatchChannel?.unsubscribe();
     _issuanceCompletionWatchChannel = Supabase.instance.client
         .channel('issuance-completion-watch')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
+          table: 'tax_invoices',
+          callback: (_) => _scheduleIssuanceWatchCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'tax_invoices',
+          callback: (_) => _scheduleIssuanceWatchCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'performance_bonds',
+          callback: (_) => _scheduleIssuanceWatchCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'performance_bonds',
+          callback: (_) => _scheduleIssuanceWatchCheck(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
           table: 'tax_invoice_issues',
-          callback: (_) => _scheduleIssuanceCompletionCheck(),
+          callback: (_) => _scheduleIssuanceWatchCheck(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'tax_invoice_issues',
-          callback: (_) => _scheduleIssuanceCompletionCheck(),
+          callback: (_) => _scheduleIssuanceWatchCheck(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'performance_bond_issues',
-          callback: (_) => _scheduleIssuanceCompletionCheck(),
+          callback: (_) => _scheduleIssuanceWatchCheck(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'performance_bond_issues',
-          callback: (_) => _scheduleIssuanceCompletionCheck(),
+          callback: (_) => _scheduleIssuanceWatchCheck(),
         )
         .subscribe();
   }
 
-  void _scheduleIssuanceCompletionCheck() {
+  void _scheduleIssuanceWatchCheck() {
     _issuanceCompletionDebounce?.cancel();
     _issuanceCompletionDebounce = Timer(const Duration(milliseconds: 500), () {
       if (!mounted) return;
-      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-      unawaited(_checkIssuanceCompletionAndNotify());
+      unawaited(_runIssuanceWatchCheck());
     });
+  }
+
+  Future<void> _runIssuanceWatchCheck() async {
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    try {
+      await Future.wait([
+        ref.refresh(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
+        ref.refresh(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
+      ]);
+    } catch (_) {
+      // refetch 실패 시에도 감시 로직은 한 번 시도
+    }
+    await _checkIssuanceCompletionAndNotify();
+    await _checkIssuanceRequestAndNotify();
   }
 
   Future<void> _checkIssuanceCompletionAndNotify() async {
@@ -208,18 +247,75 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       final newKeys = currentKeys.difference(seenKeys);
       if (newKeys.isEmpty) return;
 
-      for (final row in allCompleted) {
+      // 로컬 알림은 FCM(또는 포그라운드 원격 알림)이 담당 — seen 키만 동기화.
+
+      final merged = seenKeys.union(currentKeys).toList();
+      await prefs.setStringList(seenKey, merged);
+    } catch (_) {
+      // 감시 실패 시 UI 영향 없이 다음 주기에 재시도
+    }
+  }
+
+  Future<void> _checkIssuanceRequestAndNotify() async {
+    try {
+      final prefs = ref.read(appDependenciesProvider).prefs;
+      const initKey = 'issuance_request_watch_initialized_v1';
+      const seenKey = 'issuance_request_seen_keys_v1';
+
+      final taxPending = await ref.read(
+        issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future,
+      );
+      final bondPending = await ref.read(
+        issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
+      );
+      final allPending = [...taxPending, ...bondPending];
+
+      String rowKey(IssuanceRequestRow row) {
+        final masterId = (row.master['id'] ?? '').toString();
+        final issueId = (row.issue?['id'] ?? '').toString();
+        return '${row.domain.name}:$masterId:$issueId';
+      }
+
+      final currentKeys = allPending.map(rowKey).toSet();
+      final seenKeys = (prefs.getStringList(seenKey) ?? const <String>[])
+          .toSet();
+      final initialized = prefs.getBool(initKey) ?? false;
+
+      if (!initialized) {
+        await prefs.setBool(initKey, true);
+        await prefs.setStringList(seenKey, currentKeys.toList());
+        return;
+      }
+
+      final newKeys = currentKeys.difference(seenKeys);
+      if (newKeys.isEmpty) return;
+
+      for (final row in allPending) {
         final key = rowKey(row);
         if (!newKeys.contains(key)) continue;
         final isTax = row.domain == IssuanceDomain.taxInvoice;
-        final title = isTax ? '세금계산서 발급 완료' : '이행증권 발급 완료';
+        final isUrgent = isTax && (row.issue?['is_urgent'] ?? false) == true;
+        final statusRaw = (row.master['status'] ?? '').toString().toLowerCase();
+        final isPartialFollowUp =
+            isTax && statusRaw == 'in_progress' && row.issue != null;
+        final issuePct = row.issue?['percentage'];
+        final pct = issuePct is num
+            ? issuePct.toDouble()
+            : double.tryParse('$issuePct');
         final name = isTax
             ? (row.master['customer_name'] ?? '요청 건').toString()
             : (row.master['company_name'] ?? row.master['bond_type'] ?? '요청 건')
                   .toString();
-        await NotificationService.showIssuanceCompletedAlert(
+        final urgentPrefix = isUrgent ? '🚨 [긴급] ' : '';
+        final partialLabel = isPartialFollowUp ? ' 부분' : '';
+        final title =
+            '${urgentPrefix}${isTax ? '세금계산서' : '이행증권'}$partialLabel 발급요청';
+        final body = isPartialFollowUp && pct != null
+            ? '$name · ${pct.round()}% 발급요청이 등록되었습니다.'
+            : '$name 건의 발급요청이 등록되었습니다.';
+        await NotificationService.showIssuanceRequestAlert(
           title: title,
-          body: '$name 건이 발급 완료되었습니다.',
+          body: body,
           domain: row.domain,
           masterId: (row.master['id'] ?? '').toString(),
           issueId: (row.issue?['id'] ?? '').toString(),
@@ -255,6 +351,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _selectIssuanceTab() {
     ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
+    _loadedIndices.add(_issuanceTabIndex);
     if (_navSelectedIndex == _navIssuanceIndex &&
         _currentIndex == _issuanceTabIndex) {
       return;
@@ -411,12 +508,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final latestRemote = updateStatus?.latestVersion;
-    final hasOptionalUpdate = updateStatus?.hasUpdate == true &&
-        updateStatus?.forceUpdate != true;
+    final hasOptionalUpdate =
+        updateStatus?.hasUpdate == true && updateStatus?.forceUpdate != true;
     final onHomeTab =
         _currentIndex == _homeTabIndex && _navSelectedIndex == _navHomeIndex;
     final bannerDismissKey = latestRemote ?? '__play_update__';
-    final showUpdateBanner = onHomeTab &&
+    final showUpdateBanner =
+        onHomeTab &&
         hasOptionalUpdate &&
         bannerDismissKey != _dismissedUpdateBannerVersion;
     return PopScope(
@@ -561,7 +659,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         bottomNavigationBar: _MainBottomNavBar(
           selectedIndex: _navSelectedIndex,
-          issuanceBadgeAsync: ref.watch(issuanceRequestBadgeCountVisibleProvider),
+          issuanceBadgeAsync: ref.watch(
+            issuanceRequestBadgeCountVisibleProvider,
+          ),
           onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
           onLongPressHome: _openHomeFlowToday,
           onTapReception: () => _onNavDestinationSelected(_navReceptionIndex),
@@ -658,7 +758,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           icon: Icons.list_alt_rounded,
           title: '금일 접수 목록',
           keywords: const ['목록', '오늘', '접수'],
-          onTap: () => closeDrawerThen(() => unawaited(_openTodayReceptionList())),
+          onTap: () =>
+              closeDrawerThen(() => unawaited(_openTodayReceptionList())),
         ),
         AppMenuEntry(
           id: 'reception_incomplete_today',
@@ -789,10 +890,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 ),
               ),
             ),
-            TextButton(
-              onPressed: onUpdate,
-              child: const Text('업데이트'),
-            ),
+            TextButton(onPressed: onUpdate, child: const Text('업데이트')),
             IconButton(
               icon: const Icon(Icons.close_rounded, size: 20),
               onPressed: onDismiss,
@@ -828,8 +926,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           message: forceUpdate
               ? '필수 업데이트: ${latestVersion ?? '최신'} 설치'
               : latestVersion != null
-                  ? '새 버전 v$latestVersion · 탭하여 업데이트'
-                  : '새 버전 · 탭하여 업데이트',
+              ? '새 버전 v$latestVersion · 탭하여 업데이트'
+              : '새 버전 · 탭하여 업데이트',
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -915,7 +1013,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       ],
     );
   }
-
 }
 
 class _IssuanceNavIcon extends StatelessWidget {
@@ -974,7 +1071,9 @@ class _MainBottomNavBar extends StatelessWidget {
         decoration: BoxDecoration(
           color: scheme.surface,
           border: Border(
-            top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35)),
+            top: BorderSide(
+              color: scheme.outlineVariant.withValues(alpha: 0.35),
+            ),
           ),
         ),
         padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
@@ -1005,7 +1104,6 @@ class _MainBottomNavBar extends StatelessWidget {
             Expanded(
               child: _BottomNavItem(
                 label: '발급',
-                tag: 'TEST',
                 selected: selectedIndex == 2,
                 customIcon: _IssuanceNavIcon(
                   badgeAsync: issuanceBadgeAsync,
@@ -1116,7 +1214,10 @@ class _BottomNavItem extends StatelessWidget {
               if (tag != null) ...[
                 const SizedBox(height: 2),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.tertiaryContainer.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(99),

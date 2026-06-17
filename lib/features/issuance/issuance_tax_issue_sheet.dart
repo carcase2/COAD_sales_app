@@ -1,7 +1,8 @@
+import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/tax_invoice_issue_service.dart';
 import 'package:coad_customer_calls/providers.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,21 +10,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 Future<bool?> showTaxInvoiceIssueSheet({
   required BuildContext context,
   required IssuanceRequestRow row,
-  required TaxIssueSheetMode mode,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (ctx) => _TaxInvoiceIssueSheet(row: row, mode: mode),
+    builder: (ctx) => _TaxInvoiceIssueSheet(row: row),
   );
 }
 
 class _TaxInvoiceIssueSheet extends ConsumerStatefulWidget {
-  const _TaxInvoiceIssueSheet({required this.row, required this.mode});
+  const _TaxInvoiceIssueSheet({required this.row});
 
   final IssuanceRequestRow row;
-  final TaxIssueSheetMode mode;
 
   @override
   ConsumerState<_TaxInvoiceIssueSheet> createState() =>
@@ -34,16 +33,7 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
   final _itemName = TextEditingController();
   final _pct = TextEditingController();
   String _itemType = '선급금';
-  PlatformFile? _image;
   bool _saving = false;
-
-  bool get _needsImage => widget.mode != TaxIssueSheetMode.insertRequest;
-
-  String get _title => switch (widget.mode) {
-    TaxIssueSheetMode.insertRequest => '발급요청 등록',
-    TaxIssueSheetMode.fulfillRequest => '발급 (발급요청 처리)',
-    TaxIssueSheetMode.remainderIssue => '잔금 발급',
-  };
 
   @override
   void initState() {
@@ -51,16 +41,7 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
     final m = widget.row.master;
     _itemName.text = (m['item_name'] ?? '셔터').toString();
     _itemType = (m['item_type'] ?? '선급금').toString();
-    if (widget.mode == TaxIssueSheetMode.insertRequest ||
-        widget.mode == TaxIssueSheetMode.remainderIssue) {
-      _pct.text = widget.row.remainingPct.round().toString();
-    } else {
-      final issuePct = widget.row.issue?['percentage'];
-      final p = issuePct is num
-          ? issuePct.toDouble()
-          : double.tryParse('$issuePct') ?? 100;
-      _pct.text = p.round().toString();
-    }
+    _pct.text = widget.row.remainingPct.round().toString();
   }
 
   @override
@@ -68,17 +49,6 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
     _itemName.dispose();
     _pct.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickImage() async {
-    final result = await FilePicker.pickFiles(
-      allowMultiple: false,
-      type: FileType.image,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final f = result.files.first;
-    if (f.path == null) return;
-    setState(() => _image = f);
   }
 
   Future<void> _submit() async {
@@ -101,10 +71,6 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
       _snack('발급 비율(1~100)을 확인해주세요.');
       return;
     }
-    if (_needsImage && _image == null) {
-      _snack('세금계산서 이미지를 첨부해주세요.');
-      return;
-    }
 
     final invoiceId = widget.row.master['id']?.toString();
     if (invoiceId == null || invoiceId.isEmpty) {
@@ -114,32 +80,30 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
 
     setState(() => _saving = true);
     try {
-      final service = TaxInvoiceIssueService();
-      if (widget.mode == TaxIssueSheetMode.insertRequest) {
-        await service.insertPartialRequestIssue(
-          invoiceId: invoiceId,
-          issuePercentage: pct,
-          issuedBy: user.name,
-          itemType: _itemType,
-          itemName: _itemName.text.trim(),
+      final customer = (widget.row.master['customer_name'] ?? widget.row.title)
+          .toString();
+      final issueId = await TaxInvoiceIssueService().insertPartialRequestIssue(
+        invoiceId: invoiceId,
+        issuePercentage: pct,
+        issuedBy: user.name,
+        itemType: _itemType,
+        itemName: _itemName.text.trim(),
+      );
+      try {
+        await NotificationService.markIssuanceRequestSeen(
+          prefs: ref.read(appDependenciesProvider).prefs,
+          domain: IssuanceDomain.taxInvoice,
+          masterId: invoiceId,
+          issueId: issueId,
         );
-      } else {
-        await service.completeIssue(
-          invoiceId: invoiceId,
-          mode: widget.mode,
-          imageFile: _image!,
-          issuedBy: user.name,
-          itemType: _itemType,
-          itemName: _itemName.text.trim(),
-          issuePercentage: pct,
-          targetIssueId: widget.row.issue?['id']?.toString(),
-        );
+      } catch (e) {
+        debugPrint('[partial-issuance-request-seen] failed: $e');
       }
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      _snack('처리 실패: $e');
+      _snack(issuanceUserErrorMessage(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -163,7 +127,7 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            _title,
+            '부분 발급요청 등록',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
@@ -184,70 +148,36 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
               ),
             ),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _itemType,
-            decoration: const InputDecoration(
-              labelText: '항목',
-              border: OutlineInputBorder(),
-            ),
-            items: const [
-              DropdownMenuItem(value: '선급금', child: Text('선급금')),
-              DropdownMenuItem(value: '중도금', child: Text('중도금')),
-              DropdownMenuItem(value: '잔금', child: Text('잔금')),
-            ],
-            onChanged: _saving
-                ? null
-                : (v) {
-                    if (v != null) setState(() => _itemType = v);
-                  },
+            items: const ['선급금', '중도금', '잔금']
+                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                .toList(),
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _itemType = v);
+            },
+            decoration: const InputDecoration(labelText: '항목 구분 *'),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _itemName,
-            decoration: const InputDecoration(
-              labelText: '품목명',
-              border: OutlineInputBorder(),
-            ),
-            enabled: !_saving,
+            decoration: const InputDecoration(labelText: '품목명 *'),
           ),
-          if (widget.mode != TaxIssueSheetMode.fulfillRequest) ...[
-            const SizedBox(height: 10),
-            TextField(
-              controller: _pct,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: widget.mode == TaxIssueSheetMode.insertRequest
-                    ? '발급요청 비율 (%)'
-                    : '이번 발급 비율 (%)',
-                border: const OutlineInputBorder(),
-              ),
-              enabled: !_saving,
+          const SizedBox(height: 10),
+          TextField(
+            controller: _pct,
+            decoration: const InputDecoration(
+              labelText: '발급 요청 비율(%) *',
             ),
-          ],
-          if (_needsImage) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _saving ? null : _pickImage,
-              icon: const Icon(Icons.photo_camera_rounded),
-              label: Text(_image == null ? '세금계산서 사진 선택' : _image!.name),
-            ),
-          ],
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _saving ? null : _submit,
-            child: _saving
-                ? const SizedBox(
-                    height: 22,
-                    width: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(
-                    widget.mode == TaxIssueSheetMode.insertRequest
-                        ? '발급요청 등록'
-                        : '발급 완료',
-                  ),
+            child: Text(_saving ? '등록 중...' : '발급요청 등록'),
           ),
         ],
       ),

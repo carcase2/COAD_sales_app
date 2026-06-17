@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
@@ -9,6 +10,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_screen.da
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -23,6 +25,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum ListQueryMode {
   today,
   incomplete,
+  /// 최근 N일 미해결 미통화 — [date]는 `fromDate`(yyyy-MM-dd).
+  pendingUncalled,
   recent,
   completedToday,
   incompleteByDate,
@@ -191,18 +195,21 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     // 날짜 팔로우는 next_scheduled_date 기준이라 call_date 캐시와 맞지 않아 사용하지 않음.
     if (widget.mode != ListQueryMode.incompleteByDate &&
         widget.mode != ListQueryMode.dateRange &&
-        widget.mode != ListQueryMode.followRange) {
+        widget.mode != ListQueryMode.followRange &&
+        widget.mode != ListQueryMode.pendingUncalled) {
       try {
         final cacheDate = switch (widget.mode) {
           ListQueryMode.today => widget.date ?? todayYmdSeoul(),
           ListQueryMode.completedToday => widget.date ?? todayYmdSeoul(),
           ListQueryMode.incomplete => widget.date,
+          ListQueryMode.pendingUncalled => widget.date,
           ListQueryMode.recent => null,
           ListQueryMode.incompleteByDate => null,
           ListQueryMode.dateRange => null,
           ListQueryMode.followRange => null,
         };
-        final cacheIncompleteOnly = widget.mode == ListQueryMode.incomplete;
+        final cacheIncompleteOnly = widget.mode == ListQueryMode.incomplete ||
+            widget.mode == ListQueryMode.pendingUncalled;
 
         final cached = await repo.fetchCachedCalls(
           date: cacheDate,
@@ -280,6 +287,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           uncalledOnly: true,
           includeCallHistory: true,
         );
+      case ListQueryMode.pendingUncalled:
+        return repo.fetchCallsAllPages(
+          fromDate: widget.date ?? pendingUncalledFromYmd(todayYmdSeoul()),
+          uncalledOnly: true,
+          includeCallHistory: true,
+        );
       case ListQueryMode.recent:
         return repo.fetchCalls(
           limit: 50,
@@ -329,7 +342,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         if (widget.date == todayYmdSeoul()) {
           return '금일 미통화';
         }
+        if (widget.date == addDaysToYmd(todayYmdSeoul(), -1)) {
+          return '전일 미통화';
+        }
         return '미통화';
+      case ListQueryMode.pendingUncalled:
+        return '처리할 미통화';
       case ListQueryMode.recent:
         return '최근 통화';
       case ListQueryMode.completedToday:
@@ -402,13 +420,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       return '${hours}시간 ${mins}분 경과';
     }
     return '${diff.inDays}일 경과';
-  }
-
-  String _stageLabelForCard(SalesCall c) {
-    final raw = (c.callStage ?? '').trim();
-    if (RegExp(r'^\d+$').hasMatch(raw)) return '${raw}차';
-    if (raw.isEmpty || raw == '0' || raw == '접수') return '1차';
-    return raw;
   }
 
   @override
@@ -994,17 +1005,32 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                           itemCount: filteredItems.length,
                           itemBuilder: (context, i) {
                             final c = filteredItems[i];
-                            String timeStr = '${c.callDate ?? ''} ${c.callTime ?? ''}'.trim();
+                            final isPendingMode =
+                                widget.mode == ListQueryMode.pendingUncalled;
+                            final todayYmd = todayYmdSeoul();
+                            final receptionYmd = isPendingMode
+                                ? salesCallReceptionYmd(c)
+                                : '';
+                            final isCarriedOver = isPendingMode &&
+                                receptionYmd.isNotEmpty &&
+                                receptionYmd != todayYmd;
+                            String timeStr =
+                                '${c.callDate ?? ''} ${c.callTime ?? ''}'.trim();
                             DateTime? createdLocal;
-                            if (c.createdAt != null && c.createdAt!.isNotEmpty) {
+                            if (isPendingMode && receptionYmd.isNotEmpty) {
+                              timeStr = '접수 $receptionYmd';
+                            } else if (c.createdAt != null &&
+                                c.createdAt!.isNotEmpty) {
                               createdLocal = _parseCreatedLocal(c);
                               if (createdLocal != null) {
-                                timeStr = '${createdLocal.month}/${createdLocal.day} ${createdLocal.hour}:${createdLocal.minute.toString().padLeft(2, '0')}';
+                                timeStr =
+                                    '${createdLocal.month}/${createdLocal.day} ${createdLocal.hour}:${createdLocal.minute.toString().padLeft(2, '0')}';
                               }
                             }
                             final elapsedLabel = _elapsedLabelSince(createdLocal);
                             final showElapsed = c.isMissed && elapsedLabel.isNotEmpty;
-                            final stageLabel = _stageLabelForCard(c);
+                            final stageLabel = c.displayStageLabel;
+                            final inquiryMethod = c.displayInquiryMethod;
                             final scheme = Theme.of(context).colorScheme;
                             final displayAssignee = _assigneeForMode(c, overrides);
                             final assignColor = _colorForAssignee(displayAssignee, scheme);
@@ -1068,38 +1094,76 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           ),
                                         ],
                                       ),
-                                      if (showElapsed) ...[
+                                      if (showElapsed || isCarriedOver) ...[
                                         const SizedBox(height: 4),
                                         Row(
                                           children: [
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: scheme.errorContainer.withOpacity(0.55),
-                                                borderRadius: BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                '접수 후 $elapsedLabel',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: scheme.onErrorContainer,
+                                            if (isCarriedOver) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: scheme.tertiaryContainer
+                                                      .withOpacity(0.85),
+                                                  borderRadius:
+                                                      BorderRadius.circular(999),
+                                                ),
+                                                child: Text(
+                                                  '이월',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: scheme
+                                                        .onTertiaryContainer,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            const SizedBox(width: 6),
+                                              const SizedBox(width: 6),
+                                            ],
+                                            if (showElapsed) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: scheme.errorContainer
+                                                      .withOpacity(0.55),
+                                                  borderRadius:
+                                                      BorderRadius.circular(999),
+                                                ),
+                                                child: Text(
+                                                  '접수 후 $elapsedLabel',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                    color:
+                                                        scheme.onErrorContainer,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                            ],
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 4,
+                                              ),
                                               decoration: BoxDecoration(
-                                                color: scheme.secondaryContainer.withOpacity(0.8),
-                                                borderRadius: BorderRadius.circular(999),
+                                                color: scheme.secondaryContainer
+                                                    .withOpacity(0.8),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
                                               ),
                                               child: Text(
                                                 '상담이력 $stageLabel',
                                                 style: TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w700,
-                                                  color: scheme.onSecondaryContainer,
+                                                  color: scheme
+                                                      .onSecondaryContainer,
                                                 ),
                                               ),
                                             ),
@@ -1238,19 +1302,22 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                             ),
                                           ),
                                           const SizedBox(width: 8),
-                                          // Stage Badge
-                                          if (c.callStage != null && c.callStage!.isNotEmpty)
-                                            _buildPill(
-                                              (RegExp(r'^\d+$').hasMatch(c.callStage ?? '')) 
-                                                ? '${c.callStage}차' 
-                                                : (c.callStage ?? '접수'), 
-                                              scheme.secondaryContainer, 
-                                              scheme.onSecondaryContainer
-                                            ),
+                                          _buildPill(
+                                            stageLabel,
+                                            scheme.secondaryContainer,
+                                            scheme.onSecondaryContainer,
+                                          ),
                                           const SizedBox(width: 8),
-                                          // Status Badge
                                           if (c.statusLabel != null)
                                             _buildPill(c.statusLabel!, scheme.primaryContainer, scheme.onPrimaryContainer, isBold: true),
+                                          if (inquiryMethod != null) ...[
+                                            const SizedBox(width: 8),
+                                            _buildPill(
+                                              inquiryMethod,
+                                              scheme.tertiaryContainer,
+                                              scheme.onTertiaryContainer,
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ],
