@@ -81,6 +81,8 @@ class IssuanceRequestCard extends StatelessWidget {
     final assignee = (textOf('requester').isEmpty
         ? textOf('created_by')
         : textOf('requester'));
+    final cancelledBy = textOf('cancelled_by');
+    final cancelReason = textOf('cancel_reason');
     final status = row.kind == IssuanceRowKind.cancelled
         ? '취소'
         : row.isPartial
@@ -97,6 +99,12 @@ class IssuanceRequestCard extends StatelessWidget {
         : row.isCompleted
         ? '발급 완료'
         : (row.issue == null ? '요청 접수' : '요청 진행');
+    final assigneeText = row.kind == IssuanceRowKind.cancelled
+        ? (cancelledBy.isEmpty ? '미지정' : cancelledBy)
+        : (assignee.isEmpty ? '미지정' : assignee);
+    final extraText = row.kind == IssuanceRowKind.cancelled
+        ? '취소사유: ${cancelReason.isEmpty ? '-' : cancelReason}'
+        : '$extra$partialExtra';
     final isUrgent = isTax && (row.issue?['is_urgent'] ?? false) == true;
 
     Color statusColor(String label) {
@@ -287,7 +295,9 @@ class IssuanceRequestCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '담당: ${assignee.isEmpty ? '미지정' : assignee}',
+                          row.kind == IssuanceRowKind.cancelled
+                              ? '취소담당: $assigneeText'
+                              : '담당: $assigneeText',
                           style: TextStyle(
                             color: scheme.onSurfaceVariant,
                             fontSize: bodySize,
@@ -297,7 +307,7 @@ class IssuanceRequestCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '$extra$partialExtra',
+                          extraText,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -396,16 +406,18 @@ class IssuanceRowActions extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              FilledButton.icon(
-                onPressed: onOpenDetail,
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+              if (onOpenDetail != null) ...[
+                FilledButton.icon(
+                  onPressed: onOpenDetail,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: const Icon(Icons.visibility_outlined, size: 18),
+                  label: const Text('상세 보기'),
                 ),
-                icon: const Icon(Icons.visibility_outlined, size: 18),
-                label: const Text('상세 보기'),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
+              ],
               OutlinedButton(
                 onPressed: () => onCancel(row),
                 child: const Text('취소'),

@@ -164,17 +164,45 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     final allAsync = ref.watch(issuanceAllTabRowsProvider(_domain));
     final completedAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
     final cancelledAsync = ref.watch(issuanceCancelledRowsProvider(_domain));
+    final taxCompletedAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondCompletedAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
+    );
+    final taxPendingAllAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondPendingAllAsync = ref.watch(
+      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+    );
     final taxPendingAsync = ref.watch(
       issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
     final bondPendingAsync = ref.watch(
       issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
     );
-    final taxCount = taxPendingAsync.valueOrNull?.length;
-    final bondCount = bondPendingAsync.valueOrNull?.length;
+    final taxCount = taxPendingAllAsync.valueOrNull?.length;
+    final bondCount = bondPendingAllAsync.valueOrNull?.length;
     final combinedMyPendingCount =
         (taxPendingAsync.valueOrNull?.length ?? 0) +
         (bondPendingAsync.valueOrNull?.length ?? 0);
+    bool isToday(DateTime dt) {
+      final local = dt.toLocal();
+      final now = DateTime.now();
+      return local.year == now.year &&
+          local.month == now.month &&
+          local.day == now.day;
+    }
+
+    final todayTaxIssued = (taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+        .where((row) => isToday(row.createdAt))
+        .length;
+    final todayBondIssued =
+        (bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+            .where((row) => isToday(row.createdAt))
+            .length;
+    final todayIssuedCount = todayTaxIssued + todayBondIssued;
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
 
@@ -328,6 +356,20 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute(
                         builder: (_) => const _CombinedIssuancePendingPage(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _HubMenuTile(
+                    icon: Icons.task_alt_rounded,
+                    title: '금일 발급완료',
+                    count: todayIssuedCount,
+                    subtitle: '세금 $todayTaxIssued건 · 이행 $todayBondIssued건',
+                    accent: Colors.teal.shade700,
+                    large: true,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const _CombinedTodayIssuedPage(),
                       ),
                     ),
                   ),
@@ -616,8 +658,61 @@ class _HubMenuTile extends StatelessWidget {
   }
 }
 
-class _CombinedIssuancePendingPage extends ConsumerWidget {
+class _CombinedIssuancePendingPage extends ConsumerStatefulWidget {
   const _CombinedIssuancePendingPage();
+
+  @override
+  ConsumerState<_CombinedIssuancePendingPage> createState() =>
+      _CombinedIssuancePendingPageState();
+}
+
+class _CombinedIssuancePendingPageState
+    extends ConsumerState<_CombinedIssuancePendingPage> {
+
+  Future<void> _cancelRow(IssuanceRequestRow row) async {
+    final user = ref.read(authControllerProvider);
+    if (user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그인이 필요합니다.')));
+      return;
+    }
+    final reason = await showIssuanceCancelDialog(
+      context,
+      targetName: row.title,
+    );
+    if (reason == null || reason.trim().isEmpty) return;
+    try {
+      await ref
+          .read(issuanceRequestServiceProvider)
+          .cancelMaster(
+            domain: row.domain,
+            masterId: row.master['id'].toString(),
+            cancelledBy: user.name,
+            cancelReason: reason,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('발급요청이 취소되었습니다.')));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+        ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+        ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
+        ref.invalidate(
+          issuanceCancelledRowsProvider(IssuanceDomain.performanceBond),
+        );
+        ref.invalidate(issuanceRequestBadgeCountProvider);
+        ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(issuanceUserErrorMessage(e))));
+    }
+  }
 
   Future<void> _refresh(WidgetRef ref) async {
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
@@ -626,14 +721,11 @@ class _CombinedIssuancePendingPage extends ConsumerWidget {
     ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.performanceBond));
     ref.invalidate(issuanceRequestBadgeCountProvider);
     ref.invalidate(issuanceRequestTotalBadgeCountProvider);
-    await Future.wait([
-      ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
-      ref.read(issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future),
-    ]);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
     final taxAsync = ref.watch(
       issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
@@ -680,6 +772,173 @@ class _CombinedIssuancePendingPage extends ConsumerWidget {
                   ...taxRows.map(
                     (row) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          IssuanceRequestCard(
+                            row: row,
+                            isOwn: issuanceIsOwnRequest(row, user?.name),
+                            large: true,
+                            onTap: () => showIssuanceRequestDetail(context, row),
+                          ),
+                          IssuanceRowActions(
+                            row: row,
+                            onIssue: (_) async {},
+                            onCancel: (r) => _cancelRow(r),
+                            onOpenDetail: null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildSectionHeader(
+                    context,
+                    title: '이행증권',
+                    mineCount: bondMine.length,
+                    totalCount: bondRows.length,
+                    color: Colors.deepOrange.shade700,
+                  ),
+                  ...bondRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          IssuanceRequestCard(
+                            row: row,
+                            isOwn: issuanceIsOwnRequest(row, user?.name),
+                            large: true,
+                            onTap: () => showIssuanceRequestDetail(context, row),
+                          ),
+                          IssuanceRowActions(
+                            row: row,
+                            onIssue: (_) async {},
+                            onCancel: (r) => _cancelRow(r),
+                            onOpenDetail: null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (taxRows.isEmpty && bondRows.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 120),
+                      child: Center(child: Text('발급대기 건이 없습니다.')),
+                    ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required String title,
+    required int mineCount,
+    required int totalCount,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: color,
+              ),
+            ),
+          ),
+          Text(
+            '내 $mineCount건 · 전체 $totalCount건',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CombinedTodayIssuedPage extends ConsumerWidget {
+  const _CombinedTodayIssuedPage();
+
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+  }
+
+  bool _isToday(DateTime dt) {
+    final local = dt.toLocal();
+    final now = DateTime.now();
+    return local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authControllerProvider);
+    final taxAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
+    );
+    final bondAsync = ref.watch(
+      issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
+    );
+
+    final taxRows = (taxAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+        .where((r) => _isToday(r.createdAt))
+        .toList();
+    final bondRows = (bondAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+        .where((r) => _isToday(r.createdAt))
+        .toList();
+    final loading = taxAsync.isLoading || bondAsync.isLoading;
+    final hasError = taxAsync.hasError || bondAsync.hasError;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('금일 발급완료')),
+      body: RefreshIndicator(
+        onRefresh: () => _refresh(ref),
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : hasError
+            ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 140),
+                  Center(child: Text('금일 발급완료 목록을 불러오지 못했습니다.')),
+                ],
+              )
+            : ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildSectionHeader(
+                    context,
+                    title: '세금계산서',
+                    mineCount: taxRows
+                        .where((r) => issuanceIsOwnRequest(r, user?.name))
+                        .length,
+                    totalCount: taxRows.length,
+                    color: Colors.indigo.shade600,
+                  ),
+                  ...taxRows.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
                       child: IssuanceRequestCard(
                         row: row,
                         isOwn: issuanceIsOwnRequest(row, user?.name),
@@ -692,7 +951,9 @@ class _CombinedIssuancePendingPage extends ConsumerWidget {
                   _buildSectionHeader(
                     context,
                     title: '이행증권',
-                    mineCount: bondMine.length,
+                    mineCount: bondRows
+                        .where((r) => issuanceIsOwnRequest(r, user?.name))
+                        .length,
                     totalCount: bondRows.length,
                     color: Colors.deepOrange.shade700,
                   ),
@@ -710,7 +971,7 @@ class _CombinedIssuancePendingPage extends ConsumerWidget {
                   if (taxRows.isEmpty && bondRows.isEmpty)
                     const Padding(
                       padding: EdgeInsets.only(top: 120),
-                      child: Center(child: Text('발급대기 건이 없습니다.')),
+                      child: Center(child: Text('오늘 발급완료 건이 없습니다.')),
                     ),
                 ],
               ),
