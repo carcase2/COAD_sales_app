@@ -1,6 +1,9 @@
-import 'package:coad_customer_calls/data/auth_controller.dart';
+import 'dart:convert';
+
+import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/tax_invoice_calc.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -156,6 +159,10 @@ splitIssuanceRowsByOwner(
 }
 
 class IssuanceRequestService {
+  IssuanceRequestService({AppDependencies? deps}) : _deps = deps;
+
+  final AppDependencies? _deps;
+
   SupabaseClient get _client => Supabase.instance.client;
 
   static bool isCancelledStatus(String raw) {
@@ -289,10 +296,107 @@ class IssuanceRequestService {
     required String cancelledBy,
     required String cancelReason,
   }) async {
-    final table = domain == IssuanceDomain.taxInvoice
-        ? 'tax_invoices'
-        : 'performance_bonds';
-    await _client
+    if (domain == IssuanceDomain.performanceBond) {
+      await _cancelPerformanceBond(
+        masterId: masterId,
+        cancelledBy: cancelledBy,
+        cancelReason: cancelReason,
+      );
+      return;
+    }
+    await _cancelViaSupabase(
+      table: 'tax_invoices',
+      masterId: masterId,
+      cancelledBy: cancelledBy,
+      cancelReason: cancelReason,
+    );
+  }
+
+  /// 웹 `handleCancelBond` 와 동일 — RPC/API로 status를 cancelled로 저장한다.
+  Future<void> _cancelPerformanceBond({
+    required String masterId,
+    required String cancelledBy,
+    required String cancelReason,
+  }) async {
+    final reason = cancelReason.trim();
+    final userName = cancelledBy.trim();
+
+    try {
+      await _client.rpc<void>(
+        'cancel_performance_bond',
+        params: {
+          'p_bond_id': masterId,
+          'p_user_name': userName,
+          'p_cancel_reason': reason,
+        },
+      );
+      return;
+    } on PostgrestException catch (e) {
+      final code = e.code ?? '';
+      final message = e.message;
+      if (code == 'PGRST202' ||
+          code == '42883' ||
+          message.contains('cancel_performance_bond')) {
+        // RPC 미배포 환경 — 아래 API/Supabase 폴백
+      } else {
+        throw Exception(_postgrestErrorMessage(e));
+      }
+    }
+
+    final base = _deps?.effectiveBaseUrl.trim() ?? '';
+    final payload = {
+      'user_name': userName,
+      'status': 'cancelled',
+      'cancel_reason': reason,
+      'cancelled_by': userName,
+      'cancelled_at': DateTime.now().toIso8601String(),
+    };
+
+    if (base.isNotEmpty) {
+      final res = await _deps!.transport.request(
+        baseUrl: base,
+        method: 'PATCH',
+        path: '/api/performance-bonds/$masterId',
+        jsonBody: payload,
+      );
+      if (res.statusCode >= 200 && res.statusCode < 300) return;
+      final message = _parseApiErrorMessage(res.body);
+      throw Exception(
+        message ?? '이행증권 취소에 실패했습니다. (${res.statusCode})',
+      );
+    }
+
+    await _cancelViaSupabase(
+      table: 'performance_bonds',
+      masterId: masterId,
+      cancelledBy: userName,
+      cancelReason: reason,
+    );
+  }
+
+  String _postgrestErrorMessage(PostgrestException error) {
+    final message = error.message.trim();
+    if (message.isNotEmpty &&
+        message.toLowerCase() != 'bad request' &&
+        !message.startsWith('{')) {
+      return message;
+    }
+    final details = error.details?.toString().trim();
+    if (details != null &&
+        details.isNotEmpty &&
+        details.toLowerCase() != 'bad request') {
+      return details;
+    }
+    return '이행증권 취소에 실패했습니다.';
+  }
+
+  Future<void> _cancelViaSupabase({
+    required String table,
+    required String masterId,
+    required String cancelledBy,
+    required String cancelReason,
+  }) async {
+    final updated = await _client
         .from(table)
         .update({
           'status': 'cancelled',
@@ -300,7 +404,27 @@ class IssuanceRequestService {
           'cancelled_by': cancelledBy.trim(),
           'cancelled_at': DateTime.now().toIso8601String(),
         })
-        .eq('id', masterId);
+        .eq('id', masterId)
+        .select('id');
+    if (updated.isEmpty) {
+      throw Exception(
+        table == 'performance_bonds'
+            ? '취소 권한이 없습니다. BASE_URL 설정 후 다시 시도해 주세요.'
+            : '취소에 실패했습니다. 권한을 확인해 주세요.',
+      );
+    }
+  }
+
+  String? _parseApiErrorMessage(String body) {
+    if (body.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final error = decoded['error']?.toString().trim();
+        if (error != null && error.isNotEmpty) return error;
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<List<IssuanceRequestRow>> _fetchTaxInvoiceRequests() async {
@@ -694,7 +818,7 @@ List<IssuanceRequestRow> _dedupeRowsForAllTab(List<IssuanceRequestRow> rows) {
 }
 
 final issuanceRequestServiceProvider = Provider<IssuanceRequestService>((ref) {
-  return IssuanceRequestService();
+  return IssuanceRequestService(deps: ref.watch(appDependenciesProvider));
 });
 
 final issuanceAllRowsProvider =

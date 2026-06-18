@@ -30,6 +30,8 @@ class SalesApiTransport {
           req = await client.postUrl(uri);
         case 'PUT':
           req = await client.putUrl(uri);
+        case 'PATCH':
+          req = await client.patchUrl(uri);
         case 'DELETE':
           req = await client.deleteUrl(uri);
         default:

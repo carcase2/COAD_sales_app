@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 알림 deep link용 — master/issue id로 발급 행 검색.
 IssuanceRequestRow? findIssuanceRowByIds(
@@ -36,6 +37,14 @@ IssuanceListKind issuanceListKindForRow(IssuanceRequestRow row) {
 
 /// Supabase/네트워크 예외를 사용자용 한글 메시지로 변환.
 String issuanceUserErrorMessage(Object error) {
+  if (error is PostgrestException) {
+    final message = error.message.trim();
+    if (message.isNotEmpty &&
+        message.toLowerCase() != 'bad request' &&
+        !message.startsWith('{')) {
+      return message;
+    }
+  }
   final raw = error.toString();
   final lower = raw.toLowerCase();
   if (lower.contains('socketexception') ||
@@ -63,66 +72,80 @@ String issuanceUserErrorMessage(Object error) {
 Future<String?> showIssuanceCancelDialog(
   BuildContext context, {
   required String targetName,
-}) async {
-  final controller = TextEditingController();
-  String? validationError;
-
-  final result = await showDialog<String>(
+}) {
+  return showDialog<String>(
     context: context,
     builder: (dialogContext) {
-      return StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('발급요청 취소'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('「$targetName」 발급요청을 취소합니다.'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: '취소 사유 *',
-                    hintText: '취소 사유를 입력해 주세요.',
-                    errorText: validationError,
-                    border: const OutlineInputBorder(),
-                  ),
-                  onChanged: (_) {
-                    if (validationError != null) {
-                      setDialogState(() => validationError = null);
-                    }
-                  },
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('닫기'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final reason = controller.text.trim();
-                  if (reason.isEmpty) {
-                    setDialogState(
-                      () => validationError = '취소 사유를 입력해 주세요.',
-                    );
-                    return;
-                  }
-                  Navigator.of(dialogContext).pop(reason);
-                },
-                child: const Text('취소 처리'),
-              ),
-            ],
-          );
-        },
-      );
+      return _IssuanceCancelDialog(targetName: targetName);
     },
   );
-  controller.dispose();
-  return result;
+}
+
+class _IssuanceCancelDialog extends StatefulWidget {
+  const _IssuanceCancelDialog({required this.targetName});
+
+  final String targetName;
+
+  @override
+  State<_IssuanceCancelDialog> createState() => _IssuanceCancelDialogState();
+}
+
+class _IssuanceCancelDialogState extends State<_IssuanceCancelDialog> {
+  final _controller = TextEditingController();
+  String? _validationError;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('발급요청 취소'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('「${widget.targetName}」 발급요청을 취소합니다.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            maxLines: 3,
+            decoration: InputDecoration(
+              labelText: '취소 사유 *',
+              hintText: '취소 사유를 입력해 주세요.',
+              errorText: _validationError,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: (_) {
+              if (_validationError != null) {
+                setState(() => _validationError = null);
+              }
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('닫기'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final reason = _controller.text.trim();
+            if (reason.isEmpty) {
+              setState(() => _validationError = '취소 사유를 입력해 주세요.');
+              return;
+            }
+            Navigator.of(context).pop(reason);
+          },
+          child: const Text('취소 처리'),
+        ),
+      ],
+    );
+  }
 }
 
 /// AppBar 새로고침 버튼용 — 진행 중이면 스피너, 아니면 새로고침 아이콘.

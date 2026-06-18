@@ -67,10 +67,11 @@ class _IssuanceFilteredListPageState
 
   Future<void> _reloadRows() async {
     ref.invalidate(issuanceAllRowsProvider(_domain));
+    ref.invalidate(issuanceRequestRowsProvider(_domain));
     ref.invalidate(issuanceCancelledRowsProvider(_domain));
     ref.invalidate(issuanceRequestBadgeCountProvider);
     ref.invalidate(issuanceRequestTotalBadgeCountProvider);
-    await ref.read(issuanceAllRowsProvider(_domain).future);
+    await ref.read(issuanceRequestRowsProvider(_domain).future);
   }
 
   Future<void> _refresh({bool showCompletionSnackBar = false}) {

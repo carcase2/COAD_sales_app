@@ -670,42 +670,40 @@ class _CombinedIssuancePendingPageState
     extends ConsumerState<_CombinedIssuancePendingPage> {
 
   Future<void> _cancelRow(IssuanceRequestRow row) async {
+    final masterId = row.master['id']?.toString();
+    if (masterId == null || masterId.isEmpty) return;
     final user = ref.read(authControllerProvider);
     if (user == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('로그인이 필요합니다.')));
       return;
     }
+    final name = row.domain == IssuanceDomain.taxInvoice
+        ? (row.master['customer_name'] ?? row.title).toString()
+        : (row.master['company_name'] ?? row.title).toString();
     final reason = await showIssuanceCancelDialog(
       context,
-      targetName: row.title,
+      targetName: name,
     );
+    if (!mounted) return;
     if (reason == null || reason.trim().isEmpty) return;
     try {
       await ref
           .read(issuanceRequestServiceProvider)
           .cancelMaster(
             domain: row.domain,
-            masterId: row.master['id'].toString(),
+            masterId: masterId,
             cancelledBy: user.name,
             cancelReason: reason,
           );
       if (!mounted) return;
+      await _refresh();
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('발급요청이 취소되었습니다.')));
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-        ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-        ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
-        ref.invalidate(
-          issuanceCancelledRowsProvider(IssuanceDomain.performanceBond),
-        );
-        ref.invalidate(issuanceRequestBadgeCountProvider);
-        ref.invalidate(issuanceRequestTotalBadgeCountProvider);
-      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -714,14 +712,19 @@ class _CombinedIssuancePendingPageState
     }
   }
 
-  Future<void> _refresh(WidgetRef ref) async {
+  Future<void> _refresh() async {
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
     ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
+    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
     ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
     ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.performanceBond));
     ref.invalidate(issuanceRequestBadgeCountProvider);
     ref.invalidate(issuanceRequestTotalBadgeCountProvider);
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await Future.wait([
+      ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
+      ref.read(issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future),
+    ]);
   }
 
   @override
@@ -747,7 +750,7 @@ class _CombinedIssuancePendingPageState
         title: const Text('발급대기'),
       ),
       body: RefreshIndicator(
-        onRefresh: () => _refresh(ref),
+        onRefresh: _refresh,
         child: loading
             ? const Center(child: CircularProgressIndicator())
             : hasError
