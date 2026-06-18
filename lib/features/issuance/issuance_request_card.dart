@@ -1,6 +1,28 @@
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
 
+/// 이행증권 종류 칩 색상 — 등록 화면(`issuance_request_create_screen`)과 동일.
+({Color background, Color foreground}) issuanceBondTypeChipColors(String type) {
+  return switch (type.trim()) {
+    '계약이행' => (
+      background: Colors.indigo.shade100,
+      foreground: Colors.indigo.shade900,
+    ),
+    '선급금' => (
+      background: Colors.orange.shade100,
+      foreground: Colors.orange.shade900,
+    ),
+    '하자이행' => (
+      background: Colors.teal.shade100,
+      foreground: Colors.teal.shade900,
+    ),
+    _ => (
+      background: Colors.blueGrey.shade100,
+      foreground: Colors.blueGrey.shade900,
+    ),
+  };
+}
+
 class IssuanceRequestCard extends StatelessWidget {
   const IssuanceRequestCard({
     required this.row,
@@ -90,7 +112,11 @@ class IssuanceRequestCard extends StatelessWidget {
         : statusLabel(textOf('status'), isCompleted: row.isCompleted);
     final extra = isTax
         ? '품목: ${textOf('item_name').isEmpty ? '-' : textOf('item_name')} · 총액: ${formatWon(textOf('total_amount'))}'
-        : '종류: ${textOf('bond_type').isEmpty ? '-' : textOf('bond_type')} · 계약금액: ${formatWon(textOf('contract_amount'))}';
+        : '계약금액: ${formatWon(textOf('contract_amount'))}';
+    final bondType = textOf('bond_type');
+    final bondTypeChip = !isTax && bondType.isNotEmpty
+        ? issuanceBondTypeChipColors(bondType)
+        : null;
     final partialExtra = row.isPartial && isTax
         ? ' · ${row.remainingPct.round()}% 남음'
         : '';
@@ -235,6 +261,33 @@ class IssuanceRequestCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            if (bondTypeChip != null) ...[
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: large ? 10 : 8,
+                                  vertical: large ? 4 : 3,
+                                ),
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: bondTypeChip.background,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: bondTypeChip.foreground.withValues(
+                                      alpha: 0.35,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  bondType,
+                                  style: TextStyle(
+                                    fontSize: large ? 12 : chipSize,
+                                    fontWeight: FontWeight.w900,
+                                    color: bondTypeChip.foreground,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                              ),
+                            ],
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
