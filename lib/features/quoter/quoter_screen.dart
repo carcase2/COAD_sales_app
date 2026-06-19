@@ -719,7 +719,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         },
       ),
       _QuoterQuickActionItem(
-        label: '발행요청 (테스트중)',
+        label: '발행요청',
         color: Colors.indigo.shade600,
         icon: Icons.receipt_long_rounded,
         onTap: () async {

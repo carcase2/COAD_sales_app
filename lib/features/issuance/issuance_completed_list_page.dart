@@ -102,16 +102,9 @@ class _IssuanceCompletedListPageState
     );
   }
 
-  String _issueYmd(IssuanceRequestRow row) {
-    for (final raw in [row.issue?['issue_date'], row.master['issue_date']]) {
-      if (raw == null) continue;
-      final s = raw.toString().trim();
-      if (s.length >= 10) return s.substring(0, 10);
-    }
-    return ymdSeoulFromDateTime(row.createdAt);
-  }
+  String _issueYmd(IssuanceRequestRow row) => issuanceIssueYmdForRow(row);
 
-  bool _isTodayRow(IssuanceRequestRow row) => _issueYmd(row) == todayYmdSeoul();
+  bool _isTodayRow(IssuanceRequestRow row) => issuanceIsTodayIssuedRow(row);
 
   bool _matchesDateFilter(IssuanceRequestRow row) {
     final ymd = _issueYmd(row);
@@ -479,11 +472,10 @@ class _IssuanceCompletedListPageState
       ),
       body: completedAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('발급완료 목록을 불러오지 못했습니다.\n$e'),
-          ),
+        error: (e, _) => issuanceListErrorScrollable(
+          message:
+              '발급완료 목록을 불러오지 못했습니다.\n${issuanceUserErrorMessage(e)}',
+          onRetry: () => _refresh(showCompletionSnackBar: false),
         ),
         data: (allCompleted) {
           _maybeOpenPendingDetail(allCompleted);

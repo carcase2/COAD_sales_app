@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
@@ -66,6 +67,53 @@ String issuanceUserErrorMessage(Object error) {
     if (msg.isNotEmpty && !msg.startsWith('Instance of')) return msg;
   }
   return '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+}
+
+/// 발급완료·발행일 기준 `yyyy-MM-dd` (없으면 요청일 서울 기준).
+String issuanceIssueYmdForRow(IssuanceRequestRow row) {
+  for (final raw in [row.issue?['issue_date'], row.master['issue_date']]) {
+    if (raw == null) continue;
+    final s = raw.toString().trim();
+    if (s.length >= 10) return s.substring(0, 10);
+  }
+  return ymdSeoulFromDateTime(row.createdAt);
+}
+
+bool issuanceIsTodayIssuedRow(IssuanceRequestRow row) =>
+    issuanceIssueYmdForRow(row) == todayYmdSeoul();
+
+/// 목록 오류 시 당겨서 새로고침 + 다시 시도.
+Widget issuanceListErrorScrollable({
+  required String message,
+  required VoidCallback onRetry,
+}) {
+  return ListView(
+    physics: const AlwaysScrollableScrollPhysics(),
+    children: [
+      const SizedBox(height: 120),
+      Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 /// 취소 사유 입력 다이얼로그. 확인 시 사유 문자열, 취소 시 null.

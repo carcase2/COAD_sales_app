@@ -170,37 +170,26 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     final bondCompletedAsync = ref.watch(
       issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
     );
-    final taxPendingAllAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
-    );
-    final bondPendingAllAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
-    );
     final taxPendingAsync = ref.watch(
       issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
     final bondPendingAsync = ref.watch(
       issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
     );
-    final taxCount = taxPendingAllAsync.valueOrNull?.length;
-    final bondCount = bondPendingAllAsync.valueOrNull?.length;
+    final taxCount = taxPendingAsync.valueOrNull?.length;
+    final bondCount = bondPendingAsync.valueOrNull?.length;
     final combinedMyPendingCount =
         (taxPendingAsync.valueOrNull?.length ?? 0) +
         (bondPendingAsync.valueOrNull?.length ?? 0);
-    bool isToday(DateTime dt) {
-      final local = dt.toLocal();
-      final now = DateTime.now();
-      return local.year == now.year &&
-          local.month == now.month &&
-          local.day == now.day;
-    }
+    bool isTodayIssued(IssuanceRequestRow row) =>
+        issuanceIsTodayIssuedRow(row);
 
     final todayTaxIssued = (taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-        .where((row) => isToday(row.createdAt))
+        .where(isTodayIssued)
         .length;
     final todayBondIssued =
         (bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-            .where((row) => isToday(row.createdAt))
+            .where(isTodayIssued)
             .length;
     final todayIssuedCount = todayTaxIssued + todayBondIssued;
     final isTax = _domain == IssuanceDomain.taxInvoice;
@@ -364,7 +353,8 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     icon: Icons.task_alt_rounded,
                     title: '금일 발급완료',
                     count: todayIssuedCount,
-                    subtitle: '세금 $todayTaxIssued건 · 이행 $todayBondIssued건',
+                    subtitle:
+                        '발행일 기준 · 세금 $todayTaxIssued건 · 이행 $todayBondIssued건',
                     accent: Colors.teal.shade700,
                     large: true,
                     onTap: () => Navigator.of(context).push<void>(
@@ -754,12 +744,9 @@ class _CombinedIssuancePendingPageState
         child: loading
             ? const Center(child: CircularProgressIndicator())
             : hasError
-            ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 140),
-                  Center(child: Text('발급대기 목록을 불러오지 못했습니다.')),
-                ],
+            ? issuanceListErrorScrollable(
+                message: '발급대기 목록을 불러오지 못했습니다.',
+                onRetry: _refresh,
               )
             : ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -885,13 +872,7 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
     await Future<void>.delayed(const Duration(milliseconds: 80));
   }
 
-  bool _isToday(DateTime dt) {
-    final local = dt.toLocal();
-    final now = DateTime.now();
-    return local.year == now.year &&
-        local.month == now.month &&
-        local.day == now.day;
-  }
+  bool _isTodayIssued(IssuanceRequestRow row) => issuanceIsTodayIssuedRow(row);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -904,10 +885,10 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
     );
 
     final taxRows = (taxAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-        .where((r) => _isToday(r.createdAt))
+        .where(_isTodayIssued)
         .toList();
     final bondRows = (bondAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-        .where((r) => _isToday(r.createdAt))
+        .where(_isTodayIssued)
         .toList();
     final loading = taxAsync.isLoading || bondAsync.isLoading;
     final hasError = taxAsync.hasError || bondAsync.hasError;
@@ -919,12 +900,9 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
         child: loading
             ? const Center(child: CircularProgressIndicator())
             : hasError
-            ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 140),
-                  Center(child: Text('금일 발급완료 목록을 불러오지 못했습니다.')),
-                ],
+            ? issuanceListErrorScrollable(
+                message: '금일 발급완료 목록을 불러오지 못했습니다.',
+                onRetry: () => _refresh(ref),
               )
             : ListView(
                 physics: const AlwaysScrollableScrollPhysics(),

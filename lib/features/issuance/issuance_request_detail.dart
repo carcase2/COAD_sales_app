@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -244,7 +245,12 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
     }
   }
 
-  Widget attachmentButton(BuildContext context, Map<String, List<String>> groups) {
+  Widget attachmentButton(
+    BuildContext context,
+    Map<String, List<String>> groups, {
+    String galleryTitle = '첨부',
+    String buttonPrefix = '첨부',
+  }) {
     if (groups.isEmpty) return const SizedBox.shrink();
     final totalCount = groups.values.fold<int>(0, (sum, list) => sum + list.length);
     final imageItems = flattenLabeledImages(groups);
@@ -252,7 +258,7 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
     return FilledButton.tonalIcon(
       onPressed: () async {
         if (imageItems.isNotEmpty) {
-          openGallery(context, '첨부', imageItems);
+          openGallery(context, galleryTitle, imageItems);
         } else {
           await openExternalFirst(context, allUrls);
         }
@@ -263,7 +269,7 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
             : Icons.insert_drive_file_outlined,
         size: 18,
       ),
-      label: Text('첨부 ($totalCount)'),
+      label: Text('$buttonPrefix ($totalCount)'),
     );
   }
 
@@ -274,11 +280,30 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
       ? (taxBizUrls.isEmpty ? const <String, List<String>>{} : {'사업자등록증': taxBizUrls})
       : dedupeGroups(currentBondGroups);
 
+  List<String> issuedDocUrls() {
+    if (isTax) {
+      final fromIssue = parseUrlList(issue?['invoice_image_url']);
+      if (fromIssue.isNotEmpty) return fromIssue;
+      return parseUrlList(master['invoice_image_url']);
+    }
+    final fromIssue = parseUrlList(issue?['bond_image_url']);
+    if (fromIssue.isNotEmpty) return fromIssue;
+    return parseUrlList(master['bond_image_url']);
+  }
+
+  final issuedUrls = issuedDocUrls();
+  final issuedGroups = issuedUrls.isEmpty
+      ? const <String, List<String>>{}
+      : {isTax ? '발급 계산서' : '발급 증권': issuedUrls};
+  final issueYmd = issuanceIssueYmdForRow(row);
+
   final details = <Widget>[
     kv('요청 구분', isTax ? '세금계산서' : '이행증권'),
     kv('상태', statusLabel(textOf('status'))),
     if (isUrgent) kv('긴급', '예'),
     kv('요청일', row.createdAtText),
+    if (issuedUrls.isNotEmpty && issueYmd.isNotEmpty)
+      kv('발행일', issueYmd),
     kv('요청자', textOf('requester')),
     if (isTax) ...[
       kv('계산서번호', textOf('invoice_number')),
@@ -380,6 +405,15 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
                 if (primaryGroups.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   attachmentButton(context, primaryGroups),
+                ],
+                if (issuedGroups.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  attachmentButton(
+                    context,
+                    issuedGroups,
+                    galleryTitle: isTax ? '발급 계산서' : '발급 증권',
+                    buttonPrefix: isTax ? '발급 계산서' : '발급 증권',
+                  ),
                 ],
                 if (!isTax && primaryGroups.isEmpty) ...[
                   const SizedBox(height: 12),

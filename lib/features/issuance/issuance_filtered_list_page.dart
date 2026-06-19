@@ -641,13 +641,10 @@ class _IssuanceFilteredListPageState
           Expanded(
             child: rowsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
+              error: (e, _) => issuanceListErrorScrollable(
+                message:
                     '목록을 불러오지 못했습니다.\n${issuanceUserErrorMessage(e)}',
-                  ),
-                ),
+                onRetry: _refresh,
               ),
               data: (rows) {
                 _maybeOpenPendingDetail(rows);

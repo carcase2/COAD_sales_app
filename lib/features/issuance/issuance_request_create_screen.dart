@@ -841,10 +841,10 @@ class _IssuanceRequestCreateScreenState
   Widget build(BuildContext context) {
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final taxRowsAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+      issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
     final bondRowsAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+      issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
     );
     final taxCount = taxRowsAsync.valueOrNull?.length;
     final bondCount = bondRowsAsync.valueOrNull?.length;

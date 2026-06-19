@@ -456,7 +456,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         },
       ),
       _QuickActionItem(
-        label: '발행요청 (테스트중)',
+        label: '발행요청',
         subtitle: '세금/이행 발급요청 확인',
         color: Colors.indigo.shade600,
         icon: Icons.receipt_long_rounded,
