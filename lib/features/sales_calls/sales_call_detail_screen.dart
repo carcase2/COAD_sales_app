@@ -494,27 +494,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return '2차';
   }
 
-  /// `call_date` + `call_time` 우선, 없으면 `created_at`(서울 기준).
   String _formatReceptionDateTime(SalesCall? call) {
     if (call == null) return '—';
-    final d = call.callDate?.trim();
-    final t = call.callTime?.trim();
-    if (d != null && d.isNotEmpty) {
-      final dateStr = formatSeoulDate(d);
-      if (t != null && t.isNotEmpty) {
-        return '$dateStr $t';
-      }
-      return dateStr;
-    }
-    final created = call.createdAt?.trim();
-    if (created != null && created.isNotEmpty) {
-      try {
-        return formatSeoulDateTime(DateTime.parse(created));
-      } catch (_) {
-        return created;
-      }
-    }
-    return '—';
+    return formatSalesCallReceptionDateTime(
+      callDate: call.callDate,
+      callTime: call.callTime,
+      createdAt: call.createdAt,
+    );
   }
 
   String _getStatusNameById(MasterDataBundle master, int? id) =>

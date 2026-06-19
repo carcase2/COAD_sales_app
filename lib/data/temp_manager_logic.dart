@@ -24,22 +24,17 @@ bool isCallWithinOverridePeriod(
   SalesCall call,
   TempManagerOverride override,
 ) {
-  final ymd = (call.callDate?.trim().isNotEmpty == true)
-      ? call.callDate!.trim()
-      : _ymdFromCreatedAt(call.createdAt);
-  if (ymd == null || ymd.isEmpty) return true;
+  final ymd = salesCallReceptionYmdForCall(
+    callDate: call.callDate,
+    callTime: call.callTime,
+    createdAt: call.createdAt,
+  );
+  if (ymd.isEmpty) return true;
   return isYmdWithinInclusiveRange(
     ymd,
     startYmd: override.startDate,
     endYmd: override.endDate,
   );
-}
-
-String? _ymdFromCreatedAt(String? createdAt) {
-  if (createdAt == null || createdAt.isEmpty) return null;
-  final dt = DateTime.tryParse(createdAt);
-  if (dt == null) return null;
-  return ymdSeoulFromDateTime(dt);
 }
 
 /// 만료된 override — 적용 기간 중 임시 담당 명의 접수 건 DB 원복 대상

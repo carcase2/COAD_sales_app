@@ -399,17 +399,15 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     return displayAssigneeForCall(c, overrides, DateTime.now());
   }
 
-  DateTime? _parseCreatedLocal(SalesCall c) {
-    final raw = c.createdAt;
-    if (raw == null || raw.isEmpty) return null;
-    final dt = DateTime.tryParse(raw);
-    if (dt == null) return null;
-    return dt.toLocal();
-  }
+  DateTime? _receptionSeoul(SalesCall c) => resolveSalesCallReceptionSeoul(
+        callDate: c.callDate,
+        callTime: c.callTime,
+        createdAt: c.createdAt,
+      );
 
-  String _elapsedLabelSince(DateTime? createdLocal) {
-    if (createdLocal == null) return '';
-    final diff = DateTime.now().difference(createdLocal);
+  String _elapsedLabelSince(DateTime? receptionSeoul) {
+    if (receptionSeoul == null) return '';
+    final diff = DateTime.now().difference(receptionSeoul);
     if (diff.isNegative) return '방금 접수';
     if (diff.inMinutes < 1) return '방금 전';
     if (diff.inHours < 1) return '${diff.inMinutes}분 경과';
@@ -1014,20 +1012,17 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final isCarriedOver = isPendingMode &&
                                 receptionYmd.isNotEmpty &&
                                 receptionYmd != todayYmd;
-                            String timeStr =
-                                '${c.callDate ?? ''} ${c.callTime ?? ''}'.trim();
-                            DateTime? createdLocal;
+                            final receptionSeoul = _receptionSeoul(c);
+                            String timeStr = formatSalesCallReceptionShort(
+                              callDate: c.callDate,
+                              callTime: c.callTime,
+                              createdAt: c.createdAt,
+                            );
                             if (isPendingMode && receptionYmd.isNotEmpty) {
                               timeStr = '접수 $receptionYmd';
-                            } else if (c.createdAt != null &&
-                                c.createdAt!.isNotEmpty) {
-                              createdLocal = _parseCreatedLocal(c);
-                              if (createdLocal != null) {
-                                timeStr =
-                                    '${createdLocal.month}/${createdLocal.day} ${createdLocal.hour}:${createdLocal.minute.toString().padLeft(2, '0')}';
-                              }
                             }
-                            final elapsedLabel = _elapsedLabelSince(createdLocal);
+                            final elapsedLabel =
+                                _elapsedLabelSince(receptionSeoul);
                             final showElapsed = c.isMissed && elapsedLabel.isNotEmpty;
                             final stageLabel = c.displayStageLabel;
                             final inquiryMethod = c.displayInquiryMethod;

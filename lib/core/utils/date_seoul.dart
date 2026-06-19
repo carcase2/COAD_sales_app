@@ -19,9 +19,148 @@ String ymdSeoulFromDateTime(DateTime input) {
 /// 표시용 — 앱 시작 시 `Asia/Seoul` 로컬이 설정되어 있다고 가정.
 String formatSeoulDateTime(DateTime? utcOrNull) {
   if (utcOrNull == null) return '—';
-  final utc = utcOrNull.isUtc ? utcOrNull : utcOrNull.toUtc();
-  final local = tz.TZDateTime.from(utc, tz.local);
-  return DateFormat('yyyy-MM-dd HH:mm', 'ko_KR').format(local);
+  return DateFormat('yyyy-MM-dd HH:mm', 'ko_KR').format(_utcToSeoul(utcOrNull));
+}
+
+/// Supabase 등 DB 원문 시각 문자열 → 서울 `DateTime`.
+DateTime parseSupabaseTimestampAsSeoul(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) {
+    throw FormatException('Empty timestamp');
+  }
+
+  final normalized = trimmed.replaceFirst(' ', 'T');
+  final dt = DateTime.tryParse(normalized);
+  if (dt == null) {
+    throw FormatException('Invalid timestamp: $raw');
+  }
+
+  if (dt.isUtc || _hasExplicitTimezone(trimmed)) {
+    return _utcToSeoul(dt.isUtc ? dt : dt.toUtc());
+  }
+
+  if (!_hasTimeComponent(trimmed)) {
+    final datePart = trimmed.split('T').first;
+    final parts = datePart.split('-');
+    if (parts.length == 3) {
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final d = int.tryParse(parts[2]);
+      if (y != null && m != null && d != null) {
+        return DateTime(y, m, d);
+      }
+    }
+  }
+
+  // 타임존 없는 `yyyy-MM-dd HH:mm:ss` — DB UTC 시각으로 해석
+  return _utcToSeoul(
+    DateTime.utc(
+      dt.year,
+      dt.month,
+      dt.day,
+      dt.hour,
+      dt.minute,
+      dt.second,
+      dt.millisecond,
+      dt.microsecond,
+    ),
+  );
+}
+
+bool _hasExplicitTimezone(String raw) {
+  final trimmed = raw.trim();
+  return trimmed.endsWith('Z') ||
+      RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(trimmed);
+}
+
+bool _hasTimeComponent(String raw) {
+  return RegExp(r'\d{2}:\d{2}').hasMatch(raw);
+}
+
+DateTime _utcToSeoul(DateTime utc) {
+  final asUtc = utc.isUtc ? utc : utc.toUtc();
+  try {
+    return tz.TZDateTime.from(asUtc, tz.local);
+  } catch (_) {
+    return asUtc.add(const Duration(hours: 9));
+  }
+}
+
+/// 고객전화 접수 시각 — `call_date`/`call_time` 우선, 없으면 `created_at`.
+DateTime? resolveSalesCallReceptionSeoul({
+  String? callDate,
+  String? callTime,
+  String? createdAt,
+}) {
+  final d = callDate?.trim() ?? '';
+  final t = callTime?.trim() ?? '';
+
+  if (d.isNotEmpty) {
+    if (_hasTimeComponent(d) || t.isNotEmpty) {
+      final combined = t.isNotEmpty && !_hasTimeComponent(d) ? '$d $t' : d;
+      try {
+        return parseSupabaseTimestampAsSeoul(combined);
+      } catch (_) {}
+    } else if (createdAt != null && createdAt.trim().isNotEmpty) {
+      try {
+        return parseSupabaseTimestampAsSeoul(createdAt.trim());
+      } catch (_) {}
+    } else {
+      try {
+        return parseSupabaseTimestampAsSeoul(d);
+      } catch (_) {}
+    }
+  }
+
+  if (createdAt != null && createdAt.trim().isNotEmpty) {
+    try {
+      return parseSupabaseTimestampAsSeoul(createdAt.trim());
+    } catch (_) {}
+  }
+  return null;
+}
+
+String formatSalesCallReceptionDateTime({
+  String? callDate,
+  String? callTime,
+  String? createdAt,
+}) {
+  final seoul = resolveSalesCallReceptionSeoul(
+    callDate: callDate,
+    callTime: callTime,
+    createdAt: createdAt,
+  );
+  if (seoul == null) return '—';
+  return DateFormat('yyyy-MM-dd HH:mm', 'ko_KR').format(seoul);
+}
+
+String formatSalesCallReceptionShort({
+  String? callDate,
+  String? callTime,
+  String? createdAt,
+}) {
+  final seoul = resolveSalesCallReceptionSeoul(
+    callDate: callDate,
+    callTime: callTime,
+    createdAt: createdAt,
+  );
+  if (seoul == null) return '';
+  return '${seoul.month}/${seoul.day} '
+      '${seoul.hour}:${seoul.minute.toString().padLeft(2, '0')}';
+}
+
+String salesCallReceptionYmdForCall({
+  String? callDate,
+  String? callTime,
+  String? createdAt,
+}) {
+  final seoul = resolveSalesCallReceptionSeoul(
+    callDate: callDate,
+    callTime: callTime,
+    createdAt: createdAt,
+  );
+  if (seoul == null) return '';
+  return DateFormat('yyyy-MM-dd').format(seoul);
 }
 
 String formatSeoulDate(String? ymd) {

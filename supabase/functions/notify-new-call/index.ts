@@ -22,9 +22,54 @@ function isYmdInInclusiveRange(
   return true
 }
 
+type PushUser = { id: string; name: string; role: string; fcm_token: string }
+
 /**
- * 휴가 대행 기간이면 푸시는 임시 담당자(`temp_manager`)에게만.
- * 해당 없으면 null → 호출부에서 기존 브로드캐스트.
+ * 접수 푸시 수신 대상.
+ * - 담당자 지정: 관리자 전원 + 담당자(이름 일치)
+ * - 담당자 미지정: FCM 토큰 있는 전체 사용자(기존 브로드캐스트)
+ */
+async function resolvePushRecipients(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  assigneeName: string | null,
+): Promise<PushUser[]> {
+  const trimmed = (assigneeName ?? '').trim()
+  if (!trimmed || trimmed === '미지정') {
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .select('id, name, role, fcm_token')
+      .not('fcm_token', 'is', null)
+
+    if (error) throw error
+    return data ?? []
+  }
+
+  const { data: admins, error: adminError } = await supabaseAdmin
+    .from('users')
+    .select('id, name, role, fcm_token')
+    .eq('role', 'admin')
+    .not('fcm_token', 'is', null)
+
+  if (adminError) throw adminError
+
+  const { data: assigneeUsers, error: assigneeError } = await supabaseAdmin
+    .from('users')
+    .select('id, name, role, fcm_token')
+    .eq('name', trimmed)
+    .not('fcm_token', 'is', null)
+
+  if (assigneeError) throw assigneeError
+
+  const byId = new Map<string, PushUser>()
+  for (const u of [...(admins ?? []), ...(assigneeUsers ?? [])]) {
+    if (u?.id) byId.set(u.id, u)
+  }
+  return Array.from(byId.values())
+}
+
+/**
+ * 휴가 대행 기간이면 담당자를 임시 담당자(`temp_manager`)로 보정.
+ * 해당 없으면 null → 호출부에서 `assigned_to` 사용.
  */
 async function resolveTempManagerNameForPush(
   supabaseAdmin: ReturnType<typeof createClient>,
@@ -84,39 +129,23 @@ serve(async (req) => {
 
     console.log(`Webhook (${type}) payload received:`, JSON.stringify(payload))
 
+    const assigneeFromRecord = (
+      (activeRecord?.assigned_to ?? '') as string
+    ).toString().trim() || '미지정'
+
     const tempManagerForPush = await resolveTempManagerNameForPush(supabaseAdmin, activeRecord)
+    const effectiveAssignee = tempManagerForPush ??
+      (assigneeFromRecord !== '미지정' ? assigneeFromRecord : null)
 
-    let users: Array<{ id: string; name: string; role: string; fcm_token: string }> = []
-    if (tempManagerForPush) {
-      console.log(`Routing push to temp manager only: ${tempManagerForPush}`)
-      const { data, error: userError } = await supabaseAdmin
-        .from('users')
-        .select('id, name, role, fcm_token')
-        .eq('name', tempManagerForPush)
-        .not('fcm_token', 'is', null)
+    console.log(
+      `Routing push to admins + assignee: record=${assigneeFromRecord}` +
+        (tempManagerForPush ? ` effective=${tempManagerForPush}` : ''),
+    )
 
-      if (userError) throw userError
-      users = data ?? []
-      if (users.length === 0) {
-        console.log(`No users with FCM token matched temp manager name: ${tempManagerForPush}`)
-        return new Response(
-          JSON.stringify({ message: 'No temp manager user with FCM token', tempManager: tempManagerForPush }),
-          { status: 200 },
-        )
-      }
-    } else {
-      console.log(`Querying ALL users with FCM tokens for broadcast...`)
-      const { data, error: userError } = await supabaseAdmin
-        .from('users')
-        .select('id, name, role, fcm_token')
-        .not('fcm_token', 'is', null)
+    const users = await resolvePushRecipients(supabaseAdmin, effectiveAssignee)
 
-      if (userError) throw userError
-      users = data ?? []
-    }
-
-    if (!users || users.length === 0) {
-      console.log('No target users with FCM tokens found')
+    if (users.length === 0) {
+      console.log('No admin/assignee users with FCM tokens found')
       return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
@@ -164,10 +193,8 @@ serve(async (req) => {
       ? `${activeRecord.region_sido} ${activeRecord.region_name}`
       : (activeRecord ? (activeRecord.region_display || activeRecord.region_name || '지역 미상') : '지역 미상')
 
-    // 푸시 제목: 당일 처리 담당(대행 중이면 assigned_to = 임시 담당)
-    const assigneeName = (
-      (activeRecord?.assigned_to ?? '') as string
-    ).toString().trim() || '미지정'
+    // 푸시 제목: 당일 처리 담당(대행 중이면 effectiveAssignee = 임시 담당)
+    const assigneeName = effectiveAssignee ?? assigneeFromRecord
 
     const customerName = (activeRecord && activeRecord.customer_name) || '이름없음'
     const phone = (activeRecord && activeRecord.customer_phone) || ''
@@ -230,7 +257,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        routedTo: tempManagerForPush ?? 'broadcast',
+        routedTo: effectiveAssignee ?? 'broadcast',
         recipientCount: tokens.length,
         results,
       }),

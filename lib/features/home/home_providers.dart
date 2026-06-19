@@ -21,16 +21,13 @@ const int pendingUncalledLookbackDays = 60;
 String pendingUncalledFromYmd(String anchorYmd) =>
     addDaysToYmd(anchorYmd, -pendingUncalledLookbackDays);
 
-/// 접수일 `call_date` (없으면 `created_at` 서울 기준).
+/// 접수일 — `call_date`/`call_time`·`created_at`을 서울 기준으로 정규화.
 String salesCallReceptionYmd(SalesCall call) {
-  final raw = call.callDate?.trim();
-  if (raw != null && raw.length >= 10) return raw.substring(0, 10);
-  final created = call.createdAt?.trim();
-  if (created != null && created.isNotEmpty) {
-    final dt = DateTime.tryParse(created);
-    if (dt != null) return ymdSeoulFromDateTime(dt);
-  }
-  return '';
+  return salesCallReceptionYmdForCall(
+    callDate: call.callDate,
+    callTime: call.callTime,
+    createdAt: call.createdAt,
+  );
 }
 
 typedef PendingUncalledSummary = ({
