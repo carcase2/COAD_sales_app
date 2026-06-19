@@ -67,6 +67,48 @@ DateTime parseSupabaseTimestampAsSeoul(String raw) {
   );
 }
 
+/// `call_date` / `call_time` — DB·웹에 **한국 현지 시각**으로 저장된 값(변환 없음).
+DateTime parseSalesCallReceptionWallClock(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) {
+    throw FormatException('Empty reception datetime');
+  }
+
+  final normalized = trimmed.replaceFirst(' ', 'T');
+  final dt = DateTime.tryParse(normalized);
+  if (dt == null) {
+    throw FormatException('Invalid reception datetime: $raw');
+  }
+
+  if (dt.isUtc || _hasExplicitTimezone(trimmed)) {
+    return _utcToSeoul(dt.isUtc ? dt : dt.toUtc());
+  }
+
+  if (!_hasTimeComponent(trimmed)) {
+    final datePart = trimmed.split('T').first;
+    final parts = datePart.split('-');
+    if (parts.length == 3) {
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final d = int.tryParse(parts[2]);
+      if (y != null && m != null && d != null) {
+        return DateTime(y, m, d);
+      }
+    }
+  }
+
+  return DateTime(
+    dt.year,
+    dt.month,
+    dt.day,
+    dt.hour,
+    dt.minute,
+    dt.second,
+    dt.millisecond,
+    dt.microsecond,
+  );
+}
+
 bool _hasExplicitTimezone(String raw) {
   final trimmed = raw.trim();
   return trimmed.endsWith('Z') ||
@@ -99,7 +141,7 @@ DateTime? resolveSalesCallReceptionSeoul({
     if (_hasTimeComponent(d) || t.isNotEmpty) {
       final combined = t.isNotEmpty && !_hasTimeComponent(d) ? '$d $t' : d;
       try {
-        return parseSupabaseTimestampAsSeoul(combined);
+        return parseSalesCallReceptionWallClock(combined);
       } catch (_) {}
     } else if (createdAt != null && createdAt.trim().isNotEmpty) {
       try {
@@ -107,7 +149,7 @@ DateTime? resolveSalesCallReceptionSeoul({
       } catch (_) {}
     } else {
       try {
-        return parseSupabaseTimestampAsSeoul(d);
+        return parseSalesCallReceptionWallClock(d);
       } catch (_) {}
     }
   }
