@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
+import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -54,6 +55,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   final _unsuccessfulReasonCtrl = TextEditingController();
 
   bool _saving = false;
+  bool _deleting = false;
   List<String> _imageUrls = [];
   bool _uploadBusy = false;
   int _uploadTotal = 0;
@@ -275,6 +277,48 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           _uploadCurrent = 0;
         });
       }
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final name = _model?.customerName?.trim();
+    final label = (name != null && name.isNotEmpty) ? '$name 접수' : '이 접수';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('접수 삭제'),
+        content: Text('$label를 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await ref.read(salesCallsRepositoryProvider).deleteCall(widget.id);
+      invalidateHomeSalesCaches(ref.invalidate);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('접수가 삭제되었습니다.')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(koreanErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -652,17 +696,32 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
           IconButton(
             icon: Icon(_isEditMode ? Icons.view_headline_rounded : Icons.edit_note_rounded),
-            onPressed: () {
-              setState(() {
-                _isEditMode = !_isEditMode;
-                if (_isEditMode) {
-                  _nextDateCtrl.text = _model?.nextScheduledDate ?? '';
-                }
-              });
-            },
+            onPressed: _deleting
+                ? null
+                : () {
+                    setState(() {
+                      _isEditMode = !_isEditMode;
+                      if (_isEditMode) {
+                        _nextDateCtrl.text = _model?.nextScheduledDate ?? '';
+                      }
+                    });
+                  },
             tooltip: _isEditMode ? '조회 모드' : '접수 정보 수정',
           ),
-          if (_loading)
+          PopupMenuButton<String>(
+            enabled: !_deleting && !_loading && _model != null,
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'delete') _confirmDelete();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'delete',
+                child: Text('접수 삭제', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+          if (_loading || _deleting)
             Padding(
               padding: const EdgeInsets.all(16),
               child: SizedBox(

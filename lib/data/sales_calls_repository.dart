@@ -580,6 +580,17 @@ class SalesCallsRepository {
     }
   }
 
+  Future<void> deleteCall(String id) async {
+    try {
+      await _client.from('call_history').delete().eq('sales_call_id', id);
+      await _client.from('sales_calls').delete().eq('id', id);
+      await _db.deleteSalesCall(id);
+      invalidateTempManagerCache(forceRevertOnNextFetch: true);
+    } catch (e) {
+      throw ApiException('삭제에 실패했습니다: $e');
+    }
+  }
+
   Future<void> addCallHistory(String callId, Map<String, dynamic> historyData) async {
     try {
       await _client.from('call_history').insert({

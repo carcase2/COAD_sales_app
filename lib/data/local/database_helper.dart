@@ -148,6 +148,11 @@ class DatabaseHelper {
         .toList();
   }
 
+  Future<void> deleteSalesCall(String id) async {
+    final db = await instance.database;
+    await db.delete('sales_calls', where: 'id = ?', whereArgs: [id]);
+  }
+
   // --- Master Data Operations ---
 
   Future<void> saveMasterData(String key, Map<String, dynamic> data) async {
