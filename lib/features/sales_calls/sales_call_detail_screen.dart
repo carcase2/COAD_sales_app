@@ -17,6 +17,7 @@ import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class SalesCallDetailScreen extends ConsumerStatefulWidget {
@@ -1445,6 +1446,25 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return null;
   }
 
+  String _consultationContentFromHistoryMap(Map<String, dynamic> h) =>
+      (h['consultation_content'] ??
+              h['consultation_result'] ??
+              h['content'] ??
+              h['note'] ??
+              h['memo'] ??
+              '')
+          .toString();
+
+  Future<void> _copyConsultationContent(String content) async {
+    final text = content.trim();
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('상담내용이 복사되었습니다.')),
+    );
+  }
+
   int? _diffDaysBetween(String? scheduledRaw, String? actualRaw) {
     if (scheduledRaw == null || actualRaw == null) return null;
     DateTime? parseYmdOnly(String raw) {
@@ -1471,7 +1491,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     ColorScheme scheme,
   ) {
     final h = history[index];
-    final content = (h['consultation_content'] ?? h['consultation_result'] ?? h['content'] ?? h['note'] ?? h['memo'] ?? '').toString();
+    final content = _consultationContentFromHistoryMap(h);
     final actualRaw = _firstNonEmptyDate(h['call_date']) ?? _firstNonEmptyDate(h['created_at']);
     final actualDate = formatSeoulDate(actualRaw);
     final scheduledRaw = _resolveScheduledDateForHistory(history, index);
@@ -1577,12 +1597,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      content.isEmpty ? '기록된 상담 내용이 없습니다.' : content,
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 1.6,
-                        color: scheme.onSurface,
+                    GestureDetector(
+                      onLongPress: content.trim().isEmpty
+                          ? null
+                          : () => _copyConsultationContent(content),
+                      behavior: HitTestBehavior.opaque,
+                      child: Text(
+                        content.isEmpty ? '기록된 상담 내용이 없습니다.' : content,
+                        style: TextStyle(
+                          fontSize: 15,
+                          height: 1.6,
+                          color: scheme.onSurface,
+                        ),
                       ),
                     ),
                     if (lostReason != null) ...[
