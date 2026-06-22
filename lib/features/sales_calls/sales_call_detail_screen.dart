@@ -17,7 +17,6 @@ import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class SalesCallDetailScreen extends ConsumerStatefulWidget {
@@ -1455,16 +1454,6 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               '')
           .toString();
 
-  Future<void> _copyConsultationContent(String content) async {
-    final text = content.trim();
-    if (text.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('상담내용이 복사되었습니다.')),
-    );
-  }
-
   int? _diffDaysBetween(String? scheduledRaw, String? actualRaw) {
     if (scheduledRaw == null || actualRaw == null) return null;
     DateTime? parseYmdOnly(String raw) {
@@ -1594,15 +1583,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             const SizedBox(height: 16),
             Expanded(
               child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    GestureDetector(
-                      onLongPress: content.trim().isEmpty
-                          ? null
-                          : () => _copyConsultationContent(content),
-                      behavior: HitTestBehavior.opaque,
-                      child: Text(
+                child: SelectionArea(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         content.isEmpty ? '기록된 상담 내용이 없습니다.' : content,
                         style: TextStyle(
                           fontSize: 15,
@@ -1610,28 +1595,28 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                           color: scheme.onSurface,
                         ),
                       ),
-                    ),
-                    if (lostReason != null) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        '미수주 사유',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.error,
+                      if (lostReason != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          '미수주 사유',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.error,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        lostReason,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          color: scheme.onSurface,
+                        const SizedBox(height: 6),
+                        Text(
+                          lostReason,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.5,
+                            color: scheme.onSurface,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
