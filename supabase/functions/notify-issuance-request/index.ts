@@ -11,6 +11,75 @@ type NotifyPayload = {
   body: string
 }
 
+type PushUser = { id: string; name: string; role: string; fcm_token: string }
+
+function assigneeFromMasterRow(
+  row: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!row) return null
+  const requester = (row.requester ?? '').toString().trim()
+  if (requester) return requester
+  const createdBy = (row.created_by ?? '').toString().trim()
+  if (createdBy) return createdBy
+  return null
+}
+
+async function resolveAssigneeName(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  notify: NotifyPayload,
+  record?: Record<string, unknown>,
+): Promise<string | null> {
+  const fromRecord = assigneeFromMasterRow(record)
+  if (fromRecord) return fromRecord
+
+  const table = notify.domain === 'taxInvoice' ? 'tax_invoices' : 'performance_bonds'
+  const { data, error } = await supabaseAdmin
+    .from(table)
+    .select('requester, created_by')
+    .eq('id', notify.masterId)
+    .maybeSingle()
+
+  if (error) {
+    console.error(`Error fetching assignee from ${table}:`, error)
+    return null
+  }
+
+  return assigneeFromMasterRow(data as Record<string, unknown> | null)
+}
+
+/** 발급요청·완료 푸시: 관리자 전원 + 해당 건 담당자(requester) */
+async function resolveIssuancePushRecipients(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  assigneeName: string | null,
+): Promise<PushUser[]> {
+  const { data: admins, error: adminError } = await supabaseAdmin
+    .from('users')
+    .select('id, name, role, fcm_token')
+    .eq('role', 'admin')
+    .not('fcm_token', 'is', null)
+
+  if (adminError) throw adminError
+
+  const trimmed = (assigneeName ?? '').trim()
+  let assigneeUsers: PushUser[] = []
+  if (trimmed && trimmed !== '미지정') {
+    const { data, error: assigneeError } = await supabaseAdmin
+      .from('users')
+      .select('id, name, role, fcm_token')
+      .eq('name', trimmed)
+      .not('fcm_token', 'is', null)
+
+    if (assigneeError) throw assigneeError
+    assigneeUsers = data ?? []
+  }
+
+  const byId = new Map<string, PushUser>()
+  for (const u of [...(admins ?? []), ...assigneeUsers]) {
+    if (u?.id) byId.set(u.id, u)
+  }
+  return Array.from(byId.values())
+}
+
 function hasText(value: unknown): boolean {
   return (value ?? '').toString().trim().length > 0
 }
@@ -315,27 +384,30 @@ serve(async (req) => {
       })
     }
 
-    const { data: users, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('id, name, role, fcm_token')
-      .not('fcm_token', 'is', null)
-
-    if (userError) throw userError
+    const record = (payload.record ?? {}) as Record<string, unknown>
+    const assigneeName = await resolveAssigneeName(supabaseAdmin, notify, record)
+    const users = await resolveIssuancePushRecipients(supabaseAdmin, assigneeName)
 
     const tokens = Array.from(
       new Set(
-        (users ?? [])
+        users
           .map((u) => (u.fcm_token ?? '').trim())
           .filter((t) => t.length > 5),
       ),
     )
 
     if (tokens.length === 0) {
-      console.log('No users with FCM tokens found for issuance request')
+      console.log(
+        `No issuance push recipients with FCM tokens: assignee=${assigneeName}`,
+      )
       return new Response(JSON.stringify({ message: 'No target users found' }), {
         status: 200,
       })
     }
+
+    console.log(
+      `Routing issuance ${notify.event} push to admins + assignee=${assigneeName} (${tokens.length} token(s))`,
+    )
 
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
     const FIREBASE_SERVICE_ACCOUNT = JSON.parse(

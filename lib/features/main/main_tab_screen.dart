@@ -290,9 +290,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       final newKeys = currentKeys.difference(seenKeys);
       if (newKeys.isEmpty) return;
 
+      final user = ref.read(authControllerProvider);
+      final isAdmin = user?.role == 'admin';
+
       for (final row in allPending) {
         final key = rowKey(row);
         if (!newKeys.contains(key)) continue;
+        if (!isAdmin && !issuanceIsOwnRequest(row, user?.name)) continue;
         final isTax = row.domain == IssuanceDomain.taxInvoice;
         final isUrgent = isTax && (row.issue?['is_urgent'] ?? false) == true;
         final statusRaw = (row.master['status'] ?? '').toString().toLowerCase();
