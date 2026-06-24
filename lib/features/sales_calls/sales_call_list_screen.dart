@@ -271,7 +271,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         return repo.fetchCalls(
           date: widget.date ?? todayYmdSeoul(),
           limit: 100,
-          includeCallHistory: true,
+          includeCallHistory: false,
         );
       case ListQueryMode.incomplete:
         if (widget.date != null && widget.dateEndInclusive != null) {
@@ -279,19 +279,19 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             dateRangeStart: widget.date!,
             dateRangeEndInclusive: widget.dateEndInclusive!,
             uncalledOnly: true,
-            includeCallHistory: true,
+            includeCallHistory: false,
           );
         }
         return repo.fetchCallsAllPages(
           date: widget.date, // 날짜가 전달된 경우 해당 날짜만 (오늘 요약 클릭 시), 없으면 전체 (전체 랭킹 등)
           uncalledOnly: true,
-          includeCallHistory: true,
+          includeCallHistory: false,
         );
       case ListQueryMode.pendingUncalled:
         return repo.fetchCallsAllPages(
           fromDate: widget.date ?? pendingUncalledFromYmd(todayYmdSeoul()),
           uncalledOnly: true,
-          includeCallHistory: true,
+          includeCallHistory: false,
         );
       case ListQueryMode.recent:
         return repo.fetchCalls(
@@ -304,7 +304,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           date: widget.date ?? todayYmdSeoul(),
           completedOnly: true,
           limit: 100,
-          includeCallHistory: true,
+          includeCallHistory: false,
         );
       case ListQueryMode.incompleteByDate:
         return repo.fetchCallsAllPages(
@@ -318,7 +318,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         return repo.fetchCallsAllPages(
           dateRangeStart: widget.date!,
           dateRangeEndInclusive: widget.dateEndInclusive!,
-          includeCallHistory: true,
+          includeCallHistory: false,
         );
       case ListQueryMode.followRange:
         return repo.fetchCallsAllPages(

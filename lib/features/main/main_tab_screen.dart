@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_screen.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
@@ -37,7 +39,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   static const int _navHomeIndex = 0;
   static const int _navReceptionIndex = 1;
   static const int _navIssuanceIndex = 2;
-  static const int _navMenuIndex = 3;
+  static const int _navGeneralScheduleIndex = 3;
   int _currentIndex = 0;
   int _navSelectedIndex = _navHomeIndex;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
@@ -368,23 +370,58 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     });
   }
 
+  bool _showGeneralScheduleInNav(AppUser? user) =>
+      user != null && canAccessGeneralSchedule(user);
+
+  int _navMenuIndexFor(AppUser? user) =>
+      _showGeneralScheduleInNav(user) ? 4 : 3;
+
   void _syncNavFromCurrentTab() {
+    final user = ref.read(authControllerProvider);
     setState(() {
       _navSelectedIndex = _currentIndex == _issuanceTabIndex
           ? _navIssuanceIndex
           : _navHomeIndex;
+      if (_navSelectedIndex == _navGeneralScheduleIndex &&
+          !_showGeneralScheduleInNav(user)) {
+        _navSelectedIndex = _navHomeIndex;
+      }
     });
   }
 
   void _openMenuDrawer() {
     HapticFeedback.lightImpact();
-    setState(() => _navSelectedIndex = _navMenuIndex);
+    final user = ref.read(authControllerProvider);
+    setState(() => _navSelectedIndex = _navMenuIndexFor(user));
     ref.read(mainScaffoldKeyProvider).currentState?.openDrawer();
   }
 
-  void _onNavDestinationSelected(int navIndex) {
-    if (navIndex == _navMenuIndex) {
+  Future<void> _openGeneralSchedule() async {
+    HapticFeedback.lightImpact();
+    final prevNav = _navSelectedIndex;
+    setState(() => _navSelectedIndex = _navGeneralScheduleIndex);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const GeneralScheduleScreen(),
+      ),
+    );
+    if (!mounted) return;
+    if (_currentIndex == _homeTabIndex) {
+      setState(() => _navSelectedIndex = prevNav == _navGeneralScheduleIndex
+          ? _navHomeIndex
+          : prevNav);
+    }
+  }
+
+  void _onNavDestinationSelected(int navIndex, AppUser? user) {
+    final menuIndex = _navMenuIndexFor(user);
+    if (navIndex == menuIndex) {
       _openMenuDrawer();
+      return;
+    }
+    if (_showGeneralScheduleInNav(user) &&
+        navIndex == _navGeneralScheduleIndex) {
+      unawaited(_openGeneralSchedule());
       return;
     }
     if (navIndex == _navReceptionIndex) {
@@ -564,7 +601,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       child: Scaffold(
         key: scaffoldKey,
         onDrawerChanged: (isOpen) {
-          if (!isOpen && _navSelectedIndex == _navMenuIndex) {
+          if (!isOpen && _navSelectedIndex == _navMenuIndexFor(user)) {
             _syncNavFromCurrentTab();
           }
         },
@@ -663,15 +700,23 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         bottomNavigationBar: _MainBottomNavBar(
           selectedIndex: _navSelectedIndex,
+          showGeneralSchedule: _showGeneralScheduleInNav(user),
           issuanceBadgeAsync: ref.watch(
             issuanceRequestBadgeCountVisibleProvider,
           ),
-          onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
+          onTapHome: () => _onNavDestinationSelected(_navHomeIndex, user),
           onLongPressHome: _openHomeFlowToday,
-          onTapReception: () => _onNavDestinationSelected(_navReceptionIndex),
+          onTapReception: () =>
+              _onNavDestinationSelected(_navReceptionIndex, user),
           onLongPressReception: _openReceptionQuickActions,
-          onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
-          onTapMenu: () => _onNavDestinationSelected(_navMenuIndex),
+          onTapIssuance: () =>
+              _onNavDestinationSelected(_navIssuanceIndex, user),
+          onTapGeneralSchedule: () =>
+              _onNavDestinationSelected(_navGeneralScheduleIndex, user),
+          onTapMenu: () => _onNavDestinationSelected(
+            _navMenuIndexFor(user),
+            user,
+          ),
         ),
       ),
     );
@@ -680,11 +725,15 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   AppMenuCatalog _buildMenuCatalog(
     BuildContext context,
     AppUpdateStatus? updateStatus,
+    AppUser? user,
   ) {
     void closeDrawerThen(VoidCallback action) {
       Navigator.pop(context);
       action();
     }
+
+    final canGeneralSchedule =
+        user != null && canAccessGeneralSchedule(user);
 
     return AppMenuCatalog(
       sections: const [
@@ -756,6 +805,18 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           keywords: const ['세금', '이행', '발급'],
           onTap: () => closeDrawerThen(_selectIssuanceTab),
         ),
+        if (canGeneralSchedule)
+          AppMenuEntry(
+            id: 'general_schedule',
+            sectionId: 'main',
+            icon: Icons.engineering_rounded,
+            title: '본사일반',
+            subtitle: '시공 일정 · 하루 6칸',
+            quickAccess: true,
+            quickLabel: '본사일반',
+            keywords: const ['본사', '일정', '시공', '스케줄'],
+            onTap: () => closeDrawerThen(() => unawaited(_openGeneralSchedule())),
+          ),
         AppMenuEntry(
           id: 'reception_today',
           sectionId: 'lists',
@@ -848,7 +909,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     AppUpdateStatus? updateStatus,
   ) {
     return AppMenuDrawer(
-      catalog: _buildMenuCatalog(context, updateStatus),
+      catalog: _buildMenuCatalog(context, updateStatus, user),
       accountName: '${user?.name ?? '사용자'} 님',
       accountSubtitle: '사번/ID: ${user?.id ?? '-'}',
       headerDecoration: BoxDecoration(
@@ -1045,22 +1106,26 @@ class _IssuanceNavIcon extends StatelessWidget {
 class _MainBottomNavBar extends StatelessWidget {
   const _MainBottomNavBar({
     required this.selectedIndex,
+    required this.showGeneralSchedule,
     required this.issuanceBadgeAsync,
     required this.onTapHome,
     required this.onLongPressHome,
     required this.onTapReception,
     required this.onLongPressReception,
     required this.onTapIssuance,
+    required this.onTapGeneralSchedule,
     required this.onTapMenu,
   });
 
   final int selectedIndex;
+  final bool showGeneralSchedule;
   final AsyncValue<int> issuanceBadgeAsync;
   final VoidCallback onTapHome;
   final VoidCallback onLongPressHome;
   final VoidCallback onTapReception;
   final VoidCallback onLongPressReception;
   final VoidCallback onTapIssuance;
+  final VoidCallback onTapGeneralSchedule;
   final VoidCallback onTapMenu;
 
   @override
@@ -1069,6 +1134,8 @@ class _MainBottomNavBar extends StatelessWidget {
     final homeAccent = scheme.primary;
     final receptionAccent = scheme.tertiary;
     final issuanceAccent = Colors.teal.shade700;
+    final generalScheduleAccent = Colors.deepOrange.shade700;
+    final menuIndex = showGeneralSchedule ? 4 : 3;
     return SafeArea(
       top: false,
       child: Container(
@@ -1118,10 +1185,21 @@ class _MainBottomNavBar extends StatelessWidget {
                 onTap: onTapIssuance,
               ),
             ),
+            if (showGeneralSchedule)
+              Expanded(
+                child: _BottomNavItem(
+                  label: '본사일반',
+                  selected: selectedIndex == 3,
+                  selectedIcon: Icons.engineering_rounded,
+                  unselectedIcon: Icons.engineering_outlined,
+                  accentColor: generalScheduleAccent,
+                  onTap: onTapGeneralSchedule,
+                ),
+              ),
             Expanded(
               child: _BottomNavItem(
                 label: '메뉴',
-                selected: selectedIndex == 3,
+                selected: selectedIndex == menuIndex,
                 selectedIcon: Icons.menu_rounded,
                 unselectedIcon: Icons.menu_open_rounded,
                 accentColor: scheme.secondary,

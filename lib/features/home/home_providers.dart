@@ -297,6 +297,10 @@ Color hubAssigneeColor(
   return color;
 }
 
+/// 접수 목록에서 미통화만 추출 — 별도 API 호출 없이 `isMissed`로 필터.
+List<SalesCall> uncalledCallsFrom(List<SalesCall> calls) =>
+    calls.where((c) => c.isMissed).toList();
+
 Future<List<SalesCall>> _fetchHubPeriodReceptionCalls(
   SalesCallsRepository repo,
   HubPeriodKey key,
@@ -306,6 +310,7 @@ Future<List<SalesCall>> _fetchHubPeriodReceptionCalls(
       return repo.fetchCallsAllPages(
         date: key.anchorYmd,
         includeCallHistory: true,
+        callHistoryQualityOnly: true,
       );
     case HubPeriod.week:
       final range = seoulWeekRangeContaining(key.anchorYmd);
@@ -313,6 +318,7 @@ Future<List<SalesCall>> _fetchHubPeriodReceptionCalls(
         dateRangeStart: range.$1,
         dateRangeEndInclusive: range.$2,
         includeCallHistory: true,
+        callHistoryQualityOnly: true,
       );
     case HubPeriod.month:
       final range = seoulMonthRangeContaining(key.anchorYmd);
@@ -320,37 +326,7 @@ Future<List<SalesCall>> _fetchHubPeriodReceptionCalls(
         dateRangeStart: range.$1,
         dateRangeEndInclusive: range.$2,
         includeCallHistory: true,
-      );
-  }
-}
-
-/// 목록 화면·통계와 동일 — `uncalledOnly` 서버 필터 + isMissed.
-Future<List<SalesCall>> _fetchHubPeriodUncalledCalls(
-  SalesCallsRepository repo,
-  HubPeriodKey key,
-) async {
-  switch (key.period) {
-    case HubPeriod.day:
-      return repo.fetchCallsAllPages(
-        date: key.anchorYmd,
-        uncalledOnly: true,
-        includeCallHistory: true,
-      );
-    case HubPeriod.week:
-      final range = seoulWeekRangeContaining(key.anchorYmd);
-      return repo.fetchCallsAllPages(
-        dateRangeStart: range.$1,
-        dateRangeEndInclusive: range.$2,
-        uncalledOnly: true,
-        includeCallHistory: true,
-      );
-    case HubPeriod.month:
-      final range = seoulMonthRangeContaining(key.anchorYmd);
-      return repo.fetchCallsAllPages(
-        dateRangeStart: range.$1,
-        dateRangeEndInclusive: range.$2,
-        uncalledOnly: true,
-        includeCallHistory: true,
+        callHistoryQualityOnly: true,
       );
   }
 }
@@ -362,18 +338,15 @@ final hubDayReceptionCallsProvider = FutureProvider.autoDispose
   return repo.fetchCallsAllPages(
     date: anchorYmd,
     includeCallHistory: true,
+    callHistoryQualityOnly: true,
   );
 });
 
-/// 금일 미통화만 — 흐름 카드·담당자 선택과 동일 API.
+/// 금일 미통화 — [hubDayReceptionCallsProvider] 결과에서 파생(추가 네트워크 없음).
 final hubDayUncalledCallsProvider = FutureProvider.autoDispose
     .family<List<SalesCall>, String>((ref, anchorYmd) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCallsAllPages(
-    date: anchorYmd,
-    uncalledOnly: true,
-    includeCallHistory: true,
-  );
+  final calls = await ref.watch(hubDayReceptionCallsProvider(anchorYmd).future);
+  return uncalledCallsFrom(calls);
 });
 
 /// 흐름 기간별 접수 목록 1회 조회 → 품질·미통화 집계에 재사용.
@@ -395,18 +368,13 @@ class HubPeriodReceptionBundle {
 final hubPeriodReceptionBundleProvider = FutureProvider.autoDispose
     .family<HubPeriodReceptionBundle, HubPeriodKey>((ref, key) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
-  if (key.period == HubPeriod.day) {
-    final results = await Future.wait([
-      ref.watch(hubDayReceptionCallsProvider(key.anchorYmd).future),
-      ref.watch(hubDayUncalledCallsProvider(key.anchorYmd).future),
-    ]);
-    return HubPeriodReceptionBundle(results[0], uncalledCalls: results[1]);
-  }
-  final results = await Future.wait([
-    _fetchHubPeriodReceptionCalls(repo, key),
-    _fetchHubPeriodUncalledCalls(repo, key),
-  ]);
-  return HubPeriodReceptionBundle(results[0], uncalledCalls: results[1]);
+  final calls = key.period == HubPeriod.day
+      ? await ref.watch(hubDayReceptionCallsProvider(key.anchorYmd).future)
+      : await _fetchHubPeriodReceptionCalls(repo, key);
+  return HubPeriodReceptionBundle(
+    calls,
+    uncalledCalls: uncalledCallsFrom(calls),
+  );
 });
 
 final hubPeriodStatsProvider = FutureProvider.autoDispose
@@ -485,9 +453,6 @@ void prefetchHubPeriodFlow(
     ref.read(hubPeriodFollowOverviewProvider(key).future),
     ref.read(hubPeriodStatsProvider(key).future),
   ];
-  if (key.period == HubPeriod.day) {
-    futures.add(ref.read(hubDayUncalledCallsProvider(key.anchorYmd).future));
-  }
   if (previousKey != null) {
     futures.add(ref.read(hubPeriodStatsProvider(previousKey).future));
   }
@@ -541,7 +506,7 @@ final hubPendingUncalledCallsProvider =
   return repo.fetchCallsAllPages(
     fromDate: pendingUncalledFromYmd(anchor),
     uncalledOnly: true,
-    includeCallHistory: true,
+    includeCallHistory: false,
   );
 });
 

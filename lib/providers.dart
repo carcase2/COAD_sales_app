@@ -2,6 +2,7 @@ import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/data/b2_upload_repository.dart';
 import 'package:coad_customer_calls/data/estimate_document_repository.dart';
+import 'package:coad_customer_calls/data/general_schedule_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/ai_extractor_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -20,6 +21,10 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 final salesCallsRepositoryProvider = Provider<SalesCallsRepository>((ref) {
   return SalesCallsRepository(ref.watch(appDependenciesProvider));
+});
+
+final generalScheduleRepositoryProvider = Provider<GeneralScheduleRepository>((ref) {
+  return GeneralScheduleRepository(ref.watch(appDependenciesProvider));
 });
 
 final b2UploadRepositoryProvider = Provider<B2UploadRepository>((ref) {

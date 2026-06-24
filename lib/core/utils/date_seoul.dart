@@ -274,6 +274,33 @@ String formatYmdFlowLabelKo(String ymd) {
   return DateFormat('M월 d일 (E)', 'ko_KR').format(day);
 }
 
+DateTime? _parseYmdLocal(String ymd) {
+  final parts = ymd.split('-');
+  if (parts.length != 3) return null;
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final d = int.tryParse(parts[2]);
+  if (y == null || m == null || d == null) return null;
+  return DateTime(y, m, d);
+}
+
+/// [ymd]가 서울 오늘(`todayYmdSeoul`) 대비 며칠 차이인지. 미래=양수, 과거=음수.
+int? dayDiffFromTodayYmd(String ymd) {
+  final target = _parseYmdLocal(ymd);
+  final today = _parseYmdLocal(todayYmdSeoul());
+  if (target == null || today == null) return null;
+  return target.difference(today).inDays;
+}
+
+/// 빈 칸·일정 UI — `오늘`, `+3일`, `-1일` 등.
+String formatDayOffsetFromTodayKo(String ymd) {
+  final diff = dayDiffFromTodayYmd(ymd);
+  if (diff == null) return '';
+  if (diff == 0) return '오늘';
+  if (diff > 0) return '+$diff일';
+  return '$diff일';
+}
+
 /// `4/7 ~ 4/13` 형태(연도 생략).
 String formatWeekRangeFlowLabel(String monYmd, String sunYmd) {
   String short(String ymd) {
