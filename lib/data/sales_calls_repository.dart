@@ -120,6 +120,8 @@ class SalesCallsRepository {
       'id,sido,region,manager,branch_type';
   static const String _callHistorySelect =
       'id,sales_call_id,call_stage,consultation_content,next_scheduled_date,unsuccessful_reason,status,status_id,created_at,created_by';
+  /// 품질 지표(첫 응답 시간)용 — 전체 상담 이력 대신 `created_at`만 조인.
+  static const String _callHistoryQualitySelect = 'created_at';
 
   Future<MasterDataBundle> fetchMasterData() async {
     final cached = await _db.getMasterData('master_bundle');
@@ -314,6 +316,7 @@ class SalesCallsRepository {
     int? limit,
     int? offset,
     bool includeCallHistory = true,
+    bool callHistoryQualityOnly = false,
     bool? incompleteOnly,
     bool? uncalledOnly,
     bool? completedOnly,
@@ -331,6 +334,7 @@ class SalesCallsRepository {
       limit: limit,
       offset: offset,
       includeCallHistory: includeCallHistory,
+      callHistoryQualityOnly: callHistoryQualityOnly,
       incompleteOnly: incompleteOnly,
       uncalledOnly: uncalledOnly,
       completedOnly: completedOnly,
@@ -351,6 +355,7 @@ class SalesCallsRepository {
     String? dateRangeEndInclusive,
     String? fromDate,
     bool includeCallHistory = true,
+    bool callHistoryQualityOnly = false,
     bool? incompleteOnly,
     bool? uncalledOnly,
     bool? completedOnly,
@@ -373,6 +378,7 @@ class SalesCallsRepository {
         limit: pageSize,
         offset: offset,
         includeCallHistory: includeCallHistory,
+        callHistoryQualityOnly: callHistoryQualityOnly,
         incompleteOnly: incompleteOnly,
         uncalledOnly: uncalledOnly,
         completedOnly: completedOnly,
@@ -398,6 +404,7 @@ class SalesCallsRepository {
     int? limit,
     int? offset,
     bool includeCallHistory = true,
+    bool callHistoryQualityOnly = false,
     bool? incompleteOnly,
     bool? uncalledOnly,
     bool? completedOnly,
@@ -418,7 +425,10 @@ class SalesCallsRepository {
       ''';
       
       if (includeCallHistory) {
-        selectStr += ', call_history($_callHistorySelect)';
+        final historyCols = callHistoryQualityOnly
+            ? _callHistoryQualitySelect
+            : _callHistorySelect;
+        selectStr += ', call_history($historyCols)';
       }
 
       PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr);
