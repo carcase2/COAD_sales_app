@@ -1,0 +1,234 @@
+import 'dart:convert';
+
+import 'package:coad_customer_calls/core/network/api_exception.dart';
+import 'package:coad_customer_calls/data/app_dependencies.dart';
+import 'package:coad_customer_calls/models/general_schedule.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class GeneralScheduleRepository {
+  GeneralScheduleRepository(this._deps);
+
+  final AppDependencies _deps;
+  final SupabaseClient _client = Supabase.instance.client;
+
+  Future<List<GeneralScheduleRecord>> fetchAll() async {
+    final res = await _client.from('sales_schedule').select('''
+        id,
+        site,
+        start,
+        end_date,
+        user_id,
+        created_by,
+        updated_by,
+        door_types,
+        models,
+        model_name,
+        slots:schedule_slots(date, slot)
+      ''');
+
+    final rows = res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    if (rows.isEmpty) return [];
+
+    final userIds = <String>{};
+    for (final row in rows) {
+      for (final key in ['user_id', 'created_by', 'updated_by']) {
+        final id = row[key]?.toString();
+        if (id != null && id.isNotEmpty) userIds.add(id);
+      }
+    }
+
+    final userMap = <String, Map<String, dynamic>>{};
+    if (userIds.isNotEmpty) {
+      final users = await _client
+          .from('users')
+          .select('id, name, role, color')
+          .inFilter('id', userIds.toList());
+      for (final u in users.whereType<Map>()) {
+        final m = Map<String, dynamic>.from(u);
+        final id = m['id']?.toString();
+        if (id != null) userMap[id] = m;
+      }
+    }
+
+    final parsed = <GeneralScheduleRecord>[];
+    for (final row in rows) {
+      _normalizeModelsField(row);
+      final assigneeId =
+          row['created_by']?.toString() ?? row['user_id']?.toString();
+      if (assigneeId != null && userMap[assigneeId] != null) {
+        row['user'] = userMap[assigneeId];
+      }
+
+      final slots = row['slots'];
+      final perDate = <String, int>{};
+      if (slots is List) {
+        for (final s in slots) {
+          if (s is! Map) continue;
+          final d = s['date']?.toString();
+          if (d != null) perDate[d] = (perDate[d] ?? 0) + 1;
+        }
+      }
+      final teamCount = perDate.values.isEmpty
+          ? 1
+          : perDate.values.reduce((a, b) => a > b ? a : b);
+
+      parsed.add(GeneralScheduleRecord.fromJson(row, teamCount: teamCount));
+    }
+    return parsed;
+  }
+
+  Future<List<DoorTypeOption>> fetchDoorTypes() async {
+    final res = await _client
+        .from('door_types')
+        .select('code, name, color')
+        .order('code');
+    return res
+        .whereType<Map>()
+        .map((e) => DoorTypeOption.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<List<DoorModelOption>> fetchDoorModels({String? doorTypeCode}) async {
+    var query = _client.from('door_models').select('id, name, door_type, color');
+    if (doorTypeCode != null && doorTypeCode.isNotEmpty) {
+      query = query.eq('door_type', doorTypeCode);
+    }
+    final res = await query.order('door_type').order('name');
+    return res
+        .whereType<Map>()
+        .map((e) => DoorModelOption.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<GeneralScheduleRecord> create({
+    required String site,
+    required String startYmd,
+    required String endYmd,
+    required String userId,
+    required Map<String, int> slotMap,
+    List<String> doorTypes = const [],
+    String? modelName,
+    List<ScheduleModelEntry> models = const [],
+    Map<String, List<int>>? extraTeamSlots,
+  }) async {
+    final insertRes = await _client
+        .from('sales_schedule')
+        .insert({
+          'site': site,
+          'start': startYmd,
+          'end_date': endYmd,
+          'user_id': userId,
+          'created_by': userId,
+          'updated_by': userId,
+          'door_types': doorTypes,
+          'model_name': modelName,
+          'models': models.map((e) => e.toJson()).toList(),
+        })
+        .select()
+        .single();
+
+    final scheduleId = insertRes['id'].toString();
+    await _insertSlots(scheduleId, slotMap, extraTeamSlots);
+
+    final all = await fetchAll();
+    return all.firstWhere((e) => e.id == scheduleId);
+  }
+
+  Future<void> update({
+    required String id,
+    required String site,
+    required String startYmd,
+    required String endYmd,
+    required String userId,
+    required Map<String, int> slotMap,
+    List<String> doorTypes = const [],
+    String? modelName,
+    List<ScheduleModelEntry> models = const [],
+    Map<String, List<int>>? extraTeamSlots,
+  }) async {
+    await _client.from('sales_schedule').update({
+      'site': site,
+      'start': startYmd,
+      'end_date': endYmd,
+      'updated_by': userId,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+      'door_types': doorTypes,
+      'model_name': modelName,
+      'models': models.map((e) => e.toJson()).toList(),
+    }).eq('id', id);
+
+    await _client.from('schedule_slots').delete().eq('schedule_id', id);
+    await _insertSlots(id, slotMap, extraTeamSlots);
+  }
+
+  Future<void> delete(String id) async {
+    await _client.from('sales_schedule').delete().eq('id', id);
+  }
+
+  Future<void> notifyTelegram({
+    required String action,
+    required Map<String, dynamic> scheduleData,
+  }) async {
+    final base = _deps.effectiveBaseUrl;
+    if (base.isEmpty) return;
+    try {
+      await _deps.transport.request(
+        baseUrl: base,
+        method: 'POST',
+        path: '/api/telegram/schedule-notification',
+        jsonBody: {
+          'action': action,
+          'scheduleData': scheduleData,
+        },
+      );
+    } catch (_) {
+      // 웹과 동일 — 알림 실패는 본 작업을 롤백하지 않음
+    }
+  }
+
+  Future<void> _insertSlots(
+    String scheduleId,
+    Map<String, int> slotMap,
+    Map<String, List<int>>? extraTeamSlots,
+  ) async {
+    final rows = <Map<String, dynamic>>[];
+    final seen = <String>{};
+
+    void add(String date, int slot) {
+      final key = '$date|$slot';
+      if (seen.contains(key)) return;
+      seen.add(key);
+      rows.add({
+        'schedule_id': scheduleId,
+        'date': date,
+        'slot': slot,
+      });
+    }
+
+    slotMap.forEach(add);
+    if (extraTeamSlots != null) {
+      for (final entry in extraTeamSlots.entries) {
+        final slots = entry.value;
+        for (var i = 1; i < slots.length; i++) {
+          add(entry.key, slots[i]);
+        }
+      }
+    }
+
+    if (rows.isEmpty) {
+      throw ApiException('배치할 slot이 없습니다.');
+    }
+    await _client.from('schedule_slots').insert(rows);
+  }
+
+  void _normalizeModelsField(Map<String, dynamic> row) {
+    final raw = row['models'];
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        row['models'] = jsonDecode(raw);
+      } catch (_) {
+        row['models'] = [];
+      }
+    }
+  }
+}
