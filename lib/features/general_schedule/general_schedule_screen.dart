@@ -567,7 +567,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final user = ref.watch(authControllerProvider);
     if (user == null || !canAccessGeneralSchedule(user)) {
       return Scaffold(
-        appBar: AppBar(title: const Text('본사일반')),
+        appBar: AppBar(title: const Text('본사일반 · test중')),
         body: const Center(
           child: Text('본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.'),
         ),
@@ -595,7 +595,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('본사일반'),
+        title: const Text('본사일반 · test중'),
         actions: [
           IconButton(
             icon: Icon(
