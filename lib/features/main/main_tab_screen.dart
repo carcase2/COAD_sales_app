@@ -6,8 +6,10 @@ import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_screen.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -201,15 +203,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   Future<void> _runIssuanceWatchCheck() async {
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-    try {
-      await Future.wait([
-        ref.refresh(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
-        ref.refresh(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
-      ]);
-    } catch (_) {
-      // refetch 실패 시에도 감시 로직은 한 번 시도
+    final onIssuanceTab = _currentIndex == _issuanceTabIndex;
+    invalidateIssuanceCore(ref);
+    if (onIssuanceTab) {
+      try {
+        await Future.wait([
+          ref.refresh(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
+          ref.refresh(
+            issuanceAllRowsProvider(IssuanceDomain.performanceBond).future,
+          ),
+        ]);
+      } catch (_) {
+        // refetch 실패 시에도 감시 로직은 한 번 시도
+      }
     }
     await _checkIssuanceCompletionAndNotify();
     await _checkIssuanceRequestAndNotify();
@@ -811,9 +817,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             sectionId: 'main',
             icon: Icons.engineering_rounded,
             title: '본사일반',
-            subtitle: '시공 일정 · 하루 6칸',
+            subtitle: '시공 일정 · $kGeneralScheduleTestLabel',
             quickAccess: true,
             quickLabel: '본사일반',
+            badge: kGeneralScheduleTestLabel,
             keywords: const ['본사', '일정', '시공', '스케줄'],
             onTap: () => closeDrawerThen(() => unawaited(_openGeneralSchedule())),
           ),
@@ -1133,7 +1140,7 @@ class _MainBottomNavBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final homeAccent = scheme.primary;
     final receptionAccent = scheme.tertiary;
-    final issuanceAccent = Colors.teal.shade700;
+    final issuanceAccent = IssuanceVisual.navAccent(scheme);
     final generalScheduleAccent = Colors.deepOrange.shade700;
     final menuIndex = showGeneralSchedule ? 4 : 3;
     return SafeArea(
@@ -1189,6 +1196,7 @@ class _MainBottomNavBar extends StatelessWidget {
               Expanded(
                 child: _BottomNavItem(
                   label: '본사일반',
+                  tag: kGeneralScheduleTestLabel,
                   selected: selectedIndex == 3,
                   selectedIcon: Icons.engineering_rounded,
                   unselectedIcon: Icons.engineering_outlined,
@@ -1281,16 +1289,22 @@ class _BottomNavItem extends StatelessWidget {
                     size: selected ? 24 : 22,
                   ),
               const SizedBox(height: 2),
-              Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                  color: fg,
-                  height: 1.1,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.visible,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+                      color: fg,
+                      height: 1.1,
+                    ),
+                  ),
                 ),
               ),
               if (tag != null) ...[

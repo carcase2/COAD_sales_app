@@ -955,14 +955,21 @@ final issuanceRequestBadgeCountProvider = FutureProvider<int>((ref) async {
   ).length;
 });
 
-/// 허브 등 — 전체 발급대기 건수 (웹 배지 규칙).
+/// 허브·도메인 탭용 경량 발급대기 건수 (웹 배지 API와 동일 규칙).
+final issuancePendingCountProvider =
+    FutureProvider.family<int, IssuanceDomain>((ref, domain) async {
+      return ref.read(issuanceRequestServiceProvider).fetchRequestBadgeCount(
+            domain,
+          );
+    });
+
+/// 허브 등 — 전체 발급대기 건수 합산.
 final issuanceRequestTotalBadgeCountProvider = FutureProvider<int>((ref) async {
-  final service = ref.read(issuanceRequestServiceProvider);
-  final taxCount = await service.fetchRequestBadgeCount(
-    IssuanceDomain.taxInvoice,
+  final taxCount = await ref.watch(
+    issuancePendingCountProvider(IssuanceDomain.taxInvoice).future,
   );
-  final bondCount = await service.fetchRequestBadgeCount(
-    IssuanceDomain.performanceBond,
+  final bondCount = await ref.watch(
+    issuancePendingCountProvider(IssuanceDomain.performanceBond).future,
   );
   return taxCount + bondCount;
 });

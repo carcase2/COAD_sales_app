@@ -567,7 +567,13 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final user = ref.watch(authControllerProvider);
     if (user == null || !canAccessGeneralSchedule(user)) {
       return Scaffold(
-        appBar: AppBar(title: const Text('본사일반 · test중')),
+        appBar: AppBar(
+          centerTitle: false,
+          title: const Text('본사일반'),
+          actions: const [
+            _GeneralScheduleTestAppBarBadge(),
+          ],
+        ),
         body: const Center(
           child: Text('본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.'),
         ),
@@ -595,8 +601,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('본사일반 · test중'),
+        centerTitle: false,
+        title: const Text('본사일반'),
         actions: [
+          const _GeneralScheduleTestAppBarBadge(),
           IconButton(
             icon: Icon(
               Icons.search_rounded,
@@ -613,19 +621,48 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
             tooltip: '오늘로 가기',
             onPressed: _goToToday,
           ),
-          IconButton(
-            icon: const Icon(Icons.event_note_rounded),
-            tooltip: '월간 달력·통계',
-            onPressed: () => _openMonthSheet(grid),
-          ),
-          IconButton(
-            icon: const Icon(Icons.date_range_outlined),
-            tooltip: '날짜 선택',
-            onPressed: () => unawaited(_pickDate()),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: recordsAsync.isLoading ? null : () => unawaited(_reload()),
+          PopupMenuButton<String>(
+            tooltip: '더보기',
+            onSelected: (value) {
+              switch (value) {
+                case 'month':
+                  _openMonthSheet(grid);
+                case 'pick':
+                  unawaited(_pickDate());
+                case 'refresh':
+                  if (!recordsAsync.isLoading) unawaited(_reload());
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'month',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.event_note_rounded),
+                  title: Text('월간 달력·통계'),
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'pick',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.date_range_outlined),
+                  title: Text('날짜 선택'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'refresh',
+                enabled: !recordsAsync.isLoading,
+                child: const ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.refresh_rounded),
+                  title: Text('새로고침'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -651,6 +688,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const _GeneralScheduleTestBanner(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 8, 14, 2),
                 child: Text(
@@ -1506,4 +1544,84 @@ class _DialogSlotDots extends StatelessWidget {
   }
 }
 
+class _GeneralScheduleTestAppBarBadge extends StatelessWidget {
+  const _GeneralScheduleTestAppBarBadge();
 
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFC857),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.14)),
+          ),
+          child: const Text(
+            kGeneralScheduleTestLabel,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF3E2723),
+              height: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GeneralScheduleTestBanner extends StatelessWidget {
+  const _GeneralScheduleTestBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.deepOrange.shade50,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        child: Row(
+          children: [
+            Icon(
+              Icons.science_outlined,
+              size: 18,
+              color: Colors.deepOrange.shade800,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '본사일반은 현재 $kGeneralScheduleTestLabel 기능입니다.',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
+                  height: 1.3,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFC857),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.12)),
+              ),
+              child: const Text(
+                kGeneralScheduleTestLabel,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF3E2723),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

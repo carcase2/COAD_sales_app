@@ -1,11 +1,12 @@
 import 'package:coad_customer_calls/data/auth_controller.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_domain_tab.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_card.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_tax_issue_sheet.dart';
-import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -267,18 +268,26 @@ class _IssuanceFilteredListPageState
         child: Row(
           children: [
             Expanded(
-              child: _DomainTab(
-                label: '세금계산서',
+              child: IssuanceDomainTab(
+                label: IssuanceVisual.domainLabel(IssuanceDomain.taxInvoice),
                 selected: _isTax,
-                accent: Colors.indigo.shade600,
+                accent: IssuanceVisual.domainAccent(
+                  IssuanceDomain.taxInvoice,
+                  scheme,
+                ),
                 onTap: () => _switchDomain(IssuanceDomain.taxInvoice),
               ),
             ),
             Expanded(
-              child: _DomainTab(
-                label: '이행증권',
+              child: IssuanceDomainTab(
+                label: IssuanceVisual.domainLabel(
+                  IssuanceDomain.performanceBond,
+                ),
                 selected: !_isTax,
-                accent: Colors.deepOrange.shade700,
+                accent: IssuanceVisual.domainAccent(
+                  IssuanceDomain.performanceBond,
+                  scheme,
+                ),
                 onTap: () => _switchDomain(IssuanceDomain.performanceBond),
               ),
             ),
@@ -676,49 +685,6 @@ class _IssuanceFilteredListPageState
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _DomainTab extends StatelessWidget {
-  const _DomainTab({
-    required this.label,
-    required this.selected,
-    required this.accent,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final Color accent;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          margin: const EdgeInsets.all(4),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: selected ? Colors.white : accent,
-            ),
-          ),
-        ),
       ),
     );
   }

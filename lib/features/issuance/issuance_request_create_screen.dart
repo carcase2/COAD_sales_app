@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:file_picker/file_picker.dart';
@@ -464,7 +465,7 @@ class _IssuanceRequestCreateScreenState
                   ? '-'
                   : _taxRegistrationNumber.text.trim(),
             ),
-            ('발행요청일시', _taxIssueDate.text.trim()),
+            ('발급요청일시', _taxIssueDate.text.trim()),
             ('부가세 포함 총액', _formatWonDisplay(totalAmount)),
             ('한글 금액', koreanWonInWords(totalAmount)),
             ('공급가액', _formatWonDisplay(supplyAmount)),
@@ -474,7 +475,7 @@ class _IssuanceRequestCreateScreenState
         _ReviewSection(
           title: '항목 설정',
           rows: [
-            ('발행 퍼센트', '$_taxPercentage%'),
+            ('발급 퍼센트', '$_taxPercentage%'),
             ('항목 구분', _taxItemType),
             ('품목명', _taxItemName.text.trim()),
           ],
@@ -605,27 +606,18 @@ class _IssuanceRequestCreateScreenState
         masterId: result.masterId,
         issueId: result.issueId,
       );
-      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-      ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.performanceBond));
-      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
-      ref.invalidate(issuanceRequestBadgeCountProvider);
-      ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+      invalidateIssuanceCore(ref);
       await Future.wait([
-        ref.read(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
-        ref.read(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
-        ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
+        ref.read(issuancePendingCountProvider(IssuanceDomain.taxInvoice).future),
         ref.read(
-          issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
+          issuancePendingCountProvider(IssuanceDomain.performanceBond).future,
         ),
       ]);
       if (!mounted) return;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('발행요청이 등록되었습니다.')));
+      ).showSnackBar(const SnackBar(content: Text('발급요청이 등록되었습니다.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -849,16 +841,17 @@ class _IssuanceRequestCreateScreenState
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final isTax = _domain == IssuanceDomain.taxInvoice;
-    final taxRowsAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
+    final taxPendingAsync = ref.watch(
+      issuancePendingCountProvider(IssuanceDomain.taxInvoice),
     );
-    final bondRowsAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
+    final bondPendingAsync = ref.watch(
+      issuancePendingCountProvider(IssuanceDomain.performanceBond),
     );
-    final taxCount = taxRowsAsync.valueOrNull?.length;
-    final bondCount = bondRowsAsync.valueOrNull?.length;
-    final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
+    final taxCount = taxPendingAsync.valueOrNull;
+    final bondCount = bondPendingAsync.valueOrNull;
+    final accent = IssuanceVisual.domainAccent(_domain, scheme);
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final actionsBottom = 12.0 + safeBottom;
     final inputTheme = Theme.of(context).inputDecorationTheme.copyWith(
@@ -889,7 +882,7 @@ class _IssuanceRequestCreateScreenState
     );
     return Scaffold(
       appBar: AppBar(
-        title: const Text('발행요청 등록'),
+        title: const Text('발급요청 등록'),
         backgroundColor: accent,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -939,7 +932,7 @@ class _IssuanceRequestCreateScreenState
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              isTax ? '세금계산서 발행요청 작성' : '이행증권 발행요청 작성',
+                              isTax ? '세금계산서 발급요청 작성' : '이행증권 발급요청 작성',
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 color: accent,
@@ -1103,12 +1096,12 @@ class _IssuanceRequestCreateScreenState
                   controller: _taxIssueDate,
                   readOnly: true,
                   decoration: const InputDecoration(
-                    labelText: '발행요청일시 *',
+                    labelText: '발급요청일시 *',
                     suffixIcon: Icon(Icons.calendar_month_rounded, size: 20),
                   ),
                   onTap: () => _pickDateTime(_taxIssueDate),
                   validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? '발행요청일시를 선택하세요.' : null,
+                      (v == null || v.trim().isEmpty) ? '발급요청일시를 선택하세요.' : null,
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -1135,7 +1128,7 @@ class _IssuanceRequestCreateScreenState
               children: [
                 Row(
                   children: [
-                    const Text('발행 퍼센트'),
+                    const Text('발급 퍼센트'),
                     Expanded(
                       child: Slider(
                         value: _taxPercentage.toDouble(),

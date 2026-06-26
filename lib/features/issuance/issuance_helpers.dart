@@ -2,6 +2,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 알림 deep link용 — master/issue id로 발급 행 검색.
@@ -69,7 +70,7 @@ String issuanceUserErrorMessage(Object error) {
   return '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 }
 
-/// 발급완료·발행일 기준 `yyyy-MM-dd` (없으면 요청일 서울 기준).
+/// 발급완료·발급일 기준 `yyyy-MM-dd` (없으면 요청일 서울 기준).
 String issuanceIssueYmdForRow(IssuanceRequestRow row) {
   for (final raw in [row.issue?['issue_date'], row.master['issue_date']]) {
     if (raw == null) continue;
@@ -249,4 +250,24 @@ Future<void> runIssuanceRefresh({
   } finally {
     if (context.mounted) onLoadingChanged(false);
   }
+}
+
+/// 발급 허브·배지·목록 공통 캐시 무효화.
+void invalidateIssuanceCore(WidgetRef ref) {
+  for (final domain in IssuanceDomain.values) {
+    ref.invalidate(issuanceAllRowsProvider(domain));
+    ref.invalidate(issuanceRequestRowsProvider(domain));
+    ref.invalidate(issuancePendingCountProvider(domain));
+    ref.invalidate(issuanceCancelledRowsProvider(domain));
+  }
+  ref.invalidate(issuanceRequestBadgeCountProvider);
+  ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+}
+
+/// 허브 첫 화면용 — 경량 pending 카운트만 다시 불러옴.
+Future<void> refreshIssuanceHubSummary(WidgetRef ref) async {
+  await Future.wait([
+    ref.read(issuancePendingCountProvider(IssuanceDomain.taxInvoice).future),
+    ref.read(issuancePendingCountProvider(IssuanceDomain.performanceBond).future),
+  ]);
 }

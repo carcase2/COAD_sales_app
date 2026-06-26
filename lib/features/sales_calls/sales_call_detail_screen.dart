@@ -806,6 +806,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     final activeOverride = m == null
         ? null
         : findActiveTempOverrideForCall(m, overrides, DateTime.now());
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     Widget sectionTitle(String title, IconData icon) {
       return Padding(
@@ -990,7 +991,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
           ),
 
-          SizedBox(height: _isEditMode ? 110 : 50),
+          SizedBox(
+            height: _isEditMode ? 110 + bottomInset : 88 + bottomInset,
+          ),
         ],
       ),
     );
@@ -1784,7 +1787,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   Expanded(
                     child: ListView(
                       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                       children: [
                       // Context Box
                       Container(

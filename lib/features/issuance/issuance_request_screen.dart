@@ -9,6 +9,8 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_card.dart
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_tax_issue_sheet.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,26 +29,25 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   bool _isListeningLaunch = false;
   bool _consumingLaunch = false;
   bool _refreshing = false;
+  bool _hubDetailReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _hubDetailReady = true);
+    });
+  }
 
   Future<void> _reloadIssuanceData() async {
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(
-      issuanceCancelledRowsProvider(IssuanceDomain.performanceBond),
-    );
-    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
-    ref.invalidate(issuanceRequestBadgeCountProvider);
-    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
-    await Future.wait([
-      ref.read(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
-      ref.read(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
-      ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
-      ref.read(
-        issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
-      ),
-    ]);
+    invalidateIssuanceCore(ref);
+    await refreshIssuanceHubSummary(ref);
+    if (_hubDetailReady) {
+      await Future.wait([
+        ref.read(issuanceAllRowsProvider(_domain).future),
+        ref.read(issuanceCancelledRowsProvider(_domain).future),
+      ]);
+    }
   }
 
   Future<void> _refreshIssuanceData({bool showCompletionSnackBar = false}) {
@@ -135,6 +136,26 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     await _refreshIssuanceData();
   }
 
+  Future<void> _openCombinedPendingPage() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => const _CombinedIssuancePendingPage(),
+      ),
+    );
+    if (!mounted) return;
+    await _refreshIssuanceData();
+  }
+
+  Future<void> _openCombinedTodayIssuedPage() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => const _CombinedTodayIssuedPage(),
+      ),
+    );
+    if (!mounted) return;
+    await _refreshIssuanceData();
+  }
+
   Future<void> _openCreateForCurrentDomain() async {
     final selected = _domain;
     final created = await Navigator.of(context).push<bool>(
@@ -163,46 +184,76 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     }
 
     final scheme = Theme.of(context).colorScheme;
-    final partialAsync = ref.watch(issuancePartialRowsProvider(_domain));
-    final fullyCompletedAsync = ref.watch(
-      issuanceFullyCompletedRowsProvider(_domain),
+    final taxPendingCountAsync = ref.watch(
+      issuancePendingCountProvider(IssuanceDomain.taxInvoice),
     );
-    final allAsync = ref.watch(issuanceAllTabRowsProvider(_domain));
-    final completedAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
-    final cancelledAsync = ref.watch(issuanceCancelledRowsProvider(_domain));
-    final taxCompletedAsync = ref.watch(
-      issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
+    final bondPendingCountAsync = ref.watch(
+      issuancePendingCountProvider(IssuanceDomain.performanceBond),
     );
-    final bondCompletedAsync = ref.watch(
-      issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
-    );
-    final taxPendingAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
-    );
-    final bondPendingAsync = ref.watch(
-      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
-    );
-    final taxCount = taxPendingAsync.valueOrNull?.length;
-    final bondCount = bondPendingAsync.valueOrNull?.length;
-    final combinedPendingCount =
-        (taxPendingAsync.valueOrNull?.length ?? 0) +
-        (bondPendingAsync.valueOrNull?.length ?? 0);
+    final taxPendingCount = taxPendingCountAsync.valueOrNull;
+    final bondPendingCount = bondPendingCountAsync.valueOrNull;
+    final pendingCountsLoading =
+        taxPendingCountAsync.isLoading || bondPendingCountAsync.isLoading;
+    final combinedPendingCount = (taxPendingCount ?? 0) + (bondPendingCount ?? 0);
+    final combinedPendingDisplay =
+        pendingCountsLoading && taxPendingCount == null && bondPendingCount == null
+        ? null
+        : combinedPendingCount;
+
+    AsyncValue<List<IssuanceRequestRow>> partialAsync =
+        const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> fullyCompletedAsync =
+        const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> allAsync = const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> completedAsync =
+        const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> cancelledAsync =
+        const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> taxCompletedAsync =
+        const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> bondCompletedAsync =
+        const AsyncValue.data([]);
+
+    if (_hubDetailReady) {
+      partialAsync = ref.watch(issuancePartialRowsProvider(_domain));
+      fullyCompletedAsync = ref.watch(
+        issuanceFullyCompletedRowsProvider(_domain),
+      );
+      allAsync = ref.watch(issuanceAllTabRowsProvider(_domain));
+      completedAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
+      cancelledAsync = ref.watch(issuanceCancelledRowsProvider(_domain));
+      taxCompletedAsync = ref.watch(
+        issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
+      );
+      bondCompletedAsync = ref.watch(
+        issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
+      );
+    }
+
     bool isTodayIssued(IssuanceRequestRow row) =>
         issuanceIsTodayIssuedRow(row);
 
-    final todayTaxIssued = (taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-        .where(isTodayIssued)
-        .length;
-    final todayBondIssued =
-        (bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+    final todayTaxIssued = _hubDetailReady
+        ? (taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
             .where(isTodayIssued)
-            .length;
-    final todayIssuedCount = todayTaxIssued + todayBondIssued;
+            .length
+        : null;
+    final todayBondIssued = _hubDetailReady
+        ? (bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
+            .where(isTodayIssued)
+            .length
+        : null;
+    final todayIssuedCount = todayTaxIssued == null || todayBondIssued == null
+        ? null
+        : todayTaxIssued + todayBondIssued;
     final isTax = _domain == IssuanceDomain.taxInvoice;
-    final accent = isTax ? Colors.indigo.shade600 : Colors.deepOrange.shade700;
+    final accent = IssuanceVisual.domainAccent(_domain, scheme);
 
-    int count(AsyncValue<List<IssuanceRequestRow>> async) =>
-        async.valueOrNull?.length ?? 0;
+    int? countRows(AsyncValue<List<IssuanceRequestRow>> async) {
+      if (!_hubDetailReady) return null;
+      if (async.isLoading && async.valueOrNull == null) return null;
+      return async.valueOrNull?.length ?? 0;
+    }
 
     return SafeArea(
       child: Column(
@@ -212,24 +263,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    accent.withValues(alpha: 0.92),
-                    accent.withValues(alpha: 0.72),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.25),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
+              decoration: IssuanceVisual.hubHeader(_domain, scheme),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -283,8 +317,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     child: Row(
                       children: [
                         _buildDomainTabButton(
-                          label: '세금계산서',
-                          count: taxCount,
+                          label: IssuanceVisual.domainLabel(
+                            IssuanceDomain.taxInvoice,
+                          ),
+                          count: taxPendingCount,
                           selected: _domain == IssuanceDomain.taxInvoice,
                           accent: accent,
                           onTap: () => setState(
@@ -293,8 +329,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         ),
                         const SizedBox(width: 6),
                         _buildDomainTabButton(
-                          label: '이행증권',
-                          count: bondCount,
+                          label: IssuanceVisual.domainLabel(
+                            IssuanceDomain.performanceBond,
+                          ),
+                          count: bondPendingCount,
                           selected: _domain == IssuanceDomain.performanceBond,
                           accent: accent,
                           onTap: () => setState(
@@ -343,16 +381,14 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   _HubMenuTile(
                     icon: IssuanceListKind.request.icon,
                     title: '발급대기',
-                    count: combinedPendingCount,
+                    count: combinedPendingDisplay,
                     subtitle:
-                        '세금 ${taxPendingAsync.valueOrNull?.length ?? 0}건 · 이행 ${bondPendingAsync.valueOrNull?.length ?? 0}건',
-                    accent: Colors.blue.shade700,
+                        '전체 ${issuanceCountLabel(combinedPendingDisplay)}건 · '
+                        '세금 ${issuanceCountLabel(taxPendingCount)} · '
+                        '이행 ${issuanceCountLabel(bondPendingCount)}',
+                    accent: IssuanceVisual.pendingTileAccent(scheme),
                     large: true,
-                    onTap: () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => const _CombinedIssuancePendingPage(),
-                      ),
-                    ),
+                    onTap: _openCombinedPendingPage,
                   ),
                   const SizedBox(height: 8),
                   _HubMenuTile(
@@ -360,14 +396,11 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     title: '금일 발급완료',
                     count: todayIssuedCount,
                     subtitle:
-                        '발행일 기준 · 세금 $todayTaxIssued건 · 이행 $todayBondIssued건',
-                    accent: Colors.teal.shade700,
+                        '발급일 기준 · 세금 ${issuanceCountLabel(todayTaxIssued)} · '
+                        '이행 ${issuanceCountLabel(todayBondIssued)}',
+                    accent: IssuanceVisual.todayTileAccent(scheme),
                     large: true,
-                    onTap: () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => const _CombinedTodayIssuedPage(),
-                      ),
-                    ),
+                    onTap: _openCombinedTodayIssuedPage,
                   ),
                   const SizedBox(height: 8),
                   GridView.count(
@@ -382,16 +415,16 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         _HubMenuTile(
                           icon: IssuanceListKind.partial.icon,
                           title: IssuanceListKind.partial.title,
-                          count: count(partialAsync),
-                          accent: Colors.orange.shade800,
+                          count: countRows(partialAsync),
+                          accent: IssuanceVisual.partialTileAccent(scheme),
                           onTap: () => _openListPage(IssuanceListKind.partial),
                         ),
                       if (isTax)
                         _HubMenuTile(
                           icon: IssuanceListKind.fullyCompleted.icon,
                           title: IssuanceListKind.fullyCompleted.title,
-                          count: count(fullyCompletedAsync),
-                          accent: Colors.green.shade700,
+                          count: countRows(fullyCompletedAsync),
+                          accent: IssuanceVisual.completedTileAccent(scheme),
                           onTap: () => _openListPage(
                             IssuanceListKind.fullyCompleted,
                           ),
@@ -399,23 +432,23 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                       _HubMenuTile(
                         icon: Icons.check_circle_outline_rounded,
                         title: '발급완료',
-                        count: count(completedAsync),
-                        accent: Colors.teal.shade700,
+                        count: countRows(completedAsync),
+                        accent: IssuanceVisual.completedTileAccent(scheme),
                         onTap: _openCompletedListPage,
                       ),
                       _HubMenuTile(
                         icon: IssuanceListKind.cancelled.icon,
                         title: IssuanceListKind.cancelled.title,
-                        count: count(cancelledAsync),
-                        accent: Colors.grey.shade700,
+                        count: countRows(cancelledAsync),
+                        accent: IssuanceVisual.cancelledTileAccent(scheme),
                         onTap: () =>
                             _openListPage(IssuanceListKind.cancelled),
                       ),
                       _HubMenuTile(
                         icon: IssuanceListKind.all.icon,
                         title: IssuanceListKind.all.title,
-                        count: count(allAsync),
-                        accent: scheme.onSurface,
+                        count: countRows(allAsync),
+                        accent: scheme.onSurfaceVariant,
                         onTap: () => _openListPage(IssuanceListKind.all),
                       ),
                     ],
@@ -499,7 +532,7 @@ class _HubMenuTile extends StatelessWidget {
 
   final IconData icon;
   final String title;
-  final int count;
+  final int? count;
   final Color accent;
   final VoidCallback onTap;
   final String? subtitle;
@@ -508,6 +541,7 @@ class _HubMenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final countLabel = issuanceCountLabel(count);
     return Material(
       color: scheme.surfaceContainerLowest,
       borderRadius: BorderRadius.circular(large ? 14 : 12),
@@ -557,7 +591,7 @@ class _HubMenuTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w800,
                               color: scheme.onSurface,
                             ),
                           ),
@@ -566,7 +600,7 @@ class _HubMenuTile extends StatelessWidget {
                             subtitle == null
                                 ? '발급대기 목록'
                                 : subtitle!,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
@@ -579,9 +613,9 @@ class _HubMenuTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '$count',
+                      countLabel,
                       style: TextStyle(
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: accent,
                         fontSize: 30,
                         height: 1,
@@ -624,9 +658,9 @@ class _HubMenuTile extends StatelessWidget {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            '$count',
+                            countLabel,
                             style: TextStyle(
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w800,
                               color: accent,
                               fontSize: 12,
                             ),
@@ -664,6 +698,17 @@ class _CombinedIssuancePendingPage extends ConsumerStatefulWidget {
 
 class _CombinedIssuancePendingPageState
     extends ConsumerState<_CombinedIssuancePendingPage> {
+
+  Future<void> _openTaxIssueSheet(IssuanceRequestRow row) async {
+    final ok = await showTaxInvoiceIssueSheet(context: context, row: row);
+    if (ok == true && mounted) {
+      await _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('발급요청이 등록되었습니다.')),
+      );
+    }
+  }
 
   Future<void> _cancelRow(IssuanceRequestRow row) async {
     final masterId = row.master['id']?.toString();
@@ -709,14 +754,7 @@ class _CombinedIssuancePendingPageState
   }
 
   Future<void> _refresh() async {
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
-    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.performanceBond));
-    ref.invalidate(issuanceRequestBadgeCountProvider);
-    ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+    invalidateIssuanceCore(ref);
     await Future.wait([
       ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
       ref.read(issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future),
@@ -725,6 +763,7 @@ class _CombinedIssuancePendingPageState
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
     final taxAsync = ref.watch(
       issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
@@ -735,8 +774,12 @@ class _CombinedIssuancePendingPageState
 
     final taxRows = taxAsync.valueOrNull ?? const <IssuanceRequestRow>[];
     final bondRows = bondAsync.valueOrNull ?? const <IssuanceRequestRow>[];
-    final taxMine = taxRows.where((r) => issuanceIsOwnRequest(r, user?.name)).toList();
-    final bondMine = bondRows.where((r) => issuanceIsOwnRequest(r, user?.name)).toList();
+    final taxMine = taxRows
+        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
+        .toList();
+    final bondMine = bondRows
+        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
+        .toList();
 
     final loading = taxAsync.isLoading || bondAsync.isLoading;
     final hasError = taxAsync.hasError || bondAsync.hasError;
@@ -744,6 +787,20 @@ class _CombinedIssuancePendingPageState
     return Scaffold(
       appBar: AppBar(
         title: const Text('발급대기'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Center(
+              child: Text(
+                '전체 대기',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
@@ -760,10 +817,13 @@ class _CombinedIssuancePendingPageState
                 children: [
                   _buildSectionHeader(
                     context,
-                    title: '세금계산서',
+                    title: IssuanceVisual.domainLabel(IssuanceDomain.taxInvoice),
                     mineCount: taxMine.length,
                     totalCount: taxRows.length,
-                    color: Colors.indigo.shade600,
+                    color: IssuanceVisual.domainAccent(
+                      IssuanceDomain.taxInvoice,
+                      scheme,
+                    ),
                   ),
                   ...taxRows.map(
                     (row) => Padding(
@@ -773,13 +833,17 @@ class _CombinedIssuancePendingPageState
                         children: [
                           IssuanceRequestCard(
                             row: row,
-                            isOwn: issuanceIsOwnRequest(row, user?.name),
+                            isOwn: issuanceIsOwnRequest(
+                              row,
+                              user?.name,
+                              userId: user?.id,
+                            ),
                             large: true,
                             onTap: () => showIssuanceRequestDetail(context, row),
                           ),
                           IssuanceRowActions(
                             row: row,
-                            onIssue: (_) async {},
+                            onIssue: _openTaxIssueSheet,
                             onCancel: (r) => _cancelRow(r),
                             onOpenDetail: null,
                           ),
@@ -790,10 +854,15 @@ class _CombinedIssuancePendingPageState
                   const SizedBox(height: 8),
                   _buildSectionHeader(
                     context,
-                    title: '이행증권',
+                    title: IssuanceVisual.domainLabel(
+                      IssuanceDomain.performanceBond,
+                    ),
                     mineCount: bondMine.length,
                     totalCount: bondRows.length,
-                    color: Colors.deepOrange.shade700,
+                    color: IssuanceVisual.domainAccent(
+                      IssuanceDomain.performanceBond,
+                      scheme,
+                    ),
                   ),
                   ...bondRows.map(
                     (row) => Padding(
@@ -803,13 +872,17 @@ class _CombinedIssuancePendingPageState
                         children: [
                           IssuanceRequestCard(
                             row: row,
-                            isOwn: issuanceIsOwnRequest(row, user?.name),
+                            isOwn: issuanceIsOwnRequest(
+                              row,
+                              user?.name,
+                              userId: user?.id,
+                            ),
                             large: true,
                             onTap: () => showIssuanceRequestDetail(context, row),
                           ),
                           IssuanceRowActions(
                             row: row,
-                            onIssue: (_) async {},
+                            onIssue: _openTaxIssueSheet,
                             onCancel: (r) => _cancelRow(r),
                             onOpenDetail: null,
                           ),
@@ -873,15 +946,20 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
   const _CombinedTodayIssuedPage();
 
   Future<void> _refresh(WidgetRef ref) async {
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.taxInvoice));
-    ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    invalidateIssuanceCore(ref);
+    await Future.wait([
+      ref.read(issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice).future),
+      ref.read(
+        issuanceCompletedRowsProvider(IssuanceDomain.performanceBond).future,
+      ),
+    ]);
   }
 
   bool _isTodayIssued(IssuanceRequestRow row) => issuanceIsTodayIssuedRow(row);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(authControllerProvider);
     final taxAsync = ref.watch(
       issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
@@ -916,19 +994,32 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
                 children: [
                   _buildSectionHeader(
                     context,
-                    title: '세금계산서',
+                    title: IssuanceVisual.domainLabel(IssuanceDomain.taxInvoice),
                     mineCount: taxRows
-                        .where((r) => issuanceIsOwnRequest(r, user?.name))
+                        .where(
+                          (r) => issuanceIsOwnRequest(
+                            r,
+                            user?.name,
+                            userId: user?.id,
+                          ),
+                        )
                         .length,
                     totalCount: taxRows.length,
-                    color: Colors.indigo.shade600,
+                    color: IssuanceVisual.domainAccent(
+                      IssuanceDomain.taxInvoice,
+                      scheme,
+                    ),
                   ),
                   ...taxRows.map(
                     (row) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: IssuanceRequestCard(
                         row: row,
-                        isOwn: issuanceIsOwnRequest(row, user?.name),
+                        isOwn: issuanceIsOwnRequest(
+                          row,
+                          user?.name,
+                          userId: user?.id,
+                        ),
                         large: true,
                         onTap: () => showIssuanceRequestDetail(context, row),
                       ),
@@ -937,19 +1028,34 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
                   const SizedBox(height: 8),
                   _buildSectionHeader(
                     context,
-                    title: '이행증권',
+                    title: IssuanceVisual.domainLabel(
+                      IssuanceDomain.performanceBond,
+                    ),
                     mineCount: bondRows
-                        .where((r) => issuanceIsOwnRequest(r, user?.name))
+                        .where(
+                          (r) => issuanceIsOwnRequest(
+                            r,
+                            user?.name,
+                            userId: user?.id,
+                          ),
+                        )
                         .length,
                     totalCount: bondRows.length,
-                    color: Colors.deepOrange.shade700,
+                    color: IssuanceVisual.domainAccent(
+                      IssuanceDomain.performanceBond,
+                      scheme,
+                    ),
                   ),
                   ...bondRows.map(
                     (row) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: IssuanceRequestCard(
                         row: row,
-                        isOwn: issuanceIsOwnRequest(row, user?.name),
+                        isOwn: issuanceIsOwnRequest(
+                          row,
+                          user?.name,
+                          userId: user?.id,
+                        ),
                         large: true,
                         onTap: () => showIssuanceRequestDetail(context, row),
                       ),

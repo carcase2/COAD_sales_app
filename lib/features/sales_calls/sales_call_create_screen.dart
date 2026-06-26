@@ -462,7 +462,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     return Form(
       key: _formKey,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
           _buildSectionHeader('분류', Icons.dashboard_customize_outlined, scheme),

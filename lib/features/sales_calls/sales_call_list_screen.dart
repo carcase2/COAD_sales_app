@@ -399,6 +399,14 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     return displayAssigneeForCall(c, overrides, DateTime.now());
   }
 
+  /// 목록 맨 아래 여백 — 홈 인디케이터·우하단 FAB와 겹치지 않게.
+  double _listScrollBottomInset() {
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    const base = 24.0;
+    if (widget.embedded) return base + safeBottom + 16;
+    return base + safeBottom + 72;
+  }
+
   DateTime? _receptionSeoul(SalesCall c) => resolveSalesCallReceptionSeoul(
         callDate: c.callDate,
         callTime: c.callTime,
@@ -999,7 +1007,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                           ),
                         )
                       : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            12,
+                            16,
+                            _listScrollBottomInset(),
+                          ),
                           itemCount: filteredItems.length,
                           itemBuilder: (context, i) {
                             final c = filteredItems[i];
