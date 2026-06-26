@@ -13,7 +13,6 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(todayCallsContentProvider);
   invalidate(hubDayReceptionCallsProvider);
   invalidate(hubDayUncalledCallsProvider);
-  invalidate(incompleteBreakdownCallsProvider);
   invalidate(calendarFollowRangeProvider);
   invalidate(hubPeriodReceptionBundleProvider);
   invalidate(hubPeriodStatsProvider);
@@ -23,7 +22,7 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(hubSegmentCalendarBadgeProvider);
 }
 
-/// 다른 화면에서 메인 탭 **홈**으로 돌아가며 [흐름|미통화|달력] 구역을 연다.
+/// 다른 화면에서 메인 탭 **홈**으로 돌아가며 [흐름|달력] 구역을 연다.
 void openHomeHub(
   BuildContext context,
   WidgetRef ref, {

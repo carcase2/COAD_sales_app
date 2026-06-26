@@ -68,10 +68,10 @@ PendingUncalledSummary summarizePendingUncalled({
   );
 }
 
-/// 홈 통합 화면의 [흐름 | 미통화 | 달력] 구역 — `HomeHubScreen`이 소비.
-enum HomeHubSection { flow, incomplete, calendar }
+/// 홈 통합 화면의 [흐름 | 달력] 구역 — `HomeHubScreen`이 소비.
+enum HomeHubSection { flow, calendar }
 
-/// 흐름 탭 상단 일/주/월 — 미통화·달력과 공유.
+/// 흐름 탭 상단 일/주/월 — 달력과 공유.
 enum HubNavStep { day, week, month }
 
 final homeHubNavStepProvider =
@@ -91,23 +91,13 @@ final pendingConsultationLaunchProvider =
 /// [MainTabScreen]이 홈(탭 0)으로 이동할 때마다 증가. [HomeHubScreen]이 업무 흐름을 **일·금일**로 맞춤.
 final homeHubFlowResetTickProvider = StateProvider<int>((ref) => 0);
 
-/// 홈으로 이동한 뒤 지정 구역(흐름·미통화·달력)을 연다.
+/// 홈으로 이동한 뒤 지정 구역(흐름·달력)을 연다.
 void requestHomeHubSection(
   WidgetRef ref,
   HomeHubSection section, {
   CalendarFormat calendarFormat = CalendarFormat.week,
 }) {
-  if (section == HomeHubSection.calendar ||
-      section == HomeHubSection.incomplete) {
-    unawaited(
-      ref.read(
-        incompleteBreakdownCallsProvider((
-          period: IncompleteSummaryPeriod.pending,
-          anchorYmd: todayYmdSeoul(),
-        )).future,
-      ),
-    );
-  }
+  unawaited(ref.read(hubPendingUncalledSummaryProvider.future));
   ref.read(pendingConsultationLaunchProvider.notifier).state = (
     section: section,
     calendarFormat: calendarFormat,
@@ -459,7 +449,7 @@ void prefetchHubPeriodFlow(
   unawaited(Future.wait(futures).catchError((_) => <Object?>[]));
 }
 
-/// 미통화 탭·흐름 카드 탭 시 — 화면 숫자와 무관하게 서버에서 다시 조회.
+/// 흐름 카드 탭 시 — 화면 숫자와 무관하게 서버에서 다시 조회.
 Future<HubPeriodReceptionBundle> refreshHubPeriodUncalledBundle(
   WidgetRef ref,
   HubPeriodKey key,
@@ -477,26 +467,6 @@ Future<HubPeriodReceptionBundle> refreshHubPeriodUncalledBundle(
   ]);
   return ref.read(hubPeriodReceptionBundleProvider(key).future);
 }
-
-/// 미통화 그리드 담당자 탭 시 — breakdown 목록 최신화.
-Future<List<SalesCall>> refreshIncompleteBreakdownCalls(
-  WidgetRef ref,
-  IncompleteBreakdownKey key,
-) async {
-  if (key.period == IncompleteSummaryPeriod.today) {
-    ref.invalidate(hubDayReceptionCallsProvider(key.anchorYmd));
-    ref.invalidate(hubDayUncalledCallsProvider(key.anchorYmd));
-  }
-  if (key.period == IncompleteSummaryPeriod.pending) {
-    ref.invalidate(hubPendingUncalledCallsProvider);
-  }
-  ref.invalidate(incompleteBreakdownCallsProvider(key));
-  ref.invalidate(hubSegmentIncompleteBadgeProvider);
-  return ref.read(incompleteBreakdownCallsProvider(key).future);
-}
-
-/// 홈 미통화 탭 기간 필터 — `HomeIncompleteBreakdown`과 동일.
-enum IncompleteSummaryPeriod { pending, today, week, month, year, all }
 
 /// 최근 [pendingUncalledLookbackDays]일 내 미해결 미통화 — 접수일 무관.
 final hubPendingUncalledCallsProvider =
@@ -520,61 +490,6 @@ final hubPendingUncalledSummaryProvider =
     overrides: overrides,
     loginName: ref.watch(authControllerProvider)?.name,
   );
-});
-
-typedef IncompleteBreakdownKey = ({
-  IncompleteSummaryPeriod period,
-  String anchorYmd,
-});
-
-/// 미통화 담당자별 집계용 접수 목록 — 기간별 서버 조회 + 페이지네이션(1000행 제한 회피).
-final incompleteBreakdownCallsProvider =
-    FutureProvider.family<List<SalesCall>, IncompleteBreakdownKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  switch (key.period) {
-    case IncompleteSummaryPeriod.pending:
-      return ref.watch(hubPendingUncalledCallsProvider.future);
-    case IncompleteSummaryPeriod.today:
-      return ref.watch(hubDayReceptionCallsProvider(key.anchorYmd).future);
-    case IncompleteSummaryPeriod.week:
-      final range = seoulWeekRangeContaining(key.anchorYmd);
-      return repo.fetchCallsAllPages(
-        dateRangeStart: range.$1,
-        dateRangeEndInclusive: range.$2,
-        includeCallHistory: false,
-      );
-    case IncompleteSummaryPeriod.month:
-      final range = seoulMonthRangeContaining(key.anchorYmd);
-      return repo.fetchCallsAllPages(
-        dateRangeStart: range.$1,
-        dateRangeEndInclusive: range.$2,
-        includeCallHistory: false,
-      );
-    case IncompleteSummaryPeriod.year:
-      final range = seoulYearRangeContaining(key.anchorYmd);
-      return repo.fetchCallsAllPages(
-        dateRangeStart: range.$1,
-        dateRangeEndInclusive: range.$2,
-        includeCallHistory: false,
-      );
-    case IncompleteSummaryPeriod.all:
-      // 연도별로 나눠 조회 — 단일 무제한 조회 시 1000행에서 끊기는 현상 방지.
-      final endYear = int.tryParse(key.anchorYmd.substring(0, 4)) ??
-          DateTime.now().year;
-      const startYear = 2020;
-      final merged = <SalesCall>[];
-      for (var y = startYear; y <= endYear; y++) {
-        final range = seoulYearRangeContaining('$y-06-15');
-        merged.addAll(
-          await repo.fetchCallsAllPages(
-            dateRangeStart: range.$1,
-            dateRangeEndInclusive: range.$2,
-            includeCallHistory: false,
-          ),
-        );
-      }
-      return merged;
-  }
 });
 
 /// 달력에 표시 중인 주·월 구간 (`next_scheduled_date` 기준, 목록 `followDate`/`followRange`와 동일).
@@ -614,7 +529,7 @@ List<String> weekYmdKeysContaining(String anchorYmd) {
   return keys;
 }
 
-/// 홈 [미통화] 탭 배지 — 처리할 미통화(최근 60일), 로그인 담당자 건수.
+/// 홈 [흐름] 탭 배지 — 처리할 미통화(최근 60일), 로그인 담당자 건수.
 final hubSegmentIncompleteBadgeProvider = FutureProvider<int>((ref) async {
   final summary = await ref.watch(hubPendingUncalledSummaryProvider.future);
   final loginName = ref.watch(authControllerProvider)?.name?.trim();

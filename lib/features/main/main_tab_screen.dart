@@ -69,18 +69,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       }
     });
 
-    // 흐름 프리페치 후 여유 있을 때 미통화 breakdown·발급 감시 (첫 화면 네트워크 혼잡 완화)
+    // 흐름 프리페치 후 여유 있을 때 처리할 미통화·발급 감시 (첫 화면 네트워크 혼잡 완화)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future<void>.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
-        unawaited(
-          ref.read(
-            incompleteBreakdownCallsProvider((
-              period: IncompleteSummaryPeriod.today,
-              anchorYmd: todayYmdSeoul(),
-            )).future,
-          ),
-        );
+        unawaited(ref.read(hubPendingUncalledSummaryProvider.future));
       });
     });
 
@@ -519,6 +512,21 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     );
   }
 
+  Future<void> _openPendingUncalledList() async {
+    final today = todayYmdSeoul();
+    final loginName = ref.read(authControllerProvider)?.name?.trim();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.pendingUncalled,
+          date: pendingUncalledFromYmd(today),
+          initialAssignee:
+              loginName != null && loginName.isNotEmpty ? loginName : null,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openTodayIncompleteList() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -744,16 +752,16 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       ],
       entries: [
         AppMenuEntry(
-          id: 'home_incomplete',
+          id: 'home_pending_uncalled',
           sectionId: 'account',
           icon: Icons.phone_missed_rounded,
-          title: '미통화 현황',
+          title: '처리할 미통화',
           quickAccess: true,
           quickLabel: '미통화',
-          keywords: const ['미통화', '미결', '콜', '홈'],
+          keywords: const ['미통화', '미결', '콜', '홈', '처리'],
           onTap: () => closeDrawerThen(() {
             _selectHomeTab();
-            requestHomeHubSection(ref, HomeHubSection.incomplete);
+            unawaited(_openPendingUncalledList());
           }),
         ),
         AppMenuEntry(

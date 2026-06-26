@@ -323,7 +323,8 @@ class AppUpdateService {
 
         final dateLabel = _dateOnlyLabel(map['created_at']);
         final proposer = _firstNonEmptyString([map['proposer']]);
-        final fallbackProposer = proposer.isEmpty ? '미기재' : proposer;
+        final fallbackProposer =
+            proposer.isEmpty ? kDefaultUpdateProposer : proposer;
         final changes = _normalizeReleaseNotes(
           map['release_notes'],
           fallbackProposer: fallbackProposer,

@@ -444,7 +444,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     final quickActions = <_QuickActionItem>[
       _QuickActionItem(
         label: '홈',
-        subtitle: '업무 흐름·미통화·달력',
+        subtitle: '업무 흐름·달력',
         color: Colors.blueGrey.shade700,
         icon: Icons.home_rounded,
         onTap: () {

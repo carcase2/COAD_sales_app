@@ -31,10 +31,6 @@ class _HubVisual {
       canvas: Color.lerp(scheme.surface, scheme.primaryContainer, 0.07)!,
       accent: scheme.primary,
     ),
-    HomeHubSection.incomplete => (
-      canvas: Color.lerp(scheme.surface, scheme.tertiaryContainer, 0.12)!,
-      accent: scheme.tertiary,
-    ),
     HomeHubSection.calendar => (
       canvas: Color.lerp(scheme.surface, scheme.secondaryContainer, 0.12)!,
       accent: scheme.secondary,
@@ -104,7 +100,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       'home_flow_longpress_hint_hidden_v1';
   static const List<HomeHubSection> _sectionOrder = [
     HomeHubSection.flow,
-    HomeHubSection.incomplete,
     HomeHubSection.calendar,
   ];
 
@@ -375,7 +370,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           _buildSectionSegmentBar(
             scheme,
             embedded: true,
-            incompleteBadge: ref
+            pendingBadge: ref
                 .watch(hubSegmentIncompleteBadgeProvider)
                 .valueOrNull,
             calendarBadge: ref
@@ -1936,10 +1931,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     switch (_section) {
       case HomeHubSection.flow:
         await _refreshActiveFlowPeriod();
-      case HomeHubSection.incomplete:
-        ref.invalidate(incompleteBreakdownCallsProvider);
-        ref.invalidate(hubPendingUncalledCallsProvider);
-        await ref.read(hubSegmentIncompleteBadgeProvider.future);
       case HomeHubSection.calendar:
         final calKey = _calendarRangeKeyForHub();
         ref.invalidate(calendarFollowRangeProvider(calKey));
@@ -1957,23 +1948,21 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   Widget _buildSectionSegmentBar(
     ColorScheme scheme, {
     bool embedded = false,
-    int? incompleteBadge,
+    int? pendingBadge,
     int? calendarBadge,
   }) {
     const sections = <(HomeHubSection, String, IconData)>[
       (HomeHubSection.flow, '흐름', Icons.insights_rounded),
-      (HomeHubSection.incomplete, '미통화', Icons.pending_actions_rounded),
       (HomeHubSection.calendar, '달력', Icons.calendar_month_rounded),
     ];
 
     int badgeCountFor(HomeHubSection section) => switch (section) {
-      HomeHubSection.incomplete => incompleteBadge ?? 0,
+      HomeHubSection.flow => pendingBadge ?? 0,
       HomeHubSection.calendar => calendarBadge ?? 0,
-      _ => 0,
     };
 
     bool showsCountBadge(HomeHubSection section) =>
-        section == HomeHubSection.incomplete ||
+        section == HomeHubSection.flow ||
         section == HomeHubSection.calendar;
 
     final trackColor = embedded
@@ -2212,16 +2201,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           HubNavStep.week => '이번 주 팔로우',
           HubNavStep.month => '이번 달 팔로우',
         },
-      ),
-    );
-  }
-
-  Widget _buildIncompleteBody(ColorScheme scheme) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(12, 2, 12, 10 + _homeBottomInset(context)),
-      child: HomeIncompleteBreakdown(
-        fitSingleScreen: true,
-        onRefresh: _onRefresh,
       ),
     );
   }
@@ -2540,7 +2519,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             color: scheme.primary,
                           ),
                           label: Text(
-                            '미통화 탭 동작 · 설정',
+                            '미통화 안내 · 설정',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -2670,10 +2649,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     _buildFlowBody(scheme, user),
                   ),
                   _lazySectionPage(
-                    HomeHubSection.incomplete,
-                    _buildIncompleteBody(scheme),
-                  ),
-                  _lazySectionPage(
                     HomeHubSection.calendar,
                     _buildCalendarBody(),
                   ),
@@ -2754,7 +2729,6 @@ class _MiniStatsWidget extends StatelessWidget {
                   child: _FlowStatTile(
                     icon: Icons.phone_missed_rounded,
                     label: incompleteLabel,
-                    hint: '미통화 탭과 동일',
                     value: incomplete.toString(),
                     color: scheme.error,
                     onTap: onTapIncomplete,
