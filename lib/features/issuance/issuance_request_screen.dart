@@ -35,11 +35,17 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     ref.invalidate(
       issuanceCancelledRowsProvider(IssuanceDomain.performanceBond),
     );
+    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
+    ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
     ref.invalidate(issuanceRequestBadgeCountProvider);
     ref.invalidate(issuanceRequestTotalBadgeCountProvider);
     await Future.wait([
       ref.read(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
       ref.read(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
+      ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
+      ref.read(
+        issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
+      ),
     ]);
   }
 
@@ -171,14 +177,14 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
     );
     final taxPendingAsync = ref.watch(
-      issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice),
+      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
     final bondPendingAsync = ref.watch(
-      issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
+      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
     );
     final taxCount = taxPendingAsync.valueOrNull?.length;
     final bondCount = bondPendingAsync.valueOrNull?.length;
-    final combinedMyPendingCount =
+    final combinedPendingCount =
         (taxPendingAsync.valueOrNull?.length ?? 0) +
         (bondPendingAsync.valueOrNull?.length ?? 0);
     bool isTodayIssued(IssuanceRequestRow row) =>
@@ -337,7 +343,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   _HubMenuTile(
                     icon: IssuanceListKind.request.icon,
                     title: '발급대기',
-                    count: combinedMyPendingCount,
+                    count: combinedPendingCount,
                     subtitle:
                         '세금 ${taxPendingAsync.valueOrNull?.length ?? 0}건 · 이행 ${bondPendingAsync.valueOrNull?.length ?? 0}건',
                     accent: Colors.blue.shade700,
@@ -558,8 +564,8 @@ class _HubMenuTile extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             subtitle == null
-                                ? '내 발급요청 확인'
-                                : '내 $count건 · $subtitle',
+                                ? '발급대기 목록'
+                                : subtitle!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(

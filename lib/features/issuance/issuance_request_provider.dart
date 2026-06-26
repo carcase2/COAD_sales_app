@@ -115,16 +115,34 @@ String _normalizeOwnerName(String raw) =>
 
 /// 내 요청 판별.
 ///
-/// DB(웹 포함)가 requester/created_by에 이름만 저장하므로 이름 기반 비교가
-/// 한계지만, 정규화 후 requester·created_by 둘 다 확인해 누락을 줄인다.
-bool issuanceIsOwnRequest(IssuanceRequestRow row, String? userName) {
+/// DB(웹 포함)가 requester/created_by에 이름 또는 사번이 저장될 수 있어
+/// [userName]·[userId]와 issue `issued_by`까지 함께 비교한다.
+bool issuanceIsOwnRequest(
+  IssuanceRequestRow row,
+  String? userName, {
+  String? userId,
+}) {
   final me = _normalizeOwnerName(userName ?? '');
-  if (me.isEmpty) return false;
+  final meId = (userId ?? '').trim().toLowerCase();
+  if (me.isEmpty && meId.isEmpty) return false;
+
   final requester =
       _normalizeOwnerName((row.master['requester'] ?? '').toString());
   final createdBy =
       _normalizeOwnerName((row.master['created_by'] ?? '').toString());
-  return requester == me || createdBy == me;
+  if (me.isNotEmpty && (requester == me || createdBy == me)) return true;
+  if (meId.isNotEmpty && (requester == meId || createdBy == meId)) {
+    return true;
+  }
+
+  final issuedBy =
+      _normalizeOwnerName((row.issue?['issued_by'] ?? '').toString());
+  if (me.isNotEmpty && issuedBy.isNotEmpty && issuedBy == me) return true;
+  if (meId.isNotEmpty && issuedBy.isNotEmpty && issuedBy == meId) {
+    return true;
+  }
+
+  return false;
 }
 
 List<IssuanceRequestRow> sortIssuanceRowsOwnFirst(
@@ -848,7 +866,13 @@ final issuanceMyRequestRowsProvider =
       final user = ref.watch(authControllerProvider);
       final rows = await ref.watch(issuanceRequestRowsProvider(domain).future);
       return rows
-          .where((row) => issuanceIsOwnRequest(row, user?.name))
+          .where(
+            (row) => issuanceIsOwnRequest(
+              row,
+              user?.name,
+              userId: user?.id,
+            ),
+          )
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     });
@@ -926,7 +950,9 @@ final issuanceRequestBadgeCountProvider = FutureProvider<int>((ref) async {
   return [
     ...taxRows,
     ...bondRows,
-  ].where((row) => issuanceIsOwnRequest(row, user.name)).length;
+  ].where(
+    (row) => issuanceIsOwnRequest(row, user.name, userId: user.id),
+  ).length;
 });
 
 /// 허브 등 — 전체 발급대기 건수 (웹 배지 규칙).

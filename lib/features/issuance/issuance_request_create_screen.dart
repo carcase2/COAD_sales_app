@@ -609,8 +609,18 @@ class _IssuanceRequestCreateScreenState
       ref.invalidate(issuanceAllRowsProvider(IssuanceDomain.performanceBond));
       ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.taxInvoice));
       ref.invalidate(issuanceCancelledRowsProvider(IssuanceDomain.performanceBond));
+      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice));
+      ref.invalidate(issuanceRequestRowsProvider(IssuanceDomain.performanceBond));
       ref.invalidate(issuanceRequestBadgeCountProvider);
       ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+      await Future.wait([
+        ref.read(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
+        ref.read(issuanceAllRowsProvider(IssuanceDomain.performanceBond).future),
+        ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
+        ref.read(
+          issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
+        ),
+      ]);
       if (!mounted) return;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(
@@ -841,10 +851,10 @@ class _IssuanceRequestCreateScreenState
   Widget build(BuildContext context) {
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final taxRowsAsync = ref.watch(
-      issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice),
+      issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
     final bondRowsAsync = ref.watch(
-      issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
+      issuanceRequestRowsProvider(IssuanceDomain.performanceBond),
     );
     final taxCount = taxRowsAsync.valueOrNull?.length;
     final bondCount = bondRowsAsync.valueOrNull?.length;
