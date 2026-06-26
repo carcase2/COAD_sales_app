@@ -1,8 +1,12 @@
 import 'dart:convert';
 
 import 'package:coad_customer_calls/core/network/api_exception.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_notification.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class GeneralScheduleRepository {
@@ -165,25 +169,43 @@ class GeneralScheduleRepository {
     await _client.from('sales_schedule').delete().eq('id', id);
   }
 
-  Future<void> notifyTelegram({
+  /// 본사영업·관리자 FCM 알림 (`notify-new-call` / `notify-issuance-request`와 동일 패턴).
+  Future<void> notifyGeneralSchedulePush({
     required String action,
     required Map<String, dynamic> scheduleData,
   }) async {
-    final base = _deps.effectiveBaseUrl;
-    if (base.isEmpty) return;
     try {
-      await _deps.transport.request(
-        baseUrl: base,
-        method: 'POST',
-        path: '/api/telegram/schedule-notification',
-        jsonBody: {
+      final res = await _client.functions.invoke(
+        'notify-general-schedule',
+        body: {
           'action': action,
           'scheduleData': scheduleData,
         },
       );
-    } catch (_) {
-      // 웹과 동일 — 알림 실패는 본 작업을 롤백하지 않음
+      if (res.status >= 400) {
+        debugPrint(
+          '[notify-general-schedule] push invoke returned error status=${res.status}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[notify-general-schedule] invoke failed: $e');
     }
+  }
+
+  Future<Map<String, dynamic>> enrichScheduleNotificationData({
+    required Map<String, dynamic> base,
+    required GeneralScheduleRecord record,
+    required String actorName,
+  }) async {
+    final all = await fetchAll();
+    final grid = buildGeneralScheduleGrid(all);
+    final alarm = buildGeneralScheduleAlarmContext(
+      grid: grid,
+      record: record,
+      actorName: actorName,
+      todayYmd: todayYmdSeoul(),
+    );
+    return mergeGeneralScheduleTelegramPayload(base: base, alarm: alarm);
   }
 
   Future<void> _insertSlots(

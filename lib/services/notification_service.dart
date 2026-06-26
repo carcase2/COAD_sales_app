@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -353,12 +354,18 @@ class NotificationService {
     var title = titleBody.$1;
     var body = titleBody.$2;
     if (title.isEmpty && body.isEmpty) {
-      final callId = _extractCallIdFromData(data);
-      if (callId != null) {
-        title = '새 통화 접수';
-        body = '알림을 탭하면 접수 상세로 이동합니다.';
+      if (_isGeneralScheduleNotification(data)) {
+        title = (data['title'] ?? '본사일반 일정').toString();
+        body = (data['body'] ?? '알림을 탭하면 본사일반 일정으로 이동합니다.')
+            .toString();
       } else {
-        return;
+        final callId = _extractCallIdFromData(data);
+        if (callId != null) {
+          title = '새 통화 접수';
+          body = '알림을 탭하면 접수 상세로 이동합니다.';
+        } else {
+          return;
+        }
       }
     }
 
@@ -431,6 +438,12 @@ class NotificationService {
     }
     if (_isIssuanceRequestNotification(data)) {
       return jsonEncode(_issuancePayloadFromData(data, completed: false));
+    }
+    if (_isGeneralScheduleNotification(data)) {
+      return jsonEncode({
+        'type': 'general_schedule',
+        'action': 'open_general_schedule',
+      });
     }
     final callId = _extractCallIdFromData(data);
     if (callId == null) return null;
@@ -546,6 +559,10 @@ class NotificationService {
       _openIssuanceRequest(data);
       return;
     }
+    if (_isGeneralScheduleNotification(data)) {
+      _openGeneralScheduleHub(data);
+      return;
+    }
     final id = _extractCallIdFromData(data);
     if (id != null) {
       _navigateToCallDetail(id);
@@ -572,6 +589,15 @@ class NotificationService {
     return type == 'issuance_request' || action == 'open_issuance_request';
   }
 
+  static bool _isGeneralScheduleNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'general_schedule' || action == 'open_general_schedule';
+  }
+
   static IssuanceDomain _parseIssuanceDomain(Object? raw) {
     final value = (raw ?? '').toString().trim().toLowerCase();
     if (value == 'performancebond' ||
@@ -593,6 +619,38 @@ class NotificationService {
 
   static void _openIssuanceRequest(Map<String, dynamic> data) {
     _openIssuanceHub(data, showCompleted: false, queueType: 'issuance_request');
+  }
+
+  static void _openGeneralScheduleHub(Map<String, dynamic> data) {
+    const payload = {
+      'type': 'general_schedule',
+      'action': 'open_general_schedule',
+    };
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) {
+      _queuePendingData(payload);
+      return;
+    }
+    try {
+      final container = ProviderScope.containerOf(ctx);
+      if (container.read(authControllerProvider) == null) {
+        _queuePendingData(payload);
+        return;
+      }
+      container.read(pendingGeneralScheduleLaunchProvider.notifier).state =
+          true;
+      _log('queue general schedule launch');
+    } catch (_) {
+      _queuePendingData(payload);
+    }
+  }
+
+  static void clearPendingGeneralScheduleNavigation() {
+    final type = (_pendingMessageData?['type'] ?? '').toString();
+    if (type == 'general_schedule') {
+      _pendingMessageData = null;
+    }
+    unawaited(_clearStoredNotificationPayload());
   }
 
   static void _openIssuanceHub(

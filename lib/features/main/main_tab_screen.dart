@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_screen.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -554,6 +555,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
       if (next == null || !context.mounted) return;
       _selectIssuanceTab();
+    });
+    ref.listen(pendingGeneralScheduleLaunchProvider, (prev, next) {
+      if (next != true || !context.mounted) return;
+      ref.read(pendingGeneralScheduleLaunchProvider.notifier).state = false;
+      NotificationService.clearPendingGeneralScheduleNavigation();
+      unawaited(_openGeneralSchedule());
     });
 
     final scheme = Theme.of(context).colorScheme;

@@ -1,0 +1,191 @@
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
+
+const ALLOWED_GROUP_NAMES = ['본사영업', '관리자']
+
+type PushUser = { id: string; name: string; role: string; fcm_token: string }
+
+type SchedulePayload = {
+  action?: string
+  scheduleData?: Record<string, unknown>
+}
+
+function actionTitle(action: string): string {
+  switch (action) {
+    case 'created':
+      return '본사일반 일정 등록'
+    case 'updated':
+      return '본사일반 일정 수정'
+    case 'deleted':
+      return '본사일반 일정 삭제'
+    default:
+      return '본사일반 일정'
+  }
+}
+
+function buildBody(scheduleData: Record<string, unknown>): string {
+  const alarmText = (scheduleData.alarm_text ?? '').toString().trim()
+  if (alarmText) return alarmText
+
+  const site = (scheduleData.site ?? '').toString().trim()
+  const user = (scheduleData.user_name ?? scheduleData.entered_by ?? '').toString().trim()
+  const parts = [
+    site ? `현장: ${site}` : '',
+    user ? `입력: ${user}` : '',
+  ].filter(Boolean)
+  return parts.join('\n') || '본사일반 일정이 변경되었습니다.'
+}
+
+/** 본사일반 FCM — 본사영업·관리자 그룹 + role=admin */
+async function resolveGeneralSchedulePushRecipients(
+  supabaseAdmin: ReturnType<typeof createClient>,
+): Promise<PushUser[]> {
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .select('id, name, role, fcm_token, is_active, groups(name)')
+    .eq('is_active', true)
+    .not('fcm_token', 'is', null)
+
+  if (error) throw error
+
+  const byId = new Map<string, PushUser>()
+  for (const raw of data ?? []) {
+    const row = raw as Record<string, unknown>
+    const groups = row.groups as { name?: string } | null
+    const groupName = (groups?.name ?? '').toString().trim()
+    const role = (row.role ?? '').toString().trim()
+    const allowed =
+      role === 'admin' || ALLOWED_GROUP_NAMES.includes(groupName)
+    if (!allowed) continue
+
+    const id = (row.id ?? '').toString()
+    const token = (row.fcm_token ?? '').toString().trim()
+    if (!id || !token) continue
+
+    byId.set(id, {
+      id,
+      name: (row.name ?? '').toString(),
+      role,
+      fcm_token: token,
+    })
+  }
+  return Array.from(byId.values())
+}
+
+serve(async (req) => {
+  try {
+    const payload = (await req.json()) as SchedulePayload
+    const action = (payload.action ?? 'created').toString()
+    const scheduleData = (payload.scheduleData ?? {}) as Record<string, unknown>
+
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    )
+
+    const users = await resolveGeneralSchedulePushRecipients(supabaseAdmin)
+    const tokens = Array.from(
+      new Set(
+        users
+          .map((u) => (u.fcm_token ?? '').trim())
+          .filter((t) => t.length > 5),
+      ),
+    )
+
+    if (tokens.length === 0) {
+      console.log('No general schedule FCM recipients in 본사영업/관리자')
+      return new Response(
+        JSON.stringify({
+          success: true,
+          recipientCount: 0,
+          message: 'No FCM recipients in 본사영업/관리자',
+        }),
+        { headers: { 'Content-Type': 'application/json' }, status: 200 },
+      )
+    }
+
+    console.log(
+      `Routing general schedule ${action} push to ${tokens.length} token(s):`,
+      users.map((u) => `${u.name}(Token OK)`).join(', '),
+    )
+
+    const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
+    const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
+      Deno.env.get('FIREBASE_SERVICE_ACCOUNT') || '{}',
+    )
+
+    const auth = new GoogleAuth({
+      credentials: FIREBASE_SERVICE_ACCOUNT,
+      scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
+    })
+
+    const client = await auth.getClient()
+    const accessTokenResponse = await client.getAccessToken()
+    const accessToken = accessTokenResponse.token
+
+    if (!accessToken) {
+      throw new Error('Failed to get FCM access token')
+    }
+
+    const title = actionTitle(action)
+    const body = buildBody(scheduleData)
+    const dataBody = body.replace(/\s+/g, ' ').trim()
+
+    console.log(`Sending general schedule ${action} push: title=${title}`)
+
+    const results = await Promise.all(
+      tokens.map(async (token: string) => {
+        try {
+          const res = await fetch(
+            `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                message: {
+                  token,
+                  // data-only → 앱 로컬 알림 표시·탭 처리 (notify-new-call / notify-issuance-request 동일)
+                  data: {
+                    type: 'general_schedule',
+                    action: 'open_general_schedule',
+                    title,
+                    body: dataBody,
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                  },
+                  android: { priority: 'high' },
+                },
+              }),
+            },
+          )
+          const resText = await res.text()
+          console.log(`FCM Response (Status: ${res.status}):`, resText)
+          return { status: res.status, body: resText }
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error('FCM error:', msg)
+          return { error: msg }
+        }
+      }),
+    )
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        recipientCount: tokens.length,
+        results,
+      }),
+      { headers: { 'Content-Type': 'application/json' }, status: 200 },
+    )
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('notify-general-schedule error:', msg)
+    return new Response(JSON.stringify({ error: msg }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 500,
+    })
+  }
+})

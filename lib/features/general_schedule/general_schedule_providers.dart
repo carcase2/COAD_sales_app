@@ -45,3 +45,6 @@ Map<String, int> occupancyByDateInMonth(
   }
   return out;
 }
+
+/// FCM 탭 시 본사일반 화면 열기.
+final pendingGeneralScheduleLaunchProvider = StateProvider<bool>((ref) => false);

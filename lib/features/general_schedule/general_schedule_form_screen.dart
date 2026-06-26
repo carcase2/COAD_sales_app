@@ -312,10 +312,9 @@ class _GeneralScheduleFormScreenState
         );
         final all = await repo.fetchAll();
         saved = all.firstWhere((e) => e.id == widget.editing!.id);
-        unawaited(
-          repo.notifyTelegram(
-            action: 'updated',
-            scheduleData: _telegramPayload(
+        unawaited(() async {
+          final payload = await repo.enrichScheduleNotificationData(
+            base: _telegramPayload(
               record: saved,
               userName: user.name,
               models: models,
@@ -323,8 +322,11 @@ class _GeneralScheduleFormScreenState
               oldStart: widget.editing!.start,
               oldEnd: widget.editing!.endDate,
             ),
-          ),
-        );
+            record: saved,
+            actorName: user.name ?? '',
+          );
+          await repo.notifyGeneralSchedulePush(action: 'updated', scheduleData: payload);
+        }());
       } else {
         saved = await repo.create(
           site: _siteController.text.trim(),
@@ -338,17 +340,19 @@ class _GeneralScheduleFormScreenState
               ? null
               : assignment.teamSlotMap,
         );
-        unawaited(
-          repo.notifyTelegram(
-            action: 'created',
-            scheduleData: _telegramPayload(
+        unawaited(() async {
+          final payload = await repo.enrichScheduleNotificationData(
+            base: _telegramPayload(
               record: saved,
               userName: user.name,
               models: models,
               doorTypes: doorTypeCodes,
             ),
-          ),
-        );
+            record: saved,
+            actorName: user.name ?? '',
+          );
+          await repo.notifyGeneralSchedulePush(action: 'created', scheduleData: payload);
+        }());
       }
 
       if (!mounted) return;
