@@ -11,17 +11,26 @@ type SchedulePayload = {
   scheduleData?: Record<string, unknown>
 }
 
-function actionTitle(action: string): string {
+function actionTitle(
+  action: string,
+  scheduleData: Record<string, unknown>,
+): string {
+  const site = (scheduleData.site ?? '').toString().trim()
+  let label: string
   switch (action) {
     case 'created':
-      return '본사일반 일정 등록'
+      label = '일정 등록'
+      break
     case 'updated':
-      return '본사일반 일정 수정'
+      label = '일정 수정'
+      break
     case 'deleted':
-      return '본사일반 일정 삭제'
+      label = '일정 삭제'
+      break
     default:
-      return '본사일반 일정'
+      label = '일정'
   }
+  return site ? `[본사일반] ${label} · ${site}` : `[본사일반] ${label}`
 }
 
 function buildBody(scheduleData: Record<string, unknown>): string {
@@ -30,11 +39,17 @@ function buildBody(scheduleData: Record<string, unknown>): string {
 
   const site = (scheduleData.site ?? '').toString().trim()
   const user = (scheduleData.user_name ?? scheduleData.entered_by ?? '').toString().trim()
+  const start = (scheduleData.start_date ?? '').toString().trim()
   const parts = [
     site ? `현장: ${site}` : '',
-    user ? `입력: ${user}` : '',
+    user && start ? `입력: ${user} · ${start}` : user ? `입력: ${user}` : '',
   ].filter(Boolean)
   return parts.join('\n') || '본사일반 일정이 변경되었습니다.'
+}
+
+/** FCM data 필드용 — 줄바꿈 유지(알림 접힘 시에도 펼치면 전체 표시). */
+function buildDataBody(body: string): string {
+  return body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
 }
 
 /** 본사일반 FCM — 본사영업·관리자 그룹 + role=admin */
@@ -128,9 +143,9 @@ serve(async (req) => {
       throw new Error('Failed to get FCM access token')
     }
 
-    const title = actionTitle(action)
+    const title = actionTitle(action, scheduleData)
     const body = buildBody(scheduleData)
-    const dataBody = body.replace(/\s+/g, ' ').trim()
+    const dataBody = buildDataBody(body)
 
     console.log(`Sending general schedule ${action} push: title=${title}`)
 
@@ -163,6 +178,12 @@ serve(async (req) => {
           )
           const resText = await res.text()
           console.log(`FCM Response (Status: ${res.status}):`, resText)
+          if (res.status === 404 && resText.includes('UNREGISTERED')) {
+            await supabaseAdmin
+              .from('users')
+              .update({ fcm_token: null })
+              .eq('fcm_token', token)
+          }
           return { status: res.status, body: resText }
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e)
@@ -176,6 +197,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         recipientCount: tokens.length,
+        recipients: users.map((u) => u.name),
         results,
       }),
       { headers: { 'Content-Type': 'application/json' }, status: 200 },

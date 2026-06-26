@@ -176,8 +176,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       final repo = ref.read(generalScheduleRepositoryProvider);
       await repo.delete(record.id);
       final user = ref.read(authControllerProvider);
-      unawaited(() async {
-        final payload = await repo.enrichScheduleNotificationData(
+      try {
+        await repo.dispatchGeneralScheduleNotification(
+          action: 'deleted',
           base: {
             'site': record.site,
             'start_date': record.start,
@@ -188,8 +189,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           record: record,
           actorName: user?.name ?? record.userName ?? '시스템',
         );
-        await repo.notifyGeneralSchedulePush(action: 'deleted', scheduleData: payload);
-      }());
+      } catch (e) {
+        debugPrint('[general-schedule] push after delete failed: $e');
+      }
       await _reload();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

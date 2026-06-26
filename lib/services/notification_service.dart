@@ -353,9 +353,12 @@ class NotificationService {
     final titleBody = _titleAndBodyFromMessage(message);
     var title = titleBody.$1;
     var body = titleBody.$2;
+    if (_isGeneralScheduleNotification(data)) {
+      body = body.replaceAll(r'\n', '\n');
+    }
     if (title.isEmpty && body.isEmpty) {
       if (_isGeneralScheduleNotification(data)) {
-        title = (data['title'] ?? '본사일반 일정').toString();
+        title = (data['title'] ?? '[본사일반] 일정').toString();
         body = (data['body'] ?? '알림을 탭하면 본사일반 일정으로 이동합니다.')
             .toString();
       } else {
@@ -395,11 +398,18 @@ class NotificationService {
     }
 
     final callId = _extractCallIdFromData(data);
+    final notificationId = _isGeneralScheduleNotification(data)
+        ? ('general_schedule:${data['action'] ?? 'open'}').hashCode &
+            0x7fffffff
+        : _notificationIdFor(callId, message);
+    final tag = _isGeneralScheduleNotification(data)
+        ? 'general_schedule'
+        : callId;
     _log(
       'showRemoteMessageNotification callId=$callId titleLen=${title.length} bodyLen=${body.length}',
     );
     await plugin.show(
-      id: _notificationIdFor(callId, message),
+      id: notificationId,
       title: title,
       body: body,
       payload: payload,
@@ -411,7 +421,7 @@ class NotificationService {
           importance: Importance.max,
           priority: Priority.high,
           styleInformation: BigTextStyleInformation(body),
-          tag: callId,
+          tag: tag,
           autoCancel: true,
           category: AndroidNotificationCategory.message,
         ),

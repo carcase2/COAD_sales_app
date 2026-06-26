@@ -312,8 +312,9 @@ class _GeneralScheduleFormScreenState
         );
         final all = await repo.fetchAll();
         saved = all.firstWhere((e) => e.id == widget.editing!.id);
-        unawaited(() async {
-          final payload = await repo.enrichScheduleNotificationData(
+        try {
+          await repo.dispatchGeneralScheduleNotification(
+            action: 'updated',
             base: _telegramPayload(
               record: saved,
               userName: user.name,
@@ -323,10 +324,11 @@ class _GeneralScheduleFormScreenState
               oldEnd: widget.editing!.endDate,
             ),
             record: saved,
-            actorName: user.name ?? '',
+            actorName: user.name,
           );
-          await repo.notifyGeneralSchedulePush(action: 'updated', scheduleData: payload);
-        }());
+        } catch (e) {
+          debugPrint('[general-schedule] push after update failed: $e');
+        }
       } else {
         saved = await repo.create(
           site: _siteController.text.trim(),
@@ -340,8 +342,9 @@ class _GeneralScheduleFormScreenState
               ? null
               : assignment.teamSlotMap,
         );
-        unawaited(() async {
-          final payload = await repo.enrichScheduleNotificationData(
+        try {
+          await repo.dispatchGeneralScheduleNotification(
+            action: 'created',
             base: _telegramPayload(
               record: saved,
               userName: user.name,
@@ -349,10 +352,11 @@ class _GeneralScheduleFormScreenState
               doorTypes: doorTypeCodes,
             ),
             record: saved,
-            actorName: user.name ?? '',
+            actorName: user.name,
           );
-          await repo.notifyGeneralSchedulePush(action: 'created', scheduleData: payload);
-        }());
+        } catch (e) {
+          debugPrint('[general-schedule] push after create failed: $e');
+        }
       }
 
       if (!mounted) return;

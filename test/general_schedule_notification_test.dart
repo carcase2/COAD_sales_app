@@ -72,7 +72,8 @@ void main() {
     expect(ctx.enteredDatesSummary, '6월 27일 (토)');
     expect(ctx.monthRemainingSlotsAfterToday, greaterThan(0));
     expect(ctx.earliestEmptySlotYmd, '2026-06-26');
-    expect(ctx.alarmLines().first, contains('김경덕 이사'));
-    expect(ctx.alarmLines()[1], contains('남은 칸(오늘 이후)'));
+    expect(ctx.alarmLines().first, '현장: 현장A');
+    expect(ctx.alarmLines()[1], contains('김경덕 이사'));
+    expect(ctx.alarmLines()[2], contains('남은 칸(오늘 이후)'));
   });
 }

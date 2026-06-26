@@ -169,6 +169,27 @@ class GeneralScheduleRepository {
     await _client.from('sales_schedule').delete().eq('id', id);
   }
 
+  /// enrich 실패 시 [base]만으로 FCM 전송 (접수 등록과 동일하게 await 호출).
+  Future<void> dispatchGeneralScheduleNotification({
+    required String action,
+    required Map<String, dynamic> base,
+    required GeneralScheduleRecord record,
+    required String actorName,
+  }) async {
+    Map<String, dynamic> payload;
+    try {
+      payload = await enrichScheduleNotificationData(
+        base: base,
+        record: record,
+        actorName: actorName,
+      );
+    } catch (e) {
+      debugPrint('[dispatchGeneralScheduleNotification] enrich failed: $e');
+      payload = base;
+    }
+    await notifyGeneralSchedulePush(action: action, scheduleData: payload);
+  }
+
   /// 본사영업·관리자 FCM 알림 (`notify-new-call` / `notify-issuance-request`와 동일 패턴).
   Future<void> notifyGeneralSchedulePush({
     required String action,
@@ -182,30 +203,40 @@ class GeneralScheduleRepository {
           'scheduleData': scheduleData,
         },
       );
+      debugPrint(
+        '[notify-general-schedule] status=${res.status} data=${res.data}',
+      );
       if (res.status >= 400) {
         debugPrint(
           '[notify-general-schedule] push invoke returned error status=${res.status}',
         );
       }
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[notify-general-schedule] invoke failed: $e');
+      debugPrint('$st');
     }
   }
 
+  /// 알림 본문 강화 실패 시에도 기본 payload로 FCM은 보냄.
   Future<Map<String, dynamic>> enrichScheduleNotificationData({
     required Map<String, dynamic> base,
     required GeneralScheduleRecord record,
     required String actorName,
   }) async {
-    final all = await fetchAll();
-    final grid = buildGeneralScheduleGrid(all);
-    final alarm = buildGeneralScheduleAlarmContext(
-      grid: grid,
-      record: record,
-      actorName: actorName,
-      todayYmd: todayYmdSeoul(),
-    );
-    return mergeGeneralScheduleTelegramPayload(base: base, alarm: alarm);
+    try {
+      final all = await fetchAll();
+      final grid = buildGeneralScheduleGrid(all);
+      final alarm = buildGeneralScheduleAlarmContext(
+        grid: grid,
+        record: record,
+        actorName: actorName,
+        todayYmd: todayYmdSeoul(),
+      );
+      return mergeGeneralScheduleTelegramPayload(base: base, alarm: alarm);
+    } catch (e) {
+      debugPrint('[enrichScheduleNotificationData] failed, using base: $e');
+      return base;
+    }
   }
 
   Future<void> _insertSlots(

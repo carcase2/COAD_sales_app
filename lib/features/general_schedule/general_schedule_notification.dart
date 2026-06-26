@@ -3,9 +3,10 @@ import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
 
-/// 텔레그램 본사일반 알림용 — 입력자·월 잔여 칸·가장 빠른 빈 칸.
+/// 텔레그램·FCM 본사일반 알림용 — 현장·입력자·월 잔여 칸·가장 빠른 빈 칸.
 class GeneralScheduleAlarmContext {
   const GeneralScheduleAlarmContext({
+    required this.site,
     required this.enteredBy,
     required this.enteredDatesSummary,
     required this.monthLabel,
@@ -14,6 +15,7 @@ class GeneralScheduleAlarmContext {
     this.earliestEmptySlotNumber,
   });
 
+  final String site;
   final String enteredBy;
   final String enteredDatesSummary;
   final String monthLabel;
@@ -22,6 +24,7 @@ class GeneralScheduleAlarmContext {
   final int? earliestEmptySlotNumber;
 
   Map<String, dynamic> toPayload() => {
+        'site': site,
         'entered_by': enteredBy,
         'entered_dates_summary': enteredDatesSummary,
         'month_label': monthLabel,
@@ -40,6 +43,7 @@ class GeneralScheduleAlarmContext {
 
   List<String> alarmLines() {
     final lines = <String>[
+      if (site.trim().isNotEmpty) '현장: ${site.trim()}',
       '입력: $enteredBy · $enteredDatesSummary',
       '$monthLabel 남은 칸(오늘 이후): $monthRemainingSlotsAfterToday칸',
     ];
@@ -71,6 +75,7 @@ GeneralScheduleAlarmContext buildGeneralScheduleAlarmContext({
   );
 
   return GeneralScheduleAlarmContext(
+    site: record.site.trim(),
     enteredBy: actorName.trim().isEmpty
         ? (record.userName?.trim().isNotEmpty == true
             ? record.userName!.trim()
