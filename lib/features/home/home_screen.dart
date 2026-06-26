@@ -1915,6 +1915,67 @@ class _HomeFollowCalendarPanelState
     );
   }
 
+  int _todayFollowCount({
+    required Map<String, int> dateMarkers,
+    required Map<String, Map<String, int>> weekAssigneeCounts,
+  }) {
+    final today = todayYmdSeoul();
+    if (_calendarFormat == CalendarFormat.week) {
+      final dayMap = weekAssigneeCounts[today] ?? const <String, int>{};
+      if (_selectedAssignee == '전체') {
+        return dayMap.values.fold<int>(0, (sum, n) => sum + n);
+      }
+      return dayMap[_selectedAssignee] ?? 0;
+    }
+    return dateMarkers[today] ?? 0;
+  }
+
+  Widget _buildTodayFollowShortcut(ColorScheme scheme, int todayCount) {
+    return Material(
+      color: scheme.primaryContainer.withValues(alpha: 0.42),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          HapticFeedback.lightImpact();
+          _openDayFollowList(todayYmdSeoul());
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.today_rounded, size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '오늘 팔로우',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              Text(
+                '$todayCount건',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: scheme.primary,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: scheme.onPrimaryContainer.withValues(alpha: 0.7),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _selectAssigneeFilter(String assignee) {
     HapticFeedback.selectionClick();
     setState(() {
@@ -1929,6 +1990,7 @@ class _HomeFollowCalendarPanelState
     required Map<String, int> counts,
     required Color Function(String) colorForAssignee,
     required Map<String, int> dateMarkers,
+    required int todayFollowCount,
     Map<String, Map<String, int>> weekAssigneeCounts = const {},
   }) {
     return Padding(
@@ -1936,8 +1998,10 @@ class _HomeFollowCalendarPanelState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _buildTodayFollowShortcut(scheme, todayFollowCount),
+          const SizedBox(height: 6),
           SizedBox(
-            height: 24,
+            height: 40,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: sortedAssignees.length,
@@ -1947,21 +2011,21 @@ class _HomeFollowCalendarPanelState
                 final isSelected = _selectedAssignee == assignee;
                 final color = colorForAssignee(assignee);
                 return Padding(
-                  padding: const EdgeInsets.only(right: 4),
+                  padding: const EdgeInsets.only(right: 6),
                   child: GestureDetector(
                     onTap: () => _selectAssigneeFilter(assignee),
                     child: Container(
-                      constraints: const BoxConstraints(maxWidth: 88),
+                      constraints: const BoxConstraints(maxWidth: 108),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
+                        horizontal: 10,
+                        vertical: 6,
                       ),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: isSelected
                             ? color.withValues(alpha: 0.16)
                             : scheme.surface,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: isSelected
                               ? color.withValues(alpha: 0.45)
@@ -1977,7 +2041,7 @@ class _HomeFollowCalendarPanelState
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 12,
                                 fontWeight: isSelected
                                     ? FontWeight.w800
                                     : FontWeight.w600,
@@ -1985,11 +2049,11 @@ class _HomeFollowCalendarPanelState
                               ),
                             ),
                           ),
-                          const SizedBox(width: 3),
+                          const SizedBox(width: 4),
                           Text(
                             '$count',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: FontWeight.w900,
                               color: color,
                             ),
@@ -2999,6 +3063,11 @@ class _HomeFollowCalendarPanelState
       bucket[assignee] = (bucket[assignee] ?? 0) + 1;
     }
 
+    final todayFollowCount = _todayFollowCount(
+      dateMarkers: dateMarkers,
+      weekAssigneeCounts: weekAssigneeCounts,
+    );
+
     if (widget.fitSingleScreen) {
       return _buildFitSingleScreenLayout(
         scheme: scheme,
@@ -3006,6 +3075,7 @@ class _HomeFollowCalendarPanelState
         counts: counts,
         colorForAssignee: colorForAssignee,
         dateMarkers: dateMarkers,
+        todayFollowCount: todayFollowCount,
         weekAssigneeCounts: weekAssigneeCounts,
       );
     }
@@ -3072,6 +3142,10 @@ class _HomeFollowCalendarPanelState
                 ),
               ],
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: _buildTodayFollowShortcut(scheme, todayFollowCount),
           ),
           // ─── 상단 담당자 필터 바 (캘린더용) ───
           SizedBox(

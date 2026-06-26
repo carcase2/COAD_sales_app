@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_day_follow_pager_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
@@ -1152,9 +1153,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       case HubPeriod.day:
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => SalesCallListScreen(
-              mode: ListQueryMode.incompleteByDate,
-              date: _hubFlowAnchorYmd,
+            builder: (_) => SalesCallDayFollowPagerScreen(
+              initialDateYmd: _hubFlowAnchorYmd,
               initialAssignee: assignee,
             ),
           ),
@@ -1745,27 +1745,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _sectionPageController.jumpToPage(index);
   }
 
-  void _resetCalendarToThisWeek() {
-    _hubFlowAnchorYmd = todayYmdSeoul();
-    _hubNavStep = HubNavStep.week;
-    _launchCalendarFormat = CalendarFormat.week;
-    _calendarKeyNonce++;
-  }
-
   void _goToSection(HomeHubSection section, {bool fromPill = false}) {
     _materializeSection(section);
     if (_section == section && !fromPill) return;
     HapticFeedback.selectionClick();
-    setState(() {
-      _section = section;
-      if (section == HomeHubSection.calendar) {
-        _resetCalendarToThisWeek();
-      }
-    });
+    setState(() => _section = section);
     ref.read(bottomBarVisibilityProvider.notifier).state = true;
-    if (section == HomeHubSection.calendar) {
-      _publishHubPeriod();
-    }
     if (_sectionPageController.hasClients) {
       _sectionPageController.animateToPage(
         _sectionIndex(section),
@@ -1780,14 +1765,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _materializeSection(next);
     if (_section == next) return;
     HapticFeedback.selectionClick();
-    if (next == HomeHubSection.calendar) {
-      setState(() {
-        _section = next;
-        _resetCalendarToThisWeek();
-      });
-      _publishHubPeriod();
-      return;
-    }
     setState(() => _section = next);
   }
 
@@ -2231,9 +2208,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           HubNavStep.month => '금월 미통화',
         },
         followLabel: switch (_hubNavStep) {
-          HubNavStep.day => '금일 팔로우',
-          HubNavStep.week => '금주 팔로우',
-          HubNavStep.month => '금월 팔로우',
+          HubNavStep.day => '오늘 팔로우',
+          HubNavStep.week => '이번 주 팔로우',
+          HubNavStep.month => '이번 달 팔로우',
         },
       ),
     );
@@ -2253,7 +2230,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     return Padding(
       padding: EdgeInsets.only(bottom: _homeBottomInset(context)),
       child: HomeFollowCalendarPanel(
-        key: ValueKey('cal_${_calendarKeyNonce}_${_launchCalendarFormat.name}'),
+        key: ValueKey('cal_$_calendarKeyNonce'),
         initialCalendarFormat: _launchCalendarFormat,
         fitSingleScreen: true,
         onRefresh: _onRefresh,

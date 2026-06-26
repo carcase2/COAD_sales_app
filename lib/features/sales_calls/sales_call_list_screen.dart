@@ -353,13 +353,19 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       case ListQueryMode.completedToday:
         return '오늘 완료';
       case ListQueryMode.incompleteByDate:
-        if (widget.date == todayYmdSeoul()) {
-          return '오늘 날짜 팔로우';
+        final followDate = widget.date ?? todayYmdSeoul();
+        if (followDate == todayYmdSeoul()) {
+          return '오늘 팔로우';
         }
-        return '${widget.date?.substring(5) ?? ''} 날짜 팔로우';
+        return '${formatYmdFlowLabelKo(followDate)} 팔로우';
       case ListQueryMode.dateRange:
         return '접수 ${widget.date ?? ''} ~ ${widget.dateEndInclusive ?? ''}';
       case ListQueryMode.followRange:
+        if (widget.date != null && widget.dateEndInclusive != null) {
+          final start = formatYmdFlowLabelKo(widget.date!);
+          final end = formatYmdFlowLabelKo(widget.dateEndInclusive!);
+          return '팔로우 $start ~ $end';
+        }
         return '팔로우 ${widget.date ?? ''} ~ ${widget.dateEndInclusive ?? ''}';
     }
   }
@@ -730,6 +736,40 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     );
   }
 
+  Widget _buildEmbeddedSearchBar() {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: TextField(
+        controller: _searchCtrl,
+        decoration: InputDecoration(
+          hintText: '고객명, 연락처 검색…',
+          isDense: true,
+          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: '검색 지우기',
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                ),
+          filled: true,
+          fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+        textInputAction: TextInputAction.search,
+        onChanged: (val) => setState(() => _searchQuery = val.trim()),
+      ),
+    );
+  }
+
   Widget _buildBody() {
     if (_isLoading && _items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -883,6 +923,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           return Column(
             children: [
+              if (widget.embedded) _buildEmbeddedSearchBar(),
               Container(
                 height: 58,
                 width: double.infinity,
