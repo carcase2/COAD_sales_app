@@ -1,5 +1,5 @@
 /// UI에 표시하는 앱 버전 (`pubspec.yaml`의 version 과 맞추세요)
-const String kAppVersion = '0.19.2';
+const String kAppVersion = '0.19.3';
 
 /// 업데이트 내역에 제안자가 없을 때 표시·폴백 이름
 const String kDefaultUpdateProposer = '김경덕 이사';

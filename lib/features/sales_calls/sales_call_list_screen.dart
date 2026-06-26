@@ -1,14 +1,9 @@
-import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
-import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
-import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -80,10 +75,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   bool _hasScrolledToInitial = false;
   int? _lastHandledAssigneeScrollNonce;
   bool _pendingSharedAssigneeScroll = false;
-  bool _quickActionsOpen = false;
-  final ScrollController _quickActionsScrollCtrl = ScrollController();
-  bool _quickHasMoreAbove = false;
-  bool _quickHasMoreBelow = false;
 
   bool get _sharedAssigneeFilter => widget.onAssigneeChanged != null;
 
@@ -162,29 +153,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _scrollController.dispose();
-    _quickActionsScrollCtrl.dispose();
     super.dispose();
-  }
-
-  void _refreshQuickHints() {
-    if (!_quickActionsOpen || !_quickActionsScrollCtrl.hasClients) {
-      if (_quickHasMoreAbove || _quickHasMoreBelow) {
-        setState(() {
-          _quickHasMoreAbove = false;
-          _quickHasMoreBelow = false;
-        });
-      }
-      return;
-    }
-    final pos = _quickActionsScrollCtrl.position;
-    final nextAbove = pos.pixels > 1;
-    final nextBelow = pos.pixels < (pos.maxScrollExtent - 1);
-    if (nextAbove != _quickHasMoreAbove || nextBelow != _quickHasMoreBelow) {
-      setState(() {
-        _quickHasMoreAbove = nextAbove;
-        _quickHasMoreBelow = nextBelow;
-      });
-    }
   }
 
   /// 캐시를 먼저 보여주고 서버 데이터를 가져오는 핵심 로직
@@ -436,74 +405,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final actionsBottom = 12.0 + safeBottom;
-    final quickMenuWidth = (screenWidth * 0.64).clamp(220.0, 300.0);
-    final quickActions = <_QuickActionItem>[
-      _QuickActionItem(
-        label: '홈',
-        subtitle: '업무 흐름·달력',
-        color: Colors.blueGrey.shade700,
-        icon: Icons.home_rounded,
-        onTap: () {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          openHomeHub(context, ref);
-        },
-      ),
-      _QuickActionItem(
-        label: '접수',
-        subtitle: '새 고객 전화 접수 등록',
-        color: scheme.tertiary,
-        icon: Icons.add_ic_call_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              settings: const RouteSettings(name: kSalesCallCreateRouteName),
-              builder: (_) => const SalesCallCreateScreen(),
-            ),
-          );
-        },
-      ),
-      _QuickActionItem(
-        label: '발행요청',
-        subtitle: '세금/이행 발급요청 확인',
-        color: Colors.indigo.shade600,
-        icon: Icons.receipt_long_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const IssuanceRequestScreen(),
-            ),
-          );
-        },
-      ),
-      _QuickActionItem(
-        label: '견적기 (테스트중)',
-        subtitle: '견적서 작성 화면 열기',
-        color: Colors.teal.shade600,
-        icon: Icons.calculate_rounded,
-        onTap: () async {
-          setState(() => _quickActionsOpen = false);
-          _refreshQuickHints();
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => Scaffold(
-                appBar: AppBar(title: const Text('견적기 (테스트중)')),
-                body: const QuoterHubScreen(),
-              ),
-            ),
-          );
-        },
-      ),
-    ];
-
     if (widget.embedded) {
       return _buildBody();
     }
@@ -553,170 +454,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             )
         ],
       ),
-      body: Stack(
-        children: [
-          _buildBody(),
-          if (_quickActionsOpen)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => setState(() => _quickActionsOpen = false),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          Positioned(
-            right: 16,
-            bottom: actionsBottom,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (_quickActionsOpen)
-                  Container(
-                    width: quickMenuWidth,
-                    constraints: const BoxConstraints(maxHeight: 300),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      color: scheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.12),
-                          blurRadius: 14,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        if (_quickHasMoreAbove)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2, bottom: 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.keyboard_arrow_up_rounded, size: 16, color: scheme.onSurfaceVariant),
-                                const SizedBox(width: 2),
-                                Text('위에 메뉴 더 있음', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
-                              ],
-                            ),
-                          ),
-                        Expanded(
-                          child: NotificationListener<ScrollNotification>(
-                            onNotification: (n) {
-                              _refreshQuickHints();
-                              return false;
-                            },
-                            child: SingleChildScrollView(
-                              controller: _quickActionsScrollCtrl,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              child: Column(
-                                children: quickActions
-                                    .map(
-                                      (item) => Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 3),
-                                        child: Material(
-                                          color: item.color.withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(12),
-                                          child: InkWell(
-                                            borderRadius: BorderRadius.circular(12),
-                                            onTap: item.onTap,
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                              child: Row(
-                                                children: [
-                                                  Icon(item.icon, size: 18, color: item.color),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Text(
-                                                          item.label,
-                                                          maxLines: 1,
-                                                          overflow:
-                                                              TextOverflow
-                                                                  .ellipsis,
-                                                          softWrap: false,
-                                                          style: TextStyle(
-                                                            fontSize: 13,
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                            color:
-                                                                scheme.onSurface,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                          height: 2,
-                                                        ),
-                                                        Text(
-                                                          item.subtitle,
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          softWrap: false,
-                                                          style: TextStyle(
-                                                            fontSize: 10.5,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color: scheme
-                                                                .onSurfaceVariant,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (_quickHasMoreBelow)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4, bottom: 2),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: scheme.onSurfaceVariant),
-                                const SizedBox(width: 2),
-                                Text('아래 메뉴 더 있음', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                FloatingActionButton(
-                  heroTag: 'list_actions_toggle',
-                  backgroundColor: scheme.primary,
-                  foregroundColor: Colors.white,
-                  mini: true,
-                  onPressed: () {
-                    setState(() => _quickActionsOpen = !_quickActionsOpen);
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshQuickHints());
-                  },
-                  tooltip: _quickActionsOpen ? '닫기' : '열기',
-                  child: Icon(_quickActionsOpen ? Icons.close_rounded : Icons.menu_open_rounded),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      body: _buildBody(),
     );
   }
 
@@ -1418,20 +1156,4 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
     );
   }
-}
-
-class _QuickActionItem {
-  const _QuickActionItem({
-    required this.label,
-    required this.subtitle,
-    required this.color,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final String subtitle;
-  final Color color;
-  final IconData icon;
-  final VoidCallback onTap;
 }
