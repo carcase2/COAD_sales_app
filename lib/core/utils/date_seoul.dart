@@ -262,7 +262,12 @@ String formatTodayGreetingSentenceKo() {
   return '오늘은 $m월$d일($wd) 입니다.';
 }
 
-/// 홈 흐름 요약용 — `5월 12일 (월)` 형태.
+const _shortWeekdaysKo = ['월', '화', '수', '목', '금', '토', '일'];
+
+String _shortWeekdayKoFromDateTime(DateTime day) =>
+    _shortWeekdaysKo[(day.weekday - 1).clamp(0, 6)];
+
+/// 홈 흐름 요약용 — `5월 12일 (월)` 형태. 요일은 항상 한 글자(월~일).
 String formatYmdFlowLabelKo(String ymd) {
   final parts = ymd.split('-');
   if (parts.length != 3) return ymd;
@@ -271,7 +276,20 @@ String formatYmdFlowLabelKo(String ymd) {
   final d = int.tryParse(parts[2]);
   if (y == null || m == null || d == null) return ymd;
   final day = DateTime(y, m, d);
-  return DateFormat('M월 d일 (E)', 'ko_KR').format(day);
+  return '$m월 $d일 (${_shortWeekdayKoFromDateTime(day)})';
+}
+
+/// 팔로우 AppBar 등 좁은 영역 — `6/25(수) 팔로우`.
+String formatYmdFollowAppBarTitleKo(String ymd) {
+  if (ymd == todayYmdSeoul()) return '오늘 팔로우';
+  final parts = ymd.split('-');
+  if (parts.length != 3) return '$ymd 팔로우';
+  final y = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final d = int.tryParse(parts[2]);
+  if (y == null || m == null || d == null) return '$ymd 팔로우';
+  final day = DateTime(y, m, d);
+  return '$m/$d(${_shortWeekdayKoFromDateTime(day)}) 팔로우';
 }
 
 DateTime? _parseYmdLocal(String ymd) {

@@ -2,7 +2,7 @@ import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
 import 'package:flutter/material.dart';
 
-/// 햄버거 드로어 — 바로가기·검색·카드형 목록(메뉴 추가 시 구조 유지).
+/// 햄버거 드로어 — 상단 3열 그리드 바로가기 + 하단 계정 메뉴(중복 최소화).
 class AppMenuDrawer extends StatefulWidget {
   const AppMenuDrawer({
     super.key,
@@ -37,9 +37,13 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
   List<AppMenuEntry> get _quickEntries =>
       _enabledEntries.where((e) => e.quickAccess).toList();
 
-  List<AppMenuEntry> get _visibleEntries {
+  /// 하단 목록 — 바로가기 그리드와 겹치지 않는 항목만.
+  List<AppMenuEntry> get _listEntries =>
+      _enabledEntries.where((e) => !e.quickAccess).toList();
+
+  List<AppMenuEntry> get _visibleListEntries {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return _enabledEntries;
+    if (q.isEmpty) return _listEntries;
     return _enabledEntries
         .where(
           (e) => e.searchTokens.any((t) => t.toLowerCase().contains(q)),
@@ -50,38 +54,25 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final visible = _visibleEntries;
-    final visibleIds = visible.map((e) => e.id).toSet();
-    final showQuick = _query.isEmpty && _quickEntries.isNotEmpty;
+    final searching = _query.trim().isNotEmpty;
+    final showGrid = !searching && _quickEntries.isNotEmpty;
+    final visibleList = _visibleListEntries;
 
     return Drawer(
       child: Column(
         children: [
-          UserAccountsDrawerHeader(
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: scheme.primaryContainer,
-              child: Icon(
-                Icons.person,
-                size: 40,
-                color: scheme.onPrimaryContainer,
-              ),
-            ),
-            accountName: Text(
-              widget.accountName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            accountEmail: Text(
-              widget.accountSubtitle,
-              style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8)),
-            ),
+          _CompactDrawerHeader(
+            accountName: widget.accountName,
+            accountSubtitle: widget.accountSubtitle,
             decoration:
                 widget.headerDecoration ?? BoxDecoration(color: scheme.primary),
+            scheme: scheme,
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
             child: SearchBar(
               controller: _searchController,
-              hintText: '메뉴 검색 (미통화, 달력, 접수…)',
+              hintText: '메뉴 검색',
               leading: const Icon(Icons.search_rounded, size: 20),
               trailing: _query.isEmpty
                   ? null
@@ -96,24 +87,24 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
                     ],
               onChanged: (v) => setState(() => _query = v),
               padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: 12),
+                EdgeInsets.symmetric(horizontal: 10),
               ),
               elevation: const WidgetStatePropertyAll(0),
               backgroundColor: WidgetStatePropertyAll(
-                scheme.surfaceContainerHighest.withValues(alpha: 0.65),
+                scheme.surfaceContainerHighest.withValues(alpha: 0.55),
               ),
             ),
           ),
-          if (showQuick) ...[
+          if (showGrid) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   '바로가기',
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
@@ -121,24 +112,43 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              child: GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.08,
                 children: [
                   for (final entry in _quickEntries)
-                    _QuickChip(entry: entry, scheme: scheme),
+                    _GridMenuTile(entry: entry, scheme: scheme),
                 ],
               ),
             ),
             const SizedBox(height: 6),
           ],
+          if (searching)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '검색 결과',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
           Expanded(
-            child: visible.isEmpty
+            child: visibleList.isEmpty
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
-                        '검색 결과가 없습니다.',
+                        searching ? '검색 결과가 없습니다.' : '추가 메뉴가 없습니다.',
                         style: TextStyle(color: scheme.onSurfaceVariant),
                       ),
                     ),
@@ -146,22 +156,27 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
                 : ListView(
                     padding: const EdgeInsets.only(bottom: 8),
                     children: [
-                      for (final section in widget.catalog.sections) ...[
-                        if (visible.any((e) => e.sectionId == section.id)) ...[
-                          _SectionTitle(title: section.title, scheme: scheme),
-                          for (final entry in widget.catalog.entriesForSection(
-                            section.id,
-                          ))
-                            if (visibleIds.contains(entry.id))
-                              _MenuCard(entry: entry, scheme: scheme),
-                        ],
-                      ],
+                      if (!searching)
+                        for (final section in widget.catalog.sections)
+                          if (visibleList.any(
+                            (e) => e.sectionId == section.id,
+                          )) ...[
+                            _SectionTitle(title: section.title, scheme: scheme),
+                            for (final entry in widget.catalog.entriesForSection(
+                              section.id,
+                            ))
+                              if (visibleList.any((e) => e.id == entry.id))
+                                _MenuListTile(entry: entry, scheme: scheme),
+                          ]
+                      else
+                        for (final entry in visibleList)
+                          _MenuListTile(entry: entry, scheme: scheme),
                     ],
                   ),
           ),
           const Divider(height: 1),
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 10, 24, 20),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -179,24 +194,140 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
   }
 }
 
-class _QuickChip extends StatelessWidget {
-  const _QuickChip({required this.entry, required this.scheme});
+class _CompactDrawerHeader extends StatelessWidget {
+  const _CompactDrawerHeader({
+    required this.accountName,
+    required this.accountSubtitle,
+    required this.decoration,
+    required this.scheme,
+  });
+
+  final String accountName;
+  final String accountSubtitle;
+  final BoxDecoration decoration;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: decoration,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: scheme.primaryContainer,
+                child: Icon(
+                  Icons.person_rounded,
+                  size: 26,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      accountName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      accountSubtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onPrimary.withValues(alpha: 0.82),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GridMenuTile extends StatelessWidget {
+  const _GridMenuTile({required this.entry, required this.scheme});
 
   final AppMenuEntry entry;
   final ColorScheme scheme;
 
   @override
   Widget build(BuildContext context) {
-    return ActionChip(
-      avatar: Icon(entry.icon, size: 18, color: scheme.primary),
-      label: Text(
-        entry.quickLabel ?? entry.title,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+    final label = entry.quickLabel ?? entry.title;
+    return Material(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: entry.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(entry.icon, size: 24, color: scheme.primary),
+                  if (entry.badge != null)
+                    Positioned(
+                      right: -10,
+                      top: -6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.tertiary,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          entry.badge!,
+                          style: TextStyle(
+                            fontSize: 7,
+                            fontWeight: FontWeight.w900,
+                            color: scheme.onTertiary,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  height: 1.15,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      onPressed: entry.onTap,
-      backgroundColor: scheme.primaryContainer.withValues(alpha: 0.45),
-      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
     );
   }
 }
@@ -210,22 +341,21 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
       child: Text(
         title,
         style: TextStyle(
           fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: scheme.primary.withValues(alpha: 0.7),
-          letterSpacing: 1.1,
+          fontWeight: FontWeight.w800,
+          color: scheme.onSurfaceVariant,
         ),
       ),
     );
   }
 }
 
-class _MenuCard extends StatelessWidget {
-  const _MenuCard({required this.entry, required this.scheme});
+class _MenuListTile extends StatelessWidget {
+  const _MenuListTile({required this.entry, required this.scheme});
 
   final AppMenuEntry entry;
   final ColorScheme scheme;
@@ -235,82 +365,49 @@ class _MenuCard extends StatelessWidget {
     final isLogout = entry.id == 'logout';
     final accent = isLogout ? scheme.error : scheme.primary;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Material(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: entry.onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(entry.icon, color: accent, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        entry.title,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: isLogout ? scheme.error : scheme.onSurface,
-                        ),
-                      ),
-                      if (entry.subtitle != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          entry.subtitle!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (entry.badge != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      entry.badge!,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onPrimaryContainer,
-                      ),
-                    ),
-                  )
-                else
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                  ),
-              ],
-            ),
-          ),
+    return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      leading: Icon(entry.icon, color: accent, size: 22),
+      title: Text(
+        entry.title,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: isLogout ? scheme.error : scheme.onSurface,
         ),
       ),
+      subtitle: entry.subtitle == null
+          ? null
+          : Text(
+              entry.subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+      trailing: entry.badge != null
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                entry.badge!,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+            )
+          : Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+            ),
+      onTap: entry.onTap,
     );
   }
 }

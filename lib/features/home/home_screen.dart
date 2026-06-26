@@ -1713,6 +1713,10 @@ class _HomeFollowCalendarPanelState
   List<SalesCall>? _cachedFollowCalls;
   List<TempManagerOverride>? _cachedOverrides;
 
+  static final DateTime _weekEpochMonday = DateTime(2020, 1, 6);
+  PageController? _weekPageController;
+  int _weekPageIndex = 0;
+
   DateTime _ymdToDateTime(String ymd) {
     final parts = ymd.split('-');
     if (parts.length != 3) return DateTime.now();
@@ -1730,9 +1734,53 @@ class _HomeFollowCalendarPanelState
         : CalendarFormat.week;
     if (_calendarFormat == CalendarFormat.week) {
       _focusedDay = _ymdToDateTime(todayYmdSeoul());
+      _initWeekPageController();
     } else {
       _focusedDay = _ymdToDateTime(ref.read(homeHubFlowAnchorYmdProvider));
+      _weekPageController?.dispose();
+      _weekPageController = null;
     }
+  }
+
+  @override
+  void dispose() {
+    _weekPageController?.dispose();
+    super.dispose();
+  }
+
+  int _weekPageIndexFromMonday(String monYmd) {
+    final mon = _ymdToDateTime(monYmd);
+    return mon.difference(_weekEpochMonday).inDays ~/ 7;
+  }
+
+  String _mondayYmdFromWeekPageIndex(int index) {
+    final mon = _weekEpochMonday.add(Duration(days: index * 7));
+    return _ymdFromDateTime(mon);
+  }
+
+  void _initWeekPageController() {
+    final mon = seoulWeekRangeContaining(_focusedDayYmd()).$1;
+    _weekPageIndex = _weekPageIndexFromMonday(mon);
+    _weekPageController?.dispose();
+    _weekPageController = PageController(initialPage: _weekPageIndex);
+  }
+
+  void _animateToWeekPage(int index) {
+    if (index == _weekPageIndex) return;
+    final controller = _weekPageController;
+    if (controller == null || !controller.hasClients) {
+      setState(() {
+        _weekPageIndex = index;
+        _focusedDay = _ymdToDateTime(_mondayYmdFromWeekPageIndex(index));
+      });
+      return;
+    }
+    HapticFeedback.selectionClick();
+    controller.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -1745,6 +1793,11 @@ class _HomeFollowCalendarPanelState
             : CalendarFormat.week;
         if (_calendarFormat == CalendarFormat.week) {
           _focusedDay = _ymdToDateTime(todayYmdSeoul());
+          _initWeekPageController();
+        } else {
+          _focusedDay = _ymdToDateTime(ref.read(homeHubFlowAnchorYmdProvider));
+          _weekPageController?.dispose();
+          _weekPageController = null;
         }
       });
     }
@@ -1776,6 +1829,8 @@ class _HomeFollowCalendarPanelState
       _calendarFormat = CalendarFormat.month;
       _focusedDay = _ymdToDateTime(today);
     });
+    _weekPageController?.dispose();
+    _weekPageController = null;
   }
 
   void _jumpToThisWeek() {
@@ -1784,18 +1839,11 @@ class _HomeFollowCalendarPanelState
       _calendarFormat = CalendarFormat.week;
       _focusedDay = _ymdToDateTime(today);
     });
+    _initWeekPageController();
   }
 
   void _shiftFocusedWeek(int dir) {
-    final mon = seoulWeekRangeContaining(_focusedDayYmd()).$1;
-    final nextMon = addDaysToYmd(mon, 7 * dir);
-    final parts = nextMon.split('-');
-    if (parts.length != 3) return;
-    final y = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    final d = int.tryParse(parts[2]);
-    if (y == null || m == null || d == null) return;
-    setState(() => _focusedDay = DateTime(y, m, d));
+    _animateToWeekPage(_weekPageIndex + dir);
   }
 
   void _shiftFocusedMonth(int dir) {
@@ -1819,20 +1867,56 @@ class _HomeFollowCalendarPanelState
   bool _isCalendarToday(DateTime day) =>
       _ymdFromDateTime(day) == todayYmdSeoul();
 
-  Widget _wrapCalendarHorizontalSwipe({required Widget child}) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragEnd: (details) {
-        final velocity = details.primaryVelocity ?? 0;
-        if (velocity.abs() < 280) return;
+  Map<String, Map<String, int>> _weekAssigneeCountsForMonday(
+    String mondayYmd,
+    List<SalesCall> followCalls,
+    List<TempManagerOverride> overrides,
+  ) {
+    final keys = weekYmdKeysContaining(mondayYmd);
+    final map = {for (final ymd in keys) ymd: <String, int>{}};
+    for (final c in followCalls) {
+      final fk = c.followCalendarDateKey;
+      if (fk == null || fk.length < 10) continue;
+      final dateKey = fk.substring(0, 10);
+      final bucket = map[dateKey];
+      if (bucket == null) continue;
+      final assignee = _calendarAssignee(c, overrides);
+      if (_selectedAssignee != '전체' && assignee != _selectedAssignee) continue;
+      bucket[assignee] = (bucket[assignee] ?? 0) + 1;
+    }
+    return map;
+  }
+
+  Widget _buildWeekPagerBoard({
+    required ColorScheme scheme,
+    required List<SalesCall> followCalls,
+    required List<TempManagerOverride> overrides,
+    required Color Function(String) colorForAssignee,
+  }) {
+    _weekPageController ??= PageController(initialPage: _weekPageIndex);
+    return PageView.builder(
+      controller: _weekPageController,
+      onPageChanged: (index) {
+        if (!mounted || index == _weekPageIndex) return;
         HapticFeedback.selectionClick();
-        if (_calendarFormat == CalendarFormat.week) {
-          _shiftFocusedWeek(velocity > 0 ? -1 : 1);
-        } else {
-          _shiftFocusedMonth(velocity > 0 ? -1 : 1);
-        }
+        setState(() {
+          _weekPageIndex = index;
+          _focusedDay = _ymdToDateTime(_mondayYmdFromWeekPageIndex(index));
+        });
       },
-      child: child,
+      itemBuilder: (context, index) {
+        final mon = _mondayYmdFromWeekPageIndex(index);
+        return _buildVerticalWeekBoard(
+          scheme: scheme,
+          weekKeys: weekYmdKeysContaining(mon),
+          weekAssigneeCounts: _weekAssigneeCountsForMonday(
+            mon,
+            followCalls,
+            overrides,
+          ),
+          colorForAssignee: colorForAssignee,
+        );
+      },
     );
   }
 
@@ -1991,6 +2075,8 @@ class _HomeFollowCalendarPanelState
     required Color Function(String) colorForAssignee,
     required Map<String, int> dateMarkers,
     required int todayFollowCount,
+    required List<SalesCall> followCalls,
+    required List<TempManagerOverride> overrides,
     Map<String, Map<String, int>> weekAssigneeCounts = const {},
   }) {
     return Padding(
@@ -2071,20 +2157,11 @@ class _HomeFollowCalendarPanelState
           const SizedBox(height: 3),
           Expanded(
             child: _calendarFormat == CalendarFormat.week
-                ? _wrapCalendarHorizontalSwipe(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      child: KeyedSubtree(
-                        key: ValueKey(_weekYmdKeys().first),
-                        child: _buildVerticalWeekBoard(
-                          scheme: scheme,
-                          weekAssigneeCounts: weekAssigneeCounts,
-                          colorForAssignee: colorForAssignee,
-                        ),
-                      ),
-                    ),
+                ? _buildWeekPagerBoard(
+                    scheme: scheme,
+                    followCalls: followCalls,
+                    overrides: overrides,
+                    colorForAssignee: colorForAssignee,
                   )
                 : _buildCompactCalendar(
                     scheme: scheme,
@@ -2141,10 +2218,10 @@ class _HomeFollowCalendarPanelState
 
   Widget _buildVerticalWeekBoard({
     required ColorScheme scheme,
+    required List<String> weekKeys,
     required Map<String, Map<String, int>> weekAssigneeCounts,
     required Color Function(String) colorForAssignee,
   }) {
-    final weekKeys = _weekYmdKeys();
     final today = todayYmdSeoul();
 
     return LayoutBuilder(
@@ -2235,7 +2312,7 @@ class _HomeFollowCalendarPanelState
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                width: 76,
+                width: 84,
                 padding: const EdgeInsets.only(right: 6),
                 decoration: BoxDecoration(
                   border: Border(
@@ -2269,15 +2346,19 @@ class _HomeFollowCalendarPanelState
                           ),
                         ),
                       ),
-                    Text(
-                      '$month/$dayNum(${_weekdayKo(weekday)})',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        color: isToday ? scheme.primary : weekdayColor,
-                        height: 1.1,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '$month/$dayNum(${_weekdayKo(weekday)})',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: isToday ? scheme.primary : weekdayColor,
+                          height: 1.1,
+                        ),
                       ),
                     ),
                   ],
@@ -2659,6 +2740,8 @@ class _HomeFollowCalendarPanelState
         rowHeight: isWeek ? 26 : 32,
         availableGestures: AvailableGestures.horizontalSwipe,
         pageAnimationEnabled: true,
+        pageAnimationDuration: const Duration(milliseconds: 320),
+        pageAnimationCurve: Curves.easeOutCubic,
         pageJumpingEnabled: false,
         headerStyle: HeaderStyle(
           formatButtonVisible: false,
@@ -2796,8 +2879,12 @@ class _HomeFollowCalendarPanelState
       final m = seoulMonthRangeContaining(_focusedDayYmd());
       return (startYmd: m.$1, endYmd: m.$2);
     }
-    final w = seoulWeekRangeContaining(_focusedDayYmd());
-    return (startYmd: w.$1, endYmd: w.$2);
+    final mon = seoulWeekRangeContaining(_focusedDayYmd()).$1;
+    final month = seoulMonthRangeContaining(mon);
+    return (
+      startYmd: addDaysToYmd(month.$1, -7),
+      endYmd: addDaysToYmd(month.$2, 7),
+    );
   }
 
   Future<void> _refreshCalendarData() async {
@@ -2823,9 +2910,18 @@ class _HomeFollowCalendarPanelState
       if (prev == next || next.isEmpty) return;
       final nextDay = _ymdToDateTime(next);
       if (_calendarFormat == CalendarFormat.week) {
-        final focusedWeek = seoulWeekRangeContaining(_focusedDayYmd());
         final anchorWeek = seoulWeekRangeContaining(next);
-        if (focusedWeek.$1 == anchorWeek.$1) return;
+        final focusedWeek = seoulWeekRangeContaining(_focusedDayYmd());
+        if (focusedWeek.$1 == anchorWeek.$1) {
+          setState(() => _focusedDay = nextDay);
+          return;
+        }
+        final target = _weekPageIndexFromMonday(anchorWeek.$1);
+        setState(() => _focusedDay = nextDay);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _animateToWeekPage(target);
+        });
+        return;
       }
       setState(() => _focusedDay = nextDay);
     });
@@ -3076,6 +3172,8 @@ class _HomeFollowCalendarPanelState
         colorForAssignee: colorForAssignee,
         dateMarkers: dateMarkers,
         todayFollowCount: todayFollowCount,
+        followCalls: followCalls,
+        overrides: overrides,
         weekAssigneeCounts: weekAssigneeCounts,
       );
     }
@@ -3471,6 +3569,8 @@ class _HomeFollowCalendarPanelState
                   rowHeight: isWeekView ? 28 : 46,
                   availableGestures: AvailableGestures.horizontalSwipe,
                   pageAnimationEnabled: true,
+                  pageAnimationDuration: const Duration(milliseconds: 320),
+                  pageAnimationCurve: Curves.easeOutCubic,
                   pageJumpingEnabled: false,
                   headerStyle: HeaderStyle(
                     formatButtonVisible: false,

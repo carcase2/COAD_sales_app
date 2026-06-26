@@ -25,7 +25,7 @@ class AppMenuEntry {
   final bool enabled;
   /// 검색용 동의어(메뉴가 늘어날 때 드로어 검색에 사용).
   final List<String> keywords;
-  /// 드로어 상단 바로가기 칩에 표시.
+  /// 드로어 상단 그리드에만 표시(아래 목록에는 중복 노출 안 함).
   final bool quickAccess;
   /// 바로가기 칩 라벨(없으면 [title]).
   final String? quickLabel;

@@ -738,37 +738,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       action();
     }
 
-    final canGeneralSchedule =
-        user != null && canAccessGeneralSchedule(user);
-
     return AppMenuCatalog(
       sections: const [
-        AppMenuSection(id: 'main', title: '업무'),
-        AppMenuSection(id: 'lists', title: '목록·검색'),
-        AppMenuSection(id: 'system', title: '시스템'),
+        AppMenuSection(id: 'account', title: '계정'),
       ],
       entries: [
         AppMenuEntry(
-          id: 'home',
-          sectionId: 'main',
-          icon: Icons.home_rounded,
-          title: '홈 · 업무 흐름',
-          subtitle: '금일·금주·금월 통계',
-          keywords: const ['흐름', '통계', '상담'],
-          onTap: () => closeDrawerThen(() {
-            _selectHomeTab();
-            requestHomeHubSection(ref, HomeHubSection.flow);
-          }),
-        ),
-        AppMenuEntry(
           id: 'home_incomplete',
-          sectionId: 'main',
+          sectionId: 'account',
           icon: Icons.phone_missed_rounded,
           title: '미통화 현황',
-          subtitle: '담당자별 미통화·비율',
           quickAccess: true,
           quickLabel: '미통화',
-          keywords: const ['미통화', '미결', '콜'],
+          keywords: const ['미통화', '미결', '콜', '홈'],
           onTap: () => closeDrawerThen(() {
             _selectHomeTab();
             requestHomeHubSection(ref, HomeHubSection.incomplete);
@@ -776,13 +758,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         AppMenuEntry(
           id: 'home_calendar',
-          sectionId: 'main',
+          sectionId: 'account',
           icon: Icons.calendar_month_rounded,
           title: '상담 달력',
-          subtitle: '주간·월간 팔로우 일정',
           quickAccess: true,
           quickLabel: '달력',
-          keywords: const ['달력', '일정', '팔로우'],
+          keywords: const ['달력', '일정', '팔로우', '오늘'],
           onTap: () => closeDrawerThen(() {
             _selectHomeTab();
             requestHomeHubSection(
@@ -793,61 +774,32 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           }),
         ),
         AppMenuEntry(
-          id: 'reception_create',
-          sectionId: 'main',
-          icon: Icons.add_ic_call_rounded,
-          title: '접수 등록',
-          quickAccess: true,
-          quickLabel: '접수',
-          keywords: const ['신규', '전화', '접수'],
-          onTap: () => closeDrawerThen(() => unawaited(_openReceptionCreate())),
-        ),
-        AppMenuEntry(
-          id: 'issuance',
-          sectionId: 'main',
-          icon: Icons.receipt_long_rounded,
-          title: '발급요청',
-          subtitle: '세금계산서·이행증권',
-          keywords: const ['세금', '이행', '발급'],
-          onTap: () => closeDrawerThen(_selectIssuanceTab),
-        ),
-        if (canGeneralSchedule)
-          AppMenuEntry(
-            id: 'general_schedule',
-            sectionId: 'main',
-            icon: Icons.engineering_rounded,
-            title: '본사일반',
-            subtitle: '시공 일정 · $kGeneralScheduleTestLabel',
-            quickAccess: true,
-            quickLabel: '본사일반',
-            badge: kGeneralScheduleTestLabel,
-            keywords: const ['본사', '일정', '시공', '스케줄'],
-            onTap: () => closeDrawerThen(() => unawaited(_openGeneralSchedule())),
-          ),
-        AppMenuEntry(
           id: 'reception_today',
-          sectionId: 'lists',
+          sectionId: 'account',
           icon: Icons.list_alt_rounded,
-          title: '금일 접수 목록',
-          keywords: const ['목록', '오늘', '접수'],
+          title: '오늘 접수 목록',
+          quickAccess: true,
+          quickLabel: '오늘 접수',
+          keywords: const ['목록', '오늘', '접수', '금일'],
           onTap: () =>
               closeDrawerThen(() => unawaited(_openTodayReceptionList())),
         ),
         AppMenuEntry(
           id: 'reception_incomplete_today',
-          sectionId: 'lists',
+          sectionId: 'account',
           icon: Icons.phone_callback_rounded,
-          title: '금일 미통화 목록',
-          keywords: const ['미통화', '목록'],
+          title: '오늘 미통화 목록',
+          quickAccess: true,
+          quickLabel: '오늘 미통화',
+          keywords: const ['미통화', '목록', '금일'],
           onTap: () =>
               closeDrawerThen(() => unawaited(_openTodayIncompleteList())),
         ),
         AppMenuEntry(
           id: 'search',
-          sectionId: 'lists',
+          sectionId: 'account',
           icon: Icons.search_rounded,
           title: '통합 검색',
-          subtitle: '고객·접수 건 검색',
           quickAccess: true,
           quickLabel: '검색',
           keywords: const ['검색', '고객', '찾기'],
@@ -865,7 +817,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         AppMenuEntry(
           id: 'settings',
-          sectionId: 'system',
+          sectionId: 'account',
           icon: Icons.settings_outlined,
           title: '설정',
           badge: updateStatus?.hasUpdate == true ? '업데이트' : null,
@@ -878,9 +830,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         AppMenuEntry(
           id: 'logout',
-          sectionId: 'system',
+          sectionId: 'account',
           icon: Icons.logout,
           title: '로그아웃',
+          keywords: const ['로그아웃', '종료'],
           onTap: () async {
             Navigator.pop(context);
             final confirm = await showDialog<bool>(
@@ -1206,7 +1159,7 @@ class _MainBottomNavBar extends StatelessWidget {
               ),
             Expanded(
               child: _BottomNavItem(
-                label: '메뉴',
+                label: '더보기',
                 selected: selectedIndex == menuIndex,
                 selectedIcon: Icons.menu_rounded,
                 unselectedIcon: Icons.menu_open_rounded,

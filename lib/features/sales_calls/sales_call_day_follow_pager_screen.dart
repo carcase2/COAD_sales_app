@@ -66,10 +66,7 @@ class _SalesCallDayFollowPagerScreenState
     return '${parts[1]}-${parts[2]}';
   }
 
-  String _titleForYmd(String ymd) {
-    if (ymd == todayYmdSeoul()) return '오늘 팔로우';
-    return '${formatYmdFlowLabelKo(ymd)} 팔로우';
-  }
+  String _titleForYmd(String ymd) => formatYmdFollowAppBarTitleKo(ymd);
 
   void _bumpAssigneeScrollNonce() {
     _assigneeScrollNonce++;
@@ -99,19 +96,20 @@ class _SalesCallDayFollowPagerScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_titleForYmd(currentYmd)),
+        title: Text(
+          _titleForYmd(currentYmd),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        centerTitle: false,
+        titleSpacing: 0,
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
         actions: [
-          TextButton(
+          IconButton(
+            tooltip: '오늘 팔로우',
             onPressed: _goToToday,
-            child: Text(
-              '오늘',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: scheme.onPrimary,
-              ),
-            ),
+            icon: const Icon(Icons.today_rounded),
           ),
           IconButton(
             tooltip: '이전 날짜 (${_shortMd(prevYmd)})',
