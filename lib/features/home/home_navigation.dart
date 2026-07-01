@@ -16,7 +16,7 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(calendarFollowRangeProvider);
   invalidate(hubPeriodReceptionBundleProvider);
   invalidate(hubPeriodStatsProvider);
-  invalidate(hubPeriodFollowOverviewProvider);
+  invalidate(hubPeriodFollowSnapshotProvider);
   invalidate(hubPeriodQualityOverviewProvider);
   invalidate(hubPendingUncalledCallsProvider);
   invalidate(hubPendingUncalledSummaryProvider);

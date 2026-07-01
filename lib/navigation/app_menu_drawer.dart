@@ -162,11 +162,10 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
                             (e) => e.sectionId == section.id,
                           )) ...[
                             _SectionTitle(title: section.title, scheme: scheme),
-                            for (final entry in widget.catalog.entriesForSection(
-                              section.id,
+                            for (final entry in visibleList.where(
+                              (e) => e.sectionId == section.id,
                             ))
-                              if (visibleList.any((e) => e.id == entry.id))
-                                _MenuListTile(entry: entry, scheme: scheme),
+                              _MenuListTile(entry: entry, scheme: scheme),
                           ]
                       else
                         for (final entry in visibleList)

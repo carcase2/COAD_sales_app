@@ -743,7 +743,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                   ),
                 ),
               Container(
-                height: 58,
+                height: 64,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
@@ -756,7 +756,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 child: ListView.builder(
                   controller: _scrollController,
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  clipBehavior: Clip.none,
                   itemCount: sortedAssignees.length,
                   itemBuilder: (context, idx) {
                     final assignee = sortedAssignees[idx];
@@ -782,7 +783,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
-                            vertical: 9,
+                            vertical: 8,
                           ),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
@@ -810,6 +811,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       : Theme.of(context).colorScheme.onSurfaceVariant,
                                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                   fontSize: 14,
+                                  height: 1.25,
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -828,6 +830,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   '$count',
                                   style: TextStyle(
                                     fontSize: 11,
+                                    height: 1.2,
                                     fontWeight: FontWeight.bold,
                                     color: isSelected
                                         ? Theme.of(context).colorScheme.onSurface

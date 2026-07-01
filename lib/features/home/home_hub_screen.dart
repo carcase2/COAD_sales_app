@@ -1905,13 +1905,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final previous = _previousPeriodKey;
     ref.invalidate(hubPeriodReceptionBundleProvider(active));
     ref.invalidate(hubPeriodReceptionBundleProvider(previous));
-    ref.invalidate(hubPeriodFollowOverviewProvider(active));
+    ref.invalidate(hubPeriodFollowSnapshotProvider(active));
     ref.invalidate(hubPeriodQualityOverviewProvider(active));
     ref.invalidate(hubPendingUncalledCallsProvider);
     await Future.wait([
       ref.read(hubPeriodReceptionBundleProvider(active).future),
       ref.read(hubPeriodReceptionBundleProvider(previous).future),
-      ref.read(hubPeriodFollowOverviewProvider(active).future),
+      ref.read(hubPeriodFollowSnapshotProvider(active).future),
       ref.read(hubPeriodQualityOverviewProvider(active).future),
       ref.read(hubPendingUncalledSummaryProvider.future),
     ]).catchError((_) => <void>[]);
@@ -2456,6 +2456,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final followOverviewAsync = ref.watch(
       hubPeriodFollowOverviewProvider(periodKey),
     );
+    final followSnapshotAsync = ref.watch(
+      hubPeriodFollowSnapshotProvider(periodKey),
+    );
     final qualityAsync = ref.watch(hubPeriodQualityOverviewProvider(periodKey));
     final scope = periodKey.period;
 
@@ -2464,6 +2467,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         final reception = s.todayCount ?? 0;
         final incomplete = s.incompleteCount ?? 0;
         final followCount = followOverviewAsync.valueOrNull?.total ?? 0;
+        final followSnapshot = followSnapshotAsync.valueOrNull;
         final quality = qualityAsync.valueOrNull;
         final prevReception = prevStatsAsync.valueOrNull?.todayCount ?? 0;
         final prevIncomplete = prevStatsAsync.valueOrNull?.incompleteCount ?? 0;
@@ -2506,6 +2510,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         today: reception,
                         incomplete: incomplete,
                         todayFollow: followCount,
+                        followTotal: followSnapshot?.total,
+                        followCompleted: followSnapshot?.completed,
+                        followRemaining: followSnapshot?.remaining,
                         uncalledRateText: quality == null
                             ? '-'
                             : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
@@ -2625,7 +2632,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     ref.invalidate(
                       hubPeriodReceptionBundleProvider(_previousPeriodKey),
                     );
-                    ref.invalidate(hubPeriodFollowOverviewProvider(periodKey));
+                    ref.invalidate(hubPeriodFollowSnapshotProvider(periodKey));
                     ref.invalidate(
                       hubPeriodQualityOverviewProvider(periodKey),
                     );
@@ -2701,6 +2708,9 @@ class _MiniStatsWidget extends StatefulWidget {
     required this.today,
     required this.incomplete,
     required this.todayFollow,
+    this.followTotal,
+    this.followCompleted,
+    this.followRemaining,
     required this.uncalledRateText,
     required this.avgFirstResponseText,
     required this.onTapToday,
@@ -2720,6 +2730,9 @@ class _MiniStatsWidget extends StatefulWidget {
   final int today;
   final int incomplete;
   final int todayFollow;
+  final int? followTotal;
+  final int? followCompleted;
+  final int? followRemaining;
   final String uncalledRateText;
   final String avgFirstResponseText;
   final VoidCallback onTapToday;
@@ -2792,6 +2805,55 @@ class _MiniStatsWidgetState extends State<_MiniStatsWidget> {
           ),
           if (_qualityExpanded) ...[
             SizedBox(height: compact ? 8 : 10),
+            if (widget.followTotal != null &&
+                widget.followCompleted != null &&
+                widget.followRemaining != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: scheme.tertiaryContainer.withValues(alpha: 0.35),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(11),
+                    side: BorderSide(
+                      color: scheme.tertiary.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(11),
+                    onTap: widget.onTapTodayFollow,
+                    onLongPress: widget.onLongPressTodayFollow,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: compact ? 10 : 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.event_available_rounded,
+                            size: 18,
+                            color: scheme.tertiary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${widget.followLabel} ${widget.followTotal}건 · '
+                              '완료 ${widget.followCompleted} · '
+                              '남음 ${widget.followRemaining}',
+                              style: TextStyle(
+                                fontSize: compact ? 12 : 13,
+                                height: 1.35,
+                                fontWeight: FontWeight.w700,
+                                color: scheme.onSurface,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -879,6 +879,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'account',
           icon: Icons.settings_outlined,
           title: '설정',
+          quickAccess: true,
+          quickLabel: '설정',
           badge: updateStatus?.hasUpdate == true ? '업데이트' : null,
           keywords: const ['환경', '업데이트', '미통화 안내'],
           onTap: () => closeDrawerThen(() {
@@ -892,6 +894,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'account',
           icon: Icons.logout,
           title: '로그아웃',
+          quickAccess: true,
+          quickLabel: '로그아웃',
           keywords: const ['로그아웃', '종료'],
           onTap: () async {
             Navigator.pop(context);

@@ -389,48 +389,72 @@ final hubPeriodStatsProvider = Provider.autoDispose
   );
 });
 
-final hubPeriodFollowOverviewProvider = FutureProvider.autoDispose
-    .family<AssigneeOverview, HubPeriodKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
+Future<List<SalesCall>> _fetchHubPeriodFollowCalls(
+  SalesCallsRepository repo,
+  HubPeriodKey key,
+) async {
   switch (key.period) {
     case HubPeriod.day:
-      final rows = await repo.fetchCallsAllPages(
+      return repo.fetchCallsAllPages(
         followDate: key.anchorYmd,
-        incompleteOnly: true,
         excludeSimpleInquiries: true,
         includeCallHistory: false,
-      );
-      return AssigneeOverview(
-        total: rows.length,
-        byAssignee: _groupByAssignee(rows),
       );
     case HubPeriod.week:
       final range = seoulWeekRangeContaining(key.anchorYmd);
-      final rows = await repo.fetchCallsAllPages(
+      return repo.fetchCallsAllPages(
         followRangeStart: range.$1,
         followRangeEndInclusive: range.$2,
-        incompleteOnly: true,
         excludeSimpleInquiries: true,
         includeCallHistory: false,
-      );
-      return AssigneeOverview(
-        total: rows.length,
-        byAssignee: _groupByAssignee(rows),
       );
     case HubPeriod.month:
       final range = seoulMonthRangeContaining(key.anchorYmd);
-      final rows = await repo.fetchCallsAllPages(
+      return repo.fetchCallsAllPages(
         followRangeStart: range.$1,
         followRangeEndInclusive: range.$2,
-        incompleteOnly: true,
         excludeSimpleInquiries: true,
         includeCallHistory: false,
       );
-      return AssigneeOverview(
-        total: rows.length,
-        byAssignee: _groupByAssignee(rows),
-      );
   }
+}
+
+/// 팔로우 예정·완료·남음 — 기간 내 1회 조회로 집계.
+class HubPeriodFollowSnapshot {
+  HubPeriodFollowSnapshot(this.calls);
+
+  final List<SalesCall> calls;
+
+  int get total => calls.length;
+
+  List<SalesCall> get remainingCalls =>
+      calls.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
+
+  int get remaining => remainingCalls.length;
+
+  int get completed => total - remaining;
+
+  AssigneeOverview get incompleteOverview => AssigneeOverview(
+        total: remaining,
+        byAssignee: _groupByAssignee(remainingCalls),
+      );
+}
+
+final hubPeriodFollowSnapshotProvider = FutureProvider.autoDispose
+    .family<HubPeriodFollowSnapshot, HubPeriodKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  final calls = await _fetchHubPeriodFollowCalls(repo, key);
+  return HubPeriodFollowSnapshot(calls);
+});
+
+final hubPeriodFollowOverviewProvider = Provider.autoDispose
+    .family<AsyncValue<AssigneeOverview>, HubPeriodKey>((ref, key) {
+  final snapshotAsync = ref.watch(hubPeriodFollowSnapshotProvider(key));
+  return snapshotAsync.when(
+    data: (snapshot) => AsyncValue.data(snapshot.incompleteOverview),
+    loading: () => const AsyncValue.loading(),
+    error: (e, st) => AsyncValue.error(e, st),
+  );
 });
 
 final hubPeriodQualityOverviewProvider = FutureProvider.autoDispose
@@ -447,7 +471,7 @@ void prefetchHubPeriodFlow(
 }) {
   final futures = <Future<Object?>>[
     ref.read(hubPeriodReceptionBundleProvider(key).future),
-    ref.read(hubPeriodFollowOverviewProvider(key).future),
+    ref.read(hubPeriodFollowSnapshotProvider(key).future),
   ];
   if (previousKey != null) {
     futures.add(ref.read(hubPeriodReceptionBundleProvider(previousKey).future));
