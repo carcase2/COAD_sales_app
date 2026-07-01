@@ -12,8 +12,6 @@ class CoadCustomerCallsApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authControllerProvider);
-
     return MaterialApp(
       title: 'COAD 영업',
       navigatorKey: NotificationService.navigatorKey,
@@ -40,7 +38,19 @@ class CoadCustomerCallsApp extends ConsumerWidget {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: user == null ? const LoginScreen() : const MainTabScreen(),
+      home: const _AuthGate(),
     );
+  }
+}
+
+class _AuthGate extends ConsumerWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final loggedIn = ref.watch(
+      authControllerProvider.select((user) => user != null),
+    );
+    return loggedIn ? const MainTabScreen() : const LoginScreen();
   }
 }

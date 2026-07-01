@@ -367,15 +367,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ],
           ),
           SizedBox(height: compact ? 6 : 8),
-          _buildSectionSegmentBar(
-            scheme,
-            embedded: true,
-            pendingBadge: ref
-                .watch(hubSegmentIncompleteBadgeProvider)
-                .valueOrNull,
-            calendarBadge: ref
-                .watch(hubSegmentCalendarBadgeProvider)
-                .valueOrNull,
+          Consumer(
+            builder: (context, ref, _) => _buildSectionSegmentBar(
+              scheme,
+              embedded: true,
+              pendingBadge: ref
+                  .watch(hubSegmentIncompleteBadgeProvider)
+                  .valueOrNull,
+              calendarBadge: ref
+                  .watch(hubSegmentCalendarBadgeProvider)
+                  .valueOrNull,
+            ),
           ),
           if (_section == HomeHubSection.flow) ...[
             const SizedBox(height: 8),
@@ -1902,15 +1904,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final active = _activeFlowPeriodKey;
     final previous = _previousPeriodKey;
     ref.invalidate(hubPeriodReceptionBundleProvider(active));
-    ref.invalidate(hubPeriodStatsProvider(active));
-    ref.invalidate(hubPeriodStatsProvider(previous));
+    ref.invalidate(hubPeriodReceptionBundleProvider(previous));
     ref.invalidate(hubPeriodFollowOverviewProvider(active));
     ref.invalidate(hubPeriodQualityOverviewProvider(active));
     ref.invalidate(hubPendingUncalledCallsProvider);
     await Future.wait([
       ref.read(hubPeriodReceptionBundleProvider(active).future),
-      ref.read(hubPeriodStatsProvider(active).future),
-      ref.read(hubPeriodStatsProvider(previous).future),
+      ref.read(hubPeriodReceptionBundleProvider(previous).future),
       ref.read(hubPeriodFollowOverviewProvider(active).future),
       ref.read(hubPeriodQualityOverviewProvider(active).future),
       ref.read(hubPendingUncalledSummaryProvider.future),
@@ -1918,8 +1918,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   void _invalidateSegmentBadges() {
-    ref.invalidate(hubSegmentIncompleteBadgeProvider);
-    ref.invalidate(hubSegmentCalendarBadgeProvider);
+    ref.invalidate(hubPendingUncalledSummaryProvider);
+    ref.invalidate(hubPendingUncalledCallsProvider);
   }
 
   Future<void> _onRefresh() async {
@@ -1930,10 +1930,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       case HomeHubSection.calendar:
         final calKey = _calendarRangeKeyForHub();
         ref.invalidate(calendarFollowRangeProvider(calKey));
-        await Future.wait([
-          ref.read(calendarFollowRangeProvider(calKey).future),
-          ref.read(hubSegmentCalendarBadgeProvider.future),
-        ]);
+        await ref.read(calendarFollowRangeProvider(calKey).future);
         if (mounted) {
           setState(() => _calendarKeyNonce++);
         }
@@ -2624,8 +2621,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 child: _FlowErrorPanel(
                   message: koreanErrorMessage(e),
                   onRetry: () {
-                    ref.invalidate(hubPeriodStatsProvider(periodKey));
-                    ref.invalidate(hubPeriodStatsProvider(_previousPeriodKey));
+                    ref.invalidate(hubPeriodReceptionBundleProvider(periodKey));
+                    ref.invalidate(
+                      hubPeriodReceptionBundleProvider(_previousPeriodKey),
+                    );
                     ref.invalidate(hubPeriodFollowOverviewProvider(periodKey));
                     ref.invalidate(
                       hubPeriodQualityOverviewProvider(periodKey),

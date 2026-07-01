@@ -764,7 +764,11 @@ class _CombinedIssuancePendingPageState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final user = ref.watch(authControllerProvider);
+    final user = ref.watch(
+      authControllerProvider.select(
+        (u) => u == null ? null : (name: u.name, id: u.id),
+      ),
+    );
     final taxAsync = ref.watch(
       issuanceRequestRowsProvider(IssuanceDomain.taxInvoice),
     );
@@ -811,93 +815,127 @@ class _CombinedIssuancePendingPageState
                 message: '발급대기 목록을 불러오지 못했습니다.',
                 onRetry: _refresh,
               )
-            : ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: [
-                  _buildSectionHeader(
-                    context,
-                    title: IssuanceVisual.domainLabel(IssuanceDomain.taxInvoice),
-                    mineCount: taxMine.length,
-                    totalCount: taxRows.length,
-                    color: IssuanceVisual.domainAccent(
-                      IssuanceDomain.taxInvoice,
-                      scheme,
-                    ),
-                  ),
-                  ...taxRows.map(
-                    (row) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          IssuanceRequestCard(
-                            row: row,
-                            isOwn: issuanceIsOwnRequest(
-                              row,
-                              user?.name,
-                              userId: user?.id,
-                            ),
-                            large: true,
-                            onTap: () => showIssuanceRequestDetail(context, row),
-                          ),
-                          IssuanceRowActions(
-                            row: row,
-                            onIssue: _openTaxIssueSheet,
-                            onCancel: (r) => _cancelRow(r),
-                            onOpenDetail: null,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildSectionHeader(
-                    context,
-                    title: IssuanceVisual.domainLabel(
-                      IssuanceDomain.performanceBond,
-                    ),
-                    mineCount: bondMine.length,
-                    totalCount: bondRows.length,
-                    color: IssuanceVisual.domainAccent(
-                      IssuanceDomain.performanceBond,
-                      scheme,
-                    ),
-                  ),
-                  ...bondRows.map(
-                    (row) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          IssuanceRequestCard(
-                            row: row,
-                            isOwn: issuanceIsOwnRequest(
-                              row,
-                              user?.name,
-                              userId: user?.id,
-                            ),
-                            large: true,
-                            onTap: () => showIssuanceRequestDetail(context, row),
-                          ),
-                          IssuanceRowActions(
-                            row: row,
-                            onIssue: _openTaxIssueSheet,
-                            onCancel: (r) => _cancelRow(r),
-                            onOpenDetail: null,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (taxRows.isEmpty && bondRows.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 120),
-                      child: Center(child: Text('발급대기 건이 없습니다.')),
-                    ),
-                ],
+            : _buildPendingQueueList(
+                context,
+                scheme: scheme,
+                user: user,
+                taxRows: taxRows,
+                bondRows: bondRows,
+                taxMineCount: taxMine.length,
+                bondMineCount: bondMine.length,
               ),
       ),
+    );
+  }
+
+  Widget _buildPendingQueueList(
+    BuildContext context, {
+    required ColorScheme scheme,
+    required ({String name, String id})? user,
+    required List<IssuanceRequestRow> taxRows,
+    required List<IssuanceRequestRow> bondRows,
+    required int taxMineCount,
+    required int bondMineCount,
+  }) {
+    if (taxRows.isEmpty && bondRows.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: const [
+          Padding(
+            padding: EdgeInsets.only(top: 120),
+            child: Center(child: Text('발급대기 건이 없습니다.')),
+          ),
+        ],
+      );
+    }
+
+    final itemCount = 1 + taxRows.length + 1 + 1 + bondRows.length;
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return _buildSectionHeader(
+            context,
+            title: IssuanceVisual.domainLabel(IssuanceDomain.taxInvoice),
+            mineCount: taxMineCount,
+            totalCount: taxRows.length,
+            color: IssuanceVisual.domainAccent(
+              IssuanceDomain.taxInvoice,
+              scheme,
+            ),
+          );
+        }
+        if (index <= taxRows.length) {
+          final row = taxRows[index - 1];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                IssuanceRequestCard(
+                  row: row,
+                  isOwn: issuanceIsOwnRequest(
+                    row,
+                    user?.name,
+                    userId: user?.id,
+                  ),
+                  large: true,
+                  onTap: () => showIssuanceRequestDetail(context, row),
+                ),
+                IssuanceRowActions(
+                  row: row,
+                  onIssue: _openTaxIssueSheet,
+                  onCancel: (r) => _cancelRow(r),
+                  onOpenDetail: null,
+                ),
+              ],
+            ),
+          );
+        }
+        if (index == taxRows.length + 1) {
+          return const SizedBox(height: 8);
+        }
+        if (index == taxRows.length + 2) {
+          return _buildSectionHeader(
+            context,
+            title: IssuanceVisual.domainLabel(IssuanceDomain.performanceBond),
+            mineCount: bondMineCount,
+            totalCount: bondRows.length,
+            color: IssuanceVisual.domainAccent(
+              IssuanceDomain.performanceBond,
+              scheme,
+            ),
+          );
+        }
+        final row = bondRows[index - taxRows.length - 3];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              IssuanceRequestCard(
+                row: row,
+                isOwn: issuanceIsOwnRequest(
+                  row,
+                  user?.name,
+                  userId: user?.id,
+                ),
+                large: true,
+                onTap: () => showIssuanceRequestDetail(context, row),
+              ),
+              IssuanceRowActions(
+                row: row,
+                onIssue: _openTaxIssueSheet,
+                onCancel: (r) => _cancelRow(r),
+                onOpenDetail: null,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -960,7 +998,11 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final user = ref.watch(authControllerProvider);
+    final user = ref.watch(
+      authControllerProvider.select(
+        (u) => u == null ? null : (name: u.name, id: u.id),
+      ),
+    );
     final taxAsync = ref.watch(
       issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
     );
@@ -977,6 +1019,17 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
     final loading = taxAsync.isLoading || bondAsync.isLoading;
     final hasError = taxAsync.hasError || bondAsync.hasError;
 
+    final taxMineCount = taxRows
+        .where(
+          (r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id),
+        )
+        .length;
+    final bondMineCount = bondRows
+        .where(
+          (r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id),
+        )
+        .length;
+
     return Scaffold(
       appBar: AppBar(title: const Text('금일 발급완료')),
       body: RefreshIndicator(
@@ -988,87 +1041,105 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
                 message: '금일 발급완료 목록을 불러오지 못했습니다.',
                 onRetry: () => _refresh(ref),
               )
-            : ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: [
-                  _buildSectionHeader(
-                    context,
-                    title: IssuanceVisual.domainLabel(IssuanceDomain.taxInvoice),
-                    mineCount: taxRows
-                        .where(
-                          (r) => issuanceIsOwnRequest(
-                            r,
-                            user?.name,
-                            userId: user?.id,
-                          ),
-                        )
-                        .length,
-                    totalCount: taxRows.length,
-                    color: IssuanceVisual.domainAccent(
-                      IssuanceDomain.taxInvoice,
-                      scheme,
-                    ),
-                  ),
-                  ...taxRows.map(
-                    (row) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: IssuanceRequestCard(
-                        row: row,
-                        isOwn: issuanceIsOwnRequest(
-                          row,
-                          user?.name,
-                          userId: user?.id,
-                        ),
-                        large: true,
-                        onTap: () => showIssuanceRequestDetail(context, row),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildSectionHeader(
-                    context,
-                    title: IssuanceVisual.domainLabel(
-                      IssuanceDomain.performanceBond,
-                    ),
-                    mineCount: bondRows
-                        .where(
-                          (r) => issuanceIsOwnRequest(
-                            r,
-                            user?.name,
-                            userId: user?.id,
-                          ),
-                        )
-                        .length,
-                    totalCount: bondRows.length,
-                    color: IssuanceVisual.domainAccent(
-                      IssuanceDomain.performanceBond,
-                      scheme,
-                    ),
-                  ),
-                  ...bondRows.map(
-                    (row) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: IssuanceRequestCard(
-                        row: row,
-                        isOwn: issuanceIsOwnRequest(
-                          row,
-                          user?.name,
-                          userId: user?.id,
-                        ),
-                        large: true,
-                        onTap: () => showIssuanceRequestDetail(context, row),
-                      ),
-                    ),
-                  ),
-                  if (taxRows.isEmpty && bondRows.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 120),
-                      child: Center(child: Text('오늘 발급완료 건이 없습니다.')),
-                    ),
-                ],
+            : _buildIssuedQueueList(
+                context,
+                scheme: scheme,
+                user: user,
+                taxRows: taxRows,
+                bondRows: bondRows,
+                taxMineCount: taxMineCount,
+                bondMineCount: bondMineCount,
               ),
       ),
+    );
+  }
+
+  Widget _buildIssuedQueueList(
+    BuildContext context, {
+    required ColorScheme scheme,
+    required ({String name, String id})? user,
+    required List<IssuanceRequestRow> taxRows,
+    required List<IssuanceRequestRow> bondRows,
+    required int taxMineCount,
+    required int bondMineCount,
+  }) {
+    if (taxRows.isEmpty && bondRows.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: const [
+          Padding(
+            padding: EdgeInsets.only(top: 120),
+            child: Center(child: Text('오늘 발급완료 건이 없습니다.')),
+          ),
+        ],
+      );
+    }
+
+    final itemCount = 1 + taxRows.length + 1 + 1 + bondRows.length;
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return _buildSectionHeader(
+            context,
+            title: IssuanceVisual.domainLabel(IssuanceDomain.taxInvoice),
+            mineCount: taxMineCount,
+            totalCount: taxRows.length,
+            color: IssuanceVisual.domainAccent(
+              IssuanceDomain.taxInvoice,
+              scheme,
+            ),
+          );
+        }
+        if (index <= taxRows.length) {
+          final row = taxRows[index - 1];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: IssuanceRequestCard(
+              row: row,
+              isOwn: issuanceIsOwnRequest(
+                row,
+                user?.name,
+                userId: user?.id,
+              ),
+              large: true,
+              onTap: () => showIssuanceRequestDetail(context, row),
+            ),
+          );
+        }
+        if (index == taxRows.length + 1) {
+          return const SizedBox(height: 8);
+        }
+        if (index == taxRows.length + 2) {
+          return _buildSectionHeader(
+            context,
+            title: IssuanceVisual.domainLabel(IssuanceDomain.performanceBond),
+            mineCount: bondMineCount,
+            totalCount: bondRows.length,
+            color: IssuanceVisual.domainAccent(
+              IssuanceDomain.performanceBond,
+              scheme,
+            ),
+          );
+        }
+        final row = bondRows[index - taxRows.length - 3];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: IssuanceRequestCard(
+            row: row,
+            isOwn: issuanceIsOwnRequest(
+              row,
+              user?.name,
+              userId: user?.id,
+            ),
+            large: true,
+            onTap: () => showIssuanceRequestDetail(context, row),
+          ),
+        );
+      },
     );
   }
 

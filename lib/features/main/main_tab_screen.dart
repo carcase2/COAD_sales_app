@@ -421,7 +421,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     }
   }
 
-  void _onNavDestinationSelected(int navIndex, AppUser? user) {
+  void _onNavDestinationSelected(int navIndex) {
+    final user = ref.read(authControllerProvider);
     final menuIndex = _navMenuIndexFor(user);
     if (navIndex == menuIndex) {
       _openMenuDrawer();
@@ -582,19 +583,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final scheme = Theme.of(context).colorScheme;
     final tabAccent = scheme.primary;
     final appBarBg = Color.lerp(scheme.primary, Colors.black, 0.12)!;
-    final user = ref.watch(authControllerProvider);
-    final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
-    final latestRemote = updateStatus?.latestVersion;
-    final hasOptionalUpdate =
-        updateStatus?.hasUpdate == true && updateStatus?.forceUpdate != true;
+    final showGeneralSchedule = ref.watch(
+      authControllerProvider.select(
+        (u) => u != null && canAccessGeneralSchedule(u),
+      ),
+    );
     final onHomeTab =
         _currentIndex == _homeTabIndex && _navSelectedIndex == _navHomeIndex;
-    final bannerDismissKey = latestRemote ?? '__play_update__';
-    final showUpdateBanner =
-        onHomeTab &&
-        hasOptionalUpdate &&
-        bannerDismissKey != _dismissedUpdateBannerVersion;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
@@ -638,11 +634,21 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       child: Scaffold(
         key: scaffoldKey,
         onDrawerChanged: (isOpen) {
-          if (!isOpen && _navSelectedIndex == _navMenuIndexFor(user)) {
-            _syncNavFromCurrentTab();
+          if (!isOpen) {
+            final user = ref.read(authControllerProvider);
+            if (_navSelectedIndex == _navMenuIndexFor(user)) {
+              _syncNavFromCurrentTab();
+            }
           }
         },
-        drawer: _buildAppMenuDrawer(context, user, scheme, updateStatus),
+        drawer: Consumer(
+          builder: (context, ref, _) {
+            final user = ref.watch(authControllerProvider);
+            final updateStatus =
+                ref.watch(appUpdateStatusProvider).valueOrNull;
+            return _buildAppMenuDrawer(context, user, scheme, updateStatus);
+          },
+        ),
         appBar: AppBar(
           title: Row(
             mainAxisSize: MainAxisSize.min,
@@ -652,17 +658,29 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 onTap: _openHomeFlowToday,
                 child: _buildBrandTitle(),
               ),
-              if (updateStatus?.hasUpdate == true) ...[
-                const SizedBox(width: 8),
-                _buildLogoUpdateChip(
-                  latestVersion: latestRemote,
-                  forceUpdate: updateStatus?.forceUpdate == true,
-                  onTap: () => AppUpdateService.checkAndUpdateIfNeeded(
-                    context,
-                    forceRecheck: true,
-                  ),
-                ),
-              ],
+              Consumer(
+                builder: (context, ref, _) {
+                  final updateStatus =
+                      ref.watch(appUpdateStatusProvider).valueOrNull;
+                  if (updateStatus?.hasUpdate != true) {
+                    return const SizedBox.shrink();
+                  }
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: 8),
+                      _buildLogoUpdateChip(
+                        latestVersion: updateStatus?.latestVersion,
+                        forceUpdate: updateStatus?.forceUpdate == true,
+                        onTap: () => AppUpdateService.checkAndUpdateIfNeeded(
+                          context,
+                          forceRecheck: true,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
           centerTitle: true,
@@ -712,43 +730,56 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         body: Stack(
           children: [
             IndexedStack(index: _currentIndex, children: _buildScreens()),
-            if (showUpdateBanner)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: _buildUpdateAvailableBanner(
-                  scheme: scheme,
-                  latestVersion: latestRemote,
-                  onUpdate: () => AppUpdateService.checkAndUpdateIfNeeded(
-                    context,
-                    forceRecheck: true,
+            Consumer(
+              builder: (context, ref, _) {
+                final updateStatus =
+                    ref.watch(appUpdateStatusProvider).valueOrNull;
+                final latestRemote = updateStatus?.latestVersion;
+                final hasOptionalUpdate = updateStatus?.hasUpdate == true &&
+                    updateStatus?.forceUpdate != true;
+                final bannerDismissKey = latestRemote ?? '__play_update__';
+                final showUpdateBanner = onHomeTab &&
+                    hasOptionalUpdate &&
+                    bannerDismissKey != _dismissedUpdateBannerVersion;
+                if (!showUpdateBanner) return const SizedBox.shrink();
+                return Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: _buildUpdateAvailableBanner(
+                    scheme: scheme,
+                    latestVersion: latestRemote,
+                    onUpdate: () => AppUpdateService.checkAndUpdateIfNeeded(
+                      context,
+                      forceRecheck: true,
+                    ),
+                    onDismiss: () => setState(
+                      () => _dismissedUpdateBannerVersion = bannerDismissKey,
+                    ),
                   ),
-                  onDismiss: () => setState(
-                    () => _dismissedUpdateBannerVersion = bannerDismissKey,
-                  ),
-                ),
-              ),
+                );
+              },
+            ),
           ],
         ),
-        bottomNavigationBar: _MainBottomNavBar(
-          selectedIndex: _navSelectedIndex,
-          showGeneralSchedule: _showGeneralScheduleInNav(user),
-          issuanceBadgeAsync: ref.watch(
-            issuanceRequestBadgeCountVisibleProvider,
-          ),
-          onTapHome: () => _onNavDestinationSelected(_navHomeIndex, user),
-          onLongPressHome: _openHomeFlowToday,
-          onTapReception: () =>
-              _onNavDestinationSelected(_navReceptionIndex, user),
-          onLongPressReception: _openReceptionQuickActions,
-          onTapIssuance: () =>
-              _onNavDestinationSelected(_navIssuanceIndex, user),
-          onTapGeneralSchedule: () =>
-              _onNavDestinationSelected(_navGeneralScheduleIndex, user),
-          onTapMenu: () => _onNavDestinationSelected(
-            _navMenuIndexFor(user),
-            user,
+        bottomNavigationBar: Consumer(
+          builder: (context, ref, _) => _MainBottomNavBar(
+            selectedIndex: _navSelectedIndex,
+            showGeneralSchedule: showGeneralSchedule,
+            issuanceBadgeAsync: ref.watch(
+              issuanceRequestBadgeCountVisibleProvider,
+            ),
+            onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
+            onLongPressHome: _openHomeFlowToday,
+            onTapReception: () =>
+                _onNavDestinationSelected(_navReceptionIndex),
+            onLongPressReception: _openReceptionQuickActions,
+            onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
+            onTapGeneralSchedule: () =>
+                _onNavDestinationSelected(_navGeneralScheduleIndex),
+            onTapMenu: () => _onNavDestinationSelected(
+              showGeneralSchedule ? 4 : 3,
+            ),
           ),
         ),
       ),

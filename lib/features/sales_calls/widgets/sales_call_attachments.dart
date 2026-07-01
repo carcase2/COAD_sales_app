@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
+import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
@@ -316,11 +317,15 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
                             }
                           },
                           child: kind == AttachmentKind.image
-                              ? Image.network(
-                                  u,
+                              ? CachedAppImage(
+                                  url: u,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Center(
-                                    child: Icon(Icons.broken_image_outlined, color: scheme.outline),
+                                  memCacheWidth: 256,
+                                  errorWidget: Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: scheme.outline,
+                                    ),
                                   ),
                                 )
                               : Center(
@@ -675,17 +680,14 @@ class _ZoomableNetworkImageState extends State<_ZoomableNetworkImage>
           width: size.width,
           height: size.height,
           child: Center(
-            child: Image.network(
-              widget.url,
+            child: CachedAppImage(
+              url: widget.url,
               fit: BoxFit.contain,
-              loadingBuilder: (c, child, prog) {
-                if (prog == null) return child;
-                return const Padding(
-                  padding: EdgeInsets.all(48),
-                  child: CircularProgressIndicator(color: Colors.white),
-                );
-              },
-              errorBuilder: (_, _, _) => const Padding(
+              placeholder: const Padding(
+                padding: EdgeInsets.all(48),
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+              errorWidget: const Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
                   '이미지를 불러올 수 없습니다.\n네트워크를 확인해 주세요.',

@@ -502,53 +502,76 @@ class _IssuanceFilteredListPageState
     final ownAccent = _isTax
         ? Colors.indigo.shade600
         : Colors.deepOrange.shade700;
-    final children = <Widget>[];
+    final entries = <_RequestListEntry>[];
     if (split.mine.isNotEmpty) {
-      children.add(
-        _buildMyRequestsBanner(
-          myCount: split.mine.length,
-          totalCount: rows.length,
-          accent: ownAccent,
-        ),
-      );
-      children.add(
-        _sectionHeader(
-          '내 요청 목록',
-          split.mine.length,
-          ownAccent,
+      entries.add(const _RequestListEntry.banner());
+      entries.add(
+        _RequestListEntry.header(
+          title: '내 요청 목록',
+          count: split.mine.length,
+          color: ownAccent,
           highlight: true,
         ),
       );
       for (final row in split.mine) {
-        children.add(_buildRowTile(row, isOwn: true));
-        children.add(const SizedBox(height: 12));
+        entries.add(_RequestListEntry.row(row: row, isOwn: true));
       }
     }
     if (split.others.isNotEmpty) {
-      children.add(
-        _sectionHeader(
-          '다른 요청',
-          split.others.length,
-          scheme.onSurfaceVariant,
+      entries.add(
+        _RequestListEntry.header(
+          title: '다른 요청',
+          count: split.others.length,
+          color: scheme.onSurfaceVariant,
         ),
       );
-      for (var i = 0; i < split.others.length; i++) {
-        children.add(
-          Opacity(
-            opacity: 0.88,
-            child: _buildRowTile(split.others[i], isOwn: false),
-          ),
-        );
-        if (i < split.others.length - 1) {
-          children.add(const SizedBox(height: 10));
-        }
+      for (final row in split.others) {
+        entries.add(_RequestListEntry.row(row: row, isOwn: false));
       }
     }
 
-    return ListView(
+    return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      children: children,
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: switch (entry.kind) {
+              _RequestListEntryKind.mineRow => 12,
+              _RequestListEntryKind.otherRow =>
+                index + 1 < entries.length &&
+                        entries[index + 1].kind ==
+                            _RequestListEntryKind.otherRow
+                    ? 10
+                    : 0,
+              _ => 0,
+            },
+          ),
+          child: switch (entry.kind) {
+            _RequestListEntryKind.banner => _buildMyRequestsBanner(
+                myCount: split.mine.length,
+                totalCount: rows.length,
+                accent: ownAccent,
+              ),
+            _RequestListEntryKind.header => _sectionHeader(
+                entry.title!,
+                entry.count!,
+                entry.color!,
+                highlight: entry.highlight,
+              ),
+            _RequestListEntryKind.mineRow => _buildRowTile(
+                entry.row!,
+                isOwn: true,
+              ),
+            _RequestListEntryKind.otherRow => Opacity(
+                opacity: 0.88,
+                child: _buildRowTile(entry.row!, isOwn: false),
+              ),
+          },
+        );
+      },
     );
   }
 
@@ -688,4 +711,52 @@ class _IssuanceFilteredListPageState
       ),
     );
   }
+}
+
+enum _RequestListEntryKind { banner, header, mineRow, otherRow }
+
+class _RequestListEntry {
+  const _RequestListEntry._({
+    required this.kind,
+    this.row,
+    this.title,
+    this.count,
+    this.color,
+    this.highlight = false,
+    this.isOwn = false,
+  });
+
+  const _RequestListEntry.banner() : this._(kind: _RequestListEntryKind.banner);
+
+  const _RequestListEntry.header({
+    required String title,
+    required int count,
+    required Color color,
+    bool highlight = false,
+  }) : this._(
+          kind: _RequestListEntryKind.header,
+          title: title,
+          count: count,
+          color: color,
+          highlight: highlight,
+        );
+
+  const _RequestListEntry.row({
+    required IssuanceRequestRow row,
+    required bool isOwn,
+  }) : this._(
+          kind: isOwn
+              ? _RequestListEntryKind.mineRow
+              : _RequestListEntryKind.otherRow,
+          row: row,
+          isOwn: isOwn,
+        );
+
+  final _RequestListEntryKind kind;
+  final IssuanceRequestRow? row;
+  final String? title;
+  final int? count;
+  final Color? color;
+  final bool highlight;
+  final bool isOwn;
 }

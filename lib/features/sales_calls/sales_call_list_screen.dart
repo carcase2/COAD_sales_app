@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
@@ -69,13 +71,23 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   bool _isSearching = false;
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
-  
+  String _debouncedSearchQuery = '';
+  Timer? _searchDebounce;
+
   String _selectedAssignee = '전체';
   final ScrollController _scrollController = ScrollController();
   bool _hasScrolledToInitial = false;
   int? _lastHandledAssigneeScrollNonce;
   bool _pendingSharedAssigneeScroll = false;
   bool _mineOnlyFilter = false;
+
+  List<SalesCall>? _memoItems;
+  String? _memoAssignee;
+  String? _memoSearch;
+  int? _memoOverridesLen;
+  Map<String, int>? _memoCounts;
+  List<String>? _memoSortedAssignees;
+  List<SalesCall>? _memoFilteredItems;
 
   bool get _sharedAssigneeFilter => widget.onAssigneeChanged != null;
 
@@ -152,9 +164,112 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String val) {
+    final trimmed = val.trim();
+    setState(() => _searchQuery = trimmed);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      if (_debouncedSearchQuery == trimmed) return;
+      setState(() => _debouncedSearchQuery = trimmed);
+    });
+  }
+
+  ({
+    Map<String, int> counts,
+    List<String> sortedAssignees,
+    List<SalesCall> filteredItems,
+  }) _resolveListData(
+    List<SalesCall> items,
+    List<TempManagerOverride> overrides,
+  ) {
+    final activeAssignee = _activeAssignee;
+    if (identical(_memoItems, items) &&
+        _memoAssignee == activeAssignee &&
+        _memoSearch == _debouncedSearchQuery &&
+        _memoOverridesLen == overrides.length &&
+        _memoCounts != null &&
+        _memoSortedAssignees != null &&
+        _memoFilteredItems != null) {
+      return (
+        counts: _memoCounts!,
+        sortedAssignees: _memoSortedAssignees!,
+        filteredItems: _memoFilteredItems!,
+      );
+    }
+
+    final counts = <String, int>{'전체': items.length};
+    for (final c in items) {
+      final a = _assigneeForMode(c, overrides);
+      counts[a] = (counts[a] ?? 0) + 1;
+    }
+
+    if (_sharedAssigneeFilter &&
+        activeAssignee != '전체' &&
+        !counts.containsKey(activeAssignee)) {
+      counts[activeAssignee] = 0;
+    }
+
+    final sortedAssignees = counts.keys.toList()
+      ..sort((a, b) {
+        if (a == '전체') return -1;
+        if (b == '전체') return 1;
+
+        final countA = counts[a] ?? 0;
+        final countB = counts[b] ?? 0;
+        if (countA != countB) return countB.compareTo(countA);
+
+        return a.compareTo(b);
+      });
+
+    final filteredItems = items.where((c) {
+      final a = _assigneeForMode(c, overrides);
+      final matchesAssignee =
+          activeAssignee == '전체' || a == activeAssignee;
+
+      if (_debouncedSearchQuery.isEmpty) {
+        return matchesAssignee;
+      }
+
+      final queryTerms = _debouncedSearchQuery
+          .toLowerCase()
+          .split(' ')
+          .where((t) => t.isNotEmpty);
+      if (queryTerms.isEmpty) return matchesAssignee;
+
+      final matchesSearch = queryTerms.every(
+        (term) => termMatchesSalesCallSearch(
+          term,
+          customerName: c.customerName,
+          customerPhone: c.customerPhone,
+          inquiryContent: c.inquiryContent,
+          regionLabel: c.regionLabel,
+          productCategoryName: c.productCategoryName,
+          extra: c.assignedTo,
+        ),
+      );
+      return matchesAssignee && matchesSearch;
+    }).toList();
+
+    _memoItems = items;
+    _memoAssignee = activeAssignee;
+    _memoSearch = _debouncedSearchQuery;
+    _memoOverridesLen = overrides.length;
+    _memoCounts = counts;
+    _memoSortedAssignees = sortedAssignees;
+    _memoFilteredItems = filteredItems;
+
+    return (
+      counts: counts,
+      sortedAssignees: sortedAssignees,
+      filteredItems: filteredItems,
+    );
   }
 
   /// 캐시를 먼저 보여주고 서버 데이터를 가져오는 핵심 로직
@@ -491,7 +606,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                   tooltip: '검색 지우기',
                   onPressed: () {
                     _searchCtrl.clear();
-                    setState(() => _searchQuery = '');
+                    _searchDebounce?.cancel();
+                    setState(() {
+                      _searchQuery = '';
+                      _debouncedSearchQuery = '';
+                    });
                   },
                   icon: const Icon(Icons.close_rounded, size: 18),
                 ),
@@ -504,7 +623,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           contentPadding: const EdgeInsets.symmetric(vertical: 10),
         ),
         textInputAction: TextInputAction.search,
-        onChanged: (val) => setState(() => _searchQuery = val.trim()),
+        onChanged: _onSearchChanged,
       ),
     );
   }
@@ -534,7 +653,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     }
 
     final items = _items;
-    final overrides = ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
+    final overrides =
+        ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
     if (items.isEmpty) {
       final scheme = Theme.of(context).colorScheme;
       return Center(
@@ -554,31 +674,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       );
     }
 
-          final Map<String, int> counts = {'전체': items.length};
-          for (var c in items) {
-            final a = _assigneeForMode(c, overrides);
-            counts[a] = (counts[a] ?? 0) + 1;
-          }
-
+          final listData = _resolveListData(items, overrides);
+          final counts = listData.counts;
+          final sortedAssignees = listData.sortedAssignees;
+          final filteredItems = listData.filteredItems;
           final activeAssignee = _activeAssignee;
-
-          // 페이저 공유 필터: 해당 일에 건이 없어도 선택 담당자 칩 유지
-          if (_sharedAssigneeFilter &&
-              activeAssignee != '전체' &&
-              !counts.containsKey(activeAssignee)) {
-            counts[activeAssignee] = 0;
-          }
-
-          final sortedAssignees = counts.keys.toList()..sort((a, b) {
-            if (a == '전체') return -1;
-            if (b == '전체') return 1;
-            
-            final countA = counts[a] ?? 0;
-            final countB = counts[b] ?? 0;
-            if (countA != countB) return countB.compareTo(countA);
-            
-            return a.compareTo(b);
-          });
 
           // 전달받은/자동 선택 담당자가 현재 목록에 없으면 빈 결과가 되므로 '전체'로 보정
           if (!_sharedAssigneeFilter &&
@@ -591,8 +691,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             });
           }
 
-          final user = ref.watch(authControllerProvider);
-          final userName = user?.name;
+          final userName = ref.watch(
+            authControllerProvider.select((u) => u?.name),
+          );
           // 담당자 자동 필터 제거 — 기본은 전체, 「내 건만」 토글로 선택
           if (!_sharedAssigneeFilter &&
               widget.initialAssignee != null &&
@@ -618,33 +719,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
             _pendingSharedAssigneeScroll = false;
             _scrollActiveAssigneeChipIntoView(sortedAssignees);
           }
-
-          final filteredItems = items.where((c) {
-            final a = _assigneeForMode(c, overrides);
-            bool matchesAssignee =
-                activeAssignee == '전체' || a == activeAssignee;
-            
-            bool matchesSearch = true;
-            if (_searchQuery.isNotEmpty) {
-              final queryTerms =
-                  _searchQuery.toLowerCase().split(' ').where((t) => t.isNotEmpty);
-              if (queryTerms.isNotEmpty) {
-                matchesSearch = queryTerms.every(
-                  (term) => termMatchesSalesCallSearch(
-                    term,
-                    customerName: c.customerName,
-                    customerPhone: c.customerPhone,
-                    inquiryContent: c.inquiryContent,
-                    regionLabel: c.regionLabel,
-                    productCategoryName: c.productCategoryName,
-                    extra: c.assignedTo,
-                  ),
-                );
-              }
-            }
-            
-            return matchesAssignee && matchesSearch;
-          }).toList();
 
           return Column(
             children: [
@@ -836,6 +910,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final assignColor = _colorForAssignee(displayAssignee, scheme);
 
                             return Container(
+                              key: ValueKey(c.id),
                               margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
                                 color: scheme.surfaceContainerLowest,

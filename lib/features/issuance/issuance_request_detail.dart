@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
+import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
@@ -504,14 +505,13 @@ class _IssuanceNetworkGalleryScreenState
                 minScale: 0.7,
                 maxScale: 5,
                 child: Center(
-                  child: Image.network(
-                    item.url,
+                  child: CachedAppImage(
+                    url: item.url,
                     fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const CircularProgressIndicator(color: Colors.white);
-                    },
-                    errorBuilder: (_, _, _) => const Text(
+                    placeholder: const CircularProgressIndicator(
+                      color: Colors.white,
+                    ),
+                    errorWidget: const Text(
                       '이미지를 불러올 수 없습니다.',
                       style: TextStyle(color: Colors.white70),
                     ),

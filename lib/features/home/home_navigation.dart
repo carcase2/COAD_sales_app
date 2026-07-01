@@ -18,8 +18,8 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(hubPeriodStatsProvider);
   invalidate(hubPeriodFollowOverviewProvider);
   invalidate(hubPeriodQualityOverviewProvider);
-  invalidate(hubSegmentIncompleteBadgeProvider);
-  invalidate(hubSegmentCalendarBadgeProvider);
+  invalidate(hubPendingUncalledCallsProvider);
+  invalidate(hubPendingUncalledSummaryProvider);
 }
 
 /// 다른 화면에서 메인 탭 **홈**으로 돌아가며 [흐름|달력] 구역을 연다.

@@ -208,12 +208,68 @@ class IssuanceRequestService {
         : _fetchBondRequestBadgeCount();
   }
 
-  Future<int> _fetchTaxRequestBadgeCount() async {
+  /// 하단 탭 배지 — 내 발급대기 건수(경량 count API).
+  Future<int> fetchMyRequestBadgeCount(
+    IssuanceDomain domain, {
+    required String? userName,
+    String? userId,
+  }) async {
+    return domain == IssuanceDomain.taxInvoice
+        ? _fetchTaxRequestBadgeCount(
+            ownerName: userName,
+            ownerId: userId,
+          )
+        : _fetchBondRequestBadgeCount(
+            ownerName: userName,
+            ownerId: userId,
+          );
+  }
+
+  bool _matchesOwnerFilter(
+    Map<String, dynamic> row, {
+    required String ownerName,
+    required String ownerId,
+  }) {
+    if (ownerName.isEmpty && ownerId.isEmpty) return true;
+    final requester =
+        _normalizeOwnerName((row['requester'] ?? '').toString());
+    final createdBy =
+        _normalizeOwnerName((row['created_by'] ?? '').toString());
+    if (ownerName.isNotEmpty &&
+        (requester == ownerName || createdBy == ownerName)) {
+      return true;
+    }
+    if (ownerId.isNotEmpty &&
+        (requester == ownerId || createdBy == ownerId)) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<int> _fetchTaxRequestBadgeCount({
+    String? ownerName,
+    String? ownerId,
+  }) async {
+    final owner = _normalizeOwnerName(ownerName ?? '');
+    final ownerKey = (ownerId ?? '').trim().toLowerCase();
+    final filterByOwner = owner.isNotEmpty || ownerKey.isNotEmpty;
+
     final invoicesRes = await _client
         .from('tax_invoices')
-        .select('id, invoice_image_url, percentage, status')
+        .select('id, invoice_image_url, percentage, status, requester, created_by')
         .eq('status', 'pending');
-    final invoices = List<Map<String, dynamic>>.from(invoicesRes);
+    var invoices = List<Map<String, dynamic>>.from(invoicesRes);
+    if (filterByOwner) {
+      invoices = invoices
+          .where(
+            (row) => _matchesOwnerFilter(
+              row,
+              ownerName: owner,
+              ownerId: ownerKey,
+            ),
+          )
+          .toList();
+    }
     if (invoices.isEmpty) return 0;
 
     final invoiceIds =
@@ -254,12 +310,30 @@ class IssuanceRequestService {
     return count;
   }
 
-  Future<int> _fetchBondRequestBadgeCount() async {
+  Future<int> _fetchBondRequestBadgeCount({
+    String? ownerName,
+    String? ownerId,
+  }) async {
+    final owner = _normalizeOwnerName(ownerName ?? '');
+    final ownerKey = (ownerId ?? '').trim().toLowerCase();
+    final filterByOwner = owner.isNotEmpty || ownerKey.isNotEmpty;
+
     final bondsRes = await _client
         .from('performance_bonds')
-        .select('id, status, bond_image_url')
+        .select('id, status, bond_image_url, requester, created_by')
         .inFilter('status', ['pending', 'draft']);
-    final bonds = List<Map<String, dynamic>>.from(bondsRes);
+    var bonds = List<Map<String, dynamic>>.from(bondsRes);
+    if (filterByOwner) {
+      bonds = bonds
+          .where(
+            (row) => _matchesOwnerFilter(
+              row,
+              ownerName: owner,
+              ownerId: ownerKey,
+            ),
+          )
+          .toList();
+    }
     if (bonds.isEmpty) return 0;
 
     final bondIds = bonds.map((b) => b['id']).where((id) => id != null).toList();
@@ -937,22 +1011,26 @@ final issuanceAllTabRowsProvider =
 /// false면 배지 API 미조회(앱 시작 부하 완화). 발급 탭·지연 후 true.
 final issuanceBadgeLoadEnabledProvider = StateProvider<bool>((ref) => false);
 
-/// 하단 탭 배지 — **내** 발급대기 건수 (본인 확인용).
+/// 하단 탭 배지 — **내** 발급대기 건수 (경량 count API).
 final issuanceRequestBadgeCountProvider = FutureProvider<int>((ref) async {
-  final user = ref.watch(authControllerProvider);
+  final user = ref.watch(
+    authControllerProvider.select(
+      (u) => u == null ? null : (name: u.name, id: u.id),
+    ),
+  );
   if (user == null) return 0;
-  final taxRows = await ref.watch(
-    issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future,
+  final service = ref.read(issuanceRequestServiceProvider);
+  final taxCount = await service.fetchMyRequestBadgeCount(
+    IssuanceDomain.taxInvoice,
+    userName: user.name,
+    userId: user.id,
   );
-  final bondRows = await ref.watch(
-    issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
+  final bondCount = await service.fetchMyRequestBadgeCount(
+    IssuanceDomain.performanceBond,
+    userName: user.name,
+    userId: user.id,
   );
-  return [
-    ...taxRows,
-    ...bondRows,
-  ].where(
-    (row) => issuanceIsOwnRequest(row, user.name, userId: user.id),
-  ).length;
+  return taxCount + bondCount;
 });
 
 /// 허브·도메인 탭용 경량 발급대기 건수 (웹 배지 API와 동일 규칙).

@@ -113,9 +113,10 @@ void requestConsultationCalendarWeekNavigation(WidgetRef ref) {
   );
 }
 
+/// 금일 접수 — [hubDayReceptionCallsProvider]와 동일 소스(중복 fetch 방지).
 final todayCallsContentProvider = FutureProvider<List<SalesCall>>((ref) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCalls(date: todayYmdSeoul(), limit: 100, includeCallHistory: false);
+  final today = todayYmdSeoul();
+  return ref.watch(hubDayReceptionCallsProvider(today).future);
 });
 
 /// 담당자별 건수 한 줄 (팔로우·미통화 등 공통)
@@ -367,19 +368,25 @@ final hubPeriodReceptionBundleProvider = FutureProvider.autoDispose
   );
 });
 
-final hubPeriodStatsProvider = FutureProvider.autoDispose
-    .family<TodayStats, HubPeriodKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  switch (key.period) {
-    case HubPeriod.day:
-      return repo.fetchStatsForDate(key.anchorYmd);
-    case HubPeriod.week:
-      final range = seoulWeekRangeContaining(key.anchorYmd);
-      return repo.fetchStatsForDateRange(range.$1, range.$2);
-    case HubPeriod.month:
-      final range = seoulMonthRangeContaining(key.anchorYmd);
-      return repo.fetchStatsForDateRange(range.$1, range.$2);
-  }
+TodayStats _statsFromReceptionCalls(List<SalesCall> calls) {
+  final total = calls.length;
+  final incomplete = calls.where((c) => c.isMissed).length;
+  return TodayStats(
+    todayCount: total,
+    incompleteCount: incomplete,
+    completedToday: total - incomplete,
+  );
+}
+
+/// 접수 bundle에서 파생 — 별도 stats API·Future 없음.
+final hubPeriodStatsProvider = Provider.autoDispose
+    .family<AsyncValue<TodayStats>, HubPeriodKey>((ref, key) {
+  final bundleAsync = ref.watch(hubPeriodReceptionBundleProvider(key));
+  return bundleAsync.when(
+    data: (bundle) => AsyncValue.data(_statsFromReceptionCalls(bundle.calls)),
+    loading: () => const AsyncValue.loading(),
+    error: (e, st) => AsyncValue.error(e, st),
+  );
 });
 
 final hubPeriodFollowOverviewProvider = FutureProvider.autoDispose
@@ -441,10 +448,9 @@ void prefetchHubPeriodFlow(
   final futures = <Future<Object?>>[
     ref.read(hubPeriodReceptionBundleProvider(key).future),
     ref.read(hubPeriodFollowOverviewProvider(key).future),
-    ref.read(hubPeriodStatsProvider(key).future),
   ];
   if (previousKey != null) {
-    futures.add(ref.read(hubPeriodStatsProvider(previousKey).future));
+    futures.add(ref.read(hubPeriodReceptionBundleProvider(previousKey).future));
   }
   unawaited(Future.wait(futures).catchError((_) => <Object?>[]));
 }
@@ -455,16 +461,11 @@ Future<HubPeriodReceptionBundle> refreshHubPeriodUncalledBundle(
   HubPeriodKey key,
 ) async {
   ref.invalidate(hubPeriodReceptionBundleProvider(key));
-  ref.invalidate(hubPeriodStatsProvider(key));
-  ref.invalidate(hubSegmentIncompleteBadgeProvider);
   if (key.period == HubPeriod.day) {
     ref.invalidate(hubDayReceptionCallsProvider(key.anchorYmd));
     ref.invalidate(hubDayUncalledCallsProvider(key.anchorYmd));
   }
-  await Future.wait([
-    ref.read(hubPeriodReceptionBundleProvider(key).future),
-    ref.read(hubPeriodStatsProvider(key).future),
-  ]);
+  await ref.read(hubPeriodReceptionBundleProvider(key).future);
   return ref.read(hubPeriodReceptionBundleProvider(key).future);
 }
 
@@ -488,7 +489,9 @@ final hubPendingUncalledSummaryProvider =
     calls: calls,
     todayYmd: todayYmdSeoul(),
     overrides: overrides,
-    loginName: ref.watch(authControllerProvider)?.name,
+    loginName: ref.watch(
+      authControllerProvider.select((u) => u?.name),
+    ),
   );
 });
 
@@ -529,32 +532,13 @@ List<String> weekYmdKeysContaining(String anchorYmd) {
   return keys;
 }
 
-/// 홈 [흐름] 탭 배지 — 처리할 미통화(최근 60일), 로그인 담당자 건수.
-final hubSegmentIncompleteBadgeProvider = FutureProvider<int>((ref) async {
-  final summary = await ref.watch(hubPendingUncalledSummaryProvider.future);
-  final loginName = ref.watch(authControllerProvider)?.name?.trim();
-  if (loginName != null && loginName.isNotEmpty) {
-    return summary.userCount;
-  }
-  return summary.total;
-});
-
-/// 홈 [달력] 탭 배지 — 흐름 앵커 기준 주/월 구간 팔로우 건수, 로그인 담당자 우선.
-final hubSegmentCalendarBadgeProvider = FutureProvider<int>((ref) async {
-  final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
-  final navStep = ref.watch(homeHubNavStepProvider);
-  final loginName = ref.watch(authControllerProvider)?.name.trim();
-
-  final range = switch (navStep) {
-    HubNavStep.day => (anchor, anchor),
-    HubNavStep.month => seoulMonthRangeContaining(anchor),
-    HubNavStep.week => seoulWeekRangeContaining(anchor),
-  };
-  final calls = await ref.watch(
-    calendarFollowRangeProvider((startYmd: range.$1, endYmd: range.$2)).future,
-  );
-  final overrides = await ref.watch(tempManagerOverridesProvider.future);
-
+int _countCalendarBadgeInPeriod({
+  required List<SalesCall> calls,
+  required List<TempManagerOverride> overrides,
+  required HubNavStep navStep,
+  required String anchor,
+  required String? loginName,
+}) {
   final isMonth = navStep == HubNavStep.month;
   final monthPrefix = isMonth ? anchor.substring(0, 7) : null;
   final weekDays = isMonth ? null : weekYmdKeysContaining(anchor).toSet();
@@ -581,6 +565,56 @@ final hubSegmentCalendarBadgeProvider = FutureProvider<int>((ref) async {
   if (loginName == null || loginName.isEmpty) return totalInPeriod;
   if (userInPeriod > 0) return userInPeriod;
   return totalInPeriod;
+}
+
+/// 홈 [흐름] 탭 배지 — 처리할 미통화(최근 60일), 로그인 담당자 건수.
+final hubSegmentIncompleteBadgeProvider = Provider<AsyncValue<int>>((ref) {
+  final summaryAsync = ref.watch(hubPendingUncalledSummaryProvider);
+  final loginName = ref
+      .watch(authControllerProvider.select((u) => u?.name.trim()));
+  return summaryAsync.when(
+    data: (summary) {
+      if (loginName != null && loginName.isNotEmpty) {
+        return AsyncValue.data(summary.userCount);
+      }
+      return AsyncValue.data(summary.total);
+    },
+    loading: () => const AsyncValue.loading(),
+    error: (e, st) => AsyncValue.error(e, st),
+  );
+});
+
+/// 홈 [달력] 탭 배지 — [calendarFollowRangeProvider] 결과에서 파생(추가 fetch 없음).
+final hubSegmentCalendarBadgeProvider = Provider<AsyncValue<int>>((ref) {
+  final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
+  final navStep = ref.watch(homeHubNavStepProvider);
+  final loginName = ref
+      .watch(authControllerProvider.select((u) => u?.name.trim()));
+
+  final range = switch (navStep) {
+    HubNavStep.day => (anchor, anchor),
+    HubNavStep.month => seoulMonthRangeContaining(anchor),
+    HubNavStep.week => seoulWeekRangeContaining(anchor),
+  };
+  final callsAsync = ref.watch(
+    calendarFollowRangeProvider((startYmd: range.$1, endYmd: range.$2)),
+  );
+  final overrides = ref.watch(tempManagerOverridesProvider).valueOrNull ??
+      const <TempManagerOverride>[];
+
+  return callsAsync.when(
+    data: (calls) => AsyncValue.data(
+      _countCalendarBadgeInPeriod(
+        calls: calls,
+        overrides: overrides,
+        navStep: navStep,
+        anchor: anchor,
+        loginName: loginName,
+      ),
+    ),
+    loading: () => const AsyncValue.loading(),
+    error: (e, st) => AsyncValue.error(e, st),
+  );
 });
 
 /// 메인 화면의 Scaffold를 제어하기 위한 Key (드로어 열기 등)
