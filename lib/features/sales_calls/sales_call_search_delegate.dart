@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
@@ -51,7 +52,15 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
   @override
   Widget buildSuggestions(BuildContext context) {
     if (query.isEmpty) {
-      return _buildEmptyState(context, '검색어를 입력하여 전체 상담 내역을 찾아보세요.');
+      return _buildEmptyState(
+        context,
+        '전화번호, 현장명, 상담내용으로 검색하세요.',
+        hints: const [
+          '010으로 시작하는 번호',
+          '현장명·고객명',
+          '과거 상담은 검색 후 「서버 검색」',
+        ],
+      );
     }
 
     final localResults = _filterLocalItems(query);
@@ -84,7 +93,11 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return _buildEmptyState(context, '검색 중 오류가 발생했습니다.\n${snapshot.error}');
+          return _buildEmptyState(
+            context,
+            koreanErrorMessage(snapshot.error!),
+            onRetry: () => showResults(context),
+          );
         }
         
         final results = snapshot.data ?? [];
@@ -145,6 +158,7 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: () {
+          close(context, null);
           Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => SalesCallDetailScreen(id: c.id, initial: c),
@@ -273,25 +287,27 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
   }
 
   Widget _buildQuickAction(IconData icon, Color color, VoidCallback onTap) {
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        shape: BoxShape.circle,
-      ),
+    return SizedBox(
+      width: 44,
+      height: 44,
       child: Material(
-        color: Colors.transparent,
+        color: color.withValues(alpha: 0.1),
+        shape: const CircleBorder(),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Icon(icon, size: 18, color: color),
+          customBorder: const CircleBorder(),
+          child: Icon(icon, size: 20, color: color),
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, String message) {
+  Widget _buildEmptyState(
+    BuildContext context,
+    String message, {
+    List<String> hints = const [],
+    VoidCallback? onRetry,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
@@ -299,13 +315,47 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off_rounded, size: 64, color: scheme.outlineVariant),
+            Icon(Icons.search_rounded, size: 64, color: scheme.outlineVariant),
             const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: scheme.onSurfaceVariant),
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
             ),
+            if (hints.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              ...hints.map(
+                (h) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.tips_and_updates_outlined,
+                          size: 16, color: scheme.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        h,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('다시 검색'),
+              ),
+            ],
           ],
         ),
       ),

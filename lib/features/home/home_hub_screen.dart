@@ -428,8 +428,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 icon: const Icon(Icons.chevron_left_rounded, size: 18),
                 style: IconButton.styleFrom(
                   foregroundColor: scheme.onPrimary,
-                  visualDensity: VisualDensity.compact,
-                  minimumSize: const Size(28, 28),
+                  minimumSize: const Size(40, 40),
                   padding: EdgeInsets.zero,
                 ),
               ),
@@ -454,8 +453,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 style: IconButton.styleFrom(
                   foregroundColor: scheme.onPrimary,
                   disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.35),
-                  visualDensity: VisualDensity.compact,
-                  minimumSize: const Size(28, 28),
+                  minimumSize: const Size(40, 40),
                   padding: EdgeInsets.zero,
                 ),
               ),
@@ -525,7 +523,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 Icon(Icons.my_location_rounded, size: 14, color: fgColor),
                 const SizedBox(width: 4),
                 Text(
-                  '오늘',
+                  '오늘로',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w900,
@@ -1576,9 +1574,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     (true, HubPeriod.day) => '미통화 비율',
                     (true, HubPeriod.week) => '주간 미통화 비율',
                     (true, HubPeriod.month) => '월간 미통화 비율',
-                    (false, HubPeriod.day) => '초기응답 평균 (담당자별)',
-                    (false, HubPeriod.week) => '주간 초기응답 (담당자별)',
-                    (false, HubPeriod.month) => '월간 초기응답 (담당자별)',
+                    (false, HubPeriod.day) => '첫 응답 평균 (담당자별)',
+                    (false, HubPeriod.week) => '주간 첫 응답 (담당자별)',
+                    (false, HubPeriod.month) => '월간 첫 응답 (담당자별)',
                   },
                   style: TextStyle(
                     fontSize: 16,
@@ -1603,7 +1601,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 if (!forUncalledRate) ...[
                   const SizedBox(height: 4),
                   Text(
-                    '초기응답이 긴 순 · 1·2·3등 표시',
+                    '첫 응답이 긴 순 · 1·2·3등 표시',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1745,7 +1743,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     if (_section == section && !fromPill) return;
     HapticFeedback.selectionClick();
     setState(() => _section = section);
-    ref.read(bottomBarVisibilityProvider.notifier).state = true;
     if (_sectionPageController.hasClients) {
       _sectionPageController.animateToPage(
         _sectionIndex(section),
@@ -1842,7 +1839,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _sectionPageController = PageController(initialPage: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _publishHubPeriod();
-      ref.read(bottomBarVisibilityProvider.notifier).state = true;
       _checkAndSyncPending();
       _consumePendingLaunch();
       _loadHomeFlowPrefs();
@@ -2351,8 +2347,44 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         ),
         );
       },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      loading: () => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: LinearProgressIndicator(
+          minHeight: 3,
+          color: scheme.error.withValues(alpha: 0.5),
+          backgroundColor: scheme.errorContainer.withValues(alpha: 0.2),
+        ),
+      ),
+      error: (_, __) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Material(
+          color: scheme.errorContainer.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: () => ref.invalidate(hubPendingUncalledSummaryProvider),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.cloud_off_rounded, size: 18, color: scheme.error),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '처리할 미통화를 불러오지 못했습니다 · 탭하여 다시 시도',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -2519,7 +2551,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             color: scheme.primary,
                           ),
                           label: Text(
-                            '미통화 안내 · 설정',
+                            '미통화 안내 설정',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -2662,7 +2694,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 }
 
-class _MiniStatsWidget extends StatelessWidget {
+class _MiniStatsWidget extends StatefulWidget {
   const _MiniStatsWidget({
     required this.receptionLabel,
     required this.incompleteLabel,
@@ -2702,8 +2734,16 @@ class _MiniStatsWidget extends StatelessWidget {
   final bool compact;
 
   @override
+  State<_MiniStatsWidget> createState() => _MiniStatsWidgetState();
+}
+
+class _MiniStatsWidgetState extends State<_MiniStatsWidget> {
+  bool _qualityExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final compact = widget.compact;
     return Container(
       padding: EdgeInsets.all(compact ? 10 : 12),
       decoration: _HubVisual.elevatedCard(scheme),
@@ -2716,11 +2756,11 @@ class _MiniStatsWidget extends StatelessWidget {
                 Expanded(
                   child: _FlowStatTile(
                     icon: Icons.inbox_rounded,
-                    label: receptionLabel,
-                    value: today.toString(),
+                    label: widget.receptionLabel,
+                    value: widget.today.toString(),
                     color: scheme.primary,
-                    onTap: onTapToday,
-                    onLongPress: onLongPressToday,
+                    onTap: widget.onTapToday,
+                    onLongPress: widget.onLongPressToday,
                     compact: compact,
                   ),
                 ),
@@ -2728,11 +2768,11 @@ class _MiniStatsWidget extends StatelessWidget {
                 Expanded(
                   child: _FlowStatTile(
                     icon: Icons.phone_missed_rounded,
-                    label: incompleteLabel,
-                    value: incomplete.toString(),
+                    label: widget.incompleteLabel,
+                    value: widget.incomplete.toString(),
                     color: scheme.error,
-                    onTap: onTapIncomplete,
-                    onLongPress: onLongPressIncomplete,
+                    onTap: widget.onTapIncomplete,
+                    onLongPress: widget.onLongPressIncomplete,
                     compact: compact,
                   ),
                 ),
@@ -2740,42 +2780,62 @@ class _MiniStatsWidget extends StatelessWidget {
                 Expanded(
                   child: _FlowStatTile(
                     icon: Icons.event_available_rounded,
-                    label: followLabel,
-                    value: todayFollow.toString(),
+                    label: widget.followLabel,
+                    value: widget.todayFollow.toString(),
                     color: scheme.tertiary,
-                    onTap: onTapTodayFollow,
-                    onLongPress: onLongPressTodayFollow,
+                    onTap: widget.onTapTodayFollow,
+                    onLongPress: widget.onLongPressTodayFollow,
                     compact: compact,
                   ),
                 ),
               ],
             ),
           ),
-          SizedBox(height: compact ? 8 : 10),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _InsightItem(
-                    label: '미통화율',
-                    value: uncalledRateText,
-                    color: scheme.error,
-                    onTap: onTapUncalledRate,
-                    compact: compact,
+          if (_qualityExpanded) ...[
+            SizedBox(height: compact ? 8 : 10),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _InsightItem(
+                      label: '미통화율',
+                      value: widget.uncalledRateText,
+                      color: scheme.error,
+                      onTap: widget.onTapUncalledRate,
+                      compact: compact,
+                    ),
                   ),
-                ),
-                SizedBox(width: compact ? 6 : 8),
-                Expanded(
-                  child: _InsightItem(
-                    label: '초기응답평균',
-                    value: avgFirstResponseText,
-                    color: scheme.secondary,
-                    onTap: onTapFirstResponse,
-                    compact: compact,
+                  SizedBox(width: compact ? 6 : 8),
+                  Expanded(
+                    child: _InsightItem(
+                      label: '첫 응답 평균',
+                      value: widget.avgFirstResponseText,
+                      color: scheme.secondary,
+                      onTap: widget.onTapFirstResponse,
+                      compact: compact,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: () => setState(() => _qualityExpanded = !_qualityExpanded),
+            icon: Icon(
+              _qualityExpanded
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded,
+              size: 18,
+            ),
+            label: Text(
+              _qualityExpanded ? '품질 지표 접기' : '품질 지표 더보기',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              minimumSize: const Size(0, 36),
             ),
           ),
         ],

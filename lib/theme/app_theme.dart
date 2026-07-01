@@ -57,7 +57,7 @@ class AppTheme {
           bodyMedium: const TextStyle(fontSize: 15, height: 1.5, letterSpacing: -0.1),
           labelLarge: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.1),
         );
-    final textTheme = _scaleTextTheme(baseTextTheme, 0.88);
+    final textTheme = _scaleTextTheme(baseTextTheme, 0.92);
 
     final inputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),

@@ -39,7 +39,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
-    final loginName = ref.watch(authControllerProvider)?.name.trim();
+    final user = ref.watch(authControllerProvider);
+    final loginName = user?.name.trim();
     final flowPopupOn = _flowUncalledPopupEnabled ?? true;
 
     return Scaffold(
@@ -47,6 +48,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         children: [
+          if (user != null) ...[
+            Text(
+              '계정',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: scheme.primaryContainer,
+                child: Text(
+                  (loginName != null && loginName.isNotEmpty)
+                      ? loginName[0]
+                      : '?',
+                  style: TextStyle(
+                    color: scheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              title: Text(loginName != null && loginName.isNotEmpty ? loginName : '사용자'),
+              subtitle: Text('사번/ID: ${user.id}'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.logout, color: scheme.error),
+              title: Text('로그아웃', style: TextStyle(color: scheme.error, fontWeight: FontWeight.w700)),
+              onTap: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('로그아웃'),
+                    content: const Text('정말 로그아웃 하시겠습니까?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
+                    ],
+                  ),
+                );
+                if (confirm == true && context.mounted) {
+                  await ref.read(authControllerProvider.notifier).logout();
+                }
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
+          Text(
+            '앱',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.info_outline, color: scheme.primary),

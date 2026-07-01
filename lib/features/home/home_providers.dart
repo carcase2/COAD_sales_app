@@ -583,7 +583,5 @@ final hubSegmentCalendarBadgeProvider = FutureProvider<int>((ref) async {
   return totalInPeriod;
 });
 
-final bottomBarVisibilityProvider = StateProvider<bool>((ref) => true);
-
 /// 메인 화면의 Scaffold를 제어하기 위한 Key (드로어 열기 등)
 final mainScaffoldKeyProvider = Provider((ref) => GlobalKey<ScaffoldState>());

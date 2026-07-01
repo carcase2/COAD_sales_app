@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
@@ -684,18 +686,17 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('통화 상세'),
+        title: const Text('접수 상세'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onPrimary),
         actions: [
           IconButton(
-            icon: const Icon(Icons.home_rounded),
-            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-            tooltip: '홈으로 이동',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _loading || _deleting ? null : () => unawaited(_bootstrap()),
+            tooltip: '새로고침',
           ),
-          IconButton(
-            icon: Icon(_isEditMode ? Icons.view_headline_rounded : Icons.edit_note_rounded),
+          TextButton(
             onPressed: _deleting
                 ? null
                 : () {
@@ -706,7 +707,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       }
                     });
                   },
-            tooltip: _isEditMode ? '조회 모드' : '접수 정보 수정',
+            child: Text(
+              _isEditMode ? '조회' : '수정',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.home_rounded),
+            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            tooltip: '홈으로 이동',
           ),
           PopupMenuButton<String>(
             enabled: !_deleting && !_loading && _model != null,

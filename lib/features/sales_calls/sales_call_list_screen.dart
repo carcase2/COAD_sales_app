@@ -75,6 +75,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   bool _hasScrolledToInitial = false;
   int? _lastHandledAssigneeScrollNonce;
   bool _pendingSharedAssigneeScroll = false;
+  bool _mineOnlyFilter = false;
 
   bool get _sharedAssigneeFilter => widget.onAssigneeChanged != null;
 
@@ -303,7 +304,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   String get _title {
     switch (widget.mode) {
       case ListQueryMode.today:
-        return '오늘 통화';
+        return '오늘 접수';
       case ListQueryMode.incomplete:
         if (widget.date != null && widget.dateEndInclusive != null) {
           return '미통화 ${widget.date} ~ ${widget.dateEndInclusive}';
@@ -592,21 +593,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
           final user = ref.watch(authControllerProvider);
           final userName = user?.name;
-          // 날짜 팔로우: 로그인명 자동 선택 시 전체 건수와 칩 필터가 어긋나 0건으로 보일 수 있음 → 비활성화
-          if (!_sharedAssigneeFilter &&
-              widget.mode != ListQueryMode.incompleteByDate &&
-              widget.mode != ListQueryMode.followRange &&
-              widget.initialAssignee == null &&
-              activeAssignee == '전체' &&
-              userName != null &&
-              counts.containsKey(userName)) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _activeAssignee == '전체') {
-                _updateAssignee(userName);
-              }
-            });
-          }
-
+          // 담당자 자동 필터 제거 — 기본은 전체, 「내 건만」 토글로 선택
           if (!_sharedAssigneeFilter &&
               widget.initialAssignee != null &&
               widget.initialAssignee != '전체' &&
@@ -662,6 +649,25 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           return Column(
             children: [
               if (widget.embedded) _buildEmbeddedSearchBar(),
+              if (!_sharedAssigneeFilter &&
+                  userName != null &&
+                  userName.isNotEmpty &&
+                  counts.containsKey(userName))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilterChip(
+                      label: Text('내 건만 ($userName)'),
+                      selected: _mineOnlyFilter,
+                      onSelected: (selected) {
+                        HapticFeedback.selectionClick();
+                        setState(() => _mineOnlyFilter = selected);
+                        _updateAssignee(selected ? userName : '전체');
+                      },
+                    ),
+                  ),
+                ),
               Container(
                 height: 58,
                 width: double.infinity,
@@ -689,6 +695,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       child: GestureDetector(
                         onTap: () {
                           HapticFeedback.selectionClick();
+                          if (assignee != '전체' && assignee == userName) {
+                            setState(() => _mineOnlyFilter = true);
+                          } else if (assignee == '전체') {
+                            setState(() => _mineOnlyFilter = false);
+                          } else {
+                            setState(() => _mineOnlyFilter = false);
+                          }
                           _updateAssignee(assignee);
                         },
                         child: AnimatedContainer(

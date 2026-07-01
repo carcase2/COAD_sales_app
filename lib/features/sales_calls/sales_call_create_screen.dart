@@ -412,7 +412,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         title: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('새 통화 등록', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+            Text('새 접수 등록', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
             Text(
               '한 화면에서 입력 · 아래로 스크롤',
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
@@ -442,7 +442,24 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               child: masterAsync.when(
                 data: (master) => _buildUnifiedForm(master, user?.name ?? '작성자'),
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+                error: (e, _) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(koreanErrorMessage(e), textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () =>
+                              ref.invalidate(salesCallCreateMasterDataProvider),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('다시 시도'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
             masterAsync.maybeWhen(
@@ -484,6 +501,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             onSelected: (id) => setState(() => _methodId = id),
             selectedColor: const Color(0xFF0EA5E9),
           ),
+          const SizedBox(height: 12),
+          _buildSimpleInquiryToggle(scheme),
           const SizedBox(height: 20),
           _buildSectionDivider(scheme),
           _buildSectionHeader('고객', Icons.contact_mail_outlined, scheme),
@@ -593,8 +612,6 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               onRemoveAt: (i) => setState(() => _uploadedImageUrls.removeAt(i)),
             ),
           ),
-          const SizedBox(height: 12),
-          _buildSimpleInquiryToggle(scheme),
           const SizedBox(height: 88),
         ],
       ),

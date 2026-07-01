@@ -15,6 +15,7 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_create_scree
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
+import 'package:coad_customer_calls/core/widgets/ux_onboarding_sheet.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
 import 'package:coad_customer_calls/navigation/app_menu_drawer.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
@@ -68,6 +69,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ref.invalidate(appUpdateStatusProvider);
         await ref.read(appUpdateStatusProvider.future);
       }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        unawaited(showUxOnboardingIfNeeded(context, ref));
+      });
     });
 
     // 흐름 프리페치 후 여유 있을 때 처리할 미통화·발급 감시 (첫 화면 네트워크 혼잡 완화)
@@ -425,16 +433,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       return;
     }
     if (navIndex == _navReceptionIndex) {
-      final prevNav = _navSelectedIndex;
-      setState(() => _navSelectedIndex = _navReceptionIndex);
-      unawaited(
-        _openReceptionCreate().whenComplete(() {
-          if (!mounted) return;
-          if (_currentIndex == _homeTabIndex) {
-            setState(() => _navSelectedIndex = prevNav);
-          }
-        }),
-      );
+      unawaited(_openReceptionQuickActions());
       return;
     }
     if (navIndex == _navHomeIndex) {
@@ -466,27 +465,44 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       context: context,
       showDragHandle: true,
       builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.add_ic_call_rounded),
-                title: const Text('일반 접수 등록'),
-                onTap: () => Navigator.of(context).pop('create'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.list_alt_rounded),
-                title: const Text('금일 접수 목록'),
-                onTap: () => Navigator.of(context).pop('today'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.phone_missed_rounded),
-                title: const Text('금일 미통화 목록'),
-                onTap: () => Navigator.of(context).pop('incomplete'),
-              ),
-              const SizedBox(height: 8),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '접수',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).pop('create'),
+                  icon: const Icon(Icons.add_ic_call_rounded),
+                  label: const Text('새 접수 등록'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Icon(Icons.list_alt_rounded, color: scheme.primary),
+                  title: const Text('오늘 접수 목록'),
+                  subtitle: const Text('금일 접수 건 조회'),
+                  onTap: () => Navigator.of(context).pop('today'),
+                ),
+                ListTile(
+                  leading: Icon(Icons.phone_missed_rounded, color: scheme.error),
+                  title: const Text('오늘 미통화 목록'),
+                  subtitle: const Text('금일 미통화 건 조회'),
+                  onTap: () => Navigator.of(context).pop('incomplete'),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -543,7 +559,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     const HomeHubScreen(),
     _loadedIndices.contains(_issuanceTabIndex)
         ? const IssuanceRequestScreen()
-        : const SizedBox.shrink(),
+        : const Center(child: CircularProgressIndicator()),
   ];
 
   @override
@@ -652,11 +668,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           centerTitle: true,
           backgroundColor: appBarBg,
           foregroundColor: Colors.white,
-          leading: IconButton(
-            icon: const Icon(Icons.menu_rounded),
-            onPressed: () => scaffoldKey.currentState?.openDrawer(),
-            tooltip: '메뉴 열기',
-          ),
+          automaticallyImplyLeading: false,
           actions: [
             IconButton(
               icon: const Icon(Icons.search_rounded),
@@ -755,12 +767,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
     return AppMenuCatalog(
       sections: const [
+        AppMenuSection(id: 'shortcuts', title: '바로가기'),
         AppMenuSection(id: 'account', title: '계정'),
       ],
       entries: [
         AppMenuEntry(
           id: 'home_pending_uncalled',
-          sectionId: 'account',
+          sectionId: 'shortcuts',
           icon: Icons.phone_missed_rounded,
           title: '처리할 미통화',
           quickAccess: true,
@@ -773,7 +786,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         AppMenuEntry(
           id: 'home_calendar',
-          sectionId: 'account',
+          sectionId: 'shortcuts',
           icon: Icons.calendar_month_rounded,
           title: '상담 달력',
           quickAccess: true,
@@ -790,7 +803,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         AppMenuEntry(
           id: 'reception_today',
-          sectionId: 'account',
+          sectionId: 'shortcuts',
           icon: Icons.list_alt_rounded,
           title: '오늘 접수 목록',
           quickAccess: true,
@@ -801,7 +814,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         AppMenuEntry(
           id: 'reception_incomplete_today',
-          sectionId: 'account',
+          sectionId: 'shortcuts',
           icon: Icons.phone_callback_rounded,
           title: '오늘 미통화 목록',
           quickAccess: true,
@@ -812,7 +825,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ),
         AppMenuEntry(
           id: 'search',
-          sectionId: 'account',
+          sectionId: 'shortcuts',
           icon: Icons.search_rounded,
           title: '통합 검색',
           quickAccess: true,
@@ -1020,34 +1033,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
           ),
           child: const Icon(
-            Icons.door_front_door_rounded,
+            Icons.phone_in_talk_rounded,
             size: 14,
             color: Colors.white,
           ),
         ),
         const SizedBox(width: 8),
-        RichText(
-          text: TextSpan(
-            children: [
-              const TextSpan(
-                text: 'COAD',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              TextSpan(
-                text: ' DOOR',
-                style: TextStyle(
-                  color: const Color(0xFFFFC857).withValues(alpha: 0.95),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
+        const Text(
+          'COAD 영업',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.3,
           ),
         ),
       ],
@@ -1164,7 +1162,9 @@ class _MainBottomNavBar extends StatelessWidget {
               Expanded(
                 child: _BottomNavItem(
                   label: '본사일반',
-                  tag: kGeneralScheduleTestLabel,
+                  tag: kGeneralScheduleTestLabel.isEmpty
+                      ? null
+                      : kGeneralScheduleTestLabel,
                   selected: selectedIndex == 3,
                   selectedIcon: Icons.engineering_rounded,
                   unselectedIcon: Icons.engineering_outlined,

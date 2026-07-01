@@ -91,7 +91,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       locale: const Locale('ko', 'KR'),
     );
     if (picked == null || !mounted) return;
-    _onDayTapped(_ymd(picked), ref.read(generalScheduleGridProvider));
+    _selectDayAndScroll(_ymd(picked));
   }
 
   Future<void> _openDetail(
@@ -471,28 +471,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     }
   }
 
-  void _showDayFullMessage(String ymd) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${formatYmdFlowLabelKo(ymd)} — 빈 칸이 없습니다 (6/6 만석)',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  /// 날짜 탭: 해당일로 이동 후 빈 칸이 있으면 등록, 없으면 안내.
+  /// 날짜 탭: 해당일로 이동만 (등록은 빈 칸·버튼에서).
   void _onDayTapped(String ymd, GeneralScheduleDayGrid grid) {
-    setState(() => _selectedDay = DateTime.parse(ymd));
-    final slots = grid[ymd] ?? emptyDaySlots();
-    final emptyIndex = firstEmptySlotIndex(slots);
-    if (emptyIndex == null) {
-      _showDayFullMessage(ymd);
-      return;
-    }
-    unawaited(_openAddForm(emptyIndex, ymd));
+    _selectDayAndScroll(ymd);
   }
 
   void _openMonthSheet(GeneralScheduleDayGrid grid) {
@@ -575,9 +556,6 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
         appBar: AppBar(
           centerTitle: false,
           title: const Text('본사일반'),
-          actions: const [
-            _GeneralScheduleTestAppBarBadge(),
-          ],
         ),
         body: const Center(
           child: Text('본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.'),
@@ -605,11 +583,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final isToday = selectedYmd == todayYmdSeoul();
 
     return Scaffold(
-      appBar: AppBar(
+        appBar: AppBar(
         centerTitle: false,
         title: const Text('본사일반'),
         actions: [
-          const _GeneralScheduleTestAppBarBadge(),
           IconButton(
             icon: Icon(
               Icons.search_rounded,
@@ -617,6 +594,17 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
             ),
             tooltip: '전체 일정 검색',
             onPressed: _openSearchResults,
+          ),
+          IconButton(
+            icon: recordsAsync.isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            tooltip: '새로고침',
+            onPressed: recordsAsync.isLoading ? null : () => unawaited(_reload()),
           ),
           IconButton(
             icon: Icon(
@@ -693,7 +681,6 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _GeneralScheduleTestBanner(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 8, 14, 2),
                 child: Text(
@@ -1545,88 +1532,6 @@ class _DialogSlotDots extends StatelessWidget {
           ),
         );
       }),
-    );
-  }
-}
-
-class _GeneralScheduleTestAppBarBadge extends StatelessWidget {
-  const _GeneralScheduleTestAppBarBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFC857),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.black.withValues(alpha: 0.14)),
-          ),
-          child: const Text(
-            kGeneralScheduleTestLabel,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF3E2723),
-              height: 1,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GeneralScheduleTestBanner extends StatelessWidget {
-  const _GeneralScheduleTestBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.deepOrange.shade50,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-        child: Row(
-          children: [
-            Icon(
-              Icons.science_outlined,
-              size: 18,
-              color: Colors.deepOrange.shade800,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '본사일반은 현재 $kGeneralScheduleTestLabel 기능입니다.',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurface,
-                  height: 1.3,
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFC857),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.12)),
-              ),
-              child: const Text(
-                kGeneralScheduleTestLabel,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF3E2723),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

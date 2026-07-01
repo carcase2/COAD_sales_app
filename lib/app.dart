@@ -32,8 +32,8 @@ class CoadCustomerCallsApp extends ConsumerWidget {
       builder: (context, child) {
         final media = MediaQuery.of(context);
         final clampedScale = media.textScaler.clamp(
-          minScaleFactor: 0.95,
-          maxScaleFactor: 1.15,
+          minScaleFactor: 0.9,
+          maxScaleFactor: 1.4,
         );
         return MediaQuery(
           data: media.copyWith(textScaler: clampedScale),
