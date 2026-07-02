@@ -57,10 +57,20 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
-  static const String _androidChannelId = 'high_importance_channel';
-  static const String _androidChannelName = 'High Importance Notifications';
-  static const String _androidChannelDescription =
-      'This channel is used for important notifications.';
+  static const String _androidChannelCallId = 'call_notifications';
+  static const String _androidChannelIssuanceId = 'issuance_notifications';
+  static const String _androidChannelScheduleId = 'schedule_notifications';
+  static const String _androidChannelGeneralId = 'general_notifications';
+
+  static const String _androidChannelCallName = '새 접수 알림';
+  static const String _androidChannelIssuanceName = '발급요청 알림';
+  static const String _androidChannelScheduleName = '본사일반 일정 알림';
+  static const String _androidChannelGeneralName = '일반 알림';
+
+  static const String _androidChannelCallDesc = '새 통화 접수 알림';
+  static const String _androidChannelIssuanceDesc = '세금계산서/이행증권 발급 알림';
+  static const String _androidChannelScheduleDesc = '본사일반 일정 변경 알림';
+  static const String _androidChannelGeneralDesc = '앱 업데이트 등 일반 알림';
 
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -112,6 +122,46 @@ class NotificationService {
       return prefs.getBool(key) ?? true;
     } catch (_) {
       return true;
+    }
+  }
+
+  static String _androidChannelIdForData(Map<String, dynamic> data) {
+    if (_isIssuanceCompletedNotification(data) ||
+        _isIssuanceRequestNotification(data)) {
+      return _androidChannelIssuanceId;
+    }
+    if (_isGeneralScheduleNotification(data)) {
+      return _androidChannelScheduleId;
+    }
+    if (_extractCallIdFromData(data) != null) {
+      return _androidChannelCallId;
+    }
+    return _androidChannelGeneralId;
+  }
+
+  static String _androidChannelNameForId(String channelId) {
+    switch (channelId) {
+      case _androidChannelCallId:
+        return _androidChannelCallName;
+      case _androidChannelIssuanceId:
+        return _androidChannelIssuanceName;
+      case _androidChannelScheduleId:
+        return _androidChannelScheduleName;
+      default:
+        return _androidChannelGeneralName;
+    }
+  }
+
+  static String _androidChannelDescForId(String channelId) {
+    switch (channelId) {
+      case _androidChannelCallId:
+        return _androidChannelCallDesc;
+      case _androidChannelIssuanceId:
+        return _androidChannelIssuanceDesc;
+      case _androidChannelScheduleId:
+        return _androidChannelScheduleDesc;
+      default:
+        return _androidChannelGeneralDesc;
     }
   }
 
@@ -195,18 +245,28 @@ class NotificationService {
       _pendingLaunchPayload = launchPayload;
     }
 
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      _androidChannelId,
-      _androidChannelName,
-      description: _androidChannelDescription,
-      importance: Importance.max,
-    );
-
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    await androidPlugin?.createNotificationChannel(channel);
+    if (androidPlugin != null) {
+      const ids = <String>[
+        _androidChannelCallId,
+        _androidChannelIssuanceId,
+        _androidChannelScheduleId,
+        _androidChannelGeneralId,
+      ];
+      for (final id in ids) {
+        await androidPlugin.createNotificationChannel(
+          AndroidNotificationChannel(
+            id,
+            _androidChannelNameForId(id),
+            description: _androidChannelDescForId(id),
+            importance: Importance.max,
+          ),
+        );
+      }
+    }
     if (androidPlugin != null) {
       // Android 13+ 권한 다이얼로그도 시작 흐름을 막지 않게 비동기 처리.
       unawaited(
@@ -434,10 +494,11 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     if (androidPlugin != null) {
-      const channel = AndroidNotificationChannel(
-        _androidChannelId,
-        _androidChannelName,
-        description: _androidChannelDescription,
+      final channelId = _androidChannelIdForData(data);
+      final channel = AndroidNotificationChannel(
+        channelId,
+        _androidChannelNameForId(channelId),
+        description: _androidChannelDescForId(channelId),
         importance: Importance.max,
       );
       await androidPlugin.createNotificationChannel(channel);
@@ -461,9 +522,11 @@ class NotificationService {
       payload: payload,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          _androidChannelId,
-          _androidChannelName,
-          channelDescription: _androidChannelDescription,
+          _androidChannelIdForData(data),
+          _androidChannelNameForId(_androidChannelIdForData(data)),
+          channelDescription: _androidChannelDescForId(
+            _androidChannelIdForData(data),
+          ),
           importance: Importance.max,
           priority: Priority.high,
           styleInformation: BigTextStyleInformation(body),
@@ -1401,9 +1464,9 @@ class NotificationService {
       payload: jsonEncode(payload),
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          _androidChannelId,
-          _androidChannelName,
-          channelDescription: _androidChannelDescription,
+          _androidChannelIssuanceId,
+          _androidChannelIssuanceName,
+          channelDescription: _androidChannelIssuanceDesc,
           importance: Importance.max,
           priority: Priority.high,
           styleInformation: BigTextStyleInformation(body),
@@ -1433,9 +1496,9 @@ class NotificationService {
       payload: payload,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          _androidChannelId,
-          _androidChannelName,
-          channelDescription: _androidChannelDescription,
+          _androidChannelCallId,
+          _androidChannelCallName,
+          channelDescription: _androidChannelCallDesc,
           importance: Importance.max,
           priority: Priority.high,
           tag: callId,

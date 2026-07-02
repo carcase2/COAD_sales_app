@@ -27,6 +27,8 @@ class CoadCustomerCallsApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
       builder: (context, child) {
         final media = MediaQuery.of(context);
         final clampedScale = media.textScaler.clamp(

@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -199,6 +200,36 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       if (_debouncedSearchQuery == trimmed) return;
       setState(() => _debouncedSearchQuery = trimmed);
     });
+  }
+
+  Future<bool> _onCardSwipe(
+    DismissDirection direction,
+    SalesCall call,
+  ) async {
+    final phone = (call.customerPhone ?? '').trim();
+    if (direction == DismissDirection.startToEnd) {
+      if (phone.isNotEmpty) {
+        await LauncherUtils.makePhoneCall(phone);
+      } else if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('전화번호가 없습니다.')));
+      }
+      return false;
+    }
+    if (phone.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: phone));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('전화번호를 복사했습니다.')));
+      }
+    } else if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('복사할 전화번호가 없습니다.')));
+    }
+    return false;
   }
 
   ({
@@ -538,6 +569,15 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     return '${diff.inDays}일 경과';
   }
 
+  Future<void> _openCreateShortcut() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const SalesCallCreateScreen()),
+    );
+    if (created == true && mounted) {
+      await _loadWithCache();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.embedded) {
@@ -590,6 +630,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         ],
       ),
       body: _buildBody(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openCreateShortcut,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('새 접수'),
+      ),
     );
   }
 
@@ -929,7 +974,65 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final displayAssignee = _assigneeForMode(c, overrides);
                             final assignColor = _colorForAssignee(displayAssignee, scheme);
 
-                            return Container(
+                            return Dismissible(
+                              key: ValueKey('swipe_${c.id}_$i'),
+                              direction: DismissDirection.horizontal,
+                              confirmDismiss: (direction) =>
+                                  _onCardSwipe(direction, c),
+                              background: Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 18),
+                                decoration: BoxDecoration(
+                                  color: scheme.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.call_rounded,
+                                      color: scheme.onSecondaryContainer,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '전화 걸기',
+                                      style: TextStyle(
+                                        color: scheme.onSecondaryContainer,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              secondaryBackground: Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 18),
+                                decoration: BoxDecoration(
+                                  color: scheme.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                alignment: Alignment.centerRight,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '번호 복사',
+                                      style: TextStyle(
+                                        color: scheme.onTertiaryContainer,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.copy_rounded,
+                                      color: scheme.onTertiaryContainer,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              child: Container(
                               key: ValueKey(c.id),
                               margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
@@ -1219,6 +1322,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   ),
                                 ),
                               ),
+                            ),
                             );
                           },
                         ),

@@ -32,10 +32,12 @@ class IssuanceFilteredListPage extends ConsumerStatefulWidget {
 
 class _IssuanceFilteredListPageState
     extends ConsumerState<IssuanceFilteredListPage> {
+  static const int _pageSize = 40;
   late IssuanceDomain _domain;
 
   bool _openedPendingDetail = false;
   bool _refreshing = false;
+  int _visibleCount = _pageSize;
 
   /// 부분발급 담당자 필터 — null이면 전체.
   String? _assigneeFilter;
@@ -67,6 +69,7 @@ class _IssuanceFilteredListPageState
   bool get _isTax => _domain == IssuanceDomain.taxInvoice;
 
   Future<void> _reloadRows() async {
+    setState(() => _visibleCount = _pageSize);
     ref.invalidate(issuanceAllRowsProvider(_domain));
     ref.invalidate(issuanceRequestRowsProvider(_domain));
     ref.invalidate(issuanceCancelledRowsProvider(_domain));
@@ -153,7 +156,33 @@ class _IssuanceFilteredListPageState
       _domain = domain;
       _assigneeFilterInitialized = false;
       _assigneeFilter = null;
+      _visibleCount = _pageSize;
     });
+  }
+
+  void _loadMore(int total) {
+    if (_visibleCount >= total) return;
+    setState(() {
+      _visibleCount = (_visibleCount + _pageSize).clamp(0, total);
+    });
+  }
+
+  Widget _buildLoadMore({
+    required int total,
+    required int visible,
+    required ColorScheme scheme,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+      child: Center(
+        child: OutlinedButton.icon(
+          onPressed: () => _loadMore(total),
+          icon: const Icon(Icons.expand_more_rounded),
+          label: Text('더 보기 ($visible / $total)'),
+          style: OutlinedButton.styleFrom(foregroundColor: scheme.primary),
+        ),
+      ),
+    );
   }
 
   /// 기본값: 로그인 사용자에게 부분발급 건이 있으면 본인, 없으면 전체.
@@ -479,17 +508,23 @@ class _IssuanceFilteredListPageState
             widget.kind == IssuanceListKind.partial
         ? sortIssuanceRowsOwnFirst(rows, user?.name)
         : rows;
+    final visibleRows = displayRows.take(_visibleCount).toList();
+    final hasMore = displayRows.length > visibleRows.length;
 
     if (widget.kind != IssuanceListKind.request) {
-      return ListView.separated(
+      return ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        itemCount: displayRows.length,
-        separatorBuilder: (_, index) => SizedBox(
-          height: widget.kind == IssuanceListKind.request ? 12 : 10,
-        ),
+        itemCount: visibleRows.length + (hasMore ? 1 : 0),
         itemBuilder: (context, index) {
-          final row = displayRows[index];
+          if (index >= visibleRows.length) {
+            return _buildLoadMore(
+              total: displayRows.length,
+              visible: visibleRows.length,
+              scheme: scheme,
+            );
+          }
+          final row = visibleRows[index];
           return _buildRowTile(
             row,
             isOwn: issuanceIsOwnRequest(row, user?.name),
@@ -498,7 +533,7 @@ class _IssuanceFilteredListPageState
       );
     }
 
-    final split = splitIssuanceRowsByOwner(rows, user?.name);
+    final split = splitIssuanceRowsByOwner(visibleRows, user?.name);
     final ownAccent = _isTax
         ? Colors.indigo.shade600
         : Colors.deepOrange.shade700;
@@ -533,8 +568,15 @@ class _IssuanceFilteredListPageState
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      itemCount: entries.length,
+      itemCount: entries.length + (hasMore ? 1 : 0),
       itemBuilder: (context, index) {
+        if (index >= entries.length) {
+          return _buildLoadMore(
+            total: displayRows.length,
+            visible: visibleRows.length,
+            scheme: scheme,
+          );
+        }
         final entry = entries[index];
         return Padding(
           padding: EdgeInsets.only(
@@ -552,7 +594,7 @@ class _IssuanceFilteredListPageState
           child: switch (entry.kind) {
             _RequestListEntryKind.banner => _buildMyRequestsBanner(
                 myCount: split.mine.length,
-                totalCount: rows.length,
+                totalCount: displayRows.length,
                 accent: ownAccent,
               ),
             _RequestListEntryKind.header => _sectionHeader(
