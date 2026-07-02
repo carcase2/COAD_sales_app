@@ -2,6 +2,7 @@ import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
+import 'package:coad_customer_calls/providers/theme_mode_provider.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
@@ -82,6 +83,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final user = ref.watch(authControllerProvider);
     final loginName = user?.name.trim();
     final flowPopupOn = _flowUncalledPopupEnabled ?? true;
+    final themeMode = ref.watch(themeModeProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
@@ -148,6 +150,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: Icon(Icons.info_outline, color: scheme.primary),
             title: const Text('앱 버전'),
             subtitle: Text('v$kAppVersion'),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '화면 모드',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<ThemeMode>(
+            segments: const [
+              ButtonSegment(
+                value: ThemeMode.light,
+                label: Text('밝게'),
+                icon: Icon(Icons.light_mode_outlined, size: 18),
+              ),
+              ButtonSegment(
+                value: ThemeMode.dark,
+                label: Text('어둡게'),
+                icon: Icon(Icons.dark_mode_outlined, size: 18),
+              ),
+              ButtonSegment(
+                value: ThemeMode.system,
+                label: Text('시스템'),
+                icon: Icon(Icons.brightness_auto_outlined, size: 18),
+              ),
+            ],
+            selected: {themeMode},
+            onSelectionChanged: (selected) {
+              ref.read(themeModeProvider.notifier).setMode(selected.first);
+            },
+          ),
+          const SizedBox(height: 6),
+          Text(
+            themeMode == ThemeMode.light
+                ? '기본값입니다. 항상 밝은 화면으로 표시합니다.'
+                : themeMode == ThemeMode.dark
+                ? '항상 어두운 화면으로 표시합니다.'
+                : '휴대폰 다크 모드 설정을 따릅니다.',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: scheme.onSurfaceVariant,
+              height: 1.35,
+            ),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,

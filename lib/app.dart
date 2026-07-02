@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/providers/theme_mode_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class CoadCustomerCallsApp extends ConsumerWidget {
@@ -12,6 +13,7 @@ class CoadCustomerCallsApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'COAD 영업',
       navigatorKey: NotificationService.navigatorKey,
@@ -28,7 +30,7 @@ class CoadCustomerCallsApp extends ConsumerWidget {
       ],
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
+      themeMode: themeMode,
       builder: (context, child) {
         final media = MediaQuery.of(context);
         final clampedScale = media.textScaler.clamp(
