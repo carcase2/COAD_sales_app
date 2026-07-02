@@ -310,8 +310,7 @@ class _GeneralScheduleFormScreenState
               ? null
               : assignment.teamSlotMap,
         );
-        final all = await repo.fetchAll();
-        saved = all.firstWhere((e) => e.id == widget.editing!.id);
+        saved = await repo.fetchById(widget.editing!.id);
         try {
           await repo.dispatchGeneralScheduleNotification(
             action: 'updated',

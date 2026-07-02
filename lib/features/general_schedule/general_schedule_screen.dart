@@ -797,7 +797,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                     days: scrollDays,
                     selectedYmd: selectedYmd,
                     grid: grid,
-                    searchQuery: '',
+                    searchQuery: _searchQuery,
                     onRefresh: _reload,
                     onDayChanged: (ymd) {
                       _selectDay(ymd);
@@ -1287,24 +1287,52 @@ class _SlotLaneCard extends StatelessWidget {
                                   assignee.isNotEmpty ? assignee : cell!.site;
                               final periodLabel =
                                   '${formatWeekRangeFlowLabel(cell!.start, cell!.endDate)} ($dayCount일)';
-                              final summary = [
-                                primaryLabel,
+                              final secondary = [
                                 if (assignee.isNotEmpty) cell!.site,
                                 if (doorLabel.isNotEmpty) doorLabel,
                                 periodLabel,
                               ].join(' · ');
-                              return Text(
-                                isSearchMismatch ? '검색어와 일치하지 않음' : summary,
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.15,
-                                  color: isSearchMismatch
-                                      ? scheme.onSurfaceVariant
-                                      : scheme.onSurface,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              if (isSearchMismatch) {
+                                return Text(
+                                  '검색어와 일치하지 않음',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.15,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                );
+                              }
+                              return Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    primaryLabel,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.2,
+                                      color: scheme.onSurface,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (secondary.isNotEmpty)
+                                    Text(
+                                      secondary,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.2,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
                               );
                             },
                           )

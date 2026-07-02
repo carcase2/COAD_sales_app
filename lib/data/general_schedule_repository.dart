@@ -15,28 +15,9 @@ class GeneralScheduleRepository {
   final AppDependencies _deps;
   final SupabaseClient _client = Supabase.instance.client;
 
-  /// [endDateFromYmd] — 종료일이 이 날짜 이후인 일정만 (과거 이력 제한).
-  /// 미래 일정은 빈 칸 탐색 정확성을 위해 항상 전부 포함해야 하므로 상한은 두지 않음.
-  Future<List<GeneralScheduleRecord>> fetchAll({String? endDateFromYmd}) async {
-    var query = _client.from('sales_schedule').select('''
-        id,
-        site,
-        start,
-        end_date,
-        user_id,
-        created_by,
-        updated_by,
-        door_types,
-        models,
-        model_name,
-        slots:schedule_slots(date, slot)
-      ''');
-    if (endDateFromYmd != null) {
-      query = query.gte('end_date', endDateFromYmd);
-    }
-    final res = await query;
-
-    final rows = res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  Future<List<GeneralScheduleRecord>> _parseRecords(
+    List<Map<String, dynamic>> rows,
+  ) async {
     if (rows.isEmpty) return [];
 
     final userIds = <String>{};
@@ -85,6 +66,54 @@ class GeneralScheduleRepository {
       parsed.add(GeneralScheduleRecord.fromJson(row, teamCount: teamCount));
     }
     return parsed;
+  }
+
+  /// [endDateFromYmd] — 종료일이 이 날짜 이후인 일정만 (과거 이력 제한).
+  /// 미래 일정은 빈 칸 탐색 정확성을 위해 항상 전부 포함해야 하므로 상한은 두지 않음.
+  Future<List<GeneralScheduleRecord>> fetchAll({String? endDateFromYmd}) async {
+    var query = _client.from('sales_schedule').select('''
+        id,
+        site,
+        start,
+        end_date,
+        user_id,
+        created_by,
+        updated_by,
+        door_types,
+        models,
+        model_name,
+        slots:schedule_slots(date, slot)
+      ''');
+    if (endDateFromYmd != null) {
+      query = query.gte('end_date', endDateFromYmd);
+    }
+    final res = await query;
+    final rows = res
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    return _parseRecords(rows);
+  }
+
+  Future<GeneralScheduleRecord> fetchById(String scheduleId) async {
+    final row = await _client.from('sales_schedule').select('''
+        id,
+        site,
+        start,
+        end_date,
+        user_id,
+        created_by,
+        updated_by,
+        door_types,
+        models,
+        model_name,
+        slots:schedule_slots(date, slot)
+      ''').eq('id', scheduleId).single();
+    final parsed = await _parseRecords([Map<String, dynamic>.from(row)]);
+    if (parsed.isEmpty) {
+      throw ApiException('일정을 불러오지 못했습니다.');
+    }
+    return parsed.first;
   }
 
   Future<List<DoorTypeOption>> fetchDoorTypes() async {
@@ -140,9 +169,7 @@ class GeneralScheduleRepository {
     final scheduleId = insertRes['id'].toString();
     await _insertSlots(scheduleId, slotMap, extraTeamSlots);
 
-    // end_date >= startYmd 이므로 생성 건은 항상 포함됨.
-    final all = await fetchAll(endDateFromYmd: startYmd);
-    return all.firstWhere((e) => e.id == scheduleId);
+    return fetchById(scheduleId);
   }
 
   Future<void> update({
