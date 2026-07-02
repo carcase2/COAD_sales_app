@@ -2033,7 +2033,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                                           : const Duration(seconds: 4),
                                     ),
                                   );
-                                  Navigator.of(context).pop(true);
+                                  // 상세 화면은 유지 — 연속 상담·확인 작업 편의.
                                 } else if (!ok) {
                                   setModalState(() {});
                                 }

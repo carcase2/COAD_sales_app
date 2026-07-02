@@ -1213,12 +1213,9 @@ class _HomeFollowCalendarPanelState
       final m = seoulMonthRangeContaining(_focusedDayYmd());
       return (startYmd: m.$1, endYmd: m.$2);
     }
-    final mon = seoulWeekRangeContaining(_focusedDayYmd()).$1;
-    final month = seoulMonthRangeContaining(mon);
-    return (
-      startYmd: addDaysToYmd(month.$1, -7),
-      endYmd: addDaysToYmd(month.$2, 7),
-    );
+    // 주간 달력 — 표시 주(월~일)만 조회. 월±7일 전건 fetch 제거.
+    final w = seoulWeekRangeContaining(_focusedDayYmd());
+    return (startYmd: w.$1, endYmd: w.$2);
   }
 
   Future<void> _refreshCalendarData() async {

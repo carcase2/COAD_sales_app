@@ -322,6 +322,7 @@ class SalesCallsRepository {
     bool? completedOnly,
     bool excludeSimpleInquiries = false,
     bool calendarFull = false,
+    bool cacheLocally = true,
   }) async {
     final batch = await _fetchCallsBatch(
       date: date,
@@ -340,6 +341,7 @@ class SalesCallsRepository {
       completedOnly: completedOnly,
       excludeSimpleInquiries: excludeSimpleInquiries,
       calendarFull: calendarFull,
+      cacheLocally: cacheLocally,
     );
     return batch.items;
   }
@@ -361,6 +363,7 @@ class SalesCallsRepository {
     bool? completedOnly,
     bool excludeSimpleInquiries = false,
     bool calendarFull = false,
+    bool cacheLocally = true,
     int pageSize = postgrestMaxPageSize,
   }) async {
     final overrides = await _prepareListFetchContext();
@@ -384,6 +387,7 @@ class SalesCallsRepository {
         completedOnly: completedOnly,
         excludeSimpleInquiries: excludeSimpleInquiries,
         calendarFull: calendarFull,
+        cacheLocally: cacheLocally,
         overrides: overrides,
       );
       merged.addAll(batch.items);
@@ -410,6 +414,7 @@ class SalesCallsRepository {
     bool? completedOnly,
     bool excludeSimpleInquiries = false,
     bool calendarFull = false,
+    bool cacheLocally = true,
     List<TempManagerOverride>? overrides,
   }) async {
     try {
@@ -473,8 +478,8 @@ class SalesCallsRepository {
       final res = await transformBuilder;
       final rawRowCount = res.length;
       
-      // 로컬 DB 동기화 (Upsert)
-      if (res.isNotEmpty) {
+      // 로컬 DB 동기화 (Upsert) — 달력 등 일회성 목록은 생략 가능.
+      if (cacheLocally && res.isNotEmpty) {
         await _db.saveSalesCalls(res);
       }
 

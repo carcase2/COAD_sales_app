@@ -602,6 +602,7 @@ final calendarFollowRangeProvider =
     incompleteOnly: true,
     excludeSimpleInquiries: true,
     includeCallHistory: false,
+    cacheLocally: false,
   );
 });
 
