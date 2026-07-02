@@ -149,17 +149,37 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     }
   }
 
+  /// 「내 건만」 보기 — 화면 재진입 시에도 유지되는 사용자 선호.
+  static const _mineOnlyPrefKey = 'sales_list_mine_only_v1';
+
   @override
   void initState() {
     super.initState();
     if (widget.initialAssignee != null) {
       _selectedAssignee = widget.initialAssignee!;
+    } else if (!_sharedAssigneeFilter) {
+      _restoreMineOnlyPreference();
     }
     if (widget.assigneeScrollNonce != null) {
       _lastHandledAssigneeScrollNonce = widget.assigneeScrollNonce;
       _markSharedAssigneeScrollPending();
     }
     _loadWithCache();
+  }
+
+  void _restoreMineOnlyPreference() {
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    if (prefs.getBool(_mineOnlyPrefKey) != true) return;
+    final userName = ref.read(authControllerProvider)?.name.trim();
+    if (userName == null || userName.isEmpty) return;
+    _mineOnlyFilter = true;
+    _selectedAssignee = userName;
+  }
+
+  void _saveMineOnlyPreference(bool value) {
+    unawaited(
+      ref.read(appDependenciesProvider).prefs.setBool(_mineOnlyPrefKey, value),
+    );
   }
 
   @override
@@ -353,9 +373,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   Future<List<SalesCall>> _fetchRemote(SalesCallsRepository repo) {
     switch (widget.mode) {
       case ListQueryMode.today:
-        return repo.fetchCalls(
+        // 하루치 전체 — limit 100이면 대량 접수일에 조용히 누락됨.
+        return repo.fetchCallsAllPages(
           date: widget.date ?? todayYmdSeoul(),
-          limit: 100,
           includeCallHistory: false,
         );
       case ListQueryMode.incomplete:
@@ -385,10 +405,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           includeCallHistory: false,
         );
       case ListQueryMode.completedToday:
-        return repo.fetchCalls(
+        return repo.fetchCallsAllPages(
           date: widget.date ?? todayYmdSeoul(),
           completedOnly: true,
-          limit: 100,
           includeCallHistory: false,
         );
       case ListQueryMode.incompleteByDate:
@@ -737,6 +756,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       onSelected: (selected) {
                         HapticFeedback.selectionClick();
                         setState(() => _mineOnlyFilter = selected);
+                        _saveMineOnlyPreference(selected);
                         _updateAssignee(selected ? userName : '전체');
                       },
                     ),
@@ -770,13 +790,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       child: GestureDetector(
                         onTap: () {
                           HapticFeedback.selectionClick();
-                          if (assignee != '전체' && assignee == userName) {
-                            setState(() => _mineOnlyFilter = true);
-                          } else if (assignee == '전체') {
-                            setState(() => _mineOnlyFilter = false);
-                          } else {
-                            setState(() => _mineOnlyFilter = false);
-                          }
+                          final mineOnly =
+                              assignee != '전체' && assignee == userName;
+                          setState(() => _mineOnlyFilter = mineOnly);
+                          _saveMineOnlyPreference(mineOnly);
                           _updateAssignee(assignee);
                         },
                         child: AnimatedContainer(

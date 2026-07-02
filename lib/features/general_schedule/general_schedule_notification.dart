@@ -72,6 +72,7 @@ GeneralScheduleAlarmContext buildGeneralScheduleAlarmContext({
   final earliest = findEarliestAvailableSlot(
     grid,
     fromYmd: todayYmd,
+    skipWeekends: true,
   );
 
   return GeneralScheduleAlarmContext(

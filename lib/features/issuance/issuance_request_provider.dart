@@ -519,6 +519,14 @@ class IssuanceRequestService {
     return null;
   }
 
+  /// 발급 이력(완료·부분발급) 표시 기간 — 대기(pending) 건은 기간 무관 전체 포함.
+  static const int kIssuanceHistoryDays = 366;
+
+  String get _historyCutoffIso => DateTime.now()
+      .subtract(const Duration(days: kIssuanceHistoryDays))
+      .toUtc()
+      .toIso8601String();
+
   Future<List<IssuanceRequestRow>> _fetchTaxInvoiceRequests() async {
     final invoicesRes = await _client
         .from('tax_invoices')
@@ -551,7 +559,9 @@ class IssuanceRequestService {
       cancelled_at,
       cancelled_by
     ''')
-        .neq('status', 'cancelled');
+        .neq('status', 'cancelled')
+        // 대기 건은 전체, 그 외(완료 등)는 최근 1년만 — 오래된 이력 전건 로드를 방지.
+        .or('status.eq.pending,created_at.gte.$_historyCutoffIso');
     final invoices = List<Map<String, dynamic>>.from(invoicesRes);
     if (invoices.isEmpty) return [];
 
@@ -701,7 +711,9 @@ class IssuanceRequestService {
       cancelled_at,
       cancelled_by
     ''')
-        .neq('status', 'cancelled');
+        .neq('status', 'cancelled')
+        // 대기 건은 전체, 그 외(발급됨 등)는 최근 1년만.
+        .or('status.eq.pending,created_at.gte.$_historyCutoffIso');
     final bonds = List<Map<String, dynamic>>.from(bondsRes);
     if (bonds.isEmpty) return [];
 

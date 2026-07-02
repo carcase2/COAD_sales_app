@@ -117,8 +117,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   ProviderSubscription<String>? _hubAnchorSub;
   ProviderSubscription<dynamic>? _pendingLaunchSub;
   ProviderSubscription<int>? _homeFlowResetSub;
-  static const int _followPickerFetchLimit = 1000;
-  static const int _receptionPickerFetchLimit = 1000;
 
   HubPeriodKey get _dayKey =>
       (period: HubPeriod.day, anchorYmd: _hubFlowAnchorYmd);
@@ -1186,33 +1184,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     if (forcePicker && _showLongPressHint) {
       _dismissLongPressHint();
     }
-    final repo = ref.read(salesCallsRepositoryProvider);
-    List<dynamic> rows;
+    // 흐름 카드가 이미 조회한 bundle 재사용 — 추가 API 호출 없음.
+    final key = (period: scope, anchorYmd: _hubFlowAnchorYmd);
+    List<SalesCall> rows;
     try {
-      switch (scope) {
-        case HubPeriod.day:
-          rows = await repo.fetchCalls(
-            date: _hubFlowAnchorYmd,
-            limit: _receptionPickerFetchLimit,
-            includeCallHistory: false,
-          );
-        case HubPeriod.week:
-          final w = seoulWeekRangeContaining(_hubFlowAnchorYmd);
-          rows = await repo.fetchCalls(
-            dateRangeStart: w.$1,
-            dateRangeEndInclusive: w.$2,
-            limit: _receptionPickerFetchLimit,
-            includeCallHistory: false,
-          );
-        case HubPeriod.month:
-          final m = seoulMonthRangeContaining(_hubFlowAnchorYmd);
-          rows = await repo.fetchCalls(
-            dateRangeStart: m.$1,
-            dateRangeEndInclusive: m.$2,
-            limit: _receptionPickerFetchLimit,
-            includeCallHistory: false,
-          );
-      }
+      final bundle =
+          await ref.read(hubPeriodReceptionBundleProvider(key).future);
+      rows = bundle.calls;
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1228,7 +1206,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       title: '접수 담당자 선택',
       subtitle: _hubPeriodScopeLabel(scope),
       counts: counts,
-      truncationWarnAbove: _receptionPickerFetchLimit,
       forcePicker: forcePicker,
     );
     if (!mounted || selected == null) return;
@@ -1242,39 +1219,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     if (forcePicker && _showLongPressHint) {
       _dismissLongPressHint();
     }
-    final repo = ref.read(salesCallsRepositoryProvider);
-    List<dynamic> rows;
+    // 팔로우 snapshot(미완료만) 재사용 — 추가 API 호출 없음.
+    final key = (period: scope, anchorYmd: _hubFlowAnchorYmd);
+    List<SalesCall> rows;
     try {
-      switch (scope) {
-        case HubPeriod.day:
-          rows = await repo.fetchCalls(
-            followDate: _hubFlowAnchorYmd,
-            incompleteOnly: true,
-            excludeSimpleInquiries: true,
-            limit: _followPickerFetchLimit,
-            includeCallHistory: false,
-          );
-        case HubPeriod.week:
-          final w = seoulWeekRangeContaining(_hubFlowAnchorYmd);
-          rows = await repo.fetchCalls(
-            followRangeStart: w.$1,
-            followRangeEndInclusive: w.$2,
-            incompleteOnly: true,
-            excludeSimpleInquiries: true,
-            limit: _followPickerFetchLimit,
-            includeCallHistory: false,
-          );
-        case HubPeriod.month:
-          final m = seoulMonthRangeContaining(_hubFlowAnchorYmd);
-          rows = await repo.fetchCalls(
-            followRangeStart: m.$1,
-            followRangeEndInclusive: m.$2,
-            incompleteOnly: true,
-            excludeSimpleInquiries: true,
-            limit: _followPickerFetchLimit,
-            includeCallHistory: false,
-          );
-      }
+      final snapshot =
+          await ref.read(hubPeriodFollowSnapshotProvider(key).future);
+      rows = snapshot.remainingCalls;
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1290,7 +1241,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       title: '날짜 팔로우 담당자 선택',
       subtitle: _hubPeriodScopeLabel(scope, follow: true),
       counts: counts,
-      truncationWarnAbove: _followPickerFetchLimit,
       forcePicker: forcePicker,
     );
     if (!mounted || selected == null) return;
@@ -1904,13 +1854,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final active = _activeFlowPeriodKey;
     final previous = _previousPeriodKey;
     ref.invalidate(hubPeriodReceptionBundleProvider(active));
-    ref.invalidate(hubPeriodReceptionBundleProvider(previous));
+    ref.invalidate(hubPeriodLightStatsProvider(previous));
     ref.invalidate(hubPeriodFollowSnapshotProvider(active));
     ref.invalidate(hubPeriodQualityOverviewProvider(active));
     ref.invalidate(hubPendingUncalledCallsProvider);
     await Future.wait([
       ref.read(hubPeriodReceptionBundleProvider(active).future),
-      ref.read(hubPeriodReceptionBundleProvider(previous).future),
+      ref.read(hubPeriodLightStatsProvider(previous).future),
       ref.read(hubPeriodFollowSnapshotProvider(active).future),
       ref.read(hubPeriodQualityOverviewProvider(active).future),
       ref.read(hubPendingUncalledSummaryProvider.future),
@@ -2451,7 +2401,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }) {
     final statsAsync = ref.watch(hubPeriodStatsProvider(periodKey));
     final prevStatsAsync = ref.watch(
-      hubPeriodStatsProvider(_previousPeriodKey),
+      hubPeriodLightStatsProvider(_previousPeriodKey),
     );
     final followOverviewAsync = ref.watch(
       hubPeriodFollowOverviewProvider(periodKey),
@@ -2466,8 +2416,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       data: (s) {
         final reception = s.todayCount ?? 0;
         final incomplete = s.incompleteCount ?? 0;
-        final followCount = followOverviewAsync.valueOrNull?.total ?? 0;
         final followSnapshot = followSnapshotAsync.valueOrNull;
+        final followCount = followSnapshot?.remaining ??
+            followOverviewAsync.valueOrNull?.total ??
+            0;
+        final followProgressHint = followSnapshot == null
+            ? null
+            : '전체 ${followSnapshot.total} · 완료 ${followSnapshot.completed} · 남음 ${followSnapshot.remaining}';
         final quality = qualityAsync.valueOrNull;
         final prevReception = prevStatsAsync.valueOrNull?.todayCount ?? 0;
         final prevIncomplete = prevStatsAsync.valueOrNull?.incompleteCount ?? 0;
@@ -2510,9 +2465,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         today: reception,
                         incomplete: incomplete,
                         todayFollow: followCount,
-                        followTotal: followSnapshot?.total,
-                        followCompleted: followSnapshot?.completed,
-                        followRemaining: followSnapshot?.remaining,
+                        followProgressHint: followProgressHint,
                         uncalledRateText: quality == null
                             ? '-'
                             : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
@@ -2630,7 +2583,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   onRetry: () {
                     ref.invalidate(hubPeriodReceptionBundleProvider(periodKey));
                     ref.invalidate(
-                      hubPeriodReceptionBundleProvider(_previousPeriodKey),
+                      hubPeriodLightStatsProvider(_previousPeriodKey),
                     );
                     ref.invalidate(hubPeriodFollowSnapshotProvider(periodKey));
                     ref.invalidate(
@@ -2708,9 +2661,7 @@ class _MiniStatsWidget extends StatefulWidget {
     required this.today,
     required this.incomplete,
     required this.todayFollow,
-    this.followTotal,
-    this.followCompleted,
-    this.followRemaining,
+    this.followProgressHint,
     required this.uncalledRateText,
     required this.avgFirstResponseText,
     required this.onTapToday,
@@ -2730,9 +2681,7 @@ class _MiniStatsWidget extends StatefulWidget {
   final int today;
   final int incomplete;
   final int todayFollow;
-  final int? followTotal;
-  final int? followCompleted;
-  final int? followRemaining;
+  final String? followProgressHint;
   final String uncalledRateText;
   final String avgFirstResponseText;
   final VoidCallback onTapToday;
@@ -2794,6 +2743,7 @@ class _MiniStatsWidgetState extends State<_MiniStatsWidget> {
                     icon: Icons.event_available_rounded,
                     label: widget.followLabel,
                     value: widget.todayFollow.toString(),
+                    hint: widget.followProgressHint,
                     color: scheme.tertiary,
                     onTap: widget.onTapTodayFollow,
                     onLongPress: widget.onLongPressTodayFollow,
@@ -2805,9 +2755,7 @@ class _MiniStatsWidgetState extends State<_MiniStatsWidget> {
           ),
           if (_qualityExpanded) ...[
             SizedBox(height: compact ? 8 : 10),
-            if (widget.followTotal != null &&
-                widget.followCompleted != null &&
-                widget.followRemaining != null)
+            if (widget.followProgressHint != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Material(
@@ -2837,9 +2785,7 @@ class _MiniStatsWidgetState extends State<_MiniStatsWidget> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '${widget.followLabel} ${widget.followTotal}건 · '
-                              '완료 ${widget.followCompleted} · '
-                              '남음 ${widget.followRemaining}',
+                              widget.followProgressHint!,
                               style: TextStyle(
                                 fontSize: compact ? 12 : 13,
                                 height: 1.35,

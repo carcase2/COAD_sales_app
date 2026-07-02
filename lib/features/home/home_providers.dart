@@ -15,6 +15,9 @@ import 'package:table_calendar/table_calendar.dart';
 /// 흐름 탭 · 미통화 0건 안내(설정) — `SettingsScreen`·`HomeHubScreen` 공유.
 const String homeFlowUncalledPopupPrefKey = 'home_flow_no_uncalled_popup_v2';
 
+/// 금일 팔로우 최초 예정 건수(기기·일자별) — 완료 후 목록에서 빠져도 진행률 유지.
+String homeFlowFollowBaselinePrefKey(String ymd) => 'hub_follow_baseline_v1_$ymd';
+
 /// 처리할 미통화 조회 기간 — 접수일 무관, 최근 N일.
 const int pendingUncalledLookbackDays = 60;
 
@@ -389,6 +392,19 @@ final hubPeriodStatsProvider = Provider.autoDispose
   );
 });
 
+/// 전기간(전일·전주·전월) 비교 배너용 경량 통계 — 전건 조회 없이
+/// `id·status_id·call_stage` 컬럼만 내려받음. 상세 목록이 필요하면 탭 시점에 조회.
+final hubPeriodLightStatsProvider = FutureProvider.autoDispose
+    .family<TodayStats, HubPeriodKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  final (String start, String end) = switch (key.period) {
+    HubPeriod.day => (key.anchorYmd, key.anchorYmd),
+    HubPeriod.week => seoulWeekRangeContaining(key.anchorYmd),
+    HubPeriod.month => seoulMonthRangeContaining(key.anchorYmd),
+  };
+  return repo.fetchStatsForDateRange(start, end);
+});
+
 Future<List<SalesCall>> _fetchHubPeriodFollowCalls(
   SalesCallsRepository repo,
   HubPeriodKey key,
@@ -419,20 +435,25 @@ Future<List<SalesCall>> _fetchHubPeriodFollowCalls(
   }
 }
 
-/// 팔로우 예정·완료·남음 — 기간 내 1회 조회로 집계.
+/// 팔로우 예정·완료·남음 — 기간 내 1회 조회 + (금일) 최초 건수 저장.
 class HubPeriodFollowSnapshot {
-  HubPeriodFollowSnapshot(this.calls);
+  HubPeriodFollowSnapshot({
+    required List<SalesCall> calls,
+    required this.remainingCalls,
+    this.dayBaselineTotal,
+  }) : calls = calls;
 
   final List<SalesCall> calls;
+  final List<SalesCall> remainingCalls;
 
-  int get total => calls.length;
+  /// 금일만 SharedPreferences 기준선. 주·월은 null → [calls] 길이 사용.
+  final int? dayBaselineTotal;
 
-  List<SalesCall> get remainingCalls =>
-      calls.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
+  int get total => dayBaselineTotal ?? calls.length;
 
   int get remaining => remainingCalls.length;
 
-  int get completed => total - remaining;
+  int get completed => (total - remaining).clamp(0, total);
 
   AssigneeOverview get incompleteOverview => AssigneeOverview(
         total: remaining,
@@ -440,11 +461,58 @@ class HubPeriodFollowSnapshot {
       );
 }
 
+Future<int> _resolveFollowDayBaseline(
+  Ref ref,
+  String ymd,
+  int currentTotalCalls,
+  int currentRemaining,
+) async {
+  final prefs = ref.read(appDependenciesProvider).prefs;
+  final key = homeFlowFollowBaselinePrefKey(ymd);
+  var baseline = prefs.getInt(key);
+  final observed = currentTotalCalls > currentRemaining
+      ? currentTotalCalls
+      : currentRemaining;
+
+  if (baseline == null) {
+    baseline = observed;
+    await prefs.setInt(key, baseline);
+  } else if (observed > baseline) {
+    // 당일 중 새로 잡힌 팔로우 — 기준선을 올려 전체 건수에 반영.
+    baseline = observed;
+    await prefs.setInt(key, baseline);
+  }
+
+  return baseline;
+}
+
+List<SalesCall> _followRemainingCalls(List<SalesCall> calls) =>
+    calls.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
+
 final hubPeriodFollowSnapshotProvider = FutureProvider.autoDispose
     .family<HubPeriodFollowSnapshot, HubPeriodKey>((ref, key) async {
   final repo = ref.watch(salesCallsRepositoryProvider);
   final calls = await _fetchHubPeriodFollowCalls(repo, key);
-  return HubPeriodFollowSnapshot(calls);
+  final remainingCalls = _followRemainingCalls(calls);
+
+  if (key.period == HubPeriod.day) {
+    final baseline = await _resolveFollowDayBaseline(
+      ref,
+      key.anchorYmd,
+      calls.length,
+      remainingCalls.length,
+    );
+    return HubPeriodFollowSnapshot(
+      calls: calls,
+      remainingCalls: remainingCalls,
+      dayBaselineTotal: baseline,
+    );
+  }
+
+  return HubPeriodFollowSnapshot(
+    calls: calls,
+    remainingCalls: remainingCalls,
+  );
 });
 
 final hubPeriodFollowOverviewProvider = Provider.autoDispose
@@ -464,6 +532,7 @@ final hubPeriodQualityOverviewProvider = FutureProvider.autoDispose
 });
 
 /// 흐름 탭 기간 데이터를 병렬로 미리 불러 워터폴 대기를 줄임.
+/// 전기간은 비교 배너용 경량 통계만 미리 조회(전건 fetch 없음).
 void prefetchHubPeriodFlow(
   WidgetRef ref,
   HubPeriodKey key, {
@@ -474,7 +543,7 @@ void prefetchHubPeriodFlow(
     ref.read(hubPeriodFollowSnapshotProvider(key).future),
   ];
   if (previousKey != null) {
-    futures.add(ref.read(hubPeriodReceptionBundleProvider(previousKey).future));
+    futures.add(ref.read(hubPeriodLightStatsProvider(previousKey).future));
   }
   unawaited(Future.wait(futures).catchError((_) => <Object?>[]));
 }
@@ -494,15 +563,16 @@ Future<HubPeriodReceptionBundle> refreshHubPeriodUncalledBundle(
 }
 
 /// 최근 [pendingUncalledLookbackDays]일 내 미해결 미통화 — 접수일 무관.
+/// 배지·담당자 집계 전용 경량 조회(필요 컬럼만) — 목록 화면은 자체 전체 조회 사용.
 final hubPendingUncalledCallsProvider =
     FutureProvider.autoDispose<List<SalesCall>>((ref) async {
   final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
   final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCallsAllPages(
-    fromDate: pendingUncalledFromYmd(anchor),
-    uncalledOnly: true,
-    includeCallHistory: false,
+  final calls = await repo.fetchPendingUncalledLite(
+    fromYmd: pendingUncalledFromYmd(anchor),
   );
+  final overrides = await ref.watch(tempManagerOverridesProvider.future);
+  return applyCallDisplayOverrides(calls, overrides, DateTime.now());
 });
 
 final hubPendingUncalledSummaryProvider =

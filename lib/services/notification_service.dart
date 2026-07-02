@@ -88,6 +88,33 @@ class NotificationService {
     debugPrint('[NotificationService] $message');
   }
 
+  /// 알림 카테고리별 수신 설정 키 (설정 화면과 공유) — 기본값은 모두 켜짐.
+  static const String prefKeyNotifyNewCall = 'notify_enabled_new_call_v1';
+  static const String prefKeyNotifyIssuance = 'notify_enabled_issuance_v1';
+  static const String prefKeyNotifyGeneralSchedule =
+      'notify_enabled_general_schedule_v1';
+
+  /// 사용자가 해당 카테고리 알림을 꺼두었으면 false.
+  /// 앱 업데이트 등 분류 불가 알림은 항상 표시.
+  static Future<bool> _isCategoryEnabled(Map<String, dynamic> data) async {
+    String? key;
+    if (_isIssuanceCompletedNotification(data) ||
+        _isIssuanceRequestNotification(data)) {
+      key = prefKeyNotifyIssuance;
+    } else if (_isGeneralScheduleNotification(data)) {
+      key = prefKeyNotifyGeneralSchedule;
+    } else if (_extractCallIdFromData(data) != null) {
+      key = prefKeyNotifyNewCall;
+    }
+    if (key == null) return true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(key) ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   static void _queuePendingData(Map<String, dynamic> data) {
     _pendingMessageData = data;
   }
@@ -132,12 +159,16 @@ class NotificationService {
   }
 
   static Future<void> init() async {
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
+    // 권한 다이얼로그가 첫 프레임을 막지 않도록 비동기로 요청 (결과는 로그만).
+    unawaited(
+      FirebaseMessaging.instance
+          .requestPermission(alert: true, badge: true, sound: true)
+          .then(
+            (settings) =>
+                _log('FCM permission status=${settings.authorizationStatus}'),
+          )
+          .catchError((Object e) => _log('FCM permission request failed: $e')),
     );
-    _log('FCM permission status=${settings.authorizationStatus}');
 
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
@@ -176,7 +207,17 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     await androidPlugin?.createNotificationChannel(channel);
-    await androidPlugin?.requestNotificationsPermission();
+    if (androidPlugin != null) {
+      // Android 13+ 권한 다이얼로그도 시작 흐름을 막지 않게 비동기 처리.
+      unawaited(
+        androidPlugin
+            .requestNotificationsPermission()
+            .catchError((Object e) {
+          _log('Android notifications permission request failed: $e');
+          return null;
+        }),
+      );
+    }
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       _log(
@@ -349,6 +390,11 @@ class NotificationService {
     final data = Map<String, dynamic>.from(message.data);
     final payload = _buildLocalPayload(data);
     if (payload == null) return;
+
+    if (!await _isCategoryEnabled(data)) {
+      _log('notification suppressed by user setting: data=${data['type']}');
+      return;
+    }
 
     final titleBody = _titleAndBodyFromMessage(message);
     var title = titleBody.$1;

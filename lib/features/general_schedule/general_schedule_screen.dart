@@ -36,8 +36,18 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
 
   String _ymd(DateTime d) => ymdSeoulFromDateTime(d);
 
+  /// 선택일 주변(날짜 스트립 ±60일)이 조회 구간 밖이면 하한을 앞당겨 재조회.
+  void _ensureHistoryWindowCovers(String ymd) {
+    final needed = addDaysToYmd(ymd, -_DateScrollStrip.centerIndex);
+    final current = ref.read(generalScheduleWindowStartProvider);
+    if (needed.compareTo(current) < 0) {
+      ref.read(generalScheduleWindowStartProvider.notifier).state = needed;
+    }
+  }
+
   void _selectDay(String ymd) {
     if (_ymd(_selectedDay) == ymd) return;
+    _ensureHistoryWindowCovers(ymd);
     setState(() => _selectedDay = DateTime.parse(ymd));
   }
 
@@ -46,6 +56,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   }
 
   void _selectDayAndScroll(String ymd) {
+    _ensureHistoryWindowCovers(ymd);
     setState(() => _selectedDay = DateTime.parse(ymd));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _dateStripKey.currentState?.scrollToCenter();
@@ -61,6 +72,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       grid,
       current: current,
       minYmd: todayYmdSeoul(),
+      skipWeekends: true,
     );
   }
 
@@ -69,7 +81,11 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     GeneralScheduleDayGrid grid,
     EarliestAvailableSlot current,
   ) {
-    return findNextAvailableDaySlot(grid, current: current);
+    return findNextAvailableDaySlot(
+      grid,
+      current: current,
+      skipWeekends: true,
+    );
   }
 
   void _setEarliestAddCursor(EarliestAvailableSlot slot) {
@@ -78,7 +94,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   }
 
   void _advanceEarliestAddCursorAfter(EarliestAvailableSlot slot) {
-    _earliestAddCursorYmd = addDaysToYmd(slot.ymd, 1);
+    _earliestAddCursorYmd = nextWorkdayYmd(slot.ymd);
     _earliestAddCursorSlot = 0;
   }
 
@@ -239,6 +255,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       grid,
       fromYmd: fromYmd,
       fromSlotIndex: fromSlot,
+      skipWeekends: true,
     );
     if (next == null) {
       if (!mounted) return;
@@ -402,6 +419,14 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '토·일은 건너뜁니다',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                      ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -773,6 +798,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                     selectedYmd: selectedYmd,
                     grid: grid,
                     searchQuery: '',
+                    onRefresh: _reload,
                     onDayChanged: (ymd) {
                       _selectDay(ymd);
                       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -798,6 +824,7 @@ class _DaySlotsPager extends StatefulWidget {
     required this.selectedYmd,
     required this.grid,
     required this.searchQuery,
+    required this.onRefresh,
     required this.onDayChanged,
     required this.onSlotTap,
   });
@@ -806,6 +833,7 @@ class _DaySlotsPager extends StatefulWidget {
   final String selectedYmd;
   final GeneralScheduleDayGrid grid;
   final String searchQuery;
+  final Future<void> Function() onRefresh;
   final ValueChanged<String> onDayChanged;
   final void Function(int slotIndex, String ymd, GeneralScheduleCell? cell)
       onSlotTap;
@@ -863,11 +891,14 @@ class _DaySlotsPagerState extends State<_DaySlotsPager> {
       itemBuilder: (context, pageIndex) {
         final ymd = widget.days[pageIndex];
         final daySlots = widget.grid[ymd] ?? emptyDaySlots();
-        return _DaySlotColumn(
-          daySlots: daySlots,
-          searchQuery: widget.searchQuery,
-          onSlotTap: (slotIndex, cell) =>
-              widget.onSlotTap(slotIndex, ymd, cell),
+        return RefreshIndicator(
+          onRefresh: widget.onRefresh,
+          child: _DaySlotColumn(
+            daySlots: daySlots,
+            searchQuery: widget.searchQuery,
+            onSlotTap: (slotIndex, cell) =>
+                widget.onSlotTap(slotIndex, ymd, cell),
+          ),
         );
       },
     );
@@ -898,24 +929,30 @@ class _DaySlotColumn extends StatelessWidget {
             (constraints.maxHeight - gaps - bottomInset - extraBottomSpace) /
                 slotCount;
 
-        return Padding(
-          padding: EdgeInsets.only(bottom: bottomInset + extraBottomSpace),
-          child: Column(
-            children: [
-              for (var index = 0; index < slotCount; index++) ...[
-                if (index > 0) const SizedBox(height: gap),
-                SizedBox(
-                  height: slotH,
-                  child: _SlotLaneCard(
-                    slotIndex: index,
-                    cell: daySlots[index],
-                    searchQuery: searchQuery,
-                    compact: true,
-                    onTap: () => onSlotTap(index, daySlots[index]),
-                  ),
-                ),
-              ],
-            ],
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomInset + extraBottomSpace),
+              child: Column(
+                children: [
+                  for (var index = 0; index < slotCount; index++) ...[
+                    if (index > 0) const SizedBox(height: gap),
+                    SizedBox(
+                      height: slotH,
+                      child: _SlotLaneCard(
+                        slotIndex: index,
+                        cell: daySlots[index],
+                        searchQuery: searchQuery,
+                        compact: true,
+                        onTap: () => onSlotTap(index, daySlots[index]),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         );
       },

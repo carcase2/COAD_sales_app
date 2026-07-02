@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
 
 /// COAD_home 본사일반 달력 — 하루 6칸 (slot 0~5).
@@ -79,10 +80,14 @@ EarliestAvailableSlot? findEarliestAvailableSlot(
   required String fromYmd,
   int fromSlotIndex = 0,
   int maxDays = 366,
+  bool skipWeekends = false,
 }) {
+  if (skipWeekends) {
+    fromYmd = ensureWorkdayForward(fromYmd);
+  }
   if (fromSlotIndex < 0) fromSlotIndex = 0;
   if (fromSlotIndex >= kGeneralScheduleSlotsPerDay) {
-    fromYmd = _addDaysYmd(fromYmd, 1);
+    fromYmd = skipWeekends ? nextWorkdayYmd(fromYmd) : _addDaysYmd(fromYmd, 1);
     fromSlotIndex = 0;
   }
 
@@ -97,7 +102,9 @@ EarliestAvailableSlot? findEarliestAvailableSlot(
       }
     }
     slotStart = 0;
-    currentYmd = _addDaysYmd(currentYmd, 1);
+    currentYmd = skipWeekends
+        ? nextWorkdayYmd(currentYmd)
+        : _addDaysYmd(currentYmd, 1);
   }
   return null;
 }
@@ -108,8 +115,11 @@ EarliestAvailableSlot? findPreviousAvailableDaySlot(
   GeneralScheduleDayGrid grid, {
   required EarliestAvailableSlot current,
   required String minYmd,
+  bool skipWeekends = false,
 }) {
-  var searchYmd = _addDaysYmd(current.ymd, -1);
+  var searchYmd = skipWeekends
+      ? previousWorkdayYmd(current.ymd)
+      : _addDaysYmd(current.ymd, -1);
   while (searchYmd.compareTo(minYmd) >= 0) {
     final slots = grid[searchYmd] ?? emptyDaySlots();
     if (slots[current.slotIndex] == null) {
@@ -123,7 +133,9 @@ EarliestAvailableSlot? findPreviousAvailableDaySlot(
         return EarliestAvailableSlot(ymd: searchYmd, slotIndex: i);
       }
     }
-    searchYmd = _addDaysYmd(searchYmd, -1);
+    searchYmd = skipWeekends
+        ? previousWorkdayYmd(searchYmd)
+        : _addDaysYmd(searchYmd, -1);
   }
   return null;
 }
@@ -133,8 +145,11 @@ EarliestAvailableSlot? findNextAvailableDaySlot(
   GeneralScheduleDayGrid grid, {
   required EarliestAvailableSlot current,
   int maxDays = 366,
+  bool skipWeekends = false,
 }) {
-  var searchYmd = _addDaysYmd(current.ymd, 1);
+  var searchYmd = skipWeekends
+      ? nextWorkdayYmd(current.ymd)
+      : _addDaysYmd(current.ymd, 1);
   for (var day = 0; day < maxDays; day++) {
     final slots = grid[searchYmd] ?? emptyDaySlots();
     if (slots[current.slotIndex] == null) {
@@ -147,7 +162,9 @@ EarliestAvailableSlot? findNextAvailableDaySlot(
     if (idx != null) {
       return EarliestAvailableSlot(ymd: searchYmd, slotIndex: idx);
     }
-    searchYmd = _addDaysYmd(searchYmd, 1);
+    searchYmd = skipWeekends
+        ? nextWorkdayYmd(searchYmd)
+        : _addDaysYmd(searchYmd, 1);
   }
   return null;
 }

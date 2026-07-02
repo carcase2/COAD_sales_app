@@ -15,8 +15,10 @@ class GeneralScheduleRepository {
   final AppDependencies _deps;
   final SupabaseClient _client = Supabase.instance.client;
 
-  Future<List<GeneralScheduleRecord>> fetchAll() async {
-    final res = await _client.from('sales_schedule').select('''
+  /// [endDateFromYmd] — 종료일이 이 날짜 이후인 일정만 (과거 이력 제한).
+  /// 미래 일정은 빈 칸 탐색 정확성을 위해 항상 전부 포함해야 하므로 상한은 두지 않음.
+  Future<List<GeneralScheduleRecord>> fetchAll({String? endDateFromYmd}) async {
+    var query = _client.from('sales_schedule').select('''
         id,
         site,
         start,
@@ -29,6 +31,10 @@ class GeneralScheduleRepository {
         model_name,
         slots:schedule_slots(date, slot)
       ''');
+    if (endDateFromYmd != null) {
+      query = query.gte('end_date', endDateFromYmd);
+    }
+    final res = await query;
 
     final rows = res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     if (rows.isEmpty) return [];
@@ -134,7 +140,8 @@ class GeneralScheduleRepository {
     final scheduleId = insertRes['id'].toString();
     await _insertSlots(scheduleId, slotMap, extraTeamSlots);
 
-    final all = await fetchAll();
+    // end_date >= startYmd 이므로 생성 건은 항상 포함됨.
+    final all = await fetchAll(endDateFromYmd: startYmd);
     return all.firstWhere((e) => e.id == scheduleId);
   }
 
@@ -224,7 +231,8 @@ class GeneralScheduleRepository {
     required String actorName,
   }) async {
     try {
-      final all = await fetchAll();
+      // 월 잔여·가장 빠른 빈 칸 모두 오늘 이후 기준 — 지난 일정은 불필요.
+      final all = await fetchAll(endDateFromYmd: todayYmdSeoul());
       final grid = buildGeneralScheduleGrid(all);
       final alarm = buildGeneralScheduleAlarmContext(
         grid: grid,

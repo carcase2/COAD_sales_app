@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
@@ -35,6 +36,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   SalesCall? _model;
   bool _loading = true;
   String? _loadError;
+  bool _lastSaveQueuedOffline = false;
 
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
@@ -399,6 +401,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           );
         }
       }
+      _lastSaveQueuedOffline = false;
+      return true;
+    } on OfflineException {
+      // 상담 내용은 로컬 큐에 저장됨 — 입력을 비우고 성공 흐름으로 종료.
+      if (mounted) {
+        setState(() {
+          _newConsultationCtrl.clear();
+          _unsuccessfulReasonCtrl.clear();
+          _consultationNextDateCtrl.clear();
+          _isEditMode = false;
+        });
+      }
+      _lastSaveQueuedOffline = true;
       return true;
     } catch (e) {
       if (mounted) {
@@ -804,7 +819,23 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       body: masterAsync.when(
         data: (master) => _buildScrollable(master),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(koreanErrorMessage(e))),
+        error: (e, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(koreanErrorMessage(e), textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () =>
+                      ref.invalidate(salesCallCreateMasterDataProvider),
+                  child: const Text('다시 시도'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1721,6 +1752,35 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
+  /// 상담 시트 닫기 전 — 작성 중 내용이 있으면 확인.
+  Future<bool> _confirmDiscardConsultation(BuildContext sheetContext) async {
+    final hasInput = _newConsultationCtrl.text.trim().isNotEmpty ||
+        _unsuccessfulReasonCtrl.text.trim().isNotEmpty ||
+        _consultationNextDateCtrl.text.trim().isNotEmpty;
+    if (!hasInput) return true;
+    final ok = await showDialog<bool>(
+      context: sheetContext,
+      builder: (ctx) => AlertDialog(
+        title: const Text('작성 취소'),
+        content: const Text('작성 중인 상담 내용이 있습니다.\n저장하지 않고 닫으시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 작성'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
   void _showConsultationDialog(MasterDataBundle master) {
     _consultationNextDateCtrl.clear();
     _unsuccessfulReasonCtrl.clear();
@@ -1730,6 +1790,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       useSafeArea: true,
+      // 바깥 탭·아래로 스와이프로 작성 중 상담 내용이 사라지지 않도록.
+      isDismissible: false,
+      enableDrag: false,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setModalState) {
           final m = _model;
@@ -1790,7 +1853,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.close),
-                          onPressed: _saving ? null : () => Navigator.pop(sheetContext),
+                          onPressed: _saving
+                              ? null
+                              : () async {
+                                  if (await _confirmDiscardConsultation(
+                                          sheetContext) &&
+                                      sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                  }
+                                },
                         ),
                       ],
                     ),
@@ -1951,8 +2022,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                                 }
                                 if (ok && context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('상담내용 및 이력이 저장되었습니다.'),
+                                    SnackBar(
+                                      content: Text(
+                                        _lastSaveQueuedOffline
+                                            ? '오프라인 — 상담 내용이 기기에 저장되었습니다. 연결되면 자동 전송됩니다.'
+                                            : '상담내용 및 이력이 저장되었습니다.',
+                                      ),
+                                      duration: _lastSaveQueuedOffline
+                                          ? const Duration(seconds: 5)
+                                          : const Duration(seconds: 4),
                                     ),
                                   );
                                   Navigator.of(context).pop(true);

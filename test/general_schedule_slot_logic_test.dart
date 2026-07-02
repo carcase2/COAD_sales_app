@@ -308,6 +308,69 @@ void main() {
     expect(skipFull?.slotIndex, 0);
   });
 
+  test('findNextAvailableDaySlot — 금요일 다음은 월요일(주말 제외)', () {
+    final empty = List<GeneralScheduleCell?>.filled(
+      kGeneralScheduleSlotsPerDay,
+      null,
+    );
+    final grid = <String, List<GeneralScheduleCell?>>{
+      '2026-07-03': empty, // Fri
+      '2026-07-06': empty, // Mon
+    };
+
+    final next = findNextAvailableDaySlot(
+      grid,
+      current: const EarliestAvailableSlot(
+        ymd: '2026-07-03',
+        slotIndex: 1,
+      ),
+      skipWeekends: true,
+    );
+    expect(next?.ymd, '2026-07-06');
+    expect(next?.slotIndex, 1);
+  });
+
+  test('findPreviousAvailableDaySlot — 월요일 이전은 금요일(주말 제외)', () {
+    final empty = List<GeneralScheduleCell?>.filled(
+      kGeneralScheduleSlotsPerDay,
+      null,
+    );
+    final grid = <String, List<GeneralScheduleCell?>>{
+      '2026-07-03': empty, // Fri
+      '2026-07-06': empty, // Mon
+    };
+
+    final prev = findPreviousAvailableDaySlot(
+      grid,
+      current: const EarliestAvailableSlot(
+        ymd: '2026-07-06',
+        slotIndex: 2,
+      ),
+      minYmd: '2026-07-03',
+      skipWeekends: true,
+    );
+    expect(prev?.ymd, '2026-07-03');
+    expect(prev?.slotIndex, 2);
+  });
+
+  test('findEarliestAvailableSlot — 주말 시작일은 월요일부터 탐색', () {
+    final empty = List<GeneralScheduleCell?>.filled(
+      kGeneralScheduleSlotsPerDay,
+      null,
+    );
+    final grid = <String, List<GeneralScheduleCell?>>{
+      '2026-07-06': empty, // Mon
+    };
+
+    final slot = findEarliestAvailableSlot(
+      grid,
+      fromYmd: '2026-07-04', // Sat
+      skipWeekends: true,
+    );
+    expect(slot?.ymd, '2026-07-06');
+    expect(slot?.slotIndex, 0);
+  });
+
   test('assignFixedSlotRow — 지정 칸 배치·충돌', () {
     final grid = buildGeneralScheduleGrid([
       _record(

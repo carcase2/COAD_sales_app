@@ -229,6 +229,40 @@ String addDaysToYmd(String ymd, int deltaDays) {
   return '${next.year}-${next.month.toString().padLeft(2, '0')}-${next.day.toString().padLeft(2, '0')}';
 }
 
+/// 토·일 여부 (`yyyy-MM-dd`).
+bool isWeekendYmd(String ymd) {
+  final day = _parseYmdLocal(ymd);
+  if (day == null) return false;
+  return day.weekday == DateTime.saturday || day.weekday == DateTime.sunday;
+}
+
+/// [ymd]가 주말이면 다음 월요일(포함)로 보정.
+String ensureWorkdayForward(String ymd) {
+  var current = ymd;
+  while (isWeekendYmd(current)) {
+    current = addDaysToYmd(current, 1);
+  }
+  return current;
+}
+
+/// 토·일을 건너뛰며 [deltaDays]만큼 이동(부호=방향, 0이면 [ymd] 그대로).
+String addDaysToYmdSkippingWeekends(String ymd, int deltaDays) {
+  if (deltaDays == 0) return ymd;
+  final step = deltaDays > 0 ? 1 : -1;
+  var remaining = deltaDays.abs();
+  var current = ymd;
+  while (remaining > 0) {
+    current = addDaysToYmd(current, step);
+    if (!isWeekendYmd(current)) remaining--;
+  }
+  return current;
+}
+
+/// 직전·다음 **평일**(토·일 제외).
+String previousWorkdayYmd(String ymd) =>
+    addDaysToYmdSkippingWeekends(ymd, -1);
+String nextWorkdayYmd(String ymd) => addDaysToYmdSkippingWeekends(ymd, 1);
+
 /// [anyYmd]가 속한 주의 **월요일~일요일**(포함) 구간. `weekday`는 `DateTime` 규약(월=1).
 (String mondayYmd, String sundayYmd) seoulWeekRangeContaining(String anyYmd) {
   final parts = anyYmd.split('-');

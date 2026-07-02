@@ -1,12 +1,24 @@
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// 조회 시작일(과거 이력 하한) — 기본은 오늘 기준 [kGeneralScheduleHistoryDays]일 전.
+/// 날짜 스트립·달력에서 더 과거로 이동하면 화면이 이 값을 앞당겨 재조회한다.
+const int kGeneralScheduleHistoryDays = 62;
+
+String defaultGeneralScheduleWindowStart() =>
+    addDaysToYmd(todayYmdSeoul(), -kGeneralScheduleHistoryDays);
+
+final generalScheduleWindowStartProvider =
+    StateProvider<String>((ref) => defaultGeneralScheduleWindowStart());
+
 final generalScheduleRecordsProvider =
     FutureProvider.autoDispose<List<GeneralScheduleRecord>>((ref) async {
   final repo = ref.watch(generalScheduleRepositoryProvider);
-  return repo.fetchAll();
+  final windowStart = ref.watch(generalScheduleWindowStartProvider);
+  return repo.fetchAll(endDateFromYmd: windowStart);
 });
 
 final generalScheduleGridProvider =

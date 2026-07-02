@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
+import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,10 +16,21 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool? _flowUncalledPopupEnabled;
+  late bool _notifyNewCall;
+  late bool _notifyIssuance;
+  late bool _notifyGeneralSchedule;
 
   @override
   void initState() {
     super.initState();
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    _notifyNewCall =
+        prefs.getBool(NotificationService.prefKeyNotifyNewCall) ?? true;
+    _notifyIssuance =
+        prefs.getBool(NotificationService.prefKeyNotifyIssuance) ?? true;
+    _notifyGeneralSchedule =
+        prefs.getBool(NotificationService.prefKeyNotifyGeneralSchedule) ??
+            true;
     _loadFlowUncalledPref();
   }
 
@@ -33,6 +45,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     setState(() => _flowUncalledPopupEnabled = enabled);
     final prefs = ref.read(appDependenciesProvider).prefs;
     await prefs.setBool(homeFlowUncalledPopupPrefKey, enabled);
+  }
+
+  Future<void> _setNotifyPref(String key, bool enabled) async {
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    await prefs.setBool(key, enabled);
+  }
+
+  Widget _buildNotifyToggle({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      value: value,
+      onChanged: onChanged,
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12.5,
+          color: scheme.onSurfaceVariant,
+          height: 1.35,
+        ),
+      ),
+    );
   }
 
   @override
@@ -133,6 +173,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               if (!context.mounted) return;
               ref.invalidate(appUpdateStatusProvider);
               await ref.read(appUpdateStatusProvider.future);
+            },
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '알림',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 8),
+          _buildNotifyToggle(
+            title: '새 접수 알림',
+            subtitle: '새 통화 접수가 등록되면 알림을 받습니다.',
+            value: _notifyNewCall,
+            onChanged: (v) {
+              setState(() => _notifyNewCall = v);
+              _setNotifyPref(NotificationService.prefKeyNotifyNewCall, v);
+            },
+          ),
+          _buildNotifyToggle(
+            title: '발급요청 알림',
+            subtitle: '세금계산서·이행증권 발급 요청/완료 알림을 받습니다.',
+            value: _notifyIssuance,
+            onChanged: (v) {
+              setState(() => _notifyIssuance = v);
+              _setNotifyPref(NotificationService.prefKeyNotifyIssuance, v);
+            },
+          ),
+          _buildNotifyToggle(
+            title: '본사일반 일정 알림',
+            subtitle: '본사일반 일정 등록·변경 알림을 받습니다.',
+            value: _notifyGeneralSchedule,
+            onChanged: (v) {
+              setState(() => _notifyGeneralSchedule = v);
+              _setNotifyPref(
+                NotificationService.prefKeyNotifyGeneralSchedule,
+                v,
+              );
             },
           ),
           const SizedBox(height: 16),

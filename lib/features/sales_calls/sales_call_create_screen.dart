@@ -401,12 +401,53 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     }
   }
 
+  /// 작성 중 내용이 있는지 — 이탈 확인 다이얼로그 표시 기준.
+  bool get _hasUnsavedInput =>
+      _nameCtrl.text.trim().isNotEmpty ||
+      _phoneCtrl.text.trim().isNotEmpty ||
+      _inquiryCtrl.text.trim().isNotEmpty ||
+      _uploadedImageUrls.isNotEmpty;
+
+  Future<bool> _confirmDiscard() async {
+    if (!_hasUnsavedInput || _submitting) return true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('작성 취소'),
+        content: const Text('작성 중인 접수 내용이 있습니다.\n저장하지 않고 나가시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 작성'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('나가기'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final masterAsync = ref.watch(salesCallCreateMasterDataProvider);
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
+    return PopScope(
+      // 컨트롤러 입력은 rebuild를 트리거하지 않으므로 항상 수동 pop 경로로 처리.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       backgroundColor: scheme.surface,
       appBar: AppBar(
         title: const Column(
@@ -425,12 +466,20 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () async {
+            if (await _confirmDiscard() && context.mounted) {
+              Navigator.pop(context);
+            }
+          },
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.home_rounded),
-            onPressed: () => navigateToHomeAndRefresh(context, ref),
+            onPressed: () async {
+              if (await _confirmDiscard() && context.mounted) {
+                navigateToHomeAndRefresh(context, ref);
+              }
+            },
             tooltip: '홈으로 이동',
           ),
         ],
@@ -468,6 +517,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

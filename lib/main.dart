@@ -39,9 +39,6 @@ Future<void> main() async {
       ]);
       final prefs = initResults[1] as SharedPreferences;
 
-      // 3. 외부 서비스 초기화 (상호 의존성 고려하여 순차 또는 안전한 병렬 실행)
-      await Firebase.initializeApp();
-      
       final supabaseUrl =
           dotenv.env['NEXT_PUBLIC_SUPABASE_URL'] ??
           dotenv.env['SUPABASE_URL'] ??
@@ -52,7 +49,8 @@ Future<void> main() async {
           dotenv.env['SUPABASE_ANON_KEY'] ??
           '';
 
-      // Supabase와 Notification은 각각 독립적으로 초기화 시도
+      // 3. 외부 서비스 초기화 — Supabase는 Firebase와 독립이므로
+      //    (Firebase → Notification) 체인과 병렬로 실행해 콜드 스타트를 줄임.
       await Future.wait([
         () async {
           try {
@@ -66,6 +64,7 @@ Future<void> main() async {
         }(),
         () async {
           try {
+            await Firebase.initializeApp();
             await NotificationService.init();
           } catch (e) {
             debugPrint("알림 서비스 초기화 실패: $e");

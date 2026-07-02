@@ -11,6 +11,7 @@ import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -268,6 +269,26 @@ class _IssuanceRequestCreateScreenState
     }).toList();
   }
 
+  /// 이미지는 압축 후 업로드 (상담 첨부 B2 업로드와 동일 정책 — quality 80, 1920×1080).
+  Future<Uint8List> _readCompressedBytes(String path) async {
+    final mime = lookupMimeType(path);
+    if (mime == null || !mime.startsWith('image/')) {
+      return File(path).readAsBytes();
+    }
+    try {
+      final compressed = await FlutterImageCompress.compressWithFile(
+        path,
+        quality: 80,
+        minWidth: 1920,
+        minHeight: 1080,
+      );
+      if (compressed != null && compressed.isNotEmpty) return compressed;
+    } catch (_) {
+      // 압축 실패 시 원본 업로드 (안전 장치)
+    }
+    return File(path).readAsBytes();
+  }
+
   Future<List<String>> _uploadFiles({
     required List<PlatformFile> files,
     required String rootPath,
@@ -279,7 +300,7 @@ class _IssuanceRequestCreateScreenState
     for (final f in files) {
       final p = f.path;
       if (p == null) continue;
-      final bytes = await File(p).readAsBytes();
+      final bytes = await _readCompressedBytes(p);
       final original = _safeFileName(f.name);
       final stamp = DateTime.now().millisecondsSinceEpoch;
       final rand = _rand.nextInt(999999).toString().padLeft(6, '0');
@@ -880,7 +901,15 @@ class _IssuanceRequestCreateScreenState
       ),
       floatingLabelStyle: TextStyle(color: accent, fontWeight: FontWeight.w700),
     );
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('발급요청 등록'),
         backgroundColor: accent,
@@ -998,7 +1027,46 @@ class _IssuanceRequestCreateScreenState
           ),
         ],
       ),
+      ),
     );
+  }
+
+  /// 작성 중 내용이 있는지 — 이탈 확인 기준 (기본값 제외 주요 입력만).
+  bool get _hasUnsavedInput =>
+      _taxCustomerName.text.trim().isNotEmpty ||
+      _taxRegistrationNumber.text.trim().isNotEmpty ||
+      _taxTotalAmount.text.trim().isNotEmpty ||
+      _taxEmail.text.trim().isNotEmpty ||
+      _taxBizFiles.isNotEmpty ||
+      _bondCompanyName.text.trim().isNotEmpty ||
+      _bondEmail.text.trim().isNotEmpty ||
+      _bondContractAmount.text.trim().isNotEmpty ||
+      _bondBizFiles.isNotEmpty ||
+      _bondContractFiles.isNotEmpty;
+
+  Future<bool> _confirmDiscard() async {
+    if (!_hasUnsavedInput || _saving) return true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('작성 취소'),
+        content: const Text('작성 중인 발급요청 내용이 있습니다.\n저장하지 않고 나가시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 작성'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('나가기'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   Widget _buildTaxUrgentCheckbox() {

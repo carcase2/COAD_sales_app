@@ -421,7 +421,15 @@ class _GeneralScheduleFormScreenState
       },
     );
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           isEdit
@@ -653,7 +661,46 @@ class _GeneralScheduleFormScreenState
           ],
         ),
       ),
+      ),
     );
+  }
+
+  /// 작성·수정 내용이 있는지 — 이탈 확인 기준.
+  bool get _hasUnsavedChanges {
+    final editing = widget.editing;
+    if (editing == null) {
+      return _siteController.text.trim().isNotEmpty ||
+          _selectedDoorCodes.isNotEmpty;
+    }
+    if (_siteController.text.trim() != editing.site.trim()) return true;
+    final originalCodes = editing.doorTypes.toSet();
+    return !(_selectedDoorCodes.length == originalCodes.length &&
+        _selectedDoorCodes.containsAll(originalCodes));
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (!_hasUnsavedChanges || _saving) return true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('작성 취소'),
+        content: const Text('저장하지 않은 일정 내용이 있습니다.\n나가시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 작성'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('나가기'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 }
 

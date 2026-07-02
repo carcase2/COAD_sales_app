@@ -555,10 +555,9 @@ class SalesCallsRepository {
     return createCall(draft.toInsertJson());
   }
 
-  /// 오프라인 중 등록된 상담 내역을 서버로 동기화
+  /// 오프라인 중 등록된 접수·상담을 서버로 동기화.
   Future<int> syncPendingCalls() async {
     final pendings = await _db.getPendingCalls();
-    if (pendings.isEmpty) return 0;
 
     int successCount = 0;
     for (var item in pendings) {
@@ -573,12 +572,15 @@ class SalesCallsRepository {
         // 네트워크가 여전히 안 좋거나 데이터 오류면 다음 기회에
       }
     }
+    successCount += await syncPendingConsultations();
     return successCount;
   }
 
+  /// 동기화 대기 총 건수 — 오프라인 접수 + 오프라인 상담.
   Future<int> getPendingCount() async {
-    final list = await _db.getPendingCalls();
-    return list.length;
+    final calls = await _db.getPendingCalls();
+    final consultations = await _db.getPendingConsultations();
+    return calls.length + consultations.length;
   }
 
   Future<SalesCall> updateCall(String id, Map<String, dynamic> body) async {
@@ -613,13 +615,67 @@ class SalesCallsRepository {
   }
 
   /// 상담 저장: history INSERT 후 sales_calls UPDATE (웹과 동일 순서)
+  /// 네트워크 오류면 로컬 큐(`pending_consultations`)에 저장 후 [OfflineException].
   Future<SalesCall> saveConsultationRound({
     required String callId,
     required Map<String, dynamic> historyData,
     required Map<String, dynamic> salesCallBody,
   }) async {
-    await addCallHistory(callId, historyData);
-    return updateCall(callId, salesCallBody);
+    try {
+      await addCallHistory(callId, historyData);
+    } catch (e) {
+      if (isNetworkConnectivityError(e)) {
+        await _db.savePendingConsultation(
+          callId: callId,
+          historyData: historyData,
+          salesCallBody: salesCallBody,
+          includeHistory: true,
+        );
+        throw OfflineException('오프라인 — 상담 내용이 저장되어 연결 시 자동 전송됩니다.');
+      }
+      rethrow;
+    }
+    try {
+      return await updateCall(callId, salesCallBody);
+    } catch (e) {
+      if (isNetworkConnectivityError(e)) {
+        // 이력은 이미 서버에 들어감 — 상태 업데이트만 큐잉.
+        await _db.savePendingConsultation(
+          callId: callId,
+          historyData: historyData,
+          salesCallBody: salesCallBody,
+          includeHistory: false,
+        );
+        throw OfflineException('오프라인 — 상담 내용이 저장되어 연결 시 자동 전송됩니다.');
+      }
+      rethrow;
+    }
+  }
+
+  /// 오프라인 큐의 상담 저장분을 서버로 재전송.
+  Future<int> syncPendingConsultations() async {
+    final pendings = await _db.getPendingConsultations();
+    if (pendings.isEmpty) return 0;
+
+    var successCount = 0;
+    for (final item in pendings) {
+      final id = item['id'] as int;
+      final callId = item['call_id'] as String;
+      final historyData = item['history_data'] as Map<String, dynamic>;
+      final body = item['sales_call_body'] as Map<String, dynamic>;
+      final includeHistory = item['include_history'] as bool;
+      try {
+        if (includeHistory) {
+          await addCallHistory(callId, historyData);
+        }
+        await _client.from('sales_calls').update(body).eq('id', callId);
+        await _db.deletePendingConsultation(id);
+        successCount++;
+      } catch (_) {
+        // 여전히 오프라인이거나 데이터 오류 — 다음 동기화 때 재시도.
+      }
+    }
+    return successCount;
   }
 
   TodayStats _todayStatsFromRows(List<Map<String, dynamic>> res) {
@@ -662,6 +718,39 @@ class SalesCallsRepository {
         throw ApiException('통계를 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.');
       }
       throw ApiException('통계 데이터를 불러오는데 실패했습니다: $e');
+    }
+  }
+
+  /// 홈 미통화 배지·담당자 집계용 **경량** 조회 — 요약에 필요한 컬럼만.
+  /// 조인·call_history·로컬 DB upsert 없음. `isMissed` 판정 컬럼과
+  /// 접수일([call_date]·[call_time]·[created_at]), 담당 표시([assigned_to]·[region_name])만 내려받는다.
+  Future<List<SalesCall>> fetchPendingUncalledLite({
+    required String fromYmd,
+  }) async {
+    const cols =
+        'id, call_date, call_time, created_at, status_id, call_stage, '
+        'assigned_to, region_name';
+    try {
+      final merged = <SalesCall>[];
+      var offset = 0;
+      while (true) {
+        final res = await _client
+            .from('sales_calls')
+            .select(cols)
+            .gte('call_date', '$fromYmd 00:00:00')
+            .neq('status_id', 4)
+            .order('created_at', ascending: false)
+            .range(offset, offset + postgrestMaxPageSize - 1);
+        merged.addAll(parseSalesCallList(res).where((c) => c.isMissed));
+        if (res.length < postgrestMaxPageSize) break;
+        offset += postgrestMaxPageSize;
+      }
+      return merged;
+    } catch (e) {
+      if (isNetworkConnectivityError(e)) {
+        throw ApiException('미통화 현황을 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.');
+      }
+      throw ApiException('미통화 현황을 불러오는데 실패했습니다: $e');
     }
   }
 
