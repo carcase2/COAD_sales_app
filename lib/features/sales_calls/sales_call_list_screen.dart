@@ -202,36 +202,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     });
   }
 
-  Future<bool> _onCardSwipe(
-    DismissDirection direction,
-    SalesCall call,
-  ) async {
-    final phone = (call.customerPhone ?? '').trim();
-    if (direction == DismissDirection.startToEnd) {
-      if (phone.isNotEmpty) {
-        await LauncherUtils.makePhoneCall(phone);
-      } else if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('전화번호가 없습니다.')));
-      }
-      return false;
-    }
-    if (phone.isNotEmpty) {
-      await Clipboard.setData(ClipboardData(text: phone));
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('전화번호를 복사했습니다.')));
-      }
-    } else if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('복사할 전화번호가 없습니다.')));
-    }
-    return false;
-  }
-
   ({
     Map<String, int> counts,
     List<String> sortedAssignees,
@@ -974,65 +944,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                             final displayAssignee = _assigneeForMode(c, overrides);
                             final assignColor = _colorForAssignee(displayAssignee, scheme);
 
-                            return Dismissible(
-                              key: ValueKey('swipe_${c.id}_$i'),
-                              direction: DismissDirection.horizontal,
-                              confirmDismiss: (direction) =>
-                                  _onCardSwipe(direction, c),
-                              background: Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 18),
-                                decoration: BoxDecoration(
-                                  color: scheme.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                alignment: Alignment.centerLeft,
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.call_rounded,
-                                      color: scheme.onSecondaryContainer,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '전화 걸기',
-                                      style: TextStyle(
-                                        color: scheme.onSecondaryContainer,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              secondaryBackground: Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 18),
-                                decoration: BoxDecoration(
-                                  color: scheme.tertiaryContainer,
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                alignment: Alignment.centerRight,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      '번호 복사',
-                                      style: TextStyle(
-                                        color: scheme.onTertiaryContainer,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Icon(
-                                      Icons.copy_rounded,
-                                      color: scheme.onTertiaryContainer,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              child: Container(
+                            return Container(
                               key: ValueKey(c.id),
                               margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
@@ -1322,7 +1234,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   ),
                                 ),
                               ),
-                            ),
                             );
                           },
                         ),

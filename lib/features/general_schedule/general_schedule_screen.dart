@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_form_screen.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_calendar_ui.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_month_sheet.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
@@ -22,12 +23,16 @@ class GeneralScheduleScreen extends ConsumerStatefulWidget {
 }
 
 class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
-  final _dateStripKey = GlobalKey<_DateScrollStripState>();
+  final _weekPanelKey = GlobalKey<GeneralScheduleWeekPanelState>();
 
   DateTime _selectedDay = DateTime.parse(todayYmdSeoul());
   String? _earliestAddCursorYmd;
   int _earliestAddCursorSlot = 0;
   String _searchQuery = '';
+  String _selectedAssigneeFilter = kGeneralScheduleAllAssignees;
+  GeneralScheduleCalendarView _calendarView = GeneralScheduleCalendarView.week;
+  DateTime _monthFocusedDay = DateTime.parse(todayYmdSeoul());
+  bool _returnToMonthViewOnBack = false;
 
   Future<void> _reload() async {
     ref.invalidate(generalScheduleRecordsProvider);
@@ -38,29 +43,49 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
 
   /// 선택일 주변(날짜 스트립 ±60일)이 조회 구간 밖이면 하한을 앞당겨 재조회.
   void _ensureHistoryWindowCovers(String ymd) {
-    final needed = addDaysToYmd(ymd, -_DateScrollStrip.centerIndex);
+    final needed = addDaysToYmd(ymd, -GeneralScheduleWeekPanel.centerIndex);
     final current = ref.read(generalScheduleWindowStartProvider);
     if (needed.compareTo(current) < 0) {
       ref.read(generalScheduleWindowStartProvider.notifier).state = needed;
     }
   }
 
-  void _selectDay(String ymd) {
-    if (_ymd(_selectedDay) == ymd) return;
-    _ensureHistoryWindowCovers(ymd);
-    setState(() => _selectedDay = DateTime.parse(ymd));
-  }
-
   void _goToToday() {
     _selectDayAndScroll(todayYmdSeoul());
   }
 
-  void _selectDayAndScroll(String ymd) {
+  void _selectDayAndScroll(String ymd, {bool fromMonthPick = false}) {
     _ensureHistoryWindowCovers(ymd);
-    setState(() => _selectedDay = DateTime.parse(ymd));
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _dateStripKey.currentState?.scrollToCenter();
+    final changed = _ymd(_selectedDay) != ymd;
+    if (!changed && !fromMonthPick) return;
+
+    setState(() {
+      if (changed) {
+        _selectedDay = DateTime.parse(ymd);
+        _monthFocusedDay = DateTime(_selectedDay.year, _selectedDay.month, 1);
+      }
+      if (fromMonthPick) {
+        _calendarView = GeneralScheduleCalendarView.week;
+        _returnToMonthViewOnBack = true;
+      }
     });
+    if (changed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _weekPanelKey.currentState?.scrollStripToCenter();
+      });
+    }
+  }
+
+  void _switchToMonthView() {
+    setState(() {
+      _calendarView = GeneralScheduleCalendarView.month;
+      _monthFocusedDay = DateTime(_selectedDay.year, _selectedDay.month, 1);
+      _returnToMonthViewOnBack = false;
+    });
+  }
+
+  void _onMonthDayPicked(DateTime day) {
+    _selectDayAndScroll(_ymd(day), fromMonthPick: true);
   }
 
   /// [current] 이전 **날짜**의 빈 칸 (당일 다른 칸은 건너뜀).
@@ -496,22 +521,50 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     }
   }
 
-  /// 날짜 탭: 해당일로 이동만 (등록은 빈 칸·버튼에서).
-  void _onDayTapped(String ymd, GeneralScheduleDayGrid grid) {
-    _selectDayAndScroll(ymd);
+  List<String> _monthAssignees(
+    GeneralScheduleMonthStats monthStats,
+    String? loginUserName,
+  ) {
+    return sortGeneralScheduleAssignees(
+      [
+        kGeneralScheduleAllAssignees,
+        ...monthStats.byUser.map((u) => u.name),
+      ],
+      loginUserName: loginUserName,
+    );
   }
 
-  void _openMonthSheet(GeneralScheduleDayGrid grid) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (ctx) => GeneralScheduleMonthSheet(
-        grid: grid,
-        initialMonth: _selectedDay,
-        onPickDay: (day) => _onDayTapped(_ymd(day), grid),
-      ),
-    );
+  Map<String, int> _monthAssigneeCounts(
+    GeneralScheduleMonthStats monthStats,
+    GeneralScheduleDayGrid grid,
+    int year,
+    int month,
+  ) {
+    final counts = <String, int>{kGeneralScheduleAllAssignees: monthStats.usedSlots};
+    for (final u in monthStats.byUser) {
+      counts[u.name] = u.count;
+    }
+    return counts;
+  }
+
+  Color Function(String) _assigneeColorBuilder(
+    GeneralScheduleMonthStats monthStats,
+    ColorScheme scheme,
+  ) {
+    final colorMap = <String, Color>{};
+    for (final u in monthStats.byUser) {
+      colorMap[u.name] = parseGeneralScheduleUserColor(
+        u.color,
+        fallback: scheme.primary,
+      )!;
+    }
+    return (name) {
+      if (name == kGeneralScheduleAllAssignees) {
+        return scheme.onSurfaceVariant;
+      }
+      if (name == '미지정') return scheme.outline;
+      return colorMap[name] ?? scheme.primary;
+    };
   }
 
   ({String ymd, int slotIndex}) _recordPrimarySlot(GeneralScheduleRecord record) {
@@ -592,22 +645,41 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final grid = ref.watch(generalScheduleGridProvider);
     final scheme = Theme.of(context).colorScheme;
     final selectedYmd = _ymd(_selectedDay);
-    final selectedMonthLabel = '${_selectedDay.year}년 ${_selectedDay.month}월';
-    final dayStats = computeDayStats(grid, selectedYmd);
+    final statsAnchor = _calendarView == GeneralScheduleCalendarView.month
+        ? _monthFocusedDay
+        : _selectedDay;
+    final selectedMonthLabel =
+        '${statsAnchor.year}년 ${statsAnchor.month}월';
     final monthStats = computeMonthStats(
       grid,
-      _selectedDay.year,
-      _selectedDay.month,
+      statsAnchor.year,
+      statsAnchor.month,
     );
-    final selectedWeekdayColor =
-        generalScheduleWeekdayColor(_selectedDay.weekday);
+    final monthAssignees = _monthAssignees(monthStats, user.name);
+    final monthAssigneeCounts = _monthAssigneeCounts(
+      monthStats,
+      grid,
+      statsAnchor.year,
+      statsAnchor.month,
+    );
+    final colorForAssignee = _assigneeColorBuilder(monthStats, scheme);
     final scrollDays = List.generate(
-      _DateScrollStrip.totalDays,
-      (i) => addDaysToYmd(selectedYmd, i - _DateScrollStrip.centerIndex),
+      GeneralScheduleWeekPanel.totalDays,
+      (i) => addDaysToYmd(selectedYmd, i - GeneralScheduleWeekPanel.centerIndex),
     );
     final isToday = selectedYmd == todayYmdSeoul();
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_returnToMonthViewOnBack,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (!_returnToMonthViewOnBack) return;
+        setState(() {
+          _returnToMonthViewOnBack = false;
+          _calendarView = GeneralScheduleCalendarView.month;
+        });
+      },
+      child: Scaffold(
         appBar: AppBar(
         centerTitle: false,
         title: const Text('본사일반'),
@@ -644,7 +716,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'month':
-                  _openMonthSheet(grid);
+                  _switchToMonthView();
                 case 'pick':
                   unawaited(_pickDate());
                 case 'refresh':
@@ -657,8 +729,8 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.event_note_rounded),
-                  title: Text('월간 달력·통계'),
+                  leading: Icon(Icons.calendar_month_rounded),
+                  title: Text('월간 보기'),
                 ),
               ),
               const PopupMenuItem(
@@ -703,11 +775,13 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           ),
         ),
         data: (_) {
+          final isWeekView = _calendarView == GeneralScheduleCalendarView.week;
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 2),
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
                 child: Text(
                   selectedMonthLabel,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -716,699 +790,113 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                       ),
                 ),
               ),
-              _DateScrollStrip(
-                key: _dateStripKey,
-                days: scrollDays,
-                selectedYmd: selectedYmd,
-                grid: grid,
-                onTap: _selectDayAndScroll,
+              GeneralScheduleCalendarViewToggle(
+                view: _calendarView,
+                onChanged: (view) => setState(() {
+                  _calendarView = view;
+                  if (view == GeneralScheduleCalendarView.month) {
+                    _monthFocusedDay =
+                        DateTime(_selectedDay.year, _selectedDay.month, 1);
+                    _returnToMonthViewOnBack = false;
+                  }
+                }),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
-                child: Text(
-                  '${formatYmdFlowLabelKo(selectedYmd)} · '
-                  '${dayStats.emptySlots == 0 ? '6/6 만석' : '${dayStats.usedSlots}/${dayStats.totalSlots}칸 · 남은 ${dayStats.emptySlots}'}'
-                  '${_searchQuery.isEmpty ? '' : ' · 검색: $_searchQuery'}',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: dayStats.emptySlots == 0
-                            ? scheme.error
-                            : selectedWeekdayColor ?? scheme.onSurface,
-                      ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              GeneralScheduleAssigneeFilterBar(
+                assignees: monthAssignees,
+                counts: monthAssigneeCounts,
+                selected: _selectedAssigneeFilter,
+                colorForAssignee: colorForAssignee,
+                onSelected: (name) =>
+                    setState(() => _selectedAssigneeFilter = name),
+              ),
+              if (isWeekView) ...[
+                GeneralScheduleCollapsibleMonthStats(
+                  stats: monthStats,
                 ),
-              ),
-              GeneralScheduleStatsBar(
-                dayStats: dayStats,
-                monthStats: monthStats,
-                compact: true,
-                onOpenMonth: () => _openMonthSheet(grid),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _goToToday,
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                        ),
-                        icon: Icon(
-                          Icons.today_rounded,
-                          size: 16,
-                          color: isToday ? scheme.primary : null,
-                        ),
-                        label: Text(
-                          isToday ? '오늘' : '오늘로',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _goToToday,
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                          icon: Icon(
+                            Icons.today_rounded,
+                            size: 16,
+                            color: isToday ? scheme.primary : null,
+                          ),
+                          label: Text(
+                            isToday ? '오늘' : '오늘로',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: recordsAsync.isLoading
-                            ? null
-                            : () => unawaited(_onQuickAddEarliest(grid)),
-                        style: FilledButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                        ),
-                        icon: const Icon(Icons.bolt_rounded, size: 16),
-                        label: const Text(
-                          '빈 칸 추가',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.tonalIcon(
+                          onPressed: recordsAsync.isLoading
+                              ? null
+                              : () => unawaited(_onQuickAddEarliest(grid)),
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                          icon: const Icon(Icons.bolt_rounded, size: 16),
+                          label: const Text(
+                            '빈 칸 추가',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 2, 10, 0),
-                  child: _DaySlotsPager(
-                    days: scrollDays,
-                    selectedYmd: selectedYmd,
-                    grid: grid,
-                    searchQuery: _searchQuery,
-                    onRefresh: _reload,
-                    onDayChanged: (ymd) {
-                      _selectDay(ymd);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _dateStripKey.currentState?.scrollToCenter();
-                      });
-                    },
-                    onSlotTap: _onSlotTap,
+                    ],
                   ),
                 ),
+              ],
+              Expanded(
+                child: isWeekView
+                    ? GeneralScheduleWeekPanel(
+                        key: _weekPanelKey,
+                        days: scrollDays,
+                        selectedYmd: selectedYmd,
+                        grid: grid,
+                        assignees: monthAssignees,
+                        assigneeCounts: monthAssigneeCounts,
+                        selectedAssignee: _selectedAssigneeFilter,
+                        colorForAssignee: colorForAssignee,
+                        searchQuery: _searchQuery,
+                        showAssigneeFilter: false,
+                        onAssigneeChanged: (name) =>
+                            setState(() => _selectedAssigneeFilter = name),
+                        onDaySelected: _selectDayAndScroll,
+                        onSlotTap: _onSlotTap,
+                        onRefresh: _reload,
+                        loginUserName: user.name,
+                      )
+                    : GeneralScheduleMonthCalendar(
+                        grid: grid,
+                        focusedMonth: _monthFocusedDay,
+                        assigneeFilter: _selectedAssigneeFilter,
+                        loginUserName: user.name,
+                        onFocusedMonthChanged: (month) => setState(() {
+                          _monthFocusedDay =
+                              DateTime(month.year, month.month, 1);
+                        }),
+                        onPickDay: _onMonthDayPicked,
+                      ),
               ),
             ],
           );
         },
       ),
-    );
-  }
-}
-
-/// 날짜별 6칸 — 좌우 스와이프로 이전/다음 날 이동.
-class _DaySlotsPager extends StatefulWidget {
-  const _DaySlotsPager({
-    required this.days,
-    required this.selectedYmd,
-    required this.grid,
-    required this.searchQuery,
-    required this.onRefresh,
-    required this.onDayChanged,
-    required this.onSlotTap,
-  });
-
-  final List<String> days;
-  final String selectedYmd;
-  final GeneralScheduleDayGrid grid;
-  final String searchQuery;
-  final Future<void> Function() onRefresh;
-  final ValueChanged<String> onDayChanged;
-  final void Function(int slotIndex, String ymd, GeneralScheduleCell? cell)
-      onSlotTap;
-
-  @override
-  State<_DaySlotsPager> createState() => _DaySlotsPagerState();
-}
-
-class _DaySlotsPagerState extends State<_DaySlotsPager> {
-  late final PageController _controller;
-  bool _programmaticPage = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = PageController(initialPage: _DateScrollStrip.centerIndex);
-  }
-
-  @override
-  void didUpdateWidget(covariant _DaySlotsPager oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedYmd != widget.selectedYmd) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToSelectedDay());
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _jumpToSelectedDay() {
-    if (!_controller.hasClients) return;
-    _programmaticPage = true;
-    _controller.jumpToPage(_DateScrollStrip.centerIndex);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _programmaticPage = false;
-    });
-  }
-
-  void _onPageChanged(int index) {
-    if (_programmaticPage || index < 0 || index >= widget.days.length) return;
-    final ymd = widget.days[index];
-    if (ymd == widget.selectedYmd) return;
-    widget.onDayChanged(ymd);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PageView.builder(
-      controller: _controller,
-      itemCount: widget.days.length,
-      onPageChanged: _onPageChanged,
-      itemBuilder: (context, pageIndex) {
-        final ymd = widget.days[pageIndex];
-        final daySlots = widget.grid[ymd] ?? emptyDaySlots();
-        return RefreshIndicator(
-          onRefresh: widget.onRefresh,
-          child: _DaySlotColumn(
-            daySlots: daySlots,
-            searchQuery: widget.searchQuery,
-            onSlotTap: (slotIndex, cell) =>
-                widget.onSlotTap(slotIndex, ymd, cell),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _DaySlotColumn extends StatelessWidget {
-  const _DaySlotColumn({
-    required this.daySlots,
-    required this.searchQuery,
-    required this.onSlotTap,
-  });
-
-  final List<GeneralScheduleCell?> daySlots;
-  final String searchQuery;
-  final void Function(int slotIndex, GeneralScheduleCell? cell) onSlotTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const gap = 2.0;
-        const slotCount = kGeneralScheduleSlotsPerDay;
-        const extraBottomSpace = 16.0;
-        final bottomInset = MediaQuery.paddingOf(context).bottom;
-        final gaps = gap * (slotCount - 1);
-        final slotH =
-            (constraints.maxHeight - gaps - bottomInset - extraBottomSpace) /
-                slotCount;
-
-        return SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Padding(
-              padding: EdgeInsets.only(bottom: bottomInset + extraBottomSpace),
-              child: Column(
-                children: [
-                  for (var index = 0; index < slotCount; index++) ...[
-                    if (index > 0) const SizedBox(height: gap),
-                    SizedBox(
-                      height: slotH,
-                      child: _SlotLaneCard(
-                        slotIndex: index,
-                        cell: daySlots[index],
-                        searchQuery: searchQuery,
-                        compact: true,
-                        onTap: () => onSlotTap(index, daySlots[index]),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _DateScrollStrip extends StatefulWidget {
-  const _DateScrollStrip({
-    super.key,
-    required this.days,
-    required this.selectedYmd,
-    required this.grid,
-    required this.onTap,
-  });
-
-  static const totalDays = 121;
-  static const centerIndex = 60;
-  static const itemWidth = 56.0;
-  static const stripHeight = 80.0;
-
-  final List<String> days;
-  final String selectedYmd;
-  final GeneralScheduleDayGrid grid;
-  final ValueChanged<String> onTap;
-
-  @override
-  State<_DateScrollStrip> createState() => _DateScrollStripState();
-}
-
-class _DateScrollStripState extends State<_DateScrollStrip> {
-  final _controller = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => scrollToCenter());
-  }
-
-  @override
-  void didUpdateWidget(covariant _DateScrollStrip oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedYmd != widget.selectedYmd) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => scrollToCenter());
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void scrollToCenter() {
-    if (!_controller.hasClients) return;
-    final viewport = _controller.position.viewportDimension;
-    final max = _controller.position.maxScrollExtent;
-    final target =
-        (_DateScrollStrip.centerIndex * _DateScrollStrip.itemWidth -
-                (viewport - _DateScrollStrip.itemWidth) / 2)
-            .clamp(0.0, max);
-    _controller.jumpTo(target);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
-
-    return Material(
-      color: scheme.surfaceContainerLow,
-      child: SizedBox(
-        height: _DateScrollStrip.stripHeight,
-        child: ListView.builder(
-          controller: _controller,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 6),
-          itemCount: widget.days.length,
-          itemBuilder: (context, i) {
-              final ymd = widget.days[i];
-              final parts = ymd.split('-');
-              final dayNum =
-                  parts.length == 3 ? int.tryParse(parts[2]) ?? 0 : 0;
-              final isSelected = ymd == widget.selectedYmd;
-              final isToday = ymd == todayYmdSeoul();
-              final isFull = isGeneralScheduleDayFull(widget.grid, ymd);
-              final slots = widget.grid[ymd] ?? emptyDaySlots();
-              final weekday = DateTime.parse(ymd).weekday;
-              final weekendColor = generalScheduleWeekdayColor(weekday);
-
-              return SizedBox(
-                width: _DateScrollStrip.itemWidth,
-                height: _DateScrollStrip.stripHeight - 4,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Material(
-                    clipBehavior: Clip.antiAlias,
-                    color: isSelected
-                        ? scheme.primary
-                        : isFull
-                            ? scheme.errorContainer.withValues(alpha: 0.55)
-                            : isToday
-                                ? scheme.primaryContainer
-                                : Colors.transparent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      side: isFull && !isSelected
-                          ? BorderSide(
-                              color: scheme.error.withValues(alpha: 0.7),
-                              width: 1.5,
-                            )
-                          : BorderSide.none,
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => widget.onTap(ymd),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 2,
-                          vertical: 2,
-                        ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                weekdays[weekday - 1],
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  height: 1.1,
-                                  fontWeight: FontWeight.w600,
-                                  color: isSelected
-                                      ? scheme.onPrimary
-                                      : (weekendColor ??
-                                          scheme.onSurfaceVariant),
-                                ),
-                              ),
-                              Text(
-                                '$dayNum',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  height: 1.1,
-                                  fontWeight: FontWeight.w700,
-                                  color: isSelected
-                                      ? scheme.onPrimary
-                                      : isToday
-                                          ? scheme.onPrimaryContainer
-                                          : (weekendColor ??
-                                              scheme.onSurface),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              _SlotMiniGrid(
-                                slots: slots,
-                                scheme: scheme,
-                                onPrimary: isSelected,
-                              ),
-                              if (isFull)
-                                Text(
-                                  '만석',
-                                  style: TextStyle(
-                                    fontSize: 7,
-                                    height: 1,
-                                    fontWeight: FontWeight.w800,
-                                    color: isSelected
-                                        ? scheme.onPrimary
-                                        : scheme.error,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-    );
-  }
-}
-
-class _SlotMiniGrid extends StatelessWidget {
-  const _SlotMiniGrid({
-    required this.slots,
-    required this.scheme,
-    this.onPrimary = false,
-  });
-
-  final List<GeneralScheduleCell?> slots;
-  final ColorScheme scheme;
-  final bool onPrimary;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(kGeneralScheduleSlotsPerDay, (i) {
-        final filled = slots[i] != null;
-        return Container(
-          width: 5,
-          height: 5,
-          margin: const EdgeInsets.symmetric(horizontal: 1),
-          decoration: BoxDecoration(
-            color: filled
-                ? (onPrimary
-                    ? scheme.onPrimary
-                    : (parseGeneralScheduleUserColor(
-                            slots[i]!.userColor,
-                            fallback: scheme.primary,
-                          )))
-                : (onPrimary
-                    ? scheme.onPrimary.withValues(alpha: 0.25)
-                    : scheme.outlineVariant),
-            borderRadius: BorderRadius.circular(1),
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _SlotLaneCard extends StatelessWidget {
-  const _SlotLaneCard({
-    required this.slotIndex,
-    required this.cell,
-    required this.onTap,
-    this.searchQuery = '',
-    this.compact = false,
-  });
-
-  final int slotIndex;
-  final GeneralScheduleCell? cell;
-  final VoidCallback onTap;
-  final String searchQuery;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isEmpty = cell == null;
-    final normalizedQuery = searchQuery.trim().toLowerCase();
-    final isSearchMismatch = !isEmpty &&
-        normalizedQuery.isNotEmpty &&
-        !_generalScheduleCellMatchesQuery(cell!, normalizedQuery);
-    final accent =
-        isEmpty
-            ? scheme.outline
-            : (parseGeneralScheduleUserColor(
-                cell!.userColor,
-                fallback: scheme.primary,
-              )!);
-
-    final radius = compact ? 8.0 : 12.0;
-    final badgeW = compact ? 36.0 : 52.0;
-    final numSize = compact ? 17.0 : 22.0;
-
-    return Material(
-      color: isEmpty
-          ? scheme.surface
-          : isSearchMismatch
-              ? scheme.surfaceContainerHigh
-              : scheme.surfaceContainerLowest,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(radius),
-        side: BorderSide(
-          color: isEmpty
-              ? scheme.outlineVariant
-              : accent.withValues(alpha: 0.5),
-          width: isEmpty ? 1.5 : 1,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(radius),
-        onTap: onTap,
-        child: SizedBox.expand(
-          child: Row(
-            children: [
-            SizedBox(
-              width: badgeW,
-              child: Center(
-                child: Text(
-                  '${slotIndex + 1}',
-                  style: TextStyle(
-                    fontSize: numSize,
-                    fontWeight: FontWeight.w800,
-                    color: isEmpty ? scheme.onSurfaceVariant : accent,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(0, compact ? 4 : 10, 4, compact ? 4 : 10),
-                child: isEmpty
-                    ? Row(
-                        children: [
-                          Icon(
-                            Icons.add_rounded,
-                            color: scheme.primary,
-                            size: compact ? 18 : 28,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              compact ? '탭하여 등록' : '빈 칸 — 기간·도어 등록',
-                              style: TextStyle(
-                                fontSize: compact ? 12 : 15,
-                                fontWeight: FontWeight.w600,
-                                color: scheme.primary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      )
-                    : compact
-                        ? Builder(
-                            builder: (context) {
-                              final doorLabel =
-                                  formatGeneralScheduleDoorSummary(cell!);
-                              final dayCount = inclusiveDayCount(
-                                cell!.start,
-                                cell!.endDate,
-                              );
-                              final assignee = (cell!.userName ?? '').trim();
-                              final primaryLabel =
-                                  assignee.isNotEmpty ? assignee : cell!.site;
-                              final periodLabel =
-                                  '${formatWeekRangeFlowLabel(cell!.start, cell!.endDate)} ($dayCount일)';
-                              final secondary = [
-                                if (assignee.isNotEmpty) cell!.site,
-                                if (doorLabel.isNotEmpty) doorLabel,
-                                periodLabel,
-                              ].join(' · ');
-                              if (isSearchMismatch) {
-                                return Text(
-                                  '검색어와 일치하지 않음',
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.15,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                );
-                              }
-                              return Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    primaryLabel,
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.2,
-                                      color: scheme.onSurface,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (secondary.isNotEmpty)
-                                    Text(
-                                      secondary,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w500,
-                                        height: 1.2,
-                                        color: scheme.onSurfaceVariant,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                ],
-                              );
-                            },
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                cell!.site,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Builder(
-                                builder: (context) {
-                                  final doorLabel =
-                                      formatGeneralScheduleDoorSummary(cell!);
-                                  final periodLabel =
-                                      formatGeneralSchedulePeriodLabel(
-                                    startYmd: cell!.start,
-                                    endYmd: cell!.endDate,
-                                  );
-                                  final meta = [
-                                    if (periodLabel.isNotEmpty)
-                                      periodLabel
-                                    else
-                                      '${cell!.start} ~ ${cell!.endDate}',
-                                    if (cell!.userName != null)
-                                      cell!.userName!,
-                                  ].where((s) => s.isNotEmpty).join(' · ');
-                                  final subtitle = [
-                                    if (doorLabel.isNotEmpty) doorLabel,
-                                    if (meta.isNotEmpty) meta,
-                                  ].join(' · ');
-                                  if (subtitle.isEmpty) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Text(
-                                    subtitle,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: doorLabel.isNotEmpty
-                                              ? scheme.primary
-                                              : scheme.onSurfaceVariant,
-                                          fontWeight: doorLabel.isNotEmpty
-                                              ? FontWeight.w600
-                                              : FontWeight.w400,
-                                          fontSize: 11,
-                                        ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-              ),
-            ),
-            if (!isEmpty && !compact)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: Icon(
-                  Icons.chevron_right_rounded,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    ),
     );
   }
 }
@@ -1483,12 +971,6 @@ class _ScheduleDetailSheet extends StatelessWidget {
       ),
     );
   }
-}
-
-bool _generalScheduleCellMatchesQuery(GeneralScheduleCell cell, String query) {
-  if (query.isEmpty) return true;
-  final haystack = cell.site.toLowerCase();
-  return haystack.contains(query);
 }
 
 class _GeneralScheduleSearchDelegate extends SearchDelegate<GeneralScheduleRecord?> {

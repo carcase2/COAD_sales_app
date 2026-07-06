@@ -11,6 +11,18 @@ typedef GeneralScheduleDayGrid = Map<String, List<GeneralScheduleCell?>>;
 List<GeneralScheduleCell?> emptyDaySlots() =>
     List<GeneralScheduleCell?>.filled(kGeneralScheduleSlotsPerDay, null);
 
+/// 항상 6칸 리스트로 정규화 (짧은 리스트·null 방어).
+List<GeneralScheduleCell?> normalizeGeneralScheduleDaySlots(
+  List<GeneralScheduleCell?>? raw,
+) {
+  final out = emptyDaySlots();
+  if (raw == null || raw.isEmpty) return out;
+  for (var i = 0; i < raw.length && i < kGeneralScheduleSlotsPerDay; i++) {
+    out[i] = raw[i];
+  }
+  return out;
+}
+
 /// API 목록 → 날짜별 6칸 그리드 (page.tsx `fetchSchedules`와 동일).
 GeneralScheduleDayGrid buildGeneralScheduleGrid(List<GeneralScheduleRecord> rows) {
   final grid = <String, List<GeneralScheduleCell?>>{};

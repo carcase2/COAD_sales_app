@@ -1,41 +1,85 @@
+import 'package:coad_customer_calls/models/general_schedule.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_calendar_ui.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_stats.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-/// 월간 달력 + 통계 — 날짜 탭 시 [onPickDay]로 메인 화면에 반영.
-class GeneralScheduleMonthSheet extends StatefulWidget {
-  const GeneralScheduleMonthSheet({
+/// 월간 달력 — 메인 화면 인라인·시트 공용.
+class GeneralScheduleMonthCalendar extends StatefulWidget {
+  const GeneralScheduleMonthCalendar({
     super.key,
     required this.grid,
-    required this.initialMonth,
+    required this.focusedMonth,
+    required this.assigneeFilter,
     required this.onPickDay,
+    this.onFocusedMonthChanged,
+    this.loginUserName,
+    this.scrollController,
+    this.showHeader = false,
+    this.padding = const EdgeInsets.fromLTRB(12, 0, 12, 16),
   });
 
   final GeneralScheduleDayGrid grid;
-  final DateTime initialMonth;
+  final DateTime focusedMonth;
+  final String assigneeFilter;
   final ValueChanged<DateTime> onPickDay;
+  final ValueChanged<DateTime>? onFocusedMonthChanged;
+  final String? loginUserName;
+  final ScrollController? scrollController;
+  final bool showHeader;
+  final EdgeInsets padding;
 
   @override
-  State<GeneralScheduleMonthSheet> createState() =>
-      _GeneralScheduleMonthSheetState();
+  State<GeneralScheduleMonthCalendar> createState() =>
+      _GeneralScheduleMonthCalendarState();
 }
 
-class _GeneralScheduleMonthSheetState extends State<GeneralScheduleMonthSheet> {
+class _GeneralScheduleMonthCalendarState
+    extends State<GeneralScheduleMonthCalendar> {
   late DateTime _focusedMonth;
 
   @override
   void initState() {
     super.initState();
     _focusedMonth = DateTime(
-      widget.initialMonth.year,
-      widget.initialMonth.month,
+      widget.focusedMonth.year,
+      widget.focusedMonth.month,
       1,
     );
   }
 
+  @override
+  void didUpdateWidget(covariant GeneralScheduleMonthCalendar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusedMonth.year != widget.focusedMonth.year ||
+        oldWidget.focusedMonth.month != widget.focusedMonth.month) {
+      _focusedMonth = DateTime(
+        widget.focusedMonth.year,
+        widget.focusedMonth.month,
+        1,
+      );
+    }
+  }
+
   String _ymd(DateTime d) => ymdSeoulFromDateTime(d);
+
+  bool _isToday(DateTime day) => _ymd(day) == todayYmdSeoul();
+
+  void _goToTodayMonth() {
+    final today = DateTime.parse(todayYmdSeoul());
+    setState(() {
+      _focusedMonth = DateTime(today.year, today.month, 1);
+    });
+    widget.onFocusedMonthChanged?.call(_focusedMonth);
+    widget.onPickDay(today);
+  }
+
+  void _onMonthPageChanged(DateTime focused) {
+    setState(() => _focusedMonth = focused);
+    widget.onFocusedMonthChanged?.call(focused);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,20 +89,311 @@ class _GeneralScheduleMonthSheetState extends State<GeneralScheduleMonthSheet> {
       _focusedMonth.year,
       _focusedMonth.month,
     );
-    final occupancyPct = (stats.occupancyRate * 100).round();
+    final today = DateTime.parse(todayYmdSeoul());
+    final isCurrentMonth =
+        _focusedMonth.year == today.year && _focusedMonth.month == today.month;
+
+    return ListView(
+      controller: widget.scrollController,
+      padding: widget.padding,
+      children: [
+        if (widget.showHeader) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    formatGeneralScheduleMonthTitle(stats.year, stats.month),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _goToTodayMonth,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: isCurrentMonth ? scheme.primary : null,
+                  ),
+                  icon: const Icon(Icons.today_rounded, size: 18),
+                  label: const Text('오늘'),
+                ),
+              ],
+            ),
+          ),
+        ],
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: TableCalendar<void>(
+            locale: 'ko_KR',
+            firstDay: DateTime.utc(2020, 1, 1),
+            lastDay: DateTime.utc(2035, 12, 31),
+            focusedDay: _focusedMonth,
+            calendarFormat: CalendarFormat.month,
+            availableGestures: AvailableGestures.horizontalSwipe,
+            startingDayOfWeek: StartingDayOfWeek.monday,
+            rowHeight: MediaQuery.orientationOf(context) == Orientation.landscape
+                ? 84
+                : 118,
+            daysOfWeekHeight: 28,
+            headerStyle: HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+              titleTextStyle: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurface,
+              ),
+            ),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+              weekendStyle: const TextStyle(fontSize: 0),
+            ),
+            onPageChanged: _onMonthPageChanged,
+            calendarStyle: CalendarStyle(
+              outsideDaysVisible: false,
+              isTodayHighlighted: true,
+              defaultTextStyle: const TextStyle(fontSize: 0),
+              weekendTextStyle: const TextStyle(fontSize: 0),
+              todayTextStyle: const TextStyle(fontSize: 0),
+              todayDecoration: const BoxDecoration(),
+              cellMargin: EdgeInsets.zero,
+            ),
+            calendarBuilders: CalendarBuilders(
+              dowBuilder: (context, day) {
+                final wd = day.weekday;
+                final label =
+                    const ['월', '화', '수', '목', '금', '토', '일'][wd - 1];
+                final color =
+                    generalScheduleWeekdayColor(wd) ?? scheme.onSurfaceVariant;
+                return Center(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                );
+              },
+              prioritizedBuilder: (context, day, _) =>
+                  _buildMonthDayCell(context, day),
+              todayBuilder: (context, day, _) =>
+                  _buildMonthDayCell(context, day),
+              defaultBuilder: (context, day, _) =>
+                  _buildMonthDayCell(context, day),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '날짜 탭 → 해당일 주간 보기 · 만석은 빨간 테두리',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        GeneralScheduleCollapsibleMonthStats(
+          stats: stats,
+          margin: EdgeInsets.zero,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMonthDayCell(BuildContext context, DateTime day) {
+    return _monthDayCell(
+      context: context,
+      day: day,
+      grid: widget.grid,
+      assigneeFilter: widget.assigneeFilter,
+      onTap: () => widget.onPickDay(day),
+    );
+  }
+
+  Widget _monthDayCell({
+    required BuildContext context,
+    required DateTime day,
+    required GeneralScheduleDayGrid grid,
+    required VoidCallback onTap,
+    required String assigneeFilter,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final ymd = _ymd(day);
+    final isToday = _isToday(day);
+    final slots = normalizeGeneralScheduleDaySlots(grid[ymd]);
+    final used = assigneeFilter == kGeneralScheduleAllAssignees
+        ? occupiedSlotCount(grid, ymd)
+        : slots
+            .where(
+              (c) =>
+                  c != null &&
+                  generalScheduleAssigneeLabel(c) == assigneeFilter,
+            )
+            .length;
+    final isFull = used >= kGeneralScheduleSlotsPerDay;
+    final weekendColor = generalScheduleWeekdayColor(day.weekday);
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.all(1),
+        padding: const EdgeInsets.fromLTRB(2, 1, 2, 1),
+        decoration: BoxDecoration(
+          color: isFull
+              ? scheme.errorContainer.withValues(alpha: 0.45)
+              : (isToday ? scheme.primaryContainer : null),
+          border: isFull
+              ? Border.all(
+                  color: isToday
+                      ? scheme.primary
+                      : scheme.error.withValues(alpha: 0.75),
+                  width: isToday ? 2 : 1.5,
+                )
+              : isToday
+                  ? Border.all(color: scheme.primary, width: 2)
+                  : null,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 13,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (isToday)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: scheme.primary,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        '${day.day}',
+                        style: TextStyle(
+                          fontSize: 9,
+                          height: 1.0,
+                          fontWeight: FontWeight.w900,
+                          color: scheme.onPrimary,
+                        ),
+                      ),
+                    )
+                  else
+                    Text(
+                      '${day.day}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.0,
+                        fontWeight: FontWeight.w700,
+                        color: isFull
+                            ? scheme.error
+                            : (weekendColor ?? scheme.onSurface),
+                      ),
+                    ),
+                  if (isFull) ...[
+                    const SizedBox(width: 2),
+                    Text(
+                      '만',
+                      style: TextStyle(
+                        fontSize: 7,
+                        height: 1.0,
+                        fontWeight: FontWeight.w900,
+                        color: scheme.error,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Expanded(
+              child: ClipRect(
+                child: _monthDaySiteContent(
+                  context: context,
+                  slots: slots,
+                  scheme: scheme,
+                  assigneeFilter: assigneeFilter,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _monthDaySiteContent({
+    required BuildContext context,
+    required List<GeneralScheduleCell?> slots,
+    required ColorScheme scheme,
+    required String assigneeFilter,
+  }) {
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final wide = MediaQuery.sizeOf(context).width >= 680;
+
+    if (landscape || wide) {
+      return GeneralScheduleHorizontalSlotRow(
+        slots: slots,
+        scheme: scheme,
+        assigneeFilter: assigneeFilter,
+        compact: true,
+        height: 32,
+        slotGap: 3.5,
+      );
+    }
+
+    return GeneralScheduleMonthCellSiteList(
+      slots: slots,
+      scheme: scheme,
+      assigneeFilter: assigneeFilter,
+      siteFontSize: 8.5,
+      siteRowHeight: 18,
+      siteRowGap: 2,
+    );
+  }
+}
+
+/// 월간 달력 바텀시트.
+class GeneralScheduleMonthSheet extends StatelessWidget {
+  const GeneralScheduleMonthSheet({
+    super.key,
+    required this.grid,
+    required this.initialMonth,
+    required this.onPickDay,
+    this.assigneeFilter = kGeneralScheduleAllAssignees,
+    this.loginUserName,
+  });
+
+  final GeneralScheduleDayGrid grid;
+  final DateTime initialMonth;
+  final ValueChanged<DateTime> onPickDay;
+  final String assigneeFilter;
+  final String? loginUserName;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
 
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.92,
+      initialChildSize: 0.88,
       minChildSize: 0.55,
       maxChildSize: 0.95,
       builder: (context, scrollController) {
         return Material(
           color: scheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          child: ListView(
-            controller: scrollController,
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
                 child: Container(
@@ -71,99 +406,19 @@ class _GeneralScheduleMonthSheetState extends State<GeneralScheduleMonthSheet> {
                   ),
                 ),
               ),
-              Text(
-                formatGeneralScheduleMonthTitle(stats.year, stats.month),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              const SizedBox(height: 12),
-              _MonthStatsPanel(stats: stats, occupancyPct: occupancyPct),
-              const SizedBox(height: 12),
-              Card(
-                clipBehavior: Clip.antiAlias,
-                child: TableCalendar<void>(
-                  locale: 'ko_KR',
-                  firstDay: DateTime.utc(2020, 1, 1),
-                  lastDay: DateTime.utc(2035, 12, 31),
-                  focusedDay: _focusedMonth,
-                  calendarFormat: CalendarFormat.month,
-                  availableGestures: AvailableGestures.horizontalSwipe,
-                  startingDayOfWeek: StartingDayOfWeek.monday,
-                  rowHeight: 52,
-                  daysOfWeekHeight: 32,
-                  headerStyle: HeaderStyle(
-                    formatButtonVisible: false,
-                    titleCentered: true,
-                    titleTextStyle: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                  daysOfWeekStyle: DaysOfWeekStyle(
-                    weekdayStyle: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    weekendStyle: const TextStyle(fontSize: 0),
-                  ),
-                  onPageChanged: (focused) =>
-                      setState(() => _focusedMonth = focused),
-                  calendarStyle: CalendarStyle(
-                    outsideDaysVisible: false,
-                    defaultTextStyle: const TextStyle(fontSize: 0),
-                    weekendTextStyle: const TextStyle(fontSize: 0),
-                    todayTextStyle: const TextStyle(fontSize: 0),
-                    cellMargin: EdgeInsets.zero,
-                  ),
-                  calendarBuilders: CalendarBuilders(
-                    dowBuilder: (context, day) {
-                      final wd = day.weekday;
-                      final label = const ['월', '화', '수', '목', '금', '토', '일']
-                          [wd - 1];
-                      final color = generalScheduleWeekdayColor(wd) ??
-                          scheme.onSurfaceVariant;
-                      return Center(
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: color,
-                          ),
-                        ),
-                      );
-                    },
-                    defaultBuilder: (context, day, _) => _monthDayCell(
-                      context: context,
-                      day: day,
-                      grid: widget.grid,
-                      onTap: () {
-                        Navigator.pop(context);
-                        widget.onPickDay(day);
-                      },
-                    ),
-                    todayBuilder: (context, day, _) => _monthDayCell(
-                      context: context,
-                      day: day,
-                      grid: widget.grid,
-                      isToday: true,
-                      onTap: () {
-                        Navigator.pop(context);
-                        widget.onPickDay(day);
-                      },
-                    ),
-                  ),
+              Expanded(
+                child: GeneralScheduleMonthCalendar(
+                  grid: grid,
+                  focusedMonth: initialMonth,
+                  assigneeFilter: assigneeFilter,
+                  loginUserName: loginUserName,
+                  scrollController: scrollController,
+                  showHeader: true,
+                  onPickDay: (day) {
+                    Navigator.pop(context);
+                    onPickDay(day);
+                  },
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '날짜 탭 → 일정 등록 (만석·빨간 테두리는 6/6)',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -171,268 +426,9 @@ class _GeneralScheduleMonthSheetState extends State<GeneralScheduleMonthSheet> {
       },
     );
   }
-
-  Widget _monthDayCell({
-    required BuildContext context,
-    required DateTime day,
-    required GeneralScheduleDayGrid grid,
-    required VoidCallback onTap,
-    bool isToday = false,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final ymd = _ymd(day);
-    final slots = grid[ymd] ?? emptyDaySlots();
-    final used = occupiedSlotCount(grid, ymd);
-    final isFull = used >= kGeneralScheduleSlotsPerDay;
-    final weekendColor = generalScheduleWeekdayColor(day.weekday);
-
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.all(2),
-        padding: const EdgeInsets.fromLTRB(2, 2, 2, 1),
-        decoration: BoxDecoration(
-          color: isFull
-              ? scheme.errorContainer.withValues(alpha: 0.45)
-              : (isToday ? scheme.primaryContainer : null),
-          border: isFull
-              ? Border.all(color: scheme.error.withValues(alpha: 0.75), width: 1.5)
-              : null,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '${day.day}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isFull
-                        ? scheme.error
-                        : (weekendColor ?? scheme.onSurface),
-                  ),
-                ),
-                if (isFull) ...[
-                  const SizedBox(width: 2),
-                  Text(
-                    '만',
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                      color: scheme.error,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 2),
-            Row(
-              children: List.generate(kGeneralScheduleSlotsPerDay, (i) {
-                final filled = slots[i] != null;
-                return Expanded(
-                  child: Container(
-                    height: 3,
-                    margin: EdgeInsets.only(
-                      right: i < kGeneralScheduleSlotsPerDay - 1 ? 1 : 0,
-                    ),
-                    color: filled
-                        ? (parseGeneralScheduleUserColor(
-                              slots[i]!.userColor,
-                              fallback: scheme.primary,
-                            ))
-                        : scheme.surfaceContainerHighest,
-                  ),
-                );
-              }),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
-class _MonthStatsPanel extends StatelessWidget {
-  const _MonthStatsPanel({
-    required this.stats,
-    required this.occupancyPct,
-  });
-
-  final GeneralScheduleMonthStats stats;
-  final int occupancyPct;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '월간 통계',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatTile(
-                    label: '전체 칸',
-                    value: '${stats.totalSlots}',
-                    sub: '${stats.daysInMonth}일×$kGeneralScheduleSlotsPerDay',
-                    color: scheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _StatTile(
-                    label: '사용',
-                    value: '${stats.usedSlots}',
-                    sub: '$occupancyPct%',
-                    color: scheme.tertiary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _StatTile(
-                    label: '남음',
-                    value: '${stats.emptySlots}',
-                    sub: stats.emptySlots == 0 ? '만석' : '여유',
-                    color: stats.emptySlots == 0
-                        ? scheme.error
-                        : const Color(0xFF2E7D32),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: stats.occupancyRate.clamp(0.0, 1.0),
-                minHeight: 8,
-                backgroundColor: scheme.surfaceContainerHighest,
-              ),
-            ),
-            if (stats.byUser.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                '담당자별 칸 수',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-              const SizedBox(height: 6),
-              ...stats.byUser.take(8).map((u) {
-                final accent = parseGeneralScheduleUserColor(
-                  u.color,
-                  fallback: scheme.primary,
-                )!;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: accent,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: accent.withValues(alpha: 0.35),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          u.name,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: accent,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${u.count}칸',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.label,
-    required this.value,
-    required this.sub,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final String sub;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
-          ),
-          Text(
-            sub,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 메인 화면용 컴팩트 통계 바.
+/// 메인 화면용 컴팩트 통계 바 (레거시 — [GeneralScheduleCollapsibleMonthStats] 권장).
 class GeneralScheduleStatsBar extends StatelessWidget {
   const GeneralScheduleStatsBar({
     super.key,
