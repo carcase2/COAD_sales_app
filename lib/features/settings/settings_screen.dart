@@ -20,6 +20,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late bool _notifyNewCall;
   late bool _notifyIssuance;
   late bool _notifyGeneralSchedule;
+  int _updateHistoryReloadToken = 0;
 
   @override
   void initState() {
@@ -291,14 +292,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          Text(
-            '업데이트 내역',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '업데이트 내역',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
+              ),
+              IconButton(
+                tooltip: '새로고침',
+                onPressed: () => setState(() => _updateHistoryReloadToken++),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           FutureBuilder<List<UpdateHistoryEntry>>(
+            key: ValueKey(_updateHistoryReloadToken),
             future: AppUpdateService.fetchUpdateHistory(limit: 10),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
