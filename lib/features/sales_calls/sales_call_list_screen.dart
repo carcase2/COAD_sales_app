@@ -81,6 +81,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   int? _lastHandledAssigneeScrollNonce;
   bool _pendingSharedAssigneeScroll = false;
   bool _mineOnlyFilter = false;
+  int _loadGeneration = 0;
 
   List<SalesCall>? _memoItems;
   String? _memoAssignee;
@@ -293,8 +294,56 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     );
   }
 
+  void _clearListMemo() {
+    _memoItems = null;
+    _memoAssignee = null;
+    _memoSearch = null;
+    _memoOverridesLen = null;
+    _memoCounts = null;
+    _memoSortedAssignees = null;
+    _memoFilteredItems = null;
+  }
+
+  bool _callBelongsInCurrentList(SalesCall c) {
+    switch (widget.mode) {
+      case ListQueryMode.incompleteByDate:
+        final followDate = widget.date ?? todayYmdSeoul();
+        if ([2, 3, 4].contains(c.statusId)) return false;
+        return c.followCalendarDateKey == followDate;
+      case ListQueryMode.followRange:
+        final start = widget.date;
+        final end = widget.dateEndInclusive;
+        if (start == null || end == null) return true;
+        if ([2, 3, 4].contains(c.statusId)) return false;
+        final key = c.followCalendarDateKey;
+        if (key == null) return false;
+        return key.compareTo(start) >= 0 && key.compareTo(end) <= 0;
+      default:
+        return true;
+    }
+  }
+
+  void _applyDetailReturn(SalesCall? updated) {
+    if (updated == null) return;
+    final belongs = _callBelongsInCurrentList(updated);
+    setState(() {
+      if (belongs) {
+        final index = _items.indexWhere((c) => c.id == updated.id);
+        if (index >= 0) {
+          final next = List<SalesCall>.from(_items);
+          next[index] = updated;
+          _items = next;
+        }
+      } else {
+        _items = _items.where((c) => c.id != updated.id).toList();
+      }
+      _clearListMemo();
+    });
+  }
+
   /// 캐시를 먼저 보여주고 서버 데이터를 가져오는 핵심 로직
   Future<void> _loadWithCache() async {
+    final generation = ++_loadGeneration;
     final repo = ref.read(salesCallsRepositoryProvider);
     
     // 1. 로컬 캐시 먼저 로드 (즉시 응답)
@@ -322,9 +371,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           incompleteOnly: cacheIncompleteOnly,
         );
 
-        if (mounted && cached.isNotEmpty) {
+        if (mounted && cached.isNotEmpty && generation == _loadGeneration) {
           setState(() {
             _items = cached;
+            _clearListMemo();
             _isLoading = false; // 캐시가 있으면 일단 로딩 종료 표시
           });
         }
@@ -335,24 +385,25 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
     // 2. 서버에서 최신 데이터 가져오기
     try {
-      if (_items.isEmpty) {
+      if (_items.isEmpty && generation == _loadGeneration) {
         setState(() => _isLoading = true);
       }
       
       final remote = await _fetchRemote(repo);
       
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         if (_sharedAssigneeFilter && _activeAssignee != '전체') {
           _markSharedAssigneeScrollPending();
         }
         setState(() {
           _items = remote;
+          _clearListMemo();
           _isLoading = false;
           _error = null;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _isLoading = false;
           // 캐시가 아예 없는 경우에만 에러 화면 표시
@@ -965,12 +1016,15 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(18),
                                 onTap: () async {
-                                  await Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
+                                  final updated =
+                                      await Navigator.of(context).push<SalesCall?>(
+                                    MaterialPageRoute(
                                       builder: (_) => SalesCallDetailScreen(id: c.id, initial: c),
                                     ),
                                   );
-                                  if (mounted) _loadWithCache();
+                                  if (!mounted) return;
+                                  _applyDetailReturn(updated);
+                                  await _loadWithCache();
                                 },
                                 child: Padding(
                                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),

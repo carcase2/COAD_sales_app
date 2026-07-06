@@ -169,6 +169,18 @@ class DatabaseHelper {
     await db.delete('sales_calls', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<Map<String, dynamic>?> getSalesCallById(String id) async {
+    final db = await instance.database;
+    final res = await db.query(
+      'sales_calls',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (res.isEmpty) return null;
+    return jsonDecode(res.first['data'] as String) as Map<String, dynamic>;
+  }
+
   // --- Master Data Operations ---
 
   Future<void> saveMasterData(String key, Map<String, dynamic> data) async {

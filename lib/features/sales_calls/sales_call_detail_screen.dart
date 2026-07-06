@@ -37,6 +37,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   bool _loading = true;
   String? _loadError;
   bool _lastSaveQueuedOffline = false;
+  bool _consultationSavedSinceOpen = false;
+  bool _isPoppingDetail = false;
 
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
@@ -315,7 +317,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('접수가 삭제되었습니다.')),
       );
-      Navigator.pop(context, true);
+      _popDetail(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -385,6 +387,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           salesCallBody: salesPayload,
         );
         _applyModel(updated);
+        _consultationSavedSinceOpen = true;
+        invalidateHomeSalesCaches(ref.invalidate);
       }
 
       if (mounted) {
@@ -405,6 +409,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       return true;
     } on OfflineException {
       // 상담 내용은 로컬 큐에 저장됨 — 입력을 비우고 성공 흐름으로 종료.
+      if (!_isEditMode) {
+        _consultationSavedSinceOpen = true;
+        invalidateHomeSalesCaches(ref.invalidate);
+      }
       if (mounted) {
         setState(() {
           _newConsultationCtrl.clear();
@@ -670,23 +678,44 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
+  Widget _withPopResult(Widget child) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop || _isPoppingDetail) return;
+        _popDetail();
+      },
+      child: child,
+    );
+  }
+
+  void _popDetail([Object? explicitResult]) {
+    if (!mounted) return;
+    _isPoppingDetail = true;
+    Navigator.of(context).pop(
+      explicitResult ?? (_consultationSavedSinceOpen ? _model : null),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final masterAsync = ref.watch(salesCallCreateMasterDataProvider);
 
     if (_loadError != null && _model == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('통화 상세')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(_loadError!),
-                const SizedBox(height: 12),
-                FilledButton(onPressed: _bootstrap, child: const Text('다시 시도')),
-              ],
+      return _withPopResult(
+        Scaffold(
+          appBar: AppBar(title: const Text('통화 상세')),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_loadError!),
+                  const SizedBox(height: 12),
+                  FilledButton(onPressed: _bootstrap, child: const Text('다시 시도')),
+                ],
+              ),
             ),
           ),
         ),
@@ -694,12 +723,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     }
 
     if (_loading && _model == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return _withPopResult(
+        const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
-    return Scaffold(
+    return _withPopResult(
+      Scaffold(
       appBar: AppBar(
         title: const Text('접수 상세'),
         backgroundColor: Theme.of(context).colorScheme.primary,
@@ -732,7 +764,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.home_rounded),
-            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            onPressed: () {
+              if (_consultationSavedSinceOpen) {
+                invalidateHomeSalesCaches(ref.invalidate);
+              }
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            },
             tooltip: '홈으로 이동',
           ),
           PopupMenuButton<String>(
@@ -837,6 +874,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 

@@ -621,6 +621,16 @@ class SalesCallsRepository {
 
   /// 상담 저장: history INSERT 후 sales_calls UPDATE (웹과 동일 순서)
   /// 네트워크 오류면 로컬 큐(`pending_consultations`)에 저장 후 [OfflineException].
+  Future<void> _patchLocalSalesCallFromBody(
+    String callId,
+    Map<String, dynamic> salesCallBody,
+  ) async {
+    final cached = await _db.getSalesCallById(callId);
+    if (cached == null) return;
+    final merged = Map<String, dynamic>.from(cached)..addAll(salesCallBody);
+    await _db.saveSalesCalls([merged]);
+  }
+
   Future<SalesCall> saveConsultationRound({
     required String callId,
     required Map<String, dynamic> historyData,
@@ -636,6 +646,7 @@ class SalesCallsRepository {
           salesCallBody: salesCallBody,
           includeHistory: true,
         );
+        await _patchLocalSalesCallFromBody(callId, salesCallBody);
         throw OfflineException('오프라인 — 상담 내용이 저장되어 연결 시 자동 전송됩니다.');
       }
       rethrow;
@@ -651,6 +662,7 @@ class SalesCallsRepository {
           salesCallBody: salesCallBody,
           includeHistory: false,
         );
+        await _patchLocalSalesCallFromBody(callId, salesCallBody);
         throw OfflineException('오프라인 — 상담 내용이 저장되어 연결 시 자동 전송됩니다.');
       }
       rethrow;
