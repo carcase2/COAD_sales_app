@@ -9,7 +9,7 @@ insert into public.app_update_history (
 )
 select
   '1.0.3',
-  '이상수 팀장',
+  '이상호 팀장',
   jsonb_build_array(
     jsonb_build_object(
       'note',
