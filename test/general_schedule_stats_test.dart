@@ -106,10 +106,12 @@ void main() {
         null,
         null,
         null,
+        null,
+        null,
       ],
     };
     final day = computeDayStats(grid, '2026-06-15');
     expect(day.usedSlots, 1);
-    expect(day.emptySlots, 5);
+    expect(day.emptySlots, 7);
   });
 }

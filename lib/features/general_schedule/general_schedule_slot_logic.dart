@@ -1,17 +1,17 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
 
-/// COAD_home 본사일반 달력 — 하루 6칸 (slot 0~5).
-const int kGeneralScheduleSlotsPerDay = 6;
+/// COAD_home 본사일반 달력 — 하루 8칸 (slot 0~7).
+const int kGeneralScheduleSlotsPerDay = 8;
 
-const List<int> kGeneralScheduleSlotIndices = [0, 1, 2, 3, 4, 5];
+const List<int> kGeneralScheduleSlotIndices = [0, 1, 2, 3, 4, 5, 6, 7];
 
 typedef GeneralScheduleDayGrid = Map<String, List<GeneralScheduleCell?>>;
 
 List<GeneralScheduleCell?> emptyDaySlots() =>
     List<GeneralScheduleCell?>.filled(kGeneralScheduleSlotsPerDay, null);
 
-/// 항상 6칸 리스트로 정규화 (짧은 리스트·null 방어).
+/// 항상 8칸 리스트로 정규화 (짧은 리스트·null 방어).
 List<GeneralScheduleCell?> normalizeGeneralScheduleDaySlots(
   List<GeneralScheduleCell?>? raw,
 ) {
@@ -23,7 +23,7 @@ List<GeneralScheduleCell?> normalizeGeneralScheduleDaySlots(
   return out;
 }
 
-/// API 목록 → 날짜별 6칸 그리드 (page.tsx `fetchSchedules`와 동일).
+/// API 목록 → 날짜별 8칸 그리드 (page.tsx `fetchSchedules`와 동일).
 GeneralScheduleDayGrid buildGeneralScheduleGrid(List<GeneralScheduleRecord> rows) {
   final grid = <String, List<GeneralScheduleCell?>>{};
   final teamCountById = <String, int>{};
@@ -71,7 +71,7 @@ int occupiedSlotCount(GeneralScheduleDayGrid grid, String ymd) {
 bool isGeneralScheduleDayFull(GeneralScheduleDayGrid grid, String ymd) =>
     occupiedSlotCount(grid, ymd) >= kGeneralScheduleSlotsPerDay;
 
-/// 첫 빈 칸 인덱스(0~5). 없으면 null.
+/// 첫 빈 칸 인덱스(0~7). 없으면 null.
 int? firstEmptySlotIndex(List<GeneralScheduleCell?> daySlots) {
   for (var i = 0; i < daySlots.length; i++) {
     if (daySlots[i] == null) return i;
@@ -184,7 +184,7 @@ EarliestAvailableSlot? findNextAvailableDaySlot(
 String _addDaysYmd(String ymd, int days) =>
     _ymd(DateTime.parse(ymd).add(Duration(days: days)));
 
-/// 지정 칸(0~5)에 기간 전체 배치 — 빈 칸 탭 등록·칸 고정 시 사용.
+/// 지정 칸(0~7)에 기간 전체 배치 — 빈 칸 탭 등록·칸 고정 시 사용.
 SlotAssignmentResult assignFixedSlotRow({
   required GeneralScheduleDayGrid grid,
   required String startYmd,

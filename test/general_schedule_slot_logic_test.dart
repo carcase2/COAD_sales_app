@@ -144,7 +144,7 @@ void main() {
   });
 
   test('assignSingleTeamSlots — 같은 칸 불가 시 기본은 실패(날짜별 분산 안 함)', () {
-    // 각 칸(0~5)이 기간 내 하루씩 막혀 연속 같은 칸이 없음 — 날짜별 분산만 가능.
+    // 각 칸(0~7)이 기간 내 하루씩 막혀 연속 같은 칸이 없음 — 날짜별 분산만 가능.
     final grid = buildGeneralScheduleGrid([
       _record(
         id: 'block',
@@ -152,8 +152,10 @@ void main() {
         slots: [
           (date: '2026-06-01', slot: 0),
           (date: '2026-06-01', slot: 3),
+          (date: '2026-06-01', slot: 6),
           (date: '2026-06-02', slot: 1),
           (date: '2026-06-02', slot: 4),
+          (date: '2026-06-02', slot: 7),
           (date: '2026-06-03', slot: 2),
           (date: '2026-06-03', slot: 5),
         ],

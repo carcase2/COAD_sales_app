@@ -82,7 +82,7 @@ TextStyle generalScheduleSlotLabelStyle({
   );
 }
 
-/// 가로 6칸·월간 한 줄 현장명에 필요한 최소 높이.
+/// 가로 8칸·월간 한 줄 현장명에 필요한 최소 높이.
 double generalScheduleSlotRowHeight(double fontSize) => fontSize + 10;
 
 List<GeneralScheduleCell?> filterDaySlotsForAssignee(
@@ -632,7 +632,7 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gap = slotGap ?? (compact ? 1.0 : 2.0);
-    final fontSize = compact ? 7.0 : 9.5;
+    final fontSize = compact ? 6.0 : 9.0;
     final rowHeight = height < generalScheduleSlotRowHeight(fontSize)
         ? generalScheduleSlotRowHeight(fontSize)
         : height;

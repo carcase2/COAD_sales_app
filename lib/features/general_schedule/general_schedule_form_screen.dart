@@ -20,7 +20,7 @@ class GeneralScheduleFormScreen extends ConsumerStatefulWidget {
 
   final GeneralScheduleRecord? editing;
   final String? initialStartYmd;
-  /// 빈 칸 탭 등록 시 고정할 slot (0~5).
+  /// 빈 칸 탭 등록 시 고정할 slot (0~7).
   final int? initialSlotIndex;
 
   @override

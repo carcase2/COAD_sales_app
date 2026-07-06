@@ -584,22 +584,50 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     );
   }
 
-  Future<void> _openRecordFromSearch(GeneralScheduleRecord record) async {
-    final primary = _recordPrimarySlot(record);
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => _ScheduleDetailSheet(
-        record: record,
-        slotIndex: primary.slotIndex,
-        ymd: primary.ymd,
-      ),
-    );
-    if (!mounted || action == null) return;
-    if (action == 'edit') {
-      await _openFullForm(editing: record);
-    } else if (action == 'delete') {
-      await _confirmDelete(record);
+  Future<void> _openRecordFromSearch(
+    BuildContext hostContext,
+    GeneralScheduleRecord record,
+  ) async {
+    if (!mounted) return;
+    setState(() => _searchQuery = record.site);
+
+    var current = record;
+    while (hostContext.mounted) {
+      final primary = _recordPrimarySlot(current);
+      final action = await showModalBottomSheet<String>(
+        context: hostContext,
+        showDragHandle: true,
+        builder: (ctx) => _ScheduleDetailSheet(
+          record: current,
+          slotIndex: primary.slotIndex,
+          ymd: primary.ymd,
+        ),
+      );
+      if (!hostContext.mounted || action == null) return;
+      if (action == 'edit') {
+        final saved = await Navigator.of(hostContext).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => GeneralScheduleFormScreen(editing: current),
+          ),
+        );
+        if (saved == true) {
+          await _reload();
+          if (!hostContext.mounted) return;
+          final records =
+              ref.read(generalScheduleRecordsProvider).valueOrNull ?? [];
+          final refreshed = records
+              .where((r) => r.id == current.id)
+              .cast<GeneralScheduleRecord?>()
+              .firstOrNull;
+          if (refreshed == null) return;
+          current = refreshed;
+        }
+        continue;
+      }
+      if (action == 'delete') {
+        await _confirmDelete(current);
+        return;
+      }
     }
   }
 
@@ -612,13 +640,13 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       );
       return;
     }
-    final selected = await showSearch<GeneralScheduleRecord?>(
+    await showSearch<GeneralScheduleRecord?>(
       context: context,
-      delegate: _GeneralScheduleSearchDelegate(records: records),
+      delegate: _GeneralScheduleSearchDelegate(
+        records: records,
+        onOpenRecord: _openRecordFromSearch,
+      ),
     );
-    if (!mounted || selected == null) return;
-    setState(() => _searchQuery = selected.site);
-    await _openRecordFromSearch(selected);
   }
 
   @override
@@ -974,9 +1002,14 @@ class _ScheduleDetailSheet extends StatelessWidget {
 }
 
 class _GeneralScheduleSearchDelegate extends SearchDelegate<GeneralScheduleRecord?> {
-  _GeneralScheduleSearchDelegate({required this.records});
+  _GeneralScheduleSearchDelegate({
+    required this.records,
+    required this.onOpenRecord,
+  });
 
   final List<GeneralScheduleRecord> records;
+  final Future<void> Function(BuildContext context, GeneralScheduleRecord record)
+      onOpenRecord;
 
   @override
   String get searchFieldLabel => '현장명으로 검색';
@@ -1042,7 +1075,7 @@ class _GeneralScheduleSearchDelegate extends SearchDelegate<GeneralScheduleRecor
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          onTap: () => close(context, item),
+          onTap: () => onOpenRecord(context, item),
         );
       },
     );

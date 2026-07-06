@@ -158,7 +158,6 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: () {
-          close(context, null);
           Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => SalesCallDetailScreen(id: c.id, initial: c),
