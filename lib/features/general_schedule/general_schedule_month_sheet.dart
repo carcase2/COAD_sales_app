@@ -136,7 +136,7 @@ class _GeneralScheduleMonthCalendarState
             startingDayOfWeek: StartingDayOfWeek.monday,
             rowHeight: MediaQuery.orientationOf(context) == Orientation.landscape
                 ? 84
-                : 118,
+                : 152,
             daysOfWeekHeight: 28,
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
@@ -355,9 +355,9 @@ class _GeneralScheduleMonthCalendarState
       slots: slots,
       scheme: scheme,
       assigneeFilter: assigneeFilter,
-      siteFontSize: 8.5,
-      siteRowHeight: 18,
-      siteRowGap: 2,
+      siteFontSize: 8.0,
+      siteRowHeight: 14,
+      siteRowGap: 1,
     );
   }
 }

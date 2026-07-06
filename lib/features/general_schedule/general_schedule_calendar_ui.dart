@@ -465,37 +465,47 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeSlots = normalizeGeneralScheduleDaySlots(slots);
-    final rows = <Widget>[];
 
-    for (final cell in safeSlots) {
-      if (cell == null) continue;
-      if (!generalScheduleMatchesAssigneeFilter(cell, assigneeFilter)) continue;
-      rows.add(_siteRow(cell, scheme));
-    }
+    return Column(
+      children: [
+        for (var i = 0; i < kGeneralScheduleSlotsPerDay; i++) ...[
+          if (i > 0) SizedBox(height: siteRowGap),
+          Expanded(
+            child: _siteRow(
+              cell: filledSlot(safeSlots[i]) ? safeSlots[i] : null,
+              scheme: scheme,
+              filled: filledSlot(safeSlots[i]),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 
-    if (rows.isEmpty) {
-      return Align(
-        alignment: Alignment.topCenter,
+  bool filledSlot(GeneralScheduleCell? cell) {
+    if (cell == null) return false;
+    return generalScheduleMatchesAssigneeFilter(cell, assigneeFilter);
+  }
+
+  Widget _siteRow({
+    required GeneralScheduleCell? cell,
+    required ColorScheme scheme,
+    required bool filled,
+  }) {
+    if (!filled || cell == null) {
+      return Center(
         child: Text(
-          '—',
+          '·',
           style: TextStyle(
-            fontSize: 8,
+            fontSize: 7,
+            height: 1.0,
+            fontWeight: FontWeight.w700,
             color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
           ),
         ),
       );
     }
 
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      physics: const ClampingScrollPhysics(),
-      itemCount: rows.length,
-      separatorBuilder: (_, _) => SizedBox(height: siteRowGap),
-      itemBuilder: (_, i) => rows[i],
-    );
-  }
-
-  Widget _siteRow(GeneralScheduleCell cell, ColorScheme scheme) {
     final accent = parseGeneralScheduleUserColor(
           cell.userColor,
           fallback: scheme.primary,
@@ -506,16 +516,11 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
       fontSize: siteFontSize,
       color: scheme.onSurface,
     );
-    final rowHeight = siteRowHeight < generalScheduleSlotRowHeight(siteFontSize)
-        ? generalScheduleSlotRowHeight(siteFontSize)
-        : siteRowHeight;
 
-    return SizedBox(
-      height: rowHeight,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(2),
-        clipBehavior: Clip.hardEdge,
-        child: DecoratedBox(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      clipBehavior: Clip.hardEdge,
+      child: DecoratedBox(
         decoration: BoxDecoration(
           color: accent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(2),
@@ -523,12 +528,11 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 1),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
                 width: 3,
-                height: rowHeight - 4,
-                margin: const EdgeInsets.only(left: 1),
+                margin: const EdgeInsets.only(left: 1, top: 1, bottom: 1),
                 decoration: BoxDecoration(
                   color: accent,
                   borderRadius: BorderRadius.circular(1),
@@ -536,11 +540,13 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
               ),
               const SizedBox(width: 3),
               Expanded(
-                child: GeneralScheduleAutoScrollText(
-                  text: site.isEmpty ? '—' : site,
-                  scrollMsPerPixel: 100,
-                  pauseMs: 1400,
-                  style: textStyle,
+                child: Center(
+                  child: GeneralScheduleAutoScrollText(
+                    text: site.isEmpty ? '—' : site,
+                    scrollMsPerPixel: 100,
+                    pauseMs: 1400,
+                    style: textStyle,
+                  ),
                 ),
               ),
               const SizedBox(width: 2),
@@ -548,12 +554,11 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
           ),
         ),
       ),
-      ),
     );
   }
 }
 
-/// 주간 날짜 스트립용 6칸 점 표시 (현장명 없음).
+/// 주간 날짜 스트립용 8칸 점 표시 (현장명 없음).
 class GeneralScheduleStripSlotDots extends StatelessWidget {
   const GeneralScheduleStripSlotDots({
     super.key,
@@ -606,7 +611,7 @@ class GeneralScheduleStripSlotDots extends StatelessWidget {
   }
 }
 
-/// 날짜 칸·일별 보기용 가로 6칸 현장명.
+/// 날짜 칸·일별 보기용 가로 8칸 현장명.
 class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
   const GeneralScheduleHorizontalSlotRow({
     super.key,
@@ -1738,7 +1743,7 @@ class GeneralScheduleWeekPanelState extends State<GeneralScheduleWeekPanel> {
             .length;
     final slotSummary = widget.selectedAssignee == kGeneralScheduleAllAssignees
         ? (dayStats.emptySlots == 0
-            ? '6/6 만석'
+            ? '${dayStats.totalSlots}/${dayStats.totalSlots} 만석'
             : '${dayStats.usedSlots}/${dayStats.totalSlots}칸 · 남은 ${dayStats.emptySlots}')
         : '$filteredUsed건';
     final weekdayColor =
