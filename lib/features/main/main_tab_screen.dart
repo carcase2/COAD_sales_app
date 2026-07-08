@@ -14,6 +14,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
+import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/core/widgets/ux_onboarding_sheet.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
@@ -23,6 +24,7 @@ import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
+import 'package:coad_customer_calls/services/usage_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,7 +107,25 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     if (user != null) {
       unawaited(NotificationService.updateTokenInSupabase(user.id));
       NotificationService.listenToTokenRefresh(user.id);
+      _trackAppOpen(user);
     }
+  }
+
+  void _trackAppOpen(AppUser user) {
+    unawaited(
+      UsageService.recordAppOpen(userId: user.id, userName: user.name),
+    );
+  }
+
+  void _trackTab(AppUser? user, String tabKey) {
+    if (user == null) return;
+    unawaited(
+      UsageService.recordTab(
+        userId: user.id,
+        userName: user.name,
+        tabKey: tabKey,
+      ),
+    );
   }
 
   @override
@@ -115,6 +135,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       final user = ref.read(authControllerProvider);
       if (user != null) {
         unawaited(NotificationService.updateTokenInSupabase(user.id));
+        _trackAppOpen(user);
       }
       ref.invalidate(appUpdateStatusProvider);
       if (mounted) {
@@ -361,6 +382,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       _navSelectedIndex = _navHomeIndex;
       _currentIndex = _homeTabIndex;
     });
+    _trackTab(ref.read(authControllerProvider), 'home');
   }
 
   void _selectIssuanceTab() {
@@ -376,6 +398,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       _loadedIndices.add(_issuanceTabIndex);
       _lastBackExitHintAt = null;
     });
+    _trackTab(ref.read(authControllerProvider), 'issuance');
   }
 
   bool _showGeneralScheduleInNav(AppUser? user) =>
@@ -400,12 +423,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   void _openMenuDrawer() {
     HapticFeedback.lightImpact();
     final user = ref.read(authControllerProvider);
+    _trackTab(user, 'menu');
     setState(() => _navSelectedIndex = _navMenuIndexFor(user));
     ref.read(mainScaffoldKeyProvider).currentState?.openDrawer();
   }
 
   Future<void> _openGeneralSchedule() async {
     HapticFeedback.lightImpact();
+    _trackTab(ref.read(authControllerProvider), 'general_schedule');
     final prevNav = _navSelectedIndex;
     setState(() => _navSelectedIndex = _navGeneralScheduleIndex);
     await Navigator.of(context).push(
@@ -434,6 +459,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       return;
     }
     if (navIndex == _navReceptionIndex) {
+      _trackTab(user, 'reception');
       unawaited(_openReceptionQuickActions());
       return;
     }
@@ -874,6 +900,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             );
           }),
         ),
+        if (user?.role == 'admin')
+          AppMenuEntry(
+            id: 'app_usage',
+            sectionId: 'account',
+            icon: Icons.bar_chart_rounded,
+            title: '앱 사용량',
+            subtitle: '사용자별 앱 사용 통계',
+            keywords: const ['사용량', '통계', '관리'],
+            onTap: () => closeDrawerThen(() {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const AppUsageScreen()),
+              );
+            }),
+          ),
         AppMenuEntry(
           id: 'settings',
           sectionId: 'account',
@@ -884,6 +924,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           badge: updateStatus?.hasUpdate == true ? '업데이트' : null,
           keywords: const ['환경', '업데이트', '미통화 안내'],
           onTap: () => closeDrawerThen(() {
+            _trackTab(user, 'settings');
             Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             );
