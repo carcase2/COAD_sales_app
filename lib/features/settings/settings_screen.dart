@@ -1,5 +1,7 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
+import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/providers/theme_mode_provider.dart';
@@ -135,6 +137,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 if (confirm == true && context.mounted) {
                   await ref.read(authControllerProvider.notifier).logout();
                 }
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
+          if (user != null && isAppAdmin(user)) ...[
+            Text(
+              '관리',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.bar_chart_rounded, color: scheme.primary),
+              title: const Text('앱 사용량'),
+              subtitle: const Text('사용자별 앱 실행·탭 사용 통계'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AppUsageScreen(),
+                  ),
+                );
               },
             ),
             const SizedBox(height: 20),

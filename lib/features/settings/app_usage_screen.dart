@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/models/app_usage_summary.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,14 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = ref.watch(authControllerProvider);
+    if (!isAppAdmin(user)) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('앱 사용량')),
+        body: const Center(child: Text('관리자만 이용할 수 있습니다.')),
+      );
+    }
+
     final scheme = Theme.of(context).colorScheme;
     final summariesAsync = ref.watch(appUsageSummariesProvider(_days));
 
@@ -67,10 +76,12 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
         data: (summaries) {
           if (summaries.isEmpty) {
             return _ErrorBody(
-              message: '최근 $_days일간 기록된 사용량이 없습니다.',
+              message: '표시할 사용자가 없습니다.',
               onRetry: () => ref.invalidate(appUsageSummariesProvider(_days)),
             );
           }
+          final usedCount =
+              summaries.where((s) => s.weekOpens > 0 || s.activeDays > 0).length;
           return RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(appUsageSummariesProvider(_days));
@@ -78,10 +89,21 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
             },
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              itemCount: summaries.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemCount: summaries.length + 1,
+              separatorBuilder: (_, index) =>
+                  index == 0 ? const SizedBox(height: 10) : const SizedBox(height: 10),
               itemBuilder: (context, index) {
-                final row = summaries[index];
+                if (index == 0) {
+                  return Text(
+                    '전체 ${summaries.length}명 · 최근 $_days일 사용 $usedCount명',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  );
+                }
+                final row = summaries[index - 1];
                 return _UsageCard(row: row, days: _days);
               },
             ),
@@ -107,7 +129,9 @@ class _UsageCard extends StatelessWidget {
 
     return Card(
       elevation: 0,
-      color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+      color: row.weekOpens == 0 && row.activeDays == 0
+          ? scheme.surfaceContainerHighest.withValues(alpha: 0.22)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.45),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Column(

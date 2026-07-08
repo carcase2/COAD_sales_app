@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
+import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
@@ -322,7 +323,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       if (newKeys.isEmpty) return;
 
       final user = ref.read(authControllerProvider);
-      final isAdmin = user?.role == 'admin';
+      final isAdmin = isAppAdmin(user);
 
       for (final row in allPending) {
         final key = rowKey(row);
@@ -900,13 +901,15 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             );
           }),
         ),
-        if (user?.role == 'admin')
+        if (isAppAdmin(user))
           AppMenuEntry(
             id: 'app_usage',
             sectionId: 'account',
             icon: Icons.bar_chart_rounded,
             title: '앱 사용량',
             subtitle: '사용자별 앱 사용 통계',
+            quickAccess: true,
+            quickLabel: '사용량',
             keywords: const ['사용량', '통계', '관리'],
             onTap: () => closeDrawerThen(() {
               Navigator.of(context).push(
