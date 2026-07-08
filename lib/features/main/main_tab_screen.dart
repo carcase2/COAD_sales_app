@@ -907,7 +907,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             sectionId: 'account',
             icon: Icons.bar_chart_rounded,
             title: '앱 사용량',
-            subtitle: '사용자별 앱 사용 통계',
+            subtitle: '앱 사용 기록이 있는 직원 통계',
             quickAccess: true,
             quickLabel: '사용량',
             keywords: const ['사용량', '통계', '관리'],

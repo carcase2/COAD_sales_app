@@ -76,12 +76,10 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
         data: (summaries) {
           if (summaries.isEmpty) {
             return _ErrorBody(
-              message: '표시할 사용자가 없습니다.',
+              message: '최근 $_days일간 앱 사용 기록이 없습니다.',
               onRetry: () => ref.invalidate(appUsageSummariesProvider(_days)),
             );
           }
-          final usedCount =
-              summaries.where((s) => s.weekOpens > 0 || s.activeDays > 0).length;
           return RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(appUsageSummariesProvider(_days));
@@ -95,7 +93,7 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
               itemBuilder: (context, index) {
                 if (index == 0) {
                   return Text(
-                    '전체 ${summaries.length}명 · 최근 $_days일 사용 $usedCount명',
+                    '앱 사용자 ${summaries.length}명 · 최근 $_days일',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -129,9 +127,7 @@ class _UsageCard extends StatelessWidget {
 
     return Card(
       elevation: 0,
-      color: row.weekOpens == 0 && row.activeDays == 0
-          ? scheme.surfaceContainerHighest.withValues(alpha: 0.22)
-          : scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Column(

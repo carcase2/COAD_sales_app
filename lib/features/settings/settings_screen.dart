@@ -153,7 +153,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.bar_chart_rounded, color: scheme.primary),
               title: const Text('앱 사용량'),
-              subtitle: const Text('사용자별 앱 실행·탭 사용 통계'),
+              subtitle: const Text('앱을 실제로 사용한 직원 통계'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () {
                 Navigator.of(context).push(
