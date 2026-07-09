@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
@@ -68,7 +69,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   List<SalesCall> _items = [];
   bool _isLoading = true;
   Object? _error;
-  
+
+  /// 서버 페이지 오프셋(다음 요청 시작 위치).
+  int _nextOffset = 0;
+  bool _hasMore = false;
+  bool _isLoadingMore = false;
+  static const int _pageSize = SalesCallsRepository.listPageSize;
+
   bool _isSearching = false;
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
@@ -77,6 +84,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
   String _selectedAssignee = '전체';
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _listScrollController = ScrollController();
   bool _hasScrolledToInitial = false;
   int? _lastHandledAssigneeScrollNonce;
   bool _pendingSharedAssigneeScroll = false;
@@ -166,7 +174,17 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       _lastHandledAssigneeScrollNonce = widget.assigneeScrollNonce;
       _markSharedAssigneeScrollPending();
     }
+    _listScrollController.addListener(_onListScroll);
     _loadWithCache();
+  }
+
+  void _onListScroll() {
+    if (!_hasMore || _isLoadingMore || _isLoading) return;
+    if (!_listScrollController.hasClients) return;
+    final pos = _listScrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 280) {
+      unawaited(_loadMore());
+    }
   }
 
   void _restoreMineOnlyPreference() {
@@ -189,6 +207,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _scrollController.dispose();
+    _listScrollController.removeListener(_onListScroll);
+    _listScrollController.dispose();
     super.dispose();
   }
 
@@ -341,11 +361,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     });
   }
 
-  /// 캐시를 먼저 보여주고 서버 데이터를 가져오는 핵심 로직
+  /// 캐시를 먼저 보여주고 서버 1페이지를 가져오는 핵심 로직.
   Future<void> _loadWithCache() async {
     final generation = ++_loadGeneration;
     final repo = ref.read(salesCallsRepositoryProvider);
-    
+
     // 1. 로컬 캐시 먼저 로드 (즉시 응답)
     // 날짜 팔로우는 next_scheduled_date 기준이라 call_date 캐시와 맞지 않아 사용하지 않음.
     if (widget.mode != ListQueryMode.incompleteByDate &&
@@ -375,7 +395,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           setState(() {
             _items = cached;
             _clearListMemo();
-            _isLoading = false; // 캐시가 있으면 일단 로딩 종료 표시
+            _isLoading = false;
           });
         }
       } catch (e) {
@@ -383,20 +403,23 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       }
     }
 
-    // 2. 서버에서 최신 데이터 가져오기
+    // 2. 서버 첫 페이지
     try {
       if (_items.isEmpty && generation == _loadGeneration) {
         setState(() => _isLoading = true);
       }
-      
-      final remote = await _fetchRemote(repo);
-      
+
+      final page = await _fetchRemotePage(repo, offset: 0);
+
       if (mounted && generation == _loadGeneration) {
         if (_sharedAssigneeFilter && _activeAssignee != '전체') {
           _markSharedAssigneeScrollPending();
         }
         setState(() {
-          _items = remote;
+          _items = page.items;
+          _nextOffset = page.rawRowCount;
+          _hasMore = page.hasMore;
+          _isLoadingMore = false;
           _clearListMemo();
           _isLoading = false;
           _error = null;
@@ -406,83 +429,131 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       if (mounted && generation == _loadGeneration) {
         setState(() {
           _isLoading = false;
-          // 캐시가 아예 없는 경우에만 에러 화면 표시
+          _isLoadingMore = false;
           if (_items.isEmpty) {
             _error = e;
           }
         });
-        
-        // 캐시가 있는 상태에서 서버 에러면 스낵바로만 알림
+
         if (_items.isNotEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('최신 데이터를 가져오지 못했습니다: ${koreanErrorMessage(e)}')),
+            SnackBar(
+              content: Text(
+                '최신 데이터를 가져오지 못했습니다: ${koreanErrorMessage(e)}',
+              ),
+            ),
           );
         }
       }
     }
   }
 
-  Future<List<SalesCall>> _fetchRemote(SalesCallsRepository repo) {
+  Future<void> _loadMore() async {
+    if (!_hasMore || _isLoadingMore || _isLoading) return;
+    final generation = _loadGeneration;
+    final repo = ref.read(salesCallsRepositoryProvider);
+    setState(() => _isLoadingMore = true);
+    try {
+      final page = await _fetchRemotePage(repo, offset: _nextOffset);
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        // id 기준 중복 제거 후 이어붙이기
+        final seen = _items.map((e) => e.id).toSet();
+        final appended = page.items.where((c) => !seen.contains(c.id)).toList();
+        _items = [..._items, ...appended];
+        _nextOffset += page.rawRowCount;
+        _hasMore = page.hasMore;
+        _isLoadingMore = false;
+        _clearListMemo();
+      });
+    } catch (e) {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('추가 목록을 불러오지 못했습니다: ${koreanErrorMessage(e)}')),
+      );
+    }
+  }
+
+  Future<({List<SalesCall> items, bool hasMore, int rawRowCount})>
+      _fetchRemotePage(
+    SalesCallsRepository repo, {
+    required int offset,
+  }) {
     switch (widget.mode) {
       case ListQueryMode.today:
-        // 하루치 전체 — limit 100이면 대량 접수일에 조용히 누락됨.
-        return repo.fetchCallsAllPages(
+        return repo.fetchCallsPage(
           date: widget.date ?? todayYmdSeoul(),
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
       case ListQueryMode.incomplete:
         if (widget.date != null && widget.dateEndInclusive != null) {
-          return repo.fetchCallsAllPages(
+          return repo.fetchCallsPage(
             dateRangeStart: widget.date!,
             dateRangeEndInclusive: widget.dateEndInclusive!,
             uncalledOnly: true,
             includeCallHistory: false,
+            limit: _pageSize,
+            offset: offset,
           );
         }
-        return repo.fetchCallsAllPages(
-          date: widget.date, // 날짜가 전달된 경우 해당 날짜만 (오늘 요약 클릭 시), 없으면 전체 (전체 랭킹 등)
+        return repo.fetchCallsPage(
+          date: widget.date,
           uncalledOnly: true,
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
       case ListQueryMode.pendingUncalled:
-        return repo.fetchCallsAllPages(
+        return repo.fetchCallsPage(
           fromDate: widget.date ?? pendingUncalledFromYmd(todayYmdSeoul()),
           uncalledOnly: true,
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
       case ListQueryMode.recent:
-        return repo.fetchCalls(
-          limit: 50,
-          offset: 0,
+        return repo.fetchCallsPage(
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
       case ListQueryMode.completedToday:
-        return repo.fetchCallsAllPages(
+        return repo.fetchCallsPage(
           date: widget.date ?? todayYmdSeoul(),
           completedOnly: true,
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
       case ListQueryMode.incompleteByDate:
-        return repo.fetchCallsAllPages(
+        return repo.fetchCallsPage(
           followDate: widget.date ?? todayYmdSeoul(),
           incompleteOnly: true,
           excludeSimpleInquiries: true,
-          // `todayFollowOverviewProvider`·홈 바텀시트와 동일 조건 (call_history 포함 시 일부 행 누락 가능)
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
       case ListQueryMode.dateRange:
-        return repo.fetchCallsAllPages(
+        return repo.fetchCallsPage(
           dateRangeStart: widget.date!,
           dateRangeEndInclusive: widget.dateEndInclusive!,
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
       case ListQueryMode.followRange:
-        return repo.fetchCallsAllPages(
+        return repo.fetchCallsPage(
           followRangeStart: widget.date!,
           followRangeEndInclusive: widget.dateEndInclusive!,
           incompleteOnly: true,
           excludeSimpleInquiries: true,
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
         );
     }
   }
@@ -715,25 +786,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
   Widget _buildBody() {
     if (_isLoading && _items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoading(message: '목록을 불러오는 중…');
     }
-    
+
     if (_error != null && _items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(koreanErrorMessage(_error!)),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _loadWithCache,
-                child: const Text('다시 시도'),
-              ),
-            ],
-          ),
-        ),
+      return AppErrorState(
+        message: koreanErrorMessage(_error!),
+        onRetry: _loadWithCache,
       );
     }
 
@@ -741,21 +800,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     final overrides =
         ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
     if (items.isEmpty) {
-      final scheme = Theme.of(context).colorScheme;
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.inbox_outlined, size: 56, color: scheme.outlineVariant),
-              const SizedBox(height: 16),
-              const Text('목록이 비어 있습니다.'),
-              const SizedBox(height: 12),
-              TextButton(onPressed: _loadWithCache, child: const Text('새로고침')),
-            ],
-          ),
-        ),
+      return AppEmpty(
+        message: '목록이 비어 있습니다.',
+        actionLabel: '새로고침',
+        onAction: _loadWithCache,
       );
     }
 
@@ -935,38 +983,35 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                     await _loadWithCache();
                   },
                   child: filteredItems.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.person_search_rounded,
-                                  size: 48,
-                                  color: Theme.of(context).colorScheme.outlineVariant,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '해당 담당자의 목록이 없습니다.',
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: const [
+                            SizedBox(height: 80),
+                            AppEmpty(
+                              message: '해당 담당자의 목록이 없습니다.',
+                              icon: Icons.person_search_rounded,
                             ),
-                          ),
+                          ],
                         )
                       : ListView.builder(
+                          controller: _listScrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
                           padding: EdgeInsets.fromLTRB(
                             16,
                             12,
                             16,
                             _listScrollBottomInset(),
                           ),
-                          itemCount: filteredItems.length,
+                          itemCount: filteredItems.length +
+                              (_hasMore || _isLoadingMore ? 1 : 0),
                           itemBuilder: (context, i) {
+                            if (i >= filteredItems.length) {
+                              return AppLoadMoreFooter(
+                                loading: _isLoadingMore,
+                                hasMore: _hasMore,
+                                onLoadMore: () => unawaited(_loadMore()),
+                              );
+                            }
                             final c = filteredItems[i];
                             final isPendingMode =
                                 widget.mode == ListQueryMode.pendingUncalled;

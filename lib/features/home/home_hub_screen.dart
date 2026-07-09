@@ -12,8 +12,6 @@ import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
-import 'package:coad_customer_calls/providers/app_update_provider.dart';
-import 'package:coad_customer_calls/services/app_update_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -274,59 +272,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   /// 상단 파란 영역 — 당일 인사만 (기간 이동과 무관).
   String _homeTopDateLine() => formatTodayGreetingSentenceKo();
 
-  Widget _buildHomeUpdatePrompt({
-    required ColorScheme scheme,
-    required String? latestVersion,
-    required bool forceUpdate,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => AppUpdateService.checkAndUpdateIfNeeded(
-          context,
-          forceRecheck: true,
-        ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: forceUpdate
-                ? Colors.red.shade700.withValues(alpha: 0.95)
-                : Colors.amber.shade700.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.35),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.system_update_alt_rounded,
-                size: 13,
-                color: Colors.white.withValues(alpha: 0.95),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                forceUpdate ? '업데이트 필요' : '업데이트 있음',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  height: 1.1,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
+  /// 업데이트 안내는 메인 AppBar 칩 단일 진입점 — 홈 헤더에는 표시하지 않음.
   Widget _buildUnifiedHomeTop(ColorScheme scheme, AppUser? user) {
     final compact = _section != HomeHubSection.flow;
-    final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
-    final showUpdatePrompt = updateStatus?.hasUpdate == true;
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(14, compact ? 6 : 8, 14, compact ? 8 : 10),
@@ -334,35 +282,20 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (showUpdatePrompt) ...[
-                _buildHomeUpdatePrompt(
-                  scheme: scheme,
-                  latestVersion: updateStatus?.latestVersion,
-                  forceUpdate: updateStatus?.forceUpdate == true,
-                ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    _homeTopDateLine(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onPrimary.withValues(alpha: 0.95),
-                      height: 1.2,
-                    ),
-                  ),
-                ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              _homeTopDateLine(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: scheme.onPrimary.withValues(alpha: 0.95),
+                height: 1.2,
               ),
-            ],
+            ),
           ),
           SizedBox(height: compact ? 6 : 8),
           Consumer(

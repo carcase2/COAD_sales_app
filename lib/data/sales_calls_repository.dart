@@ -116,12 +116,37 @@ class SalesCallsRepository {
 
   /// PostgREST/Supabase `api.max_rows` (see `supabase/config.toml`).
   static const int postgrestMaxPageSize = 1000;
+
+  /// 목록·홈 집계 기본 페이지 크기 — UI 「더 보기」와 동일.
+  static const int listPageSize = 50;
+
   static const String _regionSelect =
       'id,sido,region,manager,branch_type';
   static const String _callHistorySelect =
       'id,sales_call_id,call_stage,consultation_content,next_scheduled_date,unsuccessful_reason,status,status_id,created_at,created_by';
   /// 품질 지표(첫 응답 시간)용 — 전체 상담 이력 대신 `created_at`만 조인.
   static const String _callHistoryQualitySelect = 'created_at';
+
+  /// 목록/집계용 — `images` 등 대용량 컬럼 제외, 화면 표시에 필요한 필드만.
+  static const String _listSelect = '''
+        id, call_date, call_time, customer_name, customer_phone, inquiry_content,
+        product_category_id, inquiry_method_id, region_id, status_id, assigned_to,
+        created_by, call_stage, next_scheduled_date, region_sido, region_name,
+        region_manager, region_branch_type, created_at, updated_at,
+        product_categories(name),
+        inquiry_methods(name),
+        call_statuses(name),
+        regions($_regionSelect)
+      ''';
+
+  /// 상세 조회용 — 첨부 이미지 포함.
+  static const String _detailSelect = '''
+        *,
+        product_categories(name),
+        inquiry_methods(name),
+        call_statuses(name),
+        regions($_regionSelect)
+      ''';
 
   Future<MasterDataBundle> fetchMasterData() async {
     final cached = await _db.getMasterData('master_bundle');
@@ -346,8 +371,58 @@ class SalesCallsRepository {
     return batch.items;
   }
 
-  /// [fetchCalls]와 동일 조건으로 PostgREST 페이지(최대 [postgrestMaxPageSize])를 반복 조회해 전체를 합칩니다.
+  /// 한 페이지 조회 — 목록 화면 초기 로드·「더 보기」용.
+  /// [hasMore]는 **서버 raw 행 수** 기준(클라이언트 후처리 전).
+  Future<({List<SalesCall> items, bool hasMore, int rawRowCount})> fetchCallsPage({
+    String? date,
+    String? followDate,
+    String? followRangeStart,
+    String? followRangeEndInclusive,
+    String? dateRangeStart,
+    String? dateRangeEndInclusive,
+    String? fromDate,
+    int limit = listPageSize,
+    int offset = 0,
+    bool includeCallHistory = false,
+    bool callHistoryQualityOnly = false,
+    bool? incompleteOnly,
+    bool? uncalledOnly,
+    bool? completedOnly,
+    bool excludeSimpleInquiries = false,
+    bool calendarFull = false,
+    bool cacheLocally = true,
+    bool fullDetail = false,
+  }) async {
+    final batch = await _fetchCallsBatch(
+      date: date,
+      followDate: followDate,
+      followRangeStart: followRangeStart,
+      followRangeEndInclusive: followRangeEndInclusive,
+      dateRangeStart: dateRangeStart,
+      dateRangeEndInclusive: dateRangeEndInclusive,
+      fromDate: fromDate,
+      limit: limit,
+      offset: offset,
+      includeCallHistory: includeCallHistory,
+      callHistoryQualityOnly: callHistoryQualityOnly,
+      incompleteOnly: incompleteOnly,
+      uncalledOnly: uncalledOnly,
+      completedOnly: completedOnly,
+      excludeSimpleInquiries: excludeSimpleInquiries,
+      calendarFull: calendarFull,
+      cacheLocally: cacheLocally,
+      fullDetail: fullDetail,
+    );
+    return (
+      items: batch.items,
+      hasMore: batch.rawRowCount >= limit,
+      rawRowCount: batch.rawRowCount,
+    );
+  }
+
+  /// [fetchCalls]와 동일 조건으로 PostgREST 페이지를 반복 조회해 전체를 합칩니다.
   /// `uncalledOnly` 등 클라이언트 후처리가 있어도, 다음 페이지 여부는 **서버 raw 행 수**로 판단합니다.
+  /// 홈 집계·배지 등 **전체 기간 합계가 필요한 경우**에만 사용하세요. 목록 UI는 [fetchCallsPage] 권장.
   Future<List<SalesCall>> fetchCallsAllPages({
     String? date,
     String? followDate,
@@ -365,6 +440,7 @@ class SalesCallsRepository {
     bool calendarFull = false,
     bool cacheLocally = true,
     int pageSize = postgrestMaxPageSize,
+    bool fullDetail = false,
   }) async {
     final overrides = await _prepareListFetchContext();
     final merged = <SalesCall>[];
@@ -389,6 +465,7 @@ class SalesCallsRepository {
         calendarFull: calendarFull,
         cacheLocally: cacheLocally,
         overrides: overrides,
+        fullDetail: fullDetail,
       );
       merged.addAll(batch.items);
       if (batch.rawRowCount < pageSize) break;
@@ -415,20 +492,16 @@ class SalesCallsRepository {
     bool excludeSimpleInquiries = false,
     bool calendarFull = false,
     bool cacheLocally = true,
+    bool fullDetail = false,
     List<TempManagerOverride>? overrides,
   }) async {
     try {
       final resolvedOverrides =
           overrides ?? await _prepareListFetchContext();
 
-      String selectStr = '''
-        *,
-        product_categories(name),
-        inquiry_methods(name),
-        call_statuses(name),
-        regions($_regionSelect)
-      ''';
-      
+      // 목록·집계는 images 등 대용량 필드 제외. 상세만 fullDetail.
+      var selectStr = fullDetail ? _detailSelect : _listSelect;
+
       if (includeCallHistory) {
         final historyCols = callHistoryQualityOnly
             ? _callHistoryQualitySelect
@@ -520,11 +593,7 @@ class SalesCallsRepository {
       final overrides = await _prepareListFetchContext();
 
       final res = await _client.from('sales_calls').select('''
-        *,
-        product_categories(name),
-        inquiry_methods(name),
-        call_statuses(name),
-        regions($_regionSelect),
+        $_detailSelect,
         call_history($_callHistorySelect)
       ''').eq('id', id).maybeSingle();
 
@@ -787,13 +856,8 @@ class SalesCallsRepository {
         orParts.add('customer_phone.ilike.%$phonePattern%');
       }
 
-      final res = await _client.from('sales_calls').select('''
-        *,
-        product_categories(name),
-        inquiry_methods(name),
-        call_statuses(name),
-        regions($_regionSelect)
-      ''').or(orParts.join(','))
+      final res = await _client.from('sales_calls').select(_listSelect)
+      .or(orParts.join(','))
       .order('created_at', ascending: false)
       .limit(limit);
 

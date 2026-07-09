@@ -17,6 +17,7 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/ux_onboarding_sheet.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
 import 'package:coad_customer_calls/navigation/app_menu_drawer.dart';
@@ -53,8 +54,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
 
-  /// 홈 상단 배너 [닫기] 시 해당 원격 버전은 다시 띄우지 않음.
-  String? _dismissedUpdateBannerVersion;
   RealtimeChannel? _issuanceCompletionWatchChannel;
   Timer? _issuanceCompletionDebounce;
   @override
@@ -587,7 +586,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     const HomeHubScreen(),
     _loadedIndices.contains(_issuanceTabIndex)
         ? const IssuanceRequestScreen()
-        : const Center(child: CircularProgressIndicator()),
+        : const AppLoading(message: '발급 화면 준비 중…'),
   ];
 
   @override
@@ -609,15 +608,17 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
     final scheme = Theme.of(context).colorScheme;
     final tabAccent = scheme.primary;
-    final appBarBg = Color.lerp(scheme.primary, Colors.black, 0.12)!;
+    final appBarBg = Color.lerp(
+      scheme.primary,
+      Colors.black,
+      scheme.brightness == Brightness.dark ? 0.28 : 0.12,
+    )!;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final showGeneralSchedule = ref.watch(
       authControllerProvider.select(
         (u) => u != null && canAccessGeneralSchedule(u),
       ),
     );
-    final onHomeTab =
-        _currentIndex == _homeTabIndex && _navSelectedIndex == _navHomeIndex;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
@@ -754,41 +755,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             ),
           ),
         ),
-        body: Stack(
-          children: [
-            IndexedStack(index: _currentIndex, children: _buildScreens()),
-            Consumer(
-              builder: (context, ref, _) {
-                final updateStatus =
-                    ref.watch(appUpdateStatusProvider).valueOrNull;
-                final latestRemote = updateStatus?.latestVersion;
-                final hasOptionalUpdate = updateStatus?.hasUpdate == true &&
-                    updateStatus?.forceUpdate != true;
-                final bannerDismissKey = latestRemote ?? '__play_update__';
-                final showUpdateBanner = onHomeTab &&
-                    hasOptionalUpdate &&
-                    bannerDismissKey != _dismissedUpdateBannerVersion;
-                if (!showUpdateBanner) return const SizedBox.shrink();
-                return Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: _buildUpdateAvailableBanner(
-                    scheme: scheme,
-                    latestVersion: latestRemote,
-                    onUpdate: () => AppUpdateService.checkAndUpdateIfNeeded(
-                      context,
-                      forceRecheck: true,
-                    ),
-                    onDismiss: () => setState(
-                      () => _dismissedUpdateBannerVersion = bannerDismissKey,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+        // 업데이트 안내는 AppBar 칩 단일 진입점 (홈 배너·헤더 중복 제거).
+        body: IndexedStack(index: _currentIndex, children: _buildScreens()),
         bottomNavigationBar: Consumer(
           builder: (context, ref, _) => _MainBottomNavBar(
             selectedIndex: _navSelectedIndex,
@@ -992,59 +960,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     );
   }
 
-  Widget _buildUpdateAvailableBanner({
-    required ColorScheme scheme,
-    required String? latestVersion,
-    required VoidCallback onUpdate,
-    required VoidCallback onDismiss,
-  }) {
-    return Material(
-      elevation: 3,
-      color: scheme.tertiaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-        child: Row(
-          children: [
-            Icon(
-              Icons.system_update_alt_rounded,
-              color: scheme.onTertiaryContainer,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                latestVersion != null
-                    ? '새 버전 v$latestVersion 사용 가능 (현재 v$kAppVersion)'
-                    : '새 버전 사용 가능 (현재 v$kAppVersion)',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onTertiaryContainer,
-                ),
-              ),
-            ),
-            TextButton(onPressed: onUpdate, child: const Text('업데이트')),
-            IconButton(
-              icon: const Icon(Icons.close_rounded, size: 20),
-              onPressed: onDismiss,
-              tooltip: '닫기',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+  /// 업데이트 단일 진입점 — AppBar 칩 (필수·선택 공통).
   Widget _buildLogoUpdateChip({
     required String? latestVersion,
     required bool forceUpdate,
     required VoidCallback onTap,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     final bg = forceUpdate
-        ? Colors.red.shade700.withValues(alpha: 0.92)
-        : Colors.amber.shade700.withValues(alpha: 0.92);
+        ? scheme.error
+        : Color.lerp(scheme.tertiary, scheme.primary, 0.25)!;
     final border = forceUpdate
-        ? Colors.red.shade200.withValues(alpha: 0.85)
-        : Colors.amber.shade200.withValues(alpha: 0.85);
+        ? scheme.onError.withValues(alpha: 0.35)
+        : scheme.onPrimary.withValues(alpha: 0.35);
     final label = forceUpdate
         ? '업데이트 필요'
         : (latestVersion != null ? 'v$latestVersion' : '업데이트');
@@ -1068,7 +996,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               border: Border.all(color: border),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
+                  color: scheme.shadow.withValues(alpha: 0.18),
                   blurRadius: 4,
                   offset: const Offset(0, 1),
                 ),
@@ -1080,7 +1008,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 Icon(
                   Icons.system_update_alt_rounded,
                   size: 14,
-                  color: Colors.white.withValues(alpha: 0.95),
+                  color: forceUpdate
+                      ? scheme.onError
+                      : scheme.onPrimary.withValues(alpha: 0.98),
                 ),
                 const SizedBox(width: 4),
                 Text(
@@ -1088,7 +1018,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white.withValues(alpha: 0.98),
+                    color: forceUpdate
+                        ? scheme.onError
+                        : scheme.onPrimary.withValues(alpha: 0.98),
                   ),
                 ),
               ],
