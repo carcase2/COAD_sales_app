@@ -22,6 +22,7 @@ import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -1135,7 +1136,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               _buildMasterChoiceChips(
                 items: master.productCategories,
                 selectedValue: _productId,
-                selectedColor: const Color(0xFF10B981),
+                selectedColor: AppTokens.success(scheme),
                 onSelected: (id) => setState(() => _productId = id),
               ),
               const SizedBox(height: 12),
@@ -1143,7 +1144,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               _buildMasterChoiceChips(
                 items: master.inquiryMethods,
                 selectedValue: _methodId,
-                selectedColor: const Color(0xFF0EA5E9),
+                selectedColor: AppTokens.info(scheme),
                 onSelected: (id) => setState(() => _methodId = id),
               ),
               const SizedBox(height: 16),

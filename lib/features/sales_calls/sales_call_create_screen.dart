@@ -21,6 +21,7 @@ import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/sales_call_draft.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -538,7 +539,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   items: master.productCategories,
                   selectedValue: _productId,
                   onSelected: (id) => setState(() => _productId = id),
-                  selectedColor: const Color(0xFF10B981),
+                  selectedColor: AppTokens.success(scheme),
                 ),
                 const SizedBox(height: 16),
                 _buildStepSubsectionTitle('문의 경로', scheme),
@@ -547,7 +548,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   items: master.inquiryMethods,
                   selectedValue: _methodId,
                   onSelected: (id) => setState(() => _methodId = id),
-                  selectedColor: const Color(0xFF0EA5E9),
+                  selectedColor: AppTokens.info(scheme),
                 ),
                 const SizedBox(height: 12),
                 _buildSimpleInquiryToggle(scheme),

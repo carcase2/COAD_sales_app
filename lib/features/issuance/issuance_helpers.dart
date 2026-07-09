@@ -264,6 +264,16 @@ void invalidateIssuanceCore(WidgetRef ref) {
   ref.invalidate(issuanceRequestTotalBadgeCountProvider);
 }
 
+/// Realtime 백그라운드 갱신용 — 경량 배지·pending 카운트만 무효화.
+/// 발급 탭에 있지 않을 때 전체 목록 refetch를 피합니다.
+void invalidateIssuanceBadgeOnly(WidgetRef ref) {
+  ref.invalidate(issuanceRequestBadgeCountProvider);
+  ref.invalidate(issuanceRequestTotalBadgeCountProvider);
+  for (final domain in IssuanceDomain.values) {
+    ref.invalidate(issuancePendingCountProvider(domain));
+  }
+}
+
 /// 허브 첫 화면용 — 경량 pending 카운트만 다시 불러옴.
 Future<void> refreshIssuanceHubSummary(WidgetRef ref) async {
   await Future.wait([

@@ -1,0 +1,511 @@
+import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+/// 홈 흐름 탭 — 접수/미통화/팔로우 통계 카드.
+class HomeMiniStatsWidget extends StatefulWidget {
+  const HomeMiniStatsWidget({
+    super.key,
+    required this.receptionLabel,
+    required this.incompleteLabel,
+    required this.followLabel,
+    required this.today,
+    required this.incomplete,
+    required this.todayFollow,
+    this.followProgressHint,
+    required this.uncalledRateText,
+    required this.avgFirstResponseText,
+    required this.onTapToday,
+    required this.onTapIncomplete,
+    required this.onTapTodayFollow,
+    required this.onTapUncalledRate,
+    required this.onTapFirstResponse,
+    this.onLongPressToday,
+    this.onLongPressIncomplete,
+    this.onLongPressTodayFollow,
+    this.compact = false,
+  });
+
+  final String receptionLabel;
+  final String incompleteLabel;
+  final String followLabel;
+  final int today;
+  final int incomplete;
+  final int todayFollow;
+  final String? followProgressHint;
+  final String uncalledRateText;
+  final String avgFirstResponseText;
+  final VoidCallback onTapToday;
+  final VoidCallback onTapIncomplete;
+  final VoidCallback onTapTodayFollow;
+  final VoidCallback? onLongPressToday;
+  final VoidCallback? onLongPressIncomplete;
+  final VoidCallback? onLongPressTodayFollow;
+  final VoidCallback onTapUncalledRate;
+  final VoidCallback onTapFirstResponse;
+  final bool compact;
+
+  @override
+  State<HomeMiniStatsWidget> createState() => _HomeMiniStatsWidgetState();
+}
+
+class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
+  bool _qualityExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final compact = widget.compact;
+    return Container(
+      padding: EdgeInsets.all(compact ? 10 : 12),
+      decoration: HomeHubVisual.elevatedCard(scheme),
+      child: Column(
+        children: [
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.inbox_rounded,
+                    label: widget.receptionLabel,
+                    value: widget.today.toString(),
+                    color: scheme.primary,
+                    onTap: widget.onTapToday,
+                    onLongPress: widget.onLongPressToday,
+                    compact: compact,
+                    semanticsLabel:
+                        '${widget.receptionLabel} ${widget.today}건. 탭하면 목록, 메뉴로 담당자 선택',
+                  ),
+                ),
+                SizedBox(width: compact ? 6 : 8),
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.phone_missed_rounded,
+                    label: widget.incompleteLabel,
+                    value: widget.incomplete.toString(),
+                    color: scheme.error,
+                    onTap: widget.onTapIncomplete,
+                    onLongPress: widget.onLongPressIncomplete,
+                    compact: compact,
+                    semanticsLabel:
+                        '${widget.incompleteLabel} ${widget.incomplete}건. 탭하면 목록, 메뉴로 담당자 선택',
+                  ),
+                ),
+                SizedBox(width: compact ? 6 : 8),
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.event_available_rounded,
+                    label: widget.followLabel,
+                    value: widget.todayFollow.toString(),
+                    hint: widget.followProgressHint,
+                    color: scheme.tertiary,
+                    onTap: widget.onTapTodayFollow,
+                    onLongPress: widget.onLongPressTodayFollow,
+                    compact: compact,
+                    semanticsLabel:
+                        '${widget.followLabel} ${widget.todayFollow}건. 탭하면 목록, 메뉴로 담당자 선택',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_qualityExpanded) ...[
+            SizedBox(height: compact ? 8 : 10),
+            if (widget.followProgressHint != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: scheme.tertiaryContainer.withValues(alpha: 0.35),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(11),
+                    side: BorderSide(
+                      color: scheme.tertiary.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(11),
+                    onTap: widget.onTapTodayFollow,
+                    onLongPress: widget.onLongPressTodayFollow,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: compact ? 10 : 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.event_available_rounded,
+                            size: 18,
+                            color: scheme.tertiary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              widget.followProgressHint!,
+                              style: TextStyle(
+                                fontSize: compact ? 12 : 13,
+                                height: 1.35,
+                                fontWeight: FontWeight.w700,
+                                color: scheme.onSurface,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _InsightItem(
+                      label: '미통화율',
+                      value: widget.uncalledRateText,
+                      color: scheme.error,
+                      onTap: widget.onTapUncalledRate,
+                      compact: compact,
+                    ),
+                  ),
+                  SizedBox(width: compact ? 6 : 8),
+                  Expanded(
+                    child: _InsightItem(
+                      label: '첫 응답 평균',
+                      value: widget.avgFirstResponseText,
+                      color: scheme.secondary,
+                      onTap: widget.onTapFirstResponse,
+                      compact: compact,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: () =>
+                setState(() => _qualityExpanded = !_qualityExpanded),
+            icon: Icon(
+              _qualityExpanded
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded,
+              size: 18,
+            ),
+            label: Text(
+              _qualityExpanded ? '품질 지표 접기' : '품질 지표 더보기',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              minimumSize: const Size(0, 36),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FlowStatTile extends StatelessWidget {
+  const _FlowStatTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.onTap,
+    this.hint,
+    this.onLongPress,
+    this.compact = false,
+    this.semanticsLabel,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? hint;
+  final String value;
+  final Color color;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final bool compact;
+  final String? semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: semanticsLabel ?? '$label $value',
+      child: Material(
+        color: color.withValues(alpha: 0.06),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(11),
+          side: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.22),
+          ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          borderRadius: BorderRadius.circular(11),
+          child: Stack(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  4,
+                  compact ? 8 : 10,
+                  onLongPress != null ? 22 : 4,
+                  compact ? 8 : 10,
+                ),
+                child: _StatItem(
+                  icon: icon,
+                  label: label,
+                  hint: hint,
+                  value: value,
+                  color: color,
+                  compact: compact,
+                ),
+              ),
+              if (onLongPress != null)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: IconButton(
+                    tooltip: '담당자 선택',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                    iconSize: 16,
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      onLongPress!();
+                    },
+                    icon: Icon(
+                      Icons.more_vert_rounded,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InsightItem extends StatelessWidget {
+  const _InsightItem({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.onTap,
+    this.compact = false,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: '$label $value',
+      child: Material(
+        color: color.withValues(alpha: 0.05),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(11),
+          side: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.2),
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: compact ? 10 : 12,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: compact ? 10 : 11,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                SizedBox(height: compact ? 6 : 8),
+                Text(
+                  value,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: compact ? 16 : 18,
+                    height: 1.1,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    this.hint,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? hint;
+  final String value;
+  final Color color;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          size: compact ? 15 : 17,
+          color: color.withValues(alpha: 0.75),
+        ),
+        SizedBox(height: compact ? 4 : 6),
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: compact ? 18 : 21,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurface,
+            letterSpacing: -0.5,
+            height: 1.0,
+          ),
+        ),
+        SizedBox(height: compact ? 2 : 4),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: compact ? 10 : 11,
+            height: 1.15,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+          ),
+        ),
+        if (hint != null && hint!.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            hint!,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 흐름 탭 로딩/네트워크 오류 패널.
+class HomeFlowErrorPanel extends StatelessWidget {
+  const HomeFlowErrorPanel({
+    super.key,
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_off_outlined, color: scheme.error, size: 28),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonal(onPressed: onRetry, child: const Text('다시 시도')),
+        ],
+      ),
+    );
+  }
+}
+
+/// 홈 섹션 스와이프 후 상태 유지 — 재방문 시 재빌드 비용 절감.
+class HomeKeepAliveSection extends StatefulWidget {
+  const HomeKeepAliveSection({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<HomeKeepAliveSection> createState() => _HomeKeepAliveSectionState();
+}
+
+class _HomeKeepAliveSectionState extends State<HomeKeepAliveSection>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}

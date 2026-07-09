@@ -4,6 +4,8 @@ import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/core/widgets/ux_onboarding_sheet.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_screen.dart';
 import 'package:coad_customer_calls/features/home/home_hub_screen.dart';
@@ -17,8 +19,7 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
-import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
-import 'package:coad_customer_calls/core/widgets/ux_onboarding_sheet.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
 import 'package:coad_customer_calls/navigation/app_menu_drawer.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
@@ -224,7 +225,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _scheduleIssuanceWatchCheck() {
     _issuanceCompletionDebounce?.cancel();
-    _issuanceCompletionDebounce = Timer(const Duration(milliseconds: 500), () {
+    // 연속 DB 이벤트 배치 — 500ms보다 길게 잡아 전체 refetch 폭주 완화.
+    _issuanceCompletionDebounce = Timer(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
       unawaited(_runIssuanceWatchCheck());
     });
@@ -232,21 +234,16 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   Future<void> _runIssuanceWatchCheck() async {
     final onIssuanceTab = _currentIndex == _issuanceTabIndex;
-    invalidateIssuanceCore(ref);
     if (onIssuanceTab) {
-      try {
-        await Future.wait([
-          ref.refresh(issuanceAllRowsProvider(IssuanceDomain.taxInvoice).future),
-          ref.refresh(
-            issuanceAllRowsProvider(IssuanceDomain.performanceBond).future,
-          ),
-        ]);
-      } catch (_) {
-        // refetch 실패 시에도 감시 로직은 한 번 시도
-      }
+      // 발급 탭: 캐시 무효화만 — 구독 중 위젯이 한 번 재조회. 강제 이중 fetch 없음.
+      invalidateIssuanceCore(ref);
+      await _checkIssuanceCompletionAndNotify();
+      await _checkIssuanceRequestAndNotify();
+    } else {
+      // 다른 탭: 경량 배지만. 전체 목록 refetch·로컬 알림 스캔은 생략
+      // (원격 푸시/FCM이 알림 담당, 배지로 건수 반영).
+      invalidateIssuanceBadgeOnly(ref);
     }
-    await _checkIssuanceCompletionAndNotify();
-    await _checkIssuanceRequestAndNotify();
   }
 
   Future<void> _checkIssuanceCompletionAndNotify() async {
@@ -1003,12 +1000,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       accountSubtitle: '사번/ID: ${user?.id ?? '-'}',
       headerDecoration: BoxDecoration(
         color: scheme.primary,
-        image: const DecorationImage(
-          image: NetworkImage(
-            'https://www.transparenttextures.com/patterns/cubes.png',
-          ),
-          repeat: ImageRepeat.repeat,
-          opacity: 0.05,
+        // 외부 텍스처 URL 제거 — 오프라인·지연 방지, 단색 + 은은한 그라데이션.
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primary,
+            Color.lerp(scheme.primary, scheme.primaryContainer, 0.35)!,
+          ],
         ),
       ),
     );
@@ -1022,8 +1021,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }) {
     final scheme = Theme.of(context).colorScheme;
     final bg = forceUpdate
-        ? scheme.error
-        : Color.lerp(scheme.tertiary, scheme.primary, 0.25)!;
+        ? AppTokens.updateForceBg(scheme)
+        : AppTokens.updateOptionalBg(scheme);
+    final fg = forceUpdate
+        ? AppTokens.updateForceFg(scheme)
+        : AppTokens.updateOptionalFg(scheme);
     final border = forceUpdate
         ? scheme.onError.withValues(alpha: 0.35)
         : scheme.onPrimary.withValues(alpha: 0.35);
@@ -1031,53 +1033,51 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ? '업데이트 필요'
         : (latestVersion != null ? 'v$latestVersion' : '업데이트');
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Tooltip(
-          message: forceUpdate
-              ? '필수 업데이트: ${latestVersion ?? '최신'} 설치'
-              : latestVersion != null
-              ? '새 버전 v$latestVersion · 탭하여 업데이트'
-              : '새 버전 · 탭하여 업데이트',
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: border),
-              boxShadow: [
-                BoxShadow(
-                  color: scheme.shadow.withValues(alpha: 0.18),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.system_update_alt_rounded,
-                  size: 14,
-                  color: forceUpdate
-                      ? scheme.onError
-                      : scheme.onPrimary.withValues(alpha: 0.98),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: forceUpdate
-                        ? scheme.onError
-                        : scheme.onPrimary.withValues(alpha: 0.98),
+    return Semantics(
+      button: true,
+      label: forceUpdate
+          ? '필수 업데이트 ${latestVersion ?? ''}'
+          : '새 버전 ${latestVersion ?? ''} 업데이트',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppTokens.radiusPill),
+          child: Tooltip(
+            message: forceUpdate
+                ? '필수 업데이트: ${latestVersion ?? '최신'} 설치'
+                : latestVersion != null
+                ? '새 버전 v$latestVersion · 탭하여 업데이트'
+                : '새 버전 · 탭하여 업데이트',
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(AppTokens.radiusPill),
+                border: Border.all(color: border),
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.shadow.withValues(alpha: 0.18),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
-                ),
-              ],
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.system_update_alt_rounded, size: 14, color: fg),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1223,9 +1223,9 @@ class _MainBottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final homeAccent = scheme.primary;
-    final receptionAccent = scheme.tertiary;
+    final receptionAccent = AppTokens.receptionAccent(scheme);
     final issuanceAccent = IssuanceVisual.navAccent(scheme);
-    final generalScheduleAccent = Colors.deepOrange.shade700;
+    final generalScheduleAccent = AppTokens.generalScheduleAccent(scheme);
     final menuIndex = showGeneralSchedule ? 4 : 3;
     return SafeArea(
       top: false,
@@ -1341,82 +1341,96 @@ class _BottomNavItem extends StatelessWidget {
         ? (accentColor ?? scheme.primary).withValues(alpha: 0.22)
         : Colors.transparent;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                height: 2,
-                width: selected ? 18 : 0,
-                margin: const EdgeInsets.only(bottom: 4),
-                decoration: BoxDecoration(
-                  color: fg,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              customIcon ??
-                  Icon(
-                    selected ? selectedIcon : unselectedIcon,
-                    color: fg,
-                    size: selected ? 24 : 22,
-                  ),
-              const SizedBox(height: 2),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 2,
-                    overflow: TextOverflow.visible,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                      color: fg,
-                      height: 1.1,
-                    ),
-                  ),
-                ),
-              ),
-              if (tag != null) ...[
-                const SizedBox(height: 2),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 1,
-                  ),
+    final semanticsHint = onLongPress == null
+        ? null
+        : (label == '접수'
+            ? '길게 누르면 오늘 목록 메뉴'
+            : '길게 누르면 추가 동작');
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      hint: semanticsHint,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            constraints: const BoxConstraints(minHeight: AppTokens.minTouchTarget),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  height: 2,
+                  width: selected ? 18 : 0,
+                  margin: const EdgeInsets.only(bottom: 4),
                   decoration: BoxDecoration(
-                    color: scheme.tertiaryContainer.withValues(alpha: 0.9),
+                    color: fg,
                     borderRadius: BorderRadius.circular(99),
                   ),
-                  child: Text(
-                    tag!,
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onTertiaryContainer,
-                      height: 1.1,
+                ),
+                customIcon ??
+                    Icon(
+                      selected ? selectedIcon : unselectedIcon,
+                      color: fg,
+                      size: selected ? 24 : 22,
+                    ),
+                const SizedBox(height: 2),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.visible,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight:
+                            selected ? FontWeight.w900 : FontWeight.w600,
+                        color: fg,
+                        height: 1.1,
+                      ),
                     ),
                   ),
                 ),
+                if (tag != null) ...[
+                  const SizedBox(height: 2),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.tertiaryContainer.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      tag!,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onTertiaryContainer,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
