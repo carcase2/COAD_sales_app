@@ -102,6 +102,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       });
     });
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(refreshPendingSyncCount(ref, autoSync: true));
+    });
+
     // 2. Sync FCM token with Supabase for the current user
     final user = ref.read(authControllerProvider);
     if (user != null) {
@@ -137,6 +141,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         unawaited(NotificationService.updateTokenInSupabase(user.id));
         _trackAppOpen(user);
       }
+      unawaited(refreshPendingSyncCount(ref, autoSync: true));
       ref.invalidate(appUpdateStatusProvider);
       if (mounted) {
         unawaited(() async {
@@ -459,8 +464,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       return;
     }
     if (navIndex == _navReceptionIndex) {
+      // 탭 = 새 접수(현장 1차 액션). 목록은 롱프레스 퀵메뉴.
       _trackTab(user, 'reception');
-      unawaited(_openReceptionQuickActions());
+      unawaited(_openReceptionCreate());
       return;
     }
     if (navIndex == _navHomeIndex) {
@@ -485,6 +491,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     );
   }
 
+  /// 접수 롱프레스 — 목록 바로가기(탭은 등록으로 직행).
   Future<void> _openReceptionQuickActions() async {
     if (!mounted) return;
     HapticFeedback.mediumImpact();
@@ -501,10 +508,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  '접수',
+                  '접수 바로가기',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '짧게 누르면 새 접수, 길게 누르면 이 메뉴가 열립니다.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: scheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 FilledButton.icon(
@@ -523,7 +539,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                   onTap: () => Navigator.of(context).pop('today'),
                 ),
                 ListTile(
-                  leading: Icon(Icons.phone_missed_rounded, color: scheme.error),
+                  leading:
+                      Icon(Icons.phone_missed_rounded, color: scheme.error),
                   title: const Text('오늘 미통화 목록'),
                   subtitle: const Text('금일 미통화 건 조회'),
                   onTap: () => Navigator.of(context).pop('incomplete'),
@@ -755,8 +772,45 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             ),
           ),
         ),
-        // 업데이트 안내는 AppBar 칩 단일 진입점 (홈 배너·헤더 중복 제거).
-        body: IndexedStack(index: _currentIndex, children: _buildScreens()),
+        // 업데이트 안내는 AppBar 칩 단일 진입점.
+        // 오프라인 대기는 전 탭 공통 상단 배너.
+        body: Column(
+          children: [
+            Consumer(
+              builder: (context, ref, _) {
+                final pending = ref.watch(pendingSyncCountProvider);
+                if (pending <= 0) return const SizedBox.shrink();
+                return _PendingSyncBanner(
+                  count: pending,
+                  onSync: () async {
+                    final result =
+                        await refreshPendingSyncCount(ref, autoSync: true);
+                    if (!context.mounted) return;
+                    if (result.synced > 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('미전송 ${result.synced}건이 동기화되었습니다.'),
+                        ),
+                      );
+                    } else if (result.count > 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('아직 전송되지 않은 항목이 있습니다. 네트워크를 확인해 주세요.'),
+                        ),
+                      );
+                    }
+                  },
+                );
+              },
+            ),
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _buildScreens(),
+              ),
+            ),
+          ],
+        ),
         bottomNavigationBar: Consumer(
           builder: (context, ref, _) => _MainBottomNavBar(
             selectedIndex: _navSelectedIndex,
@@ -1064,6 +1118,59 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 }
 
+/// 전 탭 공통 — 오프라인 접수·상담 대기 건수.
+class _PendingSyncBanner extends StatelessWidget {
+  const _PendingSyncBanner({
+    required this.count,
+    required this.onSync,
+  });
+
+  final int count;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.secondaryContainer,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.cloud_off_rounded,
+                size: 20,
+                color: scheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '전송 대기 $count건 · 연결되면 자동 또는 수동 전송',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
+              FilledButton.tonal(
+                onPressed: onSync,
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                child: const Text('지금 전송'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _IssuanceNavIcon extends StatelessWidget {
   const _IssuanceNavIcon({
     required this.badgeAsync,
@@ -1154,6 +1261,7 @@ class _MainBottomNavBar extends StatelessWidget {
                 accentColor: receptionAccent,
                 onTap: onTapReception,
                 onLongPress: onLongPressReception,
+                // 롱프레스 힌트는 tooltip으로
               ),
             ),
             Expanded(

@@ -714,3 +714,23 @@ final hubSegmentCalendarBadgeProvider = Provider<AsyncValue<int>>((ref) {
 
 /// 메인 화면의 Scaffold를 제어하기 위한 Key (드로어 열기 등)
 final mainScaffoldKeyProvider = Provider((ref) => GlobalKey<ScaffoldState>());
+
+/// 오프라인 미전송(접수·상담) 대기 건수 — 홈·메인 배너 공유.
+final pendingSyncCountProvider = StateProvider<int>((ref) => 0);
+
+/// 대기 건수 갱신. [autoSync] true면 건수가 있을 때 동기화 시도.
+Future<({int count, int synced})> refreshPendingSyncCount(
+  WidgetRef ref, {
+  bool autoSync = false,
+}) async {
+  final repo = ref.read(salesCallsRepositoryProvider);
+  var count = await repo.getPendingCount();
+  ref.read(pendingSyncCountProvider.notifier).state = count;
+  var synced = 0;
+  if (autoSync && count > 0) {
+    synced = await repo.syncPendingCalls();
+    count = await repo.getPendingCount();
+    ref.read(pendingSyncCountProvider.notifier).state = count;
+  }
+  return (count: count, synced: synced);
+}

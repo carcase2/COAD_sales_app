@@ -36,7 +36,7 @@ Future<void> showUxOnboardingIfNeeded(
                 icon: Icons.add_ic_call_rounded,
                 color: scheme.tertiary,
                 title: '접수',
-                body: '하단 「접수」를 누르면 등록·오늘 목록·미통화를 고를 수 있습니다.',
+                body: '하단 「접수」를 짧게 누르면 바로 등록, 길게 누르면 오늘 목록·미통화 메뉴가 열립니다.',
               ),
               const SizedBox(height: 12),
               _OnboardingRow(
@@ -50,7 +50,7 @@ Future<void> showUxOnboardingIfNeeded(
                 icon: Icons.touch_app_rounded,
                 color: scheme.secondary,
                 title: '홈 통계',
-                body: '흐름 카드를 길게 누르면 담당자를 바꿀 수 있습니다.',
+                body: '흐름 카드 오른쪽 ⋮ 또는 길게 누르면 담당자를 고를 수 있습니다.',
               ),
               const SizedBox(height: 20),
               FilledButton(

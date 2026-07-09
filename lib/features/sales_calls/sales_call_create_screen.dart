@@ -4,8 +4,11 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
@@ -227,6 +230,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         message: '접수가 완료되었습니다.',
       );
     } on OfflineException catch (e) {
+      if (!mounted) return;
+      await refreshPendingSyncCount(ref);
       if (!mounted) return;
       Navigator.pop(context); // 목록으로 돌아감
       ScaffoldMessenger.of(context).showSnackBar(
@@ -455,7 +460,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
           children: [
             Text('새 접수 등록', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
             Text(
-              '한 화면에서 입력 · 아래로 스크롤',
+              '1 분류 · 2 고객 · 3 문의',
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
             ),
           ],
@@ -490,24 +495,11 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             Expanded(
               child: masterAsync.when(
                 data: (master) => _buildUnifiedForm(master, user?.name ?? '작성자'),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(koreanErrorMessage(e), textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: () =>
-                              ref.invalidate(salesCallCreateMasterDataProvider),
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('다시 시도'),
-                        ),
-                      ],
-                    ),
-                  ),
+                loading: () => const AppLoading(message: '분류·지역 정보를 불러오는 중…'),
+                error: (e, _) => AppErrorState(
+                  message: koreanErrorMessage(e),
+                  onRetry: () =>
+                      ref.invalidate(salesCallCreateMasterDataProvider),
                 ),
               ),
             ),
@@ -529,36 +521,44 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     return Form(
       key: _formKey,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
-          _buildSectionHeader('분류', Icons.dashboard_customize_outlined, scheme),
-          const SizedBox(height: 12),
-          _buildStepSubsectionTitle('제품군', scheme),
-          const SizedBox(height: 8),
-          _buildChoiceChipGroup(
-            items: master.productCategories,
-            selectedValue: _productId,
-            onSelected: (id) => setState(() => _productId = id),
-            selectedColor: const Color(0xFF10B981),
+          FormCollapsibleSection(
+            step: 1,
+            title: '분류',
+            icon: Icons.dashboard_customize_outlined,
+            subtitle: '제품군 · 문의 경로',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildStepSubsectionTitle('제품군', scheme),
+                const SizedBox(height: 8),
+                _buildChoiceChipGroup(
+                  items: master.productCategories,
+                  selectedValue: _productId,
+                  onSelected: (id) => setState(() => _productId = id),
+                  selectedColor: const Color(0xFF10B981),
+                ),
+                const SizedBox(height: 16),
+                _buildStepSubsectionTitle('문의 경로', scheme),
+                const SizedBox(height: 8),
+                _buildChoiceChipGroup(
+                  items: master.inquiryMethods,
+                  selectedValue: _methodId,
+                  onSelected: (id) => setState(() => _methodId = id),
+                  selectedColor: const Color(0xFF0EA5E9),
+                ),
+                const SizedBox(height: 12),
+                _buildSimpleInquiryToggle(scheme),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          _buildStepSubsectionTitle('문의 경로', scheme),
-          const SizedBox(height: 8),
-          _buildChoiceChipGroup(
-            items: master.inquiryMethods,
-            selectedValue: _methodId,
-            onSelected: (id) => setState(() => _methodId = id),
-            selectedColor: const Color(0xFF0EA5E9),
-          ),
-          const SizedBox(height: 12),
-          _buildSimpleInquiryToggle(scheme),
-          const SizedBox(height: 20),
-          _buildSectionDivider(scheme),
-          _buildSectionHeader('고객', Icons.contact_mail_outlined, scheme),
-          const SizedBox(height: 12),
-          _buildCard(
-            scheme: scheme,
+          FormCollapsibleSection(
+            step: 2,
+            title: '고객 · 지역',
+            icon: Icons.contact_mail_outlined,
+            subtitle: '연락처 · 배정',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -601,15 +601,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   controller: _nameCtrl,
                   hint: '고객성함 또는 회사명',
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildCard(
-            scheme: scheme,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+                const SizedBox(height: 14),
                 const Text(
                   '지역 배정 *',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
@@ -619,7 +611,8 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   regions: master.regions,
                   value: _regionId,
                   decoration: _inputDecoration('지역 검색 · 선택').copyWith(
-                    fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                    fillColor:
+                        scheme.surfaceContainerHighest.withValues(alpha: 0.35),
                   ),
                   onChanged: (v) => setState(() => _regionId = v),
                   validator: (v) => v == null ? '지역을 선택해주세요' : null,
@@ -637,54 +630,40 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          _buildSectionDivider(scheme),
-          _buildSectionHeader('문의', Icons.edit_note_rounded, scheme),
-          const SizedBox(height: 12),
-          _buildTextField(
-            label: '문의 내용 *',
-            controller: _inquiryCtrl,
-            maxLines: 5,
-            hint: '고객 요청·문의 내용을 입력하세요',
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
-          ),
-          const SizedBox(height: 12),
-          _buildCard(
-            scheme: scheme,
-            child: SalesCallAttachmentsStrip(
-              urls: _uploadedImageUrls,
-              editable: true,
-              uploadBusy: _uploadBusy,
-              progressLabel:
-                  _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
-              onAdd: () => _pickAndUpload(master),
-              onRemoveAt: (i) => setState(() => _uploadedImageUrls.removeAt(i)),
+          FormCollapsibleSection(
+            step: 3,
+            title: '문의 · 첨부',
+            icon: Icons.edit_note_rounded,
+            subtitle: '내용 · 사진',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildTextField(
+                  label: '문의 내용 *',
+                  controller: _inquiryCtrl,
+                  maxLines: 5,
+                  hint: '고객 요청·문의 내용을 입력하세요',
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
+                ),
+                const SizedBox(height: 12),
+                SalesCallAttachmentsStrip(
+                  urls: _uploadedImageUrls,
+                  editable: true,
+                  uploadBusy: _uploadBusy,
+                  progressLabel: _uploadTotal > 0
+                      ? '전송 중 ($_uploadCurrent/$_uploadTotal)'
+                      : null,
+                  onAdd: () => _pickAndUpload(master),
+                  onRemoveAt: (i) =>
+                      setState(() => _uploadedImageUrls.removeAt(i)),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 88),
+          const SizedBox(height: 72),
         ],
       ),
-    );
-  }
-
-  Widget _buildSectionDivider(ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Divider(color: scheme.outlineVariant.withValues(alpha: 0.35)),
-    );
-  }
-
-  Widget _buildCard({required ColorScheme scheme, required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.25)),
-      ),
-      child: child,
     );
   }
 
@@ -879,20 +858,6 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   // ─── 유틸 ───
-  Widget _buildSectionHeader(String title, IconData icon, ColorScheme scheme) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: scheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-          child: Icon(icon, size: 22, color: scheme.primary),
-        ),
-        const SizedBox(width: 12),
-        Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
-      ],
-    );
-  }
-
   Widget _buildStepSubsectionTitle(String title, ColorScheme scheme) {
     return Padding(
       padding: const EdgeInsets.only(left: 4),

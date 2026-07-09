@@ -108,7 +108,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   final Set<HomeHubSection> _materializedSections = {HomeHubSection.flow};
   CalendarFormat _launchCalendarFormat = CalendarFormat.week;
   int _calendarKeyNonce = 0;
-  int _pendingSyncCount = 0;
   bool _showLongPressHint = true;
   bool _flowNoUncalledPopupEnabled = true;
   ProviderSubscription<HubNavStep>? _hubNavStepSub;
@@ -269,35 +268,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     }
   }
 
-  /// 상단 파란 영역 — 당일 인사만 (기간 이동과 무관).
-  String _homeTopDateLine() => formatTodayGreetingSentenceKo();
-
   /// 업데이트 안내는 메인 AppBar 칩 단일 진입점 — 홈 헤더에는 표시하지 않음.
+  /// 헤더는 세그먼트 + (흐름일 때만) 기간 한 줄로 밀도 최소화.
   Widget _buildUnifiedHomeTop(ColorScheme scheme, AppUser? user) {
     final compact = _section != HomeHubSection.flow;
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(14, compact ? 6 : 8, 14, compact ? 8 : 10),
+      padding: EdgeInsets.fromLTRB(12, compact ? 6 : 8, 12, compact ? 8 : 10),
       decoration: _HubVisual.header(scheme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              _homeTopDateLine(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.end,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: scheme.onPrimary.withValues(alpha: 0.95),
-                height: 1.2,
-              ),
-            ),
-          ),
-          SizedBox(height: compact ? 6 : 8),
           Consumer(
             builder: (context, ref, _) => _buildSectionSegmentBar(
               scheme,
@@ -319,9 +300,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
+  /// 금일/금주/금월 · 기간 이동 · 오늘로 를 한 블록에 배치.
   Widget _buildCompactFlowControls(ColorScheme scheme) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
       decoration: BoxDecoration(
         color: scheme.onPrimary.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
@@ -335,45 +317,40 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               _buildMiniPeriodChip(
                 scheme: scheme,
                 step: HubNavStep.day,
-                label: '금일',
+                label: '일',
               ),
               const SizedBox(width: 4),
               _buildMiniPeriodChip(
                 scheme: scheme,
                 step: HubNavStep.week,
-                label: '금주',
+                label: '주',
               ),
               const SizedBox(width: 4),
               _buildMiniPeriodChip(
                 scheme: scheme,
                 step: HubNavStep.month,
-                label: '금월',
+                label: '월',
               ),
-              const Spacer(),
-              _buildTodayJumpButton(scheme),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Row(
-            children: [
+              const SizedBox(width: 4),
               IconButton(
                 onPressed: () => _shiftHubNav(-1),
-                icon: const Icon(Icons.chevron_left_rounded, size: 18),
+                tooltip: '이전 기간',
+                icon: const Icon(Icons.chevron_left_rounded, size: 20),
                 style: IconButton.styleFrom(
                   foregroundColor: scheme.onPrimary,
-                  minimumSize: const Size(40, 40),
+                  minimumSize: const Size(36, 36),
                   padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
                 ),
               ),
               Expanded(
-                flex: 8,
                 child: Text(
                   _hubFlowNavigatedPeriodLabel(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                     color: scheme.onPrimary,
                     height: 1.1,
@@ -382,14 +359,18 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
               ),
               IconButton(
                 onPressed: _canShiftHubNavNewer() ? () => _shiftHubNav(1) : null,
-                icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                tooltip: '다음 기간',
+                icon: const Icon(Icons.chevron_right_rounded, size: 20),
                 style: IconButton.styleFrom(
                   foregroundColor: scheme.onPrimary,
-                  disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.35),
-                  minimumSize: const Size(40, 40),
+                  disabledForegroundColor:
+                      scheme.onPrimary.withValues(alpha: 0.35),
+                  minimumSize: const Size(36, 36),
                   padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
                 ),
               ),
+              _buildTodayJumpButton(scheme),
             ],
           ),
         ],
@@ -435,7 +416,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final bgColor = enabled
         ? scheme.surface
         : scheme.onPrimary.withValues(alpha: 0.1);
-    final fgColor = enabled ? scheme.primary : scheme.onPrimary.withValues(alpha: 0.45);
+    final fgColor =
+        enabled ? scheme.primary : scheme.onPrimary.withValues(alpha: 0.45);
     return Tooltip(
       message: enabled ? _hubJumpPeriodTooltip() : '이미 현재 기준',
       child: Material(
@@ -445,27 +427,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           borderRadius: BorderRadius.circular(8),
           onTap: enabled ? _resetHubFlowAnchorToCurrent : null,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: borderColor, width: enabled ? 1.5 : 1),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.my_location_rounded, size: 14, color: fgColor),
-                const SizedBox(width: 4),
-                Text(
-                  '오늘로',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                    color: fgColor,
-                    height: 1,
-                  ),
-                ),
-              ],
-            ),
+            child: Icon(Icons.my_location_rounded, size: 16, color: fgColor),
           ),
         ),
       ),
@@ -1661,18 +1628,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   Future<void> _checkAndSyncPending() async {
-    final repo = ref.read(salesCallsRepositoryProvider);
-    final count = await repo.getPendingCount();
-    if (mounted) setState(() => _pendingSyncCount = count);
-    if (count <= 0) return;
-    final success = await repo.syncPendingCalls();
-    final newCount = await repo.getPendingCount();
+    final result = await refreshPendingSyncCount(ref, autoSync: true);
     if (!mounted) return;
-    setState(() => _pendingSyncCount = newCount);
-    if (success > 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('미전송 상담 $success건이 동기화되었습니다.')));
+    if (result.synced > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('미전송 ${result.synced}건이 동기화되었습니다.')),
+      );
     }
   }
 
@@ -1991,60 +1952,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     : accent.withValues(alpha: 0.75)),
           height: 1.2,
         ),
-      ),
-    );
-  }
-
-  Widget _buildPendingSyncBanner(ColorScheme scheme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.secondary.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 52,
-            decoration: BoxDecoration(
-              color: scheme.secondary,
-              borderRadius: const BorderRadius.horizontal(
-                left: Radius.circular(14),
-              ),
-            ),
-          ),
-          Icon(
-            Icons.cloud_sync_outlined,
-            size: 22,
-            color: scheme.onSecondaryContainer,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Text(
-                '동기화 대기 $_pendingSyncCount건',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: scheme.onSecondaryContainer,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton.tonal(
-              onPressed: _checkAndSyncPending,
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-              ),
-              child: const Text('전송'),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -2471,7 +2378,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    '카드를 길게 누르면 담당자 선택이 열립니다.',
+                                    '카드 오른쪽 ⋮ 또는 길게 누르면 담당자를 고를 수 있습니다.',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
@@ -2544,12 +2451,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       child: Column(
         children: [
           _buildUnifiedHomeTop(scheme, user),
-          if (_pendingSyncCount > 0) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-              child: _buildPendingSyncBanner(scheme),
-            ),
-          ],
           Expanded(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -2819,16 +2720,48 @@ class _FlowStatTile extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(11),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: compact ? 8 : 10),
-          child: _StatItem(
-            icon: icon,
-            label: label,
-            hint: hint,
-            value: value,
-            color: color,
-            compact: compact,
-          ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                4,
+                compact ? 8 : 10,
+                onLongPress != null ? 22 : 4,
+                compact ? 8 : 10,
+              ),
+              child: _StatItem(
+                icon: icon,
+                label: label,
+                hint: hint,
+                value: value,
+                color: color,
+                compact: compact,
+              ),
+            ),
+            if (onLongPress != null)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: IconButton(
+                  tooltip: '담당자 선택',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                  iconSize: 16,
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    onLongPress!();
+                  },
+                  icon: Icon(
+                    Icons.more_vert_rounded,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

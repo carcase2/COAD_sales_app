@@ -6,9 +6,12 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -408,6 +411,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       _lastSaveQueuedOffline = false;
       return true;
     } on OfflineException {
+      await refreshPendingSyncCount(ref);
       // 상담 내용은 로컬 큐에 저장됨 — 입력을 비우고 성공 흐름으로 종료.
       if (!_isEditMode) {
         _consultationSavedSinceOpen = true;
@@ -725,7 +729,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     if (_loading && _model == null) {
       return _withPopResult(
         const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
+          body: AppLoading(message: '접수 정보를 불러오는 중…'),
         ),
       );
     }
@@ -1081,128 +1085,136 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   Widget _buildEditFormSection(MasterDataBundle master, ColorScheme scheme) {
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.edit_rounded, size: 20, color: scheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                '접수 정보 수정',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '연락처·이름·지역·문의내용·분류를 고친 뒤 아래 저장을 누르세요.',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Text(
+            '연락처·지역·문의 내용을 고친 뒤 아래 저장을 누르세요.',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 12.5,
               color: scheme.onSurfaceVariant,
               height: 1.35,
             ),
           ),
-          const SizedBox(height: 16),
-          _buildEditFieldLabel('연락처 *', scheme),
-          TextFormField(
-            controller: _phoneCtrl,
-            keyboardType: TextInputType.phone,
-            onChanged: _onPhoneChanged,
-            decoration: _editInputDecoration('010-0000-0000', scheme),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? '연락처를 입력해주세요' : null,
+        ),
+        FormCollapsibleSection(
+          step: 1,
+          title: '고객 · 연락처',
+          icon: Icons.person_outline_rounded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildEditFieldLabel('연락처 *', scheme),
+              TextFormField(
+                controller: _phoneCtrl,
+                keyboardType: TextInputType.phone,
+                onChanged: _onPhoneChanged,
+                decoration: _editInputDecoration('010-0000-0000', scheme),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? '연락처를 입력해주세요' : null,
+              ),
+              const SizedBox(height: 12),
+              _buildEditFieldLabel('고객명/상호명', scheme),
+              TextFormField(
+                controller: _nameCtrl,
+                decoration: _editInputDecoration('고객성함 또는 회사명', scheme),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _buildEditFieldLabel('고객명/상호명', scheme),
-          TextFormField(
-            controller: _nameCtrl,
-            decoration: _editInputDecoration('고객성함 또는 회사명', scheme),
+        ),
+        FormCollapsibleSection(
+          step: 2,
+          title: '분류 · 지역 · 담당',
+          icon: Icons.category_outlined,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildEditFieldLabel('제품군', scheme),
+              _buildMasterChoiceChips(
+                items: master.productCategories,
+                selectedValue: _productId,
+                selectedColor: const Color(0xFF10B981),
+                onSelected: (id) => setState(() => _productId = id),
+              ),
+              const SizedBox(height: 12),
+              _buildEditFieldLabel('문의 경로', scheme),
+              _buildMasterChoiceChips(
+                items: master.inquiryMethods,
+                selectedValue: _methodId,
+                selectedColor: const Color(0xFF0EA5E9),
+                onSelected: (id) => setState(() => _methodId = id),
+              ),
+              const SizedBox(height: 16),
+              _buildEditFieldLabel('지역 배정 *', scheme),
+              SearchableRegionPicker(
+                regions: master.regions,
+                value: _regionId,
+                decoration: _editInputDecoration('지역 검색 · 선택', scheme),
+                onChanged: (v) {
+                  setState(() {
+                    _regionId = v;
+                    final manager = _managerFromRegionId(master, v);
+                    if (manager.isNotEmpty) {
+                      _assignedCtrl.text = manager;
+                    }
+                  });
+                },
+                validator: (v) => v == null ? '지역을 선택해주세요' : null,
+              ),
+              const SizedBox(height: 16),
+              _buildEditFieldLabel('담당자', scheme),
+              Builder(
+                builder: (ctx) {
+                  final managerOptions = _managerOptionsFromMaster(master);
+                  final current = _assignedCtrl.text.trim();
+                  final selectedValue =
+                      managerOptions.contains(current) ? current : null;
+                  return DropdownButtonFormField<String>(
+                    value: selectedValue,
+                    isExpanded: true,
+                    decoration: _editInputDecoration('담당자 선택', scheme),
+                    hint: const Text('담당자를 선택하세요'),
+                    items: managerOptions
+                        .map(
+                          (m) => DropdownMenuItem<String>(
+                            value: m,
+                            child: Text(m),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() {
+                        _assignedCtrl.text = (v ?? '').trim();
+                      });
+                    },
+                  );
+                },
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          _buildEditFieldLabel('제품군', scheme),
-          _buildMasterChoiceChips(
-            items: master.productCategories,
-            selectedValue: _productId,
-            selectedColor: const Color(0xFF10B981),
-            onSelected: (id) => setState(() => _productId = id),
+        ),
+        FormCollapsibleSection(
+          step: 3,
+          title: '문의 내용',
+          icon: Icons.edit_note_rounded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildEditFieldLabel('문의 내용 *', scheme),
+              TextFormField(
+                controller: _inquiryCtrl,
+                minLines: 4,
+                maxLines: 8,
+                decoration: _editInputDecoration('고객 요청·문의 내용', scheme),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _buildEditFieldLabel('문의 경로', scheme),
-          _buildMasterChoiceChips(
-            items: master.inquiryMethods,
-            selectedValue: _methodId,
-            selectedColor: const Color(0xFF0EA5E9),
-            onSelected: (id) => setState(() => _methodId = id),
-          ),
-          const SizedBox(height: 16),
-          _buildEditFieldLabel('지역 배정 *', scheme),
-          SearchableRegionPicker(
-            regions: master.regions,
-            value: _regionId,
-            decoration: _editInputDecoration('지역 검색 · 선택', scheme),
-            onChanged: (v) {
-              setState(() {
-                _regionId = v;
-                final manager = _managerFromRegionId(master, v);
-                if (manager.isNotEmpty) {
-                  _assignedCtrl.text = manager;
-                }
-              });
-            },
-            validator: (v) => v == null ? '지역을 선택해주세요' : null,
-          ),
-          const SizedBox(height: 16),
-          _buildEditFieldLabel('담당자', scheme),
-          Builder(builder: (ctx) {
-            final managerOptions = _managerOptionsFromMaster(master);
-            final current = _assignedCtrl.text.trim();
-            final selectedValue =
-                managerOptions.contains(current) ? current : null;
-            return DropdownButtonFormField<String>(
-              value: selectedValue,
-              isExpanded: true,
-              decoration: _editInputDecoration('담당자 선택', scheme),
-              hint: const Text('담당자를 선택하세요'),
-              items: managerOptions
-                  .map(
-                    (m) => DropdownMenuItem<String>(
-                      value: m,
-                      child: Text(m),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                setState(() {
-                  _assignedCtrl.text = (v ?? '').trim();
-                });
-              },
-            );
-          }),
-          const SizedBox(height: 16),
-          _buildEditFieldLabel('문의 내용 *', scheme),
-          TextFormField(
-            controller: _inquiryCtrl,
-            minLines: 4,
-            maxLines: 8,
-            decoration: _editInputDecoration('고객 요청·문의 내용', scheme),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
