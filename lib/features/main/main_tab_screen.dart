@@ -45,6 +45,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     with WidgetsBindingObserver {
   static const int _homeTabIndex = 0;
   static const int _issuanceTabIndex = 1;
+  static const int _generalScheduleTabIndex = 2;
   static const int _navHomeIndex = 0;
   static const int _navReceptionIndex = 1;
   static const int _navIssuanceIndex = 2;
@@ -117,9 +118,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   void _trackAppOpen(AppUser user) {
-    unawaited(
-      UsageService.recordAppOpen(userId: user.id, userName: user.name),
-    );
+    unawaited(UsageService.recordAppOpen(userId: user.id, userName: user.name));
   }
 
   void _trackTab(AppUser? user, String tabKey) {
@@ -412,12 +411,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   void _syncNavFromCurrentTab() {
     final user = ref.read(authControllerProvider);
     setState(() {
-      _navSelectedIndex = _currentIndex == _issuanceTabIndex
-          ? _navIssuanceIndex
-          : _navHomeIndex;
+      _navSelectedIndex = switch (_currentIndex) {
+        _issuanceTabIndex => _navIssuanceIndex,
+        _generalScheduleTabIndex =>
+          _showGeneralScheduleInNav(user)
+              ? _navGeneralScheduleIndex
+              : _navHomeIndex,
+        _ => _navHomeIndex,
+      };
       if (_navSelectedIndex == _navGeneralScheduleIndex &&
           !_showGeneralScheduleInNav(user)) {
         _navSelectedIndex = _navHomeIndex;
+        if (_currentIndex == _generalScheduleTabIndex) {
+          _currentIndex = _homeTabIndex;
+        }
       }
     });
   }
@@ -430,22 +437,24 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     ref.read(mainScaffoldKeyProvider).currentState?.openDrawer();
   }
 
-  Future<void> _openGeneralSchedule() async {
-    HapticFeedback.lightImpact();
-    _trackTab(ref.read(authControllerProvider), 'general_schedule');
-    final prevNav = _navSelectedIndex;
-    setState(() => _navSelectedIndex = _navGeneralScheduleIndex);
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const GeneralScheduleScreen(),
-      ),
-    );
-    if (!mounted) return;
-    if (_currentIndex == _homeTabIndex) {
-      setState(() => _navSelectedIndex = prevNav == _navGeneralScheduleIndex
-          ? _navHomeIndex
-          : prevNav);
+  void _selectGeneralScheduleTab() {
+    final user = ref.read(authControllerProvider);
+    if (!_showGeneralScheduleInNav(user)) {
+      _selectHomeTab();
+      return;
     }
+    HapticFeedback.lightImpact();
+    if (_navSelectedIndex == _navGeneralScheduleIndex &&
+        _currentIndex == _generalScheduleTabIndex) {
+      return;
+    }
+    setState(() {
+      _navSelectedIndex = _navGeneralScheduleIndex;
+      _currentIndex = _generalScheduleTabIndex;
+      _loadedIndices.add(_generalScheduleTabIndex);
+      _lastBackExitHintAt = null;
+    });
+    _trackTab(user, 'general_schedule');
   }
 
   void _onNavDestinationSelected(int navIndex) {
@@ -457,7 +466,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     }
     if (_showGeneralScheduleInNav(user) &&
         navIndex == _navGeneralScheduleIndex) {
-      unawaited(_openGeneralSchedule());
+      _selectGeneralScheduleTab();
       return;
     }
     if (navIndex == _navReceptionIndex) {
@@ -495,11 +504,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final selected = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      // 기본 half-sheet 제약이 타이트해 Column overflow가 나기 쉬움 →
+      // 콘텐츠 높이만큼만 쓰고, 넘치면 스크롤.
       builder: (context) {
         final scheme = Theme.of(context).colorScheme;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        final bottomInset = MediaQuery.paddingOf(context).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+          child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -507,37 +519,46 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 Text(
                   '접수 바로가기',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '짧게 누르면 새 접수, 길게 누르면 이 메뉴가 열립니다.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: scheme.onSurfaceVariant,
-                    height: 1.35,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 2),
+                Text(
+                  '탭: 새 접수 · 길게: 이 메뉴',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 10),
                 FilledButton.icon(
                   onPressed: () => Navigator.of(context).pop('create'),
                   icon: const Icon(Icons.add_ic_call_rounded),
                   label: const Text('새 접수 등록'),
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
+                    minimumSize: const Size.fromHeight(44),
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
                   leading: Icon(Icons.list_alt_rounded, color: scheme.primary),
                   title: const Text('오늘 접수 목록'),
                   subtitle: const Text('금일 접수 건 조회'),
                   onTap: () => Navigator.of(context).pop('today'),
                 ),
                 ListTile(
-                  leading:
-                      Icon(Icons.phone_missed_rounded, color: scheme.error),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  leading: Icon(
+                    Icons.phone_missed_rounded,
+                    color: scheme.error,
+                  ),
                   title: const Text('오늘 미통화 목록'),
                   subtitle: const Text('금일 미통화 건 조회'),
                   onTap: () => Navigator.of(context).pop('incomplete'),
@@ -578,8 +599,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         builder: (_) => SalesCallListScreen(
           mode: ListQueryMode.pendingUncalled,
           date: pendingUncalledFromYmd(today),
-          initialAssignee:
-              loginName != null && loginName.isNotEmpty ? loginName : null,
+          initialAssignee: loginName != null && loginName.isNotEmpty
+              ? loginName
+              : null,
         ),
       ),
     );
@@ -601,6 +623,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     _loadedIndices.contains(_issuanceTabIndex)
         ? const IssuanceRequestScreen()
         : const AppLoading(message: '발급 화면 준비 중…'),
+    _loadedIndices.contains(_generalScheduleTabIndex)
+        ? const GeneralScheduleScreen(embedded: true)
+        : const SizedBox.shrink(),
   ];
 
   @override
@@ -617,7 +642,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       if (next != true || !context.mounted) return;
       ref.read(pendingGeneralScheduleLaunchProvider.notifier).state = false;
       NotificationService.clearPendingGeneralScheduleNavigation();
-      unawaited(_openGeneralSchedule());
+      _selectGeneralScheduleTab();
     });
 
     final scheme = Theme.of(context).colorScheme;
@@ -686,89 +711,94 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         drawer: Consumer(
           builder: (context, ref, _) {
             final user = ref.watch(authControllerProvider);
-            final updateStatus =
-                ref.watch(appUpdateStatusProvider).valueOrNull;
+            final updateStatus = ref.watch(appUpdateStatusProvider).valueOrNull;
             return _buildAppMenuDrawer(context, user, scheme, updateStatus);
           },
         ),
-        appBar: AppBar(
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: _openHomeFlowToday,
-                child: _buildBrandTitle(),
-              ),
-              Consumer(
-                builder: (context, ref, _) {
-                  final updateStatus =
-                      ref.watch(appUpdateStatusProvider).valueOrNull;
-                  if (updateStatus?.hasUpdate != true) {
-                    return const SizedBox.shrink();
-                  }
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(width: 8),
-                      _buildLogoUpdateChip(
-                        latestVersion: updateStatus?.latestVersion,
-                        forceUpdate: updateStatus?.forceUpdate == true,
-                        onTap: () => AppUpdateService.checkAndUpdateIfNeeded(
-                          context,
-                          forceRecheck: true,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
-          centerTitle: true,
-          backgroundColor: appBarBg,
-          foregroundColor: Colors.white,
-          automaticallyImplyLeading: false,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search_rounded),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.14),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                final repository = ref.read(salesCallsRepositoryProvider);
-                final calls = ref.read(todayCallsContentProvider).value ?? [];
-                showSearch(
-                  context: context,
-                  delegate: SalesCallSearchDelegate(
-                    initialItems: calls,
-                    repository: repository,
-                  ),
-                );
-              },
-              tooltip: '통합 검색',
-            ),
-            const SizedBox(width: 8),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(3),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              height: 3,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    tabAccent.withValues(alpha: 0.35),
-                    tabAccent,
-                    tabAccent.withValues(alpha: 0.35),
+        // 본사일반은 자체 AppBar(검색·새로고침)를 쓰므로 메인 AppBar를 숨긴다.
+        appBar: _currentIndex == _generalScheduleTabIndex
+            ? null
+            : AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: _openHomeFlowToday,
+                      child: _buildBrandTitle(),
+                    ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final updateStatus = ref
+                            .watch(appUpdateStatusProvider)
+                            .valueOrNull;
+                        if (updateStatus?.hasUpdate != true) {
+                          return const SizedBox.shrink();
+                        }
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(width: 8),
+                            _buildLogoUpdateChip(
+                              latestVersion: updateStatus?.latestVersion,
+                              forceUpdate: updateStatus?.forceUpdate == true,
+                              onTap: () =>
+                                  AppUpdateService.checkAndUpdateIfNeeded(
+                                    context,
+                                    forceRecheck: true,
+                                  ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ],
                 ),
+                centerTitle: true,
+                backgroundColor: appBarBg,
+                foregroundColor: Colors.white,
+                automaticallyImplyLeading: false,
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.search_rounded),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.14),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      final repository = ref.read(salesCallsRepositoryProvider);
+                      final calls =
+                          ref.read(todayCallsContentProvider).value ?? [];
+                      showSearch(
+                        context: context,
+                        delegate: SalesCallSearchDelegate(
+                          initialItems: calls,
+                          repository: repository,
+                        ),
+                      );
+                    },
+                    tooltip: '통합 검색',
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(3),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    height: 3,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          tabAccent.withValues(alpha: 0.35),
+                          tabAccent,
+                          tabAccent.withValues(alpha: 0.35),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
         // 업데이트 안내는 AppBar 칩 단일 진입점.
         // 오프라인 대기는 전 탭 공통 상단 배너.
         body: Column(
@@ -780,8 +810,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 return _PendingSyncBanner(
                   count: pending,
                   onSync: () async {
-                    final result =
-                        await refreshPendingSyncCount(ref, autoSync: true);
+                    final result = await refreshPendingSyncCount(
+                      ref,
+                      autoSync: true,
+                    );
                     if (!context.mounted) return;
                     if (result.synced > 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -817,15 +849,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             ),
             onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
             onLongPressHome: _openHomeFlowToday,
-            onTapReception: () =>
-                _onNavDestinationSelected(_navReceptionIndex),
+            onTapReception: () => _onNavDestinationSelected(_navReceptionIndex),
             onLongPressReception: _openReceptionQuickActions,
             onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
             onTapGeneralSchedule: () =>
                 _onNavDestinationSelected(_navGeneralScheduleIndex),
-            onTapMenu: () => _onNavDestinationSelected(
-              showGeneralSchedule ? 4 : 3,
-            ),
+            onTapMenu: () =>
+                _onNavDestinationSelected(showGeneralSchedule ? 4 : 3),
           ),
         ),
       ),
@@ -1120,10 +1150,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
 /// 전 탭 공통 — 오프라인 접수·상담 대기 건수.
 class _PendingSyncBanner extends StatelessWidget {
-  const _PendingSyncBanner({
-    required this.count,
-    required this.onSync,
-  });
+  const _PendingSyncBanner({required this.count, required this.onSync});
 
   final int count;
   final VoidCallback onSync;
@@ -1343,9 +1370,7 @@ class _BottomNavItem extends StatelessWidget {
 
     final semanticsHint = onLongPress == null
         ? null
-        : (label == '접수'
-            ? '길게 누르면 오늘 목록 메뉴'
-            : '길게 누르면 추가 동작');
+        : (label == '접수' ? '길게 누르면 오늘 목록 메뉴' : '길게 누르면 추가 동작');
 
     return Semantics(
       button: true,
@@ -1366,7 +1391,9 @@ class _BottomNavItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             padding: const EdgeInsets.symmetric(vertical: 6),
-            constraints: const BoxConstraints(minHeight: AppTokens.minTouchTarget),
+            constraints: const BoxConstraints(
+              minHeight: AppTokens.minTouchTarget,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1399,8 +1426,9 @@ class _BottomNavItem extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight:
-                            selected ? FontWeight.w900 : FontWeight.w600,
+                        fontWeight: selected
+                            ? FontWeight.w900
+                            : FontWeight.w600,
                         color: fg,
                         height: 1.1,
                       ),

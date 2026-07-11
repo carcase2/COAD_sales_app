@@ -32,8 +32,12 @@ class SalesCallDetailScreen extends ConsumerStatefulWidget {
   final String id;
   final SalesCall? initial;
 
+  /// [Navigator.pop] 결과 — 접수 삭제 완료. 목록에서 해당 행을 제거한다.
+  static const Object deleted = Object();
+
   @override
-  ConsumerState<SalesCallDetailScreen> createState() => _SalesCallDetailScreenState();
+  ConsumerState<SalesCallDetailScreen> createState() =>
+      _SalesCallDetailScreenState();
 }
 
 class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
@@ -50,8 +54,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   late TextEditingController _inquiryCtrl;
   late TextEditingController _assignedCtrl;
   late TextEditingController _stageCtrl;
+
   /// 전체 수정 폼용 (상담 입력과 분리)
   late TextEditingController _nextDateCtrl;
+
   /// 상담 입력 시트 전용 — DB `next_scheduled_date`와 동기하지 않음
   late TextEditingController _consultationNextDateCtrl;
 
@@ -94,7 +100,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     _regionId = i?.regionId;
     _methodId = i?.inquiryMethodId;
     _statusId = i?.statusId;
-    _orderedCallHistory = i != null ? orderCallHistoryForDisplay(i.callHistory) : [];
+    _orderedCallHistory = i != null
+        ? orderCallHistoryForDisplay(i.callHistory)
+        : [];
     _historyPageController = PageController(initialPage: 0);
     _selectedHistoryIdx = 0;
     _bootstrap();
@@ -106,7 +114,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       _loadError = null;
     });
     try {
-      final fresh = await ref.read(salesCallsRepositoryProvider).fetchCallById(widget.id);
+      final fresh = await ref
+          .read(salesCallsRepositoryProvider)
+          .fetchCallById(widget.id);
       _applyModel(fresh);
     } catch (e) {
       if (_model == null) {
@@ -125,7 +135,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     } else if (digits.length <= 7) {
       formatted = '${digits.substring(0, 3)}-${digits.substring(3)}';
     } else if (digits.length <= 11) {
-      formatted = '${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}';
+      formatted =
+          '${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}';
     } else {
       formatted =
           '${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7, 11)}';
@@ -186,7 +197,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       if (_regionId != null) 'region_id': _regionId,
       if (_methodId != null) 'inquiry_method_id': _methodId,
       if (_statusId != null) 'status_id': _statusId,
-      if (_assignedCtrl.text.trim().isNotEmpty) 'assigned_to': _assignedCtrl.text.trim(),
+      if (_assignedCtrl.text.trim().isNotEmpty)
+        'assigned_to': _assignedCtrl.text.trim(),
       if (_stageCtrl.text.trim().isNotEmpty)
         'call_stage': _parseStageValue(_stageCtrl.text.trim()),
       if (_nextDateCtrl.text.trim().isNotEmpty)
@@ -206,7 +218,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       final e = regionRow.extra;
       if (e['sido'] != null) body['region_sido'] = e['sido'];
       if (e['region'] != null) body['region_name'] = e['region'];
-      if (e['branch_type'] != null) body['region_branch_type'] = e['branch_type'];
+      if (e['branch_type'] != null)
+        body['region_branch_type'] = e['branch_type'];
     } else {
       final m = _model;
       if (m != null) {
@@ -233,7 +246,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const [
-        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'heic', 'heif', 'tif', 'tiff', 'pdf',
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'bmp',
+        'webp',
+        'svg',
+        'heic',
+        'heif',
+        'tif',
+        'tiff',
+        'pdf',
       ],
       allowMultiple: true,
     );
@@ -258,27 +282,33 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
     try {
       // 병렬 업로드 수행
-      await Future.wait(paths.map((path) async {
-        try {
-          final url = await uploader.uploadSalesCallFile(
-            filePath: path,
-            siteName: site,
-            customerPhone: _phoneCtrl.text,
-          );
-          if (mounted) {
-            setState(() {
-              _imageUrls = [..._imageUrls, url];
-              _uploadCurrent++;
-            });
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('업로드 실패 (${p.basename(path)}): ${koreanErrorMessage(e)}')),
+      await Future.wait(
+        paths.map((path) async {
+          try {
+            final url = await uploader.uploadSalesCallFile(
+              filePath: path,
+              siteName: site,
+              customerPhone: _phoneCtrl.text,
             );
+            if (mounted) {
+              setState(() {
+                _imageUrls = [..._imageUrls, url];
+                _uploadCurrent++;
+              });
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '업로드 실패 (${p.basename(path)}): ${koreanErrorMessage(e)}',
+                  ),
+                ),
+              );
+            }
           }
-        }
-      }));
+        }),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -316,19 +346,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     setState(() => _deleting = true);
     try {
       await ref.read(salesCallsRepositoryProvider).deleteCall(widget.id);
-      invalidateHomeSalesCaches(ref.invalidate);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('접수가 삭제되었습니다.')),
-      );
-      _popDetail(true);
+      invalidateHomeSalesCaches(ref.invalidate);
+      final messenger = ScaffoldMessenger.of(context);
+      // bool true 를 pop 하면 목록의 push<SalesCall?> 캐스팅이 깨져 UI가 멈춘다.
+      _popDetail(SalesCallDetailScreen.deleted);
+      messenger.showSnackBar(const SnackBar(content: Text('접수가 삭제되었습니다.')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(koreanErrorMessage(e))),
-      );
-    } finally {
-      if (mounted) setState(() => _deleting = false);
+      setState(() => _deleting = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
     }
   }
 
@@ -336,9 +365,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     if (_isEditMode) {
       if (!(_formKey.currentState?.validate() ?? false)) return false;
       if (_regionId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('배정될 지역을 선택해주세요.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('배정될 지역을 선택해주세요.')));
         return false;
       }
     }
@@ -346,7 +375,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     setState(() => _saving = true);
     try {
       final repo = ref.read(salesCallsRepositoryProvider);
-      
+
       if (_isEditMode) {
         final updated = await repo.updateCall(widget.id, _bodyFromForm(master));
         _applyModel(updated);
@@ -404,9 +433,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           _isEditMode = false;
         });
         if (wasEdit) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('접수 정보가 수정되었습니다.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('접수 정보가 수정되었습니다.')));
         }
       }
       _lastSaveQueuedOffline = false;
@@ -430,9 +459,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       return true;
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(koreanErrorMessage(e))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
       }
       return false;
     } finally {
@@ -455,16 +484,16 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               const SizedBox(height: 20),
               Text(
                 '저장 중입니다.',
-                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
                 '잠시만 기다려 주세요.',
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -508,7 +537,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     final set = <String>{};
     for (final region in master.regions) {
       final manager = (region.extra['manager'] ?? '').toString().trim();
-      final original = (region.extra['original_manager'] ?? '').toString().trim();
+      final original = (region.extra['original_manager'] ?? '')
+          .toString()
+          .trim();
       if (manager.isNotEmpty) set.add(manager);
       if (original.isNotEmpty) set.add(original);
     }
@@ -526,7 +557,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return fromHistory > fromStage ? fromHistory : fromStage;
   }
 
-  String _inputStageLabel(SalesCall? call) => '${_nextConsultationStageNumber(call)}차';
+  String _inputStageLabel(SalesCall? call) =>
+      '${_nextConsultationStageNumber(call)}차';
 
   /// 지금 입력하는 N차 상담 이후 예정일 = (N+1)차
   String _scheduledStageAfterInput(SalesCall? call) =>
@@ -559,7 +591,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   String _getNextStage(String? current) {
-    if (current == null || current.isEmpty || current == '접수' || current == '0') return '2차';
+    if (current == null || current.isEmpty || current == '접수' || current == '0')
+      return '2차';
     final match = RegExp(r'(\d+)').firstMatch(current);
     if (match != null) {
       final num = int.parse(match.group(1)!);
@@ -639,31 +672,30 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             children: [
               Text(
                 '이유',
-                style: Theme.of(ctx)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
-              Text(memo.isNotEmpty ? memo : '—',
-                  style: Theme.of(ctx).textTheme.bodyMedium),
+              Text(
+                memo.isNotEmpty ? memo : '—',
+                style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
               const SizedBox(height: 14),
               Text(
                 '기간',
-                style: Theme.of(ctx)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
               Text(period, style: Theme.of(ctx).textTheme.bodyMedium),
               const SizedBox(height: 14),
               Text(
                 '담당자 변경',
-                style: Theme.of(ctx)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
               Text(
@@ -697,9 +729,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   void _popDetail([Object? explicitResult]) {
     if (!mounted) return;
     _isPoppingDetail = true;
-    Navigator.of(context).pop(
-      explicitResult ?? (_consultationSavedSinceOpen ? _model : null),
-    );
+    Navigator.of(
+      context,
+    ).pop(explicitResult ?? (_consultationSavedSinceOpen ? _model : null));
   }
 
   @override
@@ -718,7 +750,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 children: [
                   Text(_loadError!),
                   const SizedBox(height: 12),
-                  FilledButton(onPressed: _bootstrap, child: const Text('다시 시도')),
+                  FilledButton(
+                    onPressed: _bootstrap,
+                    child: const Text('다시 시도'),
+                  ),
                 ],
               ),
             ),
@@ -729,166 +764,192 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
     if (_loading && _model == null) {
       return _withPopResult(
-        const Scaffold(
-          body: AppLoading(message: '접수 정보를 불러오는 중…'),
-        ),
+        const Scaffold(body: AppLoading(message: '접수 정보를 불러오는 중…')),
       );
     }
 
     return _withPopResult(
       Scaffold(
-      appBar: AppBar(
-        title: const Text('접수 상세'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onPrimary),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _loading || _deleting ? null : () => unawaited(_bootstrap()),
-            tooltip: '새로고침',
+        appBar: AppBar(
+          title: const Text('접수 상세'),
+          titleSpacing: 0,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          iconTheme: IconThemeData(
+            color: Theme.of(context).colorScheme.onPrimary,
           ),
-          TextButton(
-            onPressed: _deleting
-                ? null
-                : () {
-                    setState(() {
-                      _isEditMode = !_isEditMode;
-                      if (_isEditMode) {
-                        _nextDateCtrl.text = _model?.nextScheduledDate ?? '';
-                      }
-                    });
-                  },
-            child: Text(
-              _isEditMode ? '조회' : '수정',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimary,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.home_rounded),
-            onPressed: () {
-              if (_consultationSavedSinceOpen) {
-                invalidateHomeSalesCaches(ref.invalidate);
-              }
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-            tooltip: '홈으로 이동',
-          ),
-          PopupMenuButton<String>(
-            enabled: !_deleting && !_loading && _model != null,
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              if (value == 'delete') _confirmDelete();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'delete',
-                child: Text('접수 삭제', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-          if (_loading || _deleting)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
-                ),
-              ),
-            ),
-        ],
-      ),
-      floatingActionButton: (!_isEditMode &&
-              _model != null &&
-              !_loading &&
-              _canEnterFurtherConsultation)
-          ? FloatingActionButton.extended(
-              onPressed: () => masterAsync.whenData((m) => _showConsultationDialog(m)),
-              icon: const Icon(Icons.add_comment_rounded),
-              label: Text('${_inputStageLabel(_model)} 상담내용 입력'),
-            )
-          : null,
-      bottomNavigationBar: _isEditMode
-          ? masterAsync.maybeWhen(
-              data: (master) => SafeArea(
-                top: false,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 10,
-                        offset: const Offset(0, -4),
-                      ),
-                    ],
-                  ),
+          actions: [
+            if (_loading || _deleting)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Center(
                   child: SizedBox(
-                    height: 56,
-                    child: FilledButton.icon(
-                      onPressed: _saving ? null : () => _save(master),
-                      icon: _saving
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.save_as_rounded),
-                      label: Text(
-                        _saving ? '저장 중...' : '전체 정보 수정 저장',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).colorScheme.onPrimary,
                       ),
                     ),
                   ),
                 ),
               ),
-              orElse: () => null,
-            )
-          : null,
-      body: masterAsync.when(
-        data: (master) => _buildScrollable(master),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(koreanErrorMessage(e), textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () =>
-                      ref.invalidate(salesCallCreateMasterDataProvider),
-                  child: const Text('다시 시도'),
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: _loading || _deleting
+                  ? null
+                  : () => unawaited(_bootstrap()),
+              tooltip: '새로고침',
+            ),
+            IconButton(
+              icon: Icon(
+                _isEditMode ? Icons.visibility_rounded : Icons.edit_rounded,
+              ),
+              tooltip: _isEditMode ? '조회' : '수정',
+              onPressed: _deleting
+                  ? null
+                  : () {
+                      setState(() {
+                        _isEditMode = !_isEditMode;
+                        if (_isEditMode) {
+                          _nextDateCtrl.text = _model?.nextScheduledDate ?? '';
+                        }
+                      });
+                    },
+            ),
+            PopupMenuButton<String>(
+              enabled: !_deleting && !_loading,
+              tooltip: '더보기',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) {
+                if (value == 'home') {
+                  if (_consultationSavedSinceOpen) {
+                    invalidateHomeSalesCaches(ref.invalidate);
+                  }
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                } else if (value == 'delete') {
+                  unawaited(_confirmDelete());
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'home',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.home_rounded),
+                    title: Text('홈으로'),
+                    dense: true,
+                  ),
                 ),
+                if (_model != null)
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        Icons.delete_outline_rounded,
+                        color: Colors.red,
+                      ),
+                      title: Text('접수 삭제', style: TextStyle(color: Colors.red)),
+                      dense: true,
+                    ),
+                  ),
               ],
+            ),
+          ],
+        ),
+        floatingActionButton:
+            (!_isEditMode &&
+                _model != null &&
+                !_loading &&
+                _canEnterFurtherConsultation)
+            ? FloatingActionButton.extended(
+                onPressed: () =>
+                    masterAsync.whenData((m) => _showConsultationDialog(m)),
+                icon: const Icon(Icons.add_comment_rounded),
+                label: Text('${_inputStageLabel(_model)} 상담내용 입력'),
+              )
+            : null,
+        bottomNavigationBar: _isEditMode
+            ? masterAsync.maybeWhen(
+                data: (master) => SafeArea(
+                  top: false,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, -4),
+                        ),
+                      ],
+                    ),
+                    child: SizedBox(
+                      height: 56,
+                      child: FilledButton.icon(
+                        onPressed: _saving ? null : () => _save(master),
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_as_rounded),
+                        label: Text(
+                          _saving ? '저장 중...' : '전체 정보 수정 저장',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                orElse: () => null,
+              )
+            : null,
+        body: masterAsync.when(
+          data: (master) => _buildScrollable(master),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(koreanErrorMessage(e), textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () =>
+                        ref.invalidate(salesCallCreateMasterDataProvider),
+                    child: const Text('다시 시도'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
     );
   }
 
   Widget _buildScrollable(MasterDataBundle master) {
     final m = _model;
     final scheme = Theme.of(context).colorScheme;
-    final assigneeLabel = (m?.assignedTo == null || m!.assignedTo!.trim().isEmpty) ? '미지정' : m.assignedTo!.trim();
+    final assigneeLabel =
+        (m?.assignedTo == null || m!.assignedTo!.trim().isEmpty)
+        ? '미지정'
+        : m.assignedTo!.trim();
     final assigneeColor = _colorForAssignee(assigneeLabel, scheme);
-    final overrides = ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
+    final overrides =
+        ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
     final activeOverride = m == null
         ? null
         : findActiveTempOverrideForCall(m, overrides, DateTime.now());
@@ -921,12 +982,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           if (m != null)
-            _buildHeroHeader(
-              m,
-              scheme,
-              assigneeColor,
-              activeOverride,
-            ),
+            _buildHeroHeader(m, scheme, assigneeColor, activeOverride),
 
           if (_isEditMode) ...[
             _buildEditFormSection(master, scheme),
@@ -952,7 +1008,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                             .isEmpty
                         ? '미지정'
                         : '${m?.regionSido != null ? '[${m!.regionSido}] ' : ''}${m?.regionName ?? ''}'
-                            .trim(),
+                              .trim(),
                     Icons.location_on_rounded,
                     scheme,
                     bgColor: assigneeColor.withOpacity(0.08),
@@ -982,9 +1038,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             children: [
               Expanded(
                 child: _buildInfoTile(
-                  '현재 성과', 
-                  _displayStatusLabel(m), 
-                  Icons.stars_rounded, 
+                  '현재 성과',
+                  _displayStatusLabel(m),
+                  Icons.stars_rounded,
                   scheme,
                   labelColor: scheme.primary,
                 ),
@@ -992,9 +1048,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _buildInfoTile(
-                  '현재 단계', 
-                  (RegExp(r'^\d+$').hasMatch(m?.callStage ?? '')) ? '${m!.callStage}차' : (m?.callStage ?? '접수'), 
-                  Icons.stairs_outlined, 
+                  '현재 단계',
+                  (RegExp(r'^\d+$').hasMatch(m?.callStage ?? ''))
+                      ? '${m!.callStage}차'
+                      : (m?.callStage ?? '접수'),
+                  Icons.stairs_outlined,
                   scheme,
                 ),
               ),
@@ -1013,7 +1071,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             const SizedBox(height: 12),
             _buildInfoTile(
               '미수주 사유',
-              m.effectiveUnsuccessfulReason(orderedHistory: _orderedCallHistory) ??
+              m.effectiveUnsuccessfulReason(
+                    orderedHistory: _orderedCallHistory,
+                  ) ??
                   '미기재',
               Icons.report_gmailerrorred_outlined,
               scheme,
@@ -1024,12 +1084,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ],
           const SizedBox(height: 12),
           _buildInfoTile(
-            '${_getNextStage(m?.callStage)} 예정일', 
-            m?.nextScheduledDate ?? '예정 없음', 
-            Icons.event_available_rounded, 
+            '${_getNextStage(m?.callStage)} 예정일',
+            m?.nextScheduledDate ?? '예정 없음',
+            Icons.event_available_rounded,
             scheme,
-              labelColor: assigneeColor,
-              bgColor: assigneeColor.withOpacity(0.08),
+            labelColor: assigneeColor,
+            bgColor: assigneeColor.withOpacity(0.08),
           ),
 
           sectionTitle('상담 이력 (단계별)', Icons.history_rounded),
@@ -1043,11 +1103,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: assigneeColor.withOpacity(0.25)),
                 boxShadow: [
-                  BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                  BoxShadow(
+                    color: scheme.shadow.withOpacity(0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
                 ],
               ),
               child: const Center(
-                child: Text('기록된 상담 이력이 없습니다.', style: TextStyle(color: Colors.black38)),
+                child: Text(
+                  '기록된 상담 이력이 없습니다.',
+                  style: TextStyle(color: Colors.black38),
+                ),
               ),
             ),
 
@@ -1059,7 +1126,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: assigneeColor.withOpacity(0.25)),
               boxShadow: [
-                BoxShadow(color: scheme.shadow.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                BoxShadow(
+                  color: scheme.shadow.withOpacity(0.02),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
             child: SalesCallAttachmentsStrip(
@@ -1067,7 +1138,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               saveNamePrefix: _attachmentSavePrefix(m),
               editable: true,
               uploadBusy: _uploadBusy,
-              progressLabel: _uploadTotal > 0 ? '전송 중 ($_uploadCurrent/$_uploadTotal)' : null,
+              progressLabel: _uploadTotal > 0
+                  ? '전송 중 ($_uploadCurrent/$_uploadTotal)'
+                  : null,
               onAdd: () => _pickAndUpload(master),
               onRemoveAt: (i) {
                 setState(() {
@@ -1077,9 +1150,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
           ),
 
-          SizedBox(
-            height: _isEditMode ? 110 + bottomInset : 88 + bottomInset,
-          ),
+          SizedBox(height: _isEditMode ? 110 + bottomInset : 88 + bottomInset),
         ],
       ),
     );
@@ -1170,8 +1241,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 builder: (ctx) {
                   final managerOptions = _managerOptionsFromMaster(master);
                   final current = _assignedCtrl.text.trim();
-                  final selectedValue =
-                      managerOptions.contains(current) ? current : null;
+                  final selectedValue = managerOptions.contains(current)
+                      ? current
+                      : null;
                   return DropdownButtonFormField<String>(
                     value: selectedValue,
                     isExpanded: true,
@@ -1242,7 +1314,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        borderSide: BorderSide(
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -1320,27 +1394,43 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   runSpacing: 6,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.25),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         _displayStatusLabel(m),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                     if (m.displayInquiryMethod != null)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.18),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.white.withOpacity(0.35)),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.35),
+                          ),
                         ),
                         child: Text(
                           m.displayInquiryMethod!,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                   ],
@@ -1349,33 +1439,51 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               const SizedBox(width: 8),
               // 담당자 명시 (색상 적용)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
-                  color: _colorForAssignee(m.assignedTo ?? '미지정', scheme).withOpacity(0.9),
+                  color: _colorForAssignee(
+                    m.assignedTo ?? '미지정',
+                    scheme,
+                  ).withOpacity(0.9),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Colors.white.withOpacity(0.5)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.person_outline, size: 13, color: Colors.white),
+                    const Icon(
+                      Icons.person_outline,
+                      size: 13,
+                      color: Colors.white,
+                    ),
                     const SizedBox(width: 3),
                     Text(
                       m.assignedTo ?? '담당 미지정',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
                     ),
                     if (activeOverride != null) ...[
                       const SizedBox(width: 6),
                       IconButton(
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
                         tooltip: '임시 담당 변경 상세',
                         icon: const Icon(
                           Icons.info_outline_rounded,
                           size: 16,
                           color: Colors.white,
                         ),
-                        onPressed: () => _showTempOverrideInfoDialog(activeOverride),
+                        onPressed: () =>
+                            _showTempOverrideInfoDialog(activeOverride),
                       ),
                     ],
                   ],
@@ -1388,9 +1496,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           Text(
             m.customerName ?? '(이름 없음)',
             style: const TextStyle(
-              fontSize: 22, 
-              fontWeight: FontWeight.w900, 
-              color: Colors.white, 
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
               letterSpacing: -0.4,
               height: 1.2,
             ),
@@ -1400,8 +1508,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           Text(
             m.customerPhone ?? '연락처 없음',
             style: TextStyle(
-              fontSize: 15, 
-              color: Colors.white.withOpacity(0.9), 
+              fontSize: 15,
+              color: Colors.white.withOpacity(0.9),
               fontWeight: FontWeight.w600,
               letterSpacing: 0.2,
             ),
@@ -1423,9 +1531,17 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           const SizedBox(height: 14),
           Row(
             children: [
-              _buildLargeQuickAction(Icons.call, '전화', () => LauncherUtils.makePhoneCall(m.customerPhone ?? '')),
+              _buildLargeQuickAction(
+                Icons.call,
+                '전화',
+                () => LauncherUtils.makePhoneCall(m.customerPhone ?? ''),
+              ),
               const SizedBox(width: 12),
-              _buildLargeQuickAction(Icons.message_rounded, '문자', () => LauncherUtils.sendSMS(m.customerPhone ?? '')),
+              _buildLargeQuickAction(
+                Icons.message_rounded,
+                '문자',
+                () => LauncherUtils.sendSMS(m.customerPhone ?? ''),
+              ),
             ],
           ),
         ],
@@ -1433,7 +1549,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
-  Widget _buildLargeQuickAction(IconData icon, String label, VoidCallback onTap) {
+  Widget _buildLargeQuickAction(
+    IconData icon,
+    String label,
+    VoidCallback onTap,
+  ) {
     return Expanded(
       child: InkWell(
         onTap: onTap,
@@ -1448,7 +1568,14 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             children: [
               Icon(icon, color: Colors.white, size: 16),
               const SizedBox(width: 6),
-              Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
         ),
@@ -1456,7 +1583,15 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
-  Widget _buildInfoTile(String label, String value, IconData icon, ColorScheme scheme, {bool multiLine = false, Color? bgColor, Color? labelColor}) {
+  Widget _buildInfoTile(
+    String label,
+    String value,
+    IconData icon,
+    ColorScheme scheme, {
+    bool multiLine = false,
+    Color? bgColor,
+    Color? labelColor,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -1469,11 +1604,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: labelColor ?? scheme.onSurfaceVariant),
+              Icon(
+                icon,
+                size: 16,
+                color: labelColor ?? scheme.onSurfaceVariant,
+              ),
               const SizedBox(width: 8),
               Text(
                 label,
-                style: TextStyle(fontSize: 12, color: labelColor ?? scheme.onSurfaceVariant, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: labelColor ?? scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
@@ -1521,7 +1664,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         _firstNonEmptyDate(h['target_date']);
   }
 
-  String? _resolveScheduledDateForHistory(List<Map<String, dynamic>> history, int index) {
+  String? _resolveScheduledDateForHistory(
+    List<Map<String, dynamic>> history,
+    int index,
+  ) {
     // 각 차수 카드에서 "다음 차수 예정일"을 표시하기 위해 현재 이력의 예정일 값을 사용.
     return _scheduledDateFromMap(history[index]);
   }
@@ -1529,7 +1675,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   int _stageNumberForHistory(Map<String, dynamic> h) =>
       displayStageFromHistoryMap(h);
 
-  String? _resolveScheduledDateForStage(List<Map<String, dynamic>> history, int stage) {
+  String? _resolveScheduledDateForStage(
+    List<Map<String, dynamic>> history,
+    int stage,
+  ) {
     if (stage <= 1) return null;
     final prevStage = stage - 1;
     final len = history.length;
@@ -1578,12 +1727,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   ) {
     final h = history[index];
     final content = _consultationContentFromHistoryMap(h);
-    final actualRaw = _firstNonEmptyDate(h['call_date']) ?? _firstNonEmptyDate(h['created_at']);
+    final actualRaw =
+        _firstNonEmptyDate(h['call_date']) ??
+        _firstNonEmptyDate(h['created_at']);
     final actualDate = formatSeoulDate(actualRaw);
     final scheduledRaw = _resolveScheduledDateForHistory(history, index);
-    final scheduledDate = scheduledRaw == null ? '없음' : formatSeoulDate(scheduledRaw);
+    final scheduledDate = scheduledRaw == null
+        ? '없음'
+        : formatSeoulDate(scheduledRaw);
     final stageNum = _stageNumberForHistory(h);
-    final scheduledForCurrentStage = _resolveScheduledDateForStage(history, stageNum);
+    final scheduledForCurrentStage = _resolveScheduledDateForStage(
+      history,
+      stageNum,
+    );
     final diffDays = _diffDaysBetween(scheduledForCurrentStage, actualRaw);
     final currentStageLabel = displayStageLabelFromHistoryMap(h);
     final scheduledStageLabel = '${stageNum + 1}차 예정일';
@@ -1597,9 +1753,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       margin: EdgeInsets.zero,
       elevation: 0,
       color: scheme.surfaceContainerLowest,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(24),
@@ -1613,14 +1767,21 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: scheme.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         displayStageLabelFromHistoryMap(h),
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: scheme.primary),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.primary,
+                        ),
                       ),
                     ),
                   ],
@@ -1665,7 +1826,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                             fontSize: 11.5,
                             color: diffDays == 0
                                 ? scheme.primary
-                                : (diffDays > 0 ? scheme.error : Colors.teal.shade700),
+                                : (diffDays > 0
+                                      ? scheme.error
+                                      : Colors.teal.shade700),
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1723,7 +1886,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
-  Widget _buildHistorySwiper(List<Map<String, dynamic>> history, ColorScheme scheme) {
+  Widget _buildHistorySwiper(
+    List<Map<String, dynamic>> history,
+    ColorScheme scheme,
+  ) {
     return Column(
       children: [
         // ─── 차수 선택 칩 바 ───
@@ -1736,7 +1902,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               final h = history[index];
               final isSelected = _selectedHistoryIdx == index;
               final stage = displayStageLabelFromHistoryMap(h);
-              
+
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
@@ -1756,7 +1922,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   selectedColor: scheme.primary,
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.white : scheme.onSurfaceVariant,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                 ),
               );
@@ -1792,8 +1960,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _selectedHistoryIdx == index 
-                    ? scheme.primary 
+                color: _selectedHistoryIdx == index
+                    ? scheme.primary
                     : scheme.outlineVariant.withOpacity(0.5),
               ),
             );
@@ -1805,7 +1973,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
   /// 상담 시트 닫기 전 — 작성 중 내용이 있으면 확인.
   Future<bool> _confirmDiscardConsultation(BuildContext sheetContext) async {
-    final hasInput = _newConsultationCtrl.text.trim().isNotEmpty ||
+    final hasInput =
+        _newConsultationCtrl.text.trim().isNotEmpty ||
         _unsuccessfulReasonCtrl.text.trim().isNotEmpty ||
         _consultationNextDateCtrl.text.trim().isNotEmpty;
     if (!hasInput) return true;
@@ -1850,25 +2019,35 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           final scheme = Theme.of(context).colorScheme;
           final viewInsets = MediaQuery.viewInsetsOf(context);
           final screenH = MediaQuery.sizeOf(context).height;
-          final sheetHeight = (screenH * 0.92 - viewInsets.bottom).clamp(320.0, screenH * 0.92);
-          final fieldScrollPadding = EdgeInsets.only(bottom: viewInsets.bottom + 160);
+          final sheetHeight = (screenH * 0.92 - viewInsets.bottom).clamp(
+            320.0,
+            screenH * 0.92,
+          );
+          final fieldScrollPadding = EdgeInsets.only(
+            bottom: viewInsets.bottom + 160,
+          );
 
           // 선택된 상태에 따른 배경색 정의 (투명해지지 않도록 불투명한 연한 색상 적용)
           Color bgColor = Colors.white;
-          if (_statusId == 3) { // 수주
+          if (_statusId == 3) {
+            // 수주
             bgColor = const Color(0xFFE8F5E9);
           } else if (_statusId == CallStatusIds.lost) {
             bgColor = const Color(0xFFFFEBEE);
-          } else if (_statusId == 1) { // 미결정
+          } else if (_statusId == 1) {
+            // 미결정
             bgColor = const Color(0xFFFFF8E1);
-          } else if (_statusId == 4) { // 단순문의
+          } else if (_statusId == 4) {
+            // 단순문의
             bgColor = const Color(0xFFE3F2FD);
-          } else if (_statusId == 5) { // 설계문의
+          } else if (_statusId == 5) {
+            // 설계문의
             bgColor = const Color(0xFFEDE7F6);
-          } else if (_statusId == 6) { // 기타
+          } else if (_statusId == 6) {
+            // 기타
             bgColor = const Color(0xFFECEFF1);
           }
-          
+
           return Padding(
             padding: EdgeInsets.only(bottom: viewInsets.bottom),
             child: AnimatedContainer(
@@ -1877,7 +2056,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               height: sheetHeight,
               decoration: BoxDecoration(
                 color: bgColor,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
               ),
               child: Column(
                 children: [
@@ -1908,7 +2089,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                               ? null
                               : () async {
                                   if (await _confirmDiscardConsultation(
-                                          sheetContext) &&
+                                        sheetContext,
+                                      ) &&
                                       sheetContext.mounted) {
                                     Navigator.pop(sheetContext);
                                   }
@@ -1920,136 +2102,202 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   const Divider(height: 1),
                   Expanded(
                     child: ListView(
-                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                       children: [
-                      // Context Box
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Text('모델: ', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-                                Expanded(child: Text(m?.productCategoryName ?? '미지정', style: const TextStyle(color: Colors.black54))),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            const Text('문의내용:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-                            const SizedBox(height: 4),
-                            Text(
-                              m?.inquiryContent ?? '문의 내용이 없습니다.',
-                              style: const TextStyle(color: Colors.black54, height: 1.4, fontSize: 13),
-                            ),
-                            if (m != null && m.callHistory.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              const Divider(height: 1),
-                              const SizedBox(height: 12),
-                              Text(
-                                '이전(${displayStageLabelFromHistoryMap(_orderedCallHistory.first)}) 상담내용:',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueAccent),
+                        // Context Box
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Text(
+                                    '모델: ',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      m?.productCategoryName ?? '미지정',
+                                      style: const TextStyle(
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                '문의내용:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                (_orderedCallHistory.first['consultation_content'] ??
-                                        _orderedCallHistory.first['content'])
-                                    ?.toString() ??
-                                    '',
-                                style: const TextStyle(color: Colors.black54, height: 1.4, fontSize: 13),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
+                                m?.inquiryContent ?? '문의 내용이 없습니다.',
+                                style: const TextStyle(
+                                  color: Colors.black54,
+                                  height: 1.4,
+                                  fontSize: 13,
+                                ),
                               ),
+                              if (m != null && m.callHistory.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                const Divider(height: 1),
+                                const SizedBox(height: 12),
+                                Text(
+                                  '이전(${displayStageLabelFromHistoryMap(_orderedCallHistory.first)}) 상담내용:',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: Colors.blueAccent,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  (_orderedCallHistory
+                                                  .first['consultation_content'] ??
+                                              _orderedCallHistory
+                                                  .first['content'])
+                                          ?.toString() ??
+                                      '',
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    height: 1.4,
+                                    fontSize: 13,
+                                  ),
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      const Text('상담 결과 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const SizedBox(height: 12),
-                      _buildStatusGrid(scheme, setModalState),
-                      if (consultationContentRequiredForStatus(
-                        _statusId ?? CallStatusIds.undecided,
-                      )) ...[
-                        const SizedBox(height: 24),
-                        const Text('상담내용 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _newConsultationCtrl,
-                          minLines: 5,
-                          maxLines: 15,
-                          scrollPadding: fieldScrollPadding,
-                          style: const TextStyle(fontSize: 16, height: 1.45),
-                          decoration: InputDecoration(
-                            hintText: '고객와의 상담내용을 자세히 입력하세요...',
-                            filled: true,
-                            fillColor: Colors.white,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
-                      ],
-                      if (_statusId == CallStatusIds.lost) ...[
                         const SizedBox(height: 24),
-                        const Text('미수주 사유 *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _unsuccessfulReasonCtrl,
-                          minLines: 2,
-                          maxLines: 6,
-                          scrollPadding: fieldScrollPadding,
-                          style: const TextStyle(fontSize: 16, height: 1.45),
-                          onChanged: (_) => setModalState(() {}),
-                          decoration: InputDecoration(
-                            hintText: '미수주 사유를 입력하세요',
-                            filled: true,
-                            fillColor: Colors.white,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        const Text(
+                          '상담 결과 *',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
                           ),
                         ),
-                      ],
-                      if (statusRequiresNextScheduledDate(_statusId ?? CallStatusIds.undecided)) ...[
-                        const SizedBox(height: 24),
-                        Text(
-                          '${_scheduledStageAfterInput(m)} 상담 예정일 *',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _consultationNextDateCtrl,
-                          readOnly: true,
-                          onTap: () async {
-                            final today = _ymdToCalendarDate(todayYmdSeoul());
-                            final picked = _consultationNextDateCtrl.text.trim();
-                            final initial = picked.isNotEmpty
-                                ? _ymdToCalendarDate(picked)
-                                : today;
-                            final date = await showDatePicker(
-                              context: context,
-                              initialDate: initial,
-                              firstDate: today,
-                              lastDate: today.add(const Duration(days: 365)),
-                            );
-                            if (date != null) {
-                              setModalState(() {
-                                _consultationNextDateCtrl.text =
-                                    date.toIso8601String().split('T').first;
-                              });
-                            }
-                          },
-                          decoration: InputDecoration(
-                            hintText: '날짜를 선택하세요',
-                            suffixIcon: const Icon(Icons.calendar_today_outlined),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
+                        const SizedBox(height: 12),
+                        _buildStatusGrid(scheme, setModalState),
+                        if (consultationContentRequiredForStatus(
+                          _statusId ?? CallStatusIds.undecided,
+                        )) ...[
+                          const SizedBox(height: 24),
+                          const Text(
+                            '상담내용 *',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _newConsultationCtrl,
+                            minLines: 5,
+                            maxLines: 15,
+                            scrollPadding: fieldScrollPadding,
+                            style: const TextStyle(fontSize: 16, height: 1.45),
+                            decoration: InputDecoration(
+                              hintText: '고객와의 상담내용을 자세히 입력하세요...',
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (_statusId == CallStatusIds.lost) ...[
+                          const SizedBox(height: 24),
+                          const Text(
+                            '미수주 사유 *',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _unsuccessfulReasonCtrl,
+                            minLines: 2,
+                            maxLines: 6,
+                            scrollPadding: fieldScrollPadding,
+                            style: const TextStyle(fontSize: 16, height: 1.45),
+                            onChanged: (_) => setModalState(() {}),
+                            decoration: InputDecoration(
+                              hintText: '미수주 사유를 입력하세요',
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (statusRequiresNextScheduledDate(
+                          _statusId ?? CallStatusIds.undecided,
+                        )) ...[
+                          const SizedBox(height: 24),
+                          Text(
+                            '${_scheduledStageAfterInput(m)} 상담 예정일 *',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _consultationNextDateCtrl,
+                            readOnly: true,
+                            onTap: () async {
+                              final today = _ymdToCalendarDate(todayYmdSeoul());
+                              final picked = _consultationNextDateCtrl.text
+                                  .trim();
+                              final initial = picked.isNotEmpty
+                                  ? _ymdToCalendarDate(picked)
+                                  : today;
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: initial,
+                                firstDate: today,
+                                lastDate: today.add(const Duration(days: 365)),
+                              );
+                              if (date != null) {
+                                setModalState(() {
+                                  _consultationNextDateCtrl.text = date
+                                      .toIso8601String()
+                                      .split('T')
+                                      .first;
+                                });
+                              }
+                            },
+                            decoration: InputDecoration(
+                              hintText: '날짜를 선택하세요',
+                              suffixIcon: const Icon(
+                                Icons.calendar_today_outlined,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -2104,7 +2352,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                                   CallStatusIds.won => '수주 저장',
                                   _ => '상담내용 저장',
                                 },
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
@@ -2118,7 +2369,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
-  Widget _buildStatusGrid(ColorScheme scheme, [void Function(void Function())? setModalState]) {
+  Widget _buildStatusGrid(
+    ColorScheme scheme, [
+    void Function(void Function())? setModalState,
+  ]) {
     final statuses = [
       {'id': 1, 'name': '미결정', 'color': const Color(0xFFF2A900)},
       {'id': 3, 'name': '수주', 'color': const Color(0xFF2E7D32)},
@@ -2142,6 +2396,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 _consultationNextDateCtrl.clear();
               }
             }
+
             if (setModalState != null) {
               setModalState(apply);
             } else {
@@ -2154,10 +2409,18 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             decoration: BoxDecoration(
               color: isSelected ? statusColor : Colors.white,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: isSelected ? statusColor : Colors.grey.shade300),
-              boxShadow: isSelected ? [
-                BoxShadow(color: statusColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
-              ] : null,
+              border: Border.all(
+                color: isSelected ? statusColor : Colors.grey.shade300,
+              ),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: statusColor.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
             ),
             child: Center(
               child: Text(

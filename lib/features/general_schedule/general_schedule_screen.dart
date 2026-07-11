@@ -15,7 +15,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class GeneralScheduleScreen extends ConsumerStatefulWidget {
-  const GeneralScheduleScreen({super.key});
+  const GeneralScheduleScreen({super.key, this.embedded = false});
+
+  /// 메인 하단 탭에 임베드될 때 true — 뒤로가기 대신 탭 전환으로 메인 이동.
+  final bool embedded;
 
   @override
   ConsumerState<GeneralScheduleScreen> createState() =>
@@ -106,11 +109,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     GeneralScheduleDayGrid grid,
     EarliestAvailableSlot current,
   ) {
-    return findNextAvailableDaySlot(
-      grid,
-      current: current,
-      skipWeekends: true,
-    );
+    return findNextAvailableDaySlot(grid, current: current, skipWeekends: true);
   }
 
   void _setEarliestAddCursor(EarliestAvailableSlot slot) {
@@ -144,20 +143,17 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final record = findGeneralScheduleById(records, cell.scheduleId);
     if (record == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('일정 정보를 불러오지 못했습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('일정 정보를 불러오지 못했습니다.')));
       return;
     }
 
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => _ScheduleDetailSheet(
-        record: record,
-        slotIndex: slotIndex,
-        ymd: ymd,
-      ),
+      builder: (ctx) =>
+          _ScheduleDetailSheet(record: record, slotIndex: slotIndex, ymd: ymd),
     );
     if (!mounted || action == null) return;
     if (action == 'edit') {
@@ -235,14 +231,14 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       }
       await _reload();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('일정이 삭제되었습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('일정이 삭제되었습니다.')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(koreanErrorMessage(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
     }
   }
 
@@ -314,7 +310,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           }
 
           return AlertDialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 24,
+            ),
             titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
             contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
             title: Row(
@@ -329,7 +328,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.primaryContainer.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(16),
@@ -342,27 +344,30 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                       Text(
                         formatYmdFlowLabelKo(slot.ymd),
                         style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '오늘 기준 ${formatDayOffsetFromTodayKo(slot.ymd)}',
                         style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: scheme.primary,
-                            ),
+                          fontWeight: FontWeight.w800,
+                          color: scheme.primary,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '${slot.slotIndex + 1}칸 배정 예정',
                         style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onPrimaryContainer,
-                            ),
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onPrimaryContainer,
+                        ),
                       ),
                       const SizedBox(height: 8),
-                      _DialogSlotDots(activeIndex: slot.slotIndex, scheme: scheme),
+                      _DialogSlotDots(
+                        activeIndex: slot.slotIndex,
+                        scheme: scheme,
+                      ),
                     ],
                   ),
                 ),
@@ -371,9 +376,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                   '해당 날짜에 일정을 추가할까요?',
                   textAlign: TextAlign.center,
                   style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        height: 1.4,
-                      ),
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 Row(
@@ -450,8 +455,8 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                   '토·일은 건너뜁니다',
                   textAlign: TextAlign.center,
                   style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
-                      ),
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -525,13 +530,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     GeneralScheduleMonthStats monthStats,
     String? loginUserName,
   ) {
-    return sortGeneralScheduleAssignees(
-      [
-        kGeneralScheduleAllAssignees,
-        ...monthStats.byUser.map((u) => u.name),
-      ],
-      loginUserName: loginUserName,
-    );
+    return sortGeneralScheduleAssignees([
+      kGeneralScheduleAllAssignees,
+      ...monthStats.byUser.map((u) => u.name),
+    ], loginUserName: loginUserName);
   }
 
   Map<String, int> _monthAssigneeCounts(
@@ -540,7 +542,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     int year,
     int month,
   ) {
-    final counts = <String, int>{kGeneralScheduleAllAssignees: monthStats.usedSlots};
+    final counts = <String, int>{
+      kGeneralScheduleAllAssignees: monthStats.usedSlots,
+    };
     for (final u in monthStats.byUser) {
       counts[u.name] = u.count;
     }
@@ -567,7 +571,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     };
   }
 
-  ({String ymd, int slotIndex}) _recordPrimarySlot(GeneralScheduleRecord record) {
+  ({String ymd, int slotIndex}) _recordPrimarySlot(
+    GeneralScheduleRecord record,
+  ) {
     if (record.slots.isEmpty) {
       return (ymd: record.start, slotIndex: 0);
     }
@@ -635,9 +641,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final records = ref.read(generalScheduleRecordsProvider).valueOrNull ?? [];
     if (records.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('검색할 일정이 없습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('검색할 일정이 없습니다.')));
       return;
     }
     await showSearch<GeneralScheduleRecord?>(
@@ -662,10 +668,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
         appBar: AppBar(
           centerTitle: false,
           title: const Text('본사일반'),
+          automaticallyImplyLeading: !widget.embedded,
         ),
-        body: const Center(
-          child: Text('본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.'),
-        ),
+        body: const Center(child: Text('본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.')),
       );
     }
 
@@ -676,8 +681,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final statsAnchor = _calendarView == GeneralScheduleCalendarView.month
         ? _monthFocusedDay
         : _selectedDay;
-    final selectedMonthLabel =
-        '${statsAnchor.year}년 ${statsAnchor.month}월';
+    final selectedMonthLabel = '${statsAnchor.year}년 ${statsAnchor.month}월';
     final monthStats = computeMonthStats(
       grid,
       statsAnchor.year,
@@ -693,24 +697,16 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final colorForAssignee = _assigneeColorBuilder(monthStats, scheme);
     final scrollDays = List.generate(
       GeneralScheduleWeekPanel.totalDays,
-      (i) => addDaysToYmd(selectedYmd, i - GeneralScheduleWeekPanel.centerIndex),
+      (i) =>
+          addDaysToYmd(selectedYmd, i - GeneralScheduleWeekPanel.centerIndex),
     );
     final isToday = selectedYmd == todayYmdSeoul();
 
-    return PopScope(
-      canPop: !_returnToMonthViewOnBack,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        if (!_returnToMonthViewOnBack) return;
-        setState(() {
-          _returnToMonthViewOnBack = false;
-          _calendarView = GeneralScheduleCalendarView.month;
-        });
-      },
-      child: Scaffold(
-        appBar: AppBar(
+    final scaffold = Scaffold(
+      appBar: AppBar(
         centerTitle: false,
         title: const Text('본사일반'),
+        automaticallyImplyLeading: !widget.embedded,
         actions: [
           IconButton(
             icon: Icon(
@@ -729,7 +725,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                   )
                 : const Icon(Icons.refresh_rounded),
             tooltip: '새로고침',
-            onPressed: recordsAsync.isLoading ? null : () => unawaited(_reload()),
+            onPressed: recordsAsync.isLoading
+                ? null
+                : () => unawaited(_reload()),
           ),
           IconButton(
             icon: Icon(
@@ -813,9 +811,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                 child: Text(
                   selectedMonthLabel,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               GeneralScheduleCalendarViewToggle(
@@ -823,8 +821,11 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                 onChanged: (view) => setState(() {
                   _calendarView = view;
                   if (view == GeneralScheduleCalendarView.month) {
-                    _monthFocusedDay =
-                        DateTime(_selectedDay.year, _selectedDay.month, 1);
+                    _monthFocusedDay = DateTime(
+                      _selectedDay.year,
+                      _selectedDay.month,
+                      1,
+                    );
                     _returnToMonthViewOnBack = false;
                   }
                 }),
@@ -838,9 +839,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                     setState(() => _selectedAssigneeFilter = name),
               ),
               if (isWeekView) ...[
-                GeneralScheduleCollapsibleMonthStats(
-                  stats: monthStats,
-                ),
+                GeneralScheduleCollapsibleMonthStats(stats: monthStats),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
                   child: Row(
@@ -850,8 +849,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                           onPressed: _goToToday,
                           style: OutlinedButton.styleFrom(
                             visualDensity: VisualDensity.compact,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
                           ),
                           icon: Icon(
                             Icons.today_rounded,
@@ -873,8 +871,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                               : () => unawaited(_onQuickAddEarliest(grid)),
                           style: FilledButton.styleFrom(
                             visualDensity: VisualDensity.compact,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
                           ),
                           icon: const Icon(Icons.bolt_rounded, size: 16),
                           label: const Text(
@@ -914,8 +911,11 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                         assigneeFilter: _selectedAssigneeFilter,
                         loginUserName: user.name,
                         onFocusedMonthChanged: (month) => setState(() {
-                          _monthFocusedDay =
-                              DateTime(month.year, month.month, 1);
+                          _monthFocusedDay = DateTime(
+                            month.year,
+                            month.month,
+                            1,
+                          );
                         }),
                         onPickDay: _onMonthDayPicked,
                       ),
@@ -924,7 +924,23 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           );
         },
       ),
-    ),
+    );
+
+    // 임베드 탭에서 월→주 복귀만 가로채고, 그 외 뒤로가기는 메인 PopScope가 홈으로 보냄.
+    if (widget.embedded && !_returnToMonthViewOnBack) {
+      return scaffold;
+    }
+    return PopScope(
+      canPop: widget.embedded ? false : !_returnToMonthViewOnBack,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (!_returnToMonthViewOnBack) return;
+        setState(() {
+          _returnToMonthViewOnBack = false;
+          _calendarView = GeneralScheduleCalendarView.month;
+        });
+      },
+      child: scaffold,
     );
   }
 }
@@ -952,21 +968,19 @@ class _ScheduleDetailSheet extends StatelessWidget {
           children: [
             Text(
               record.site,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            Text(
-              () {
-                final period = formatGeneralSchedulePeriodLabel(
-                  startYmd: record.start,
-                  endYmd: record.endDate,
-                );
-                if (period.isNotEmpty) return '기간: $period';
-                return '기간: ${record.start}';
-              }(),
-            ),
+            Text(() {
+              final period = formatGeneralSchedulePeriodLabel(
+                startYmd: record.start,
+                endYmd: record.endDate,
+              );
+              if (period.isNotEmpty) return '기간: $period';
+              return '기간: ${record.start}';
+            }()),
             Text('담당: ${record.userName ?? '—'}'),
             if (record.teamCount > 1) Text('팀 수: ${record.teamCount}'),
             Text('칸: ${slotIndex + 1} ($ymd)'),
@@ -1001,15 +1015,19 @@ class _ScheduleDetailSheet extends StatelessWidget {
   }
 }
 
-class _GeneralScheduleSearchDelegate extends SearchDelegate<GeneralScheduleRecord?> {
+class _GeneralScheduleSearchDelegate
+    extends SearchDelegate<GeneralScheduleRecord?> {
   _GeneralScheduleSearchDelegate({
     required this.records,
     required this.onOpenRecord,
   });
 
   final List<GeneralScheduleRecord> records;
-  final Future<void> Function(BuildContext context, GeneralScheduleRecord record)
-      onOpenRecord;
+  final Future<void> Function(
+    BuildContext context,
+    GeneralScheduleRecord record,
+  )
+  onOpenRecord;
 
   @override
   String get searchFieldLabel => '현장명으로 검색';
@@ -1044,8 +1062,7 @@ class _GeneralScheduleSearchDelegate extends SearchDelegate<GeneralScheduleRecor
     final matches = records.where((r) {
       if (q.isEmpty) return true;
       return r.site.toLowerCase().contains(q);
-    }).toList()
-      ..sort((a, b) => b.start.compareTo(a.start));
+    }).toList()..sort((a, b) => b.start.compareTo(a.start));
 
     if (matches.isEmpty) {
       return const Center(child: Text('검색 결과가 없습니다.'));
@@ -1062,11 +1079,7 @@ class _GeneralScheduleSearchDelegate extends SearchDelegate<GeneralScheduleRecor
         );
         return ListTile(
           leading: const Icon(Icons.event_note_rounded),
-          title: Text(
-            item.site,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(item.site, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
             [
               if (period.isNotEmpty) period else item.start,
@@ -1083,10 +1096,7 @@ class _GeneralScheduleSearchDelegate extends SearchDelegate<GeneralScheduleRecor
 }
 
 class _DialogSlotDots extends StatelessWidget {
-  const _DialogSlotDots({
-    required this.activeIndex,
-    required this.scheme,
-  });
+  const _DialogSlotDots({required this.activeIndex, required this.scheme});
 
   final int activeIndex;
   final ColorScheme scheme;

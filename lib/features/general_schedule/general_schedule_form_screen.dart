@@ -20,6 +20,7 @@ class GeneralScheduleFormScreen extends ConsumerStatefulWidget {
 
   final GeneralScheduleRecord? editing;
   final String? initialStartYmd;
+
   /// 빈 칸 탭 등록 시 고정할 slot (0~7).
   final int? initialSlotIndex;
 
@@ -178,7 +179,9 @@ class _GeneralScheduleFormScreenState
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('등록 위치: ${formatYmdFlowLabelKo(startYmd)} · ${slotIndex + 1}칸'),
+                Text(
+                  '등록 위치: ${formatYmdFlowLabelKo(startYmd)} · ${slotIndex + 1}칸',
+                ),
                 const SizedBox(height: 6),
                 Text('현장명: ${_siteController.text.trim()}'),
                 Text('기간: $period'),
@@ -187,9 +190,9 @@ class _GeneralScheduleFormScreenState
                 const SizedBox(height: 8),
                 Text(
                   '도어 타입',
-                  style: Theme.of(ctx).textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(
+                    ctx,
+                  ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 if (modelLines.isNotEmpty)
@@ -223,15 +226,16 @@ class _GeneralScheduleFormScreenState
 
     final user = ref.read(authControllerProvider);
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('로그인이 필요합니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그인이 필요합니다.')));
       return;
     }
 
     final startYmd = _ymd(_startDate);
     final endYmd = _ymd(_endDate);
-    final doorTypes = ref.read(generalScheduleDoorTypesProvider).valueOrNull ?? [];
+    final doorTypes =
+        ref.read(generalScheduleDoorTypesProvider).valueOrNull ?? [];
     final models = _buildModels(doorTypes);
     final doorTypeCodes = _selectedDoorCodes.toList();
     final confirmed = await _confirmSlotRegistration(
@@ -362,9 +366,9 @@ class _GeneralScheduleFormScreenState
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(koreanErrorMessage(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -429,237 +433,268 @@ class _GeneralScheduleFormScreenState
         }
       },
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(
-          isEdit
-              ? '일정 수정'
-              : slotIndex != null
-                  ? '일정 등록 · ${slotIndex + 1}칸'
-                  : '일정 등록',
-        ),
-        actions: [
-          TextButton(
-            onPressed: _saving ? null : () => unawaited(_save()),
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(_saveLabel),
+        appBar: AppBar(
+          title: Text(
+            isEdit
+                ? '일정 수정'
+                : slotIndex != null
+                ? '일정 등록 · ${slotIndex + 1}칸'
+                : '일정 등록',
           ),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                children: [
-            if (widget.initialSlotIndex != null && widget.editing == null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Material(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    child: Text(
-                      '${formatYmdFlowLabelKo(widget.initialStartYmd ?? _ymd(_startDate))} · '
-                      '${widget.initialSlotIndex! + 1}칸\n'
-                      '기간·도어·수량을 입력한 뒤 등록하세요. (기간 변경 시 같은 칸 유지)',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.4,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            TextFormField(
-              controller: _siteController,
-              decoration: const InputDecoration(
-                labelText: '현장명',
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? '현장명을 입력하세요.' : null,
+          actions: [
+            IconButton(
+              tooltip: '메인으로',
+              onPressed: _saving
+                  ? null
+                  : () => Navigator.of(
+                      context,
+                    ).popUntil((route) => route.isFirst),
+              icon: const Icon(Icons.home_rounded),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => unawaited(_pickDate(isStart: true)),
-                    child: Text('시작: ${_ymd(_startDate)}'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => unawaited(_pickDate(isStart: false)),
-                    child: Text('종료: ${_ymd(_endDate)}'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text('공사 일수', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              children: [1, 2, 3, 5, 7].map((d) {
-                final selected = _dayCount == d;
-                return ChoiceChip(
-                  label: Text('$d일'),
-                  selected: selected,
-                  onSelected: (_) => _applyDayCount(d),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              _dayCount == 1
-                  ? '종료일: ${formatYmdFlowLabelKo(_ymd(_endDate))}'
-                  : '기간: ${formatYmdFlowLabelKo(_ymd(_startDate))} ~ '
-                      '${formatYmdFlowLabelKo(_ymd(_endDate))} ($_dayCount일)',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text('팀 수', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 6),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(kGeneralScheduleSlotsPerDay, (i) {
-                  final team = i + 1;
-                  final selected = _teamCount == team;
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      right: i == kGeneralScheduleSlotsPerDay - 1 ? 0 : 8,
-                    ),
-                    child: ChoiceChip(
-                      label: Text('$team팀'),
-                      selected: selected,
-                      onSelected: (_) {
-                        setState(() => _teamCount = team);
-                      },
-                    ),
-                  );
-                }),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '도어 타입',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '타입을 선택한 뒤 수량을 입력하세요.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            doorTypesAsync.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => Text(koreanErrorMessage(e)),
-              data: (options) {
-                if (options.isEmpty) {
-                  return const Text('등록된 도어 타입이 없습니다.');
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final opt in options)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _DoorTypeChip(
-                          label: opt.name,
-                          code: opt.code,
-                          color: opt.color,
-                          selected: _selectedDoorCodes.contains(opt.code),
-                          quantity: _doorTypeQuantities[opt.code] ?? 1,
-                          onSelected: (on) {
-                            setState(() {
-                              if (on) {
-                                _selectedDoorCodes.add(opt.code);
-                                _doorTypeQuantities.putIfAbsent(opt.code, () => 1);
-                              } else {
-                                _selectedDoorCodes.remove(opt.code);
-                                _doorTypeQuantities.remove(opt.code);
-                              }
-                            });
-                          },
-                          onQuantityChanged: _selectedDoorCodes.contains(opt.code)
-                              ? (qty) {
-                                  setState(() {
-                                    _doorTypeQuantities[opt.code] = qty;
-                                  });
-                                }
-                              : null,
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-                ],
-              ),
-            ),
-            Material(
-              elevation: 6,
-              shadowColor: Theme.of(context).colorScheme.shadow,
-              color: Theme.of(context).colorScheme.surface,
-              child: SafeArea(
-                top: false,
-                minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _saving ? null : () => unawaited(_save()),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(54),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      textStyle: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Icon(
-                            widget.editing != null
-                                ? Icons.save_rounded
-                                : Icons.add_circle_rounded,
-                            size: 22,
-                          ),
-                    label: Text(_saving ? '저장 중…' : _saveLabel),
-                  ),
-                ),
-              ),
+            TextButton(
+              onPressed: _saving ? null : () => unawaited(_save()),
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(_saveLabel),
             ),
           ],
         ),
-      ),
+        body: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  children: [
+                    if (widget.initialSlotIndex != null &&
+                        widget.editing == null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Material(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            child: Text(
+                              '${formatYmdFlowLabelKo(widget.initialStartYmd ?? _ymd(_startDate))} · '
+                              '${widget.initialSlotIndex! + 1}칸\n'
+                              '기간·도어·수량을 입력한 뒤 등록하세요. (기간 변경 시 같은 칸 유지)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    TextFormField(
+                      controller: _siteController,
+                      decoration: const InputDecoration(
+                        labelText: '현장명',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? '현장명을 입력하세요.'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                unawaited(_pickDate(isStart: true)),
+                            child: Text('시작: ${_ymd(_startDate)}'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                unawaited(_pickDate(isStart: false)),
+                            child: Text('종료: ${_ymd(_endDate)}'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '공사 일수',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      children: [1, 2, 3, 5, 7].map((d) {
+                        final selected = _dayCount == d;
+                        return ChoiceChip(
+                          label: Text('$d일'),
+                          selected: selected,
+                          onSelected: (_) => _applyDayCount(d),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _dayCount == 1
+                          ? '종료일: ${formatYmdFlowLabelKo(_ymd(_endDate))}'
+                          : '기간: ${formatYmdFlowLabelKo(_ymd(_startDate))} ~ '
+                                '${formatYmdFlowLabelKo(_ymd(_endDate))} ($_dayCount일)',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('팀 수', style: Theme.of(context).textTheme.labelLarge),
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: List.generate(kGeneralScheduleSlotsPerDay, (
+                          i,
+                        ) {
+                          final team = i + 1;
+                          final selected = _teamCount == team;
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              right: i == kGeneralScheduleSlotsPerDay - 1
+                                  ? 0
+                                  : 8,
+                            ),
+                            child: ChoiceChip(
+                              label: Text('$team팀'),
+                              selected: selected,
+                              onSelected: (_) {
+                                setState(() => _teamCount = team);
+                              },
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '도어 타입',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '타입을 선택한 뒤 수량을 입력하세요.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    doorTypesAsync.when(
+                      loading: () => const LinearProgressIndicator(),
+                      error: (e, _) => Text(koreanErrorMessage(e)),
+                      data: (options) {
+                        if (options.isEmpty) {
+                          return const Text('등록된 도어 타입이 없습니다.');
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final opt in options)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _DoorTypeChip(
+                                  label: opt.name,
+                                  code: opt.code,
+                                  color: opt.color,
+                                  selected: _selectedDoorCodes.contains(
+                                    opt.code,
+                                  ),
+                                  quantity: _doorTypeQuantities[opt.code] ?? 1,
+                                  onSelected: (on) {
+                                    setState(() {
+                                      if (on) {
+                                        _selectedDoorCodes.add(opt.code);
+                                        _doorTypeQuantities.putIfAbsent(
+                                          opt.code,
+                                          () => 1,
+                                        );
+                                      } else {
+                                        _selectedDoorCodes.remove(opt.code);
+                                        _doorTypeQuantities.remove(opt.code);
+                                      }
+                                    });
+                                  },
+                                  onQuantityChanged:
+                                      _selectedDoorCodes.contains(opt.code)
+                                      ? (qty) {
+                                          setState(() {
+                                            _doorTypeQuantities[opt.code] = qty;
+                                          });
+                                        }
+                                      : null,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Material(
+                elevation: 6,
+                shadowColor: Theme.of(context).colorScheme.shadow,
+                color: Theme.of(context).colorScheme.surface,
+                child: SafeArea(
+                  top: false,
+                  minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : () => unawaited(_save()),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        textStyle: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              widget.editing != null
+                                  ? Icons.save_rounded
+                                  : Icons.add_circle_rounded,
+                              size: 22,
+                            ),
+                      label: Text(_saving ? '저장 중…' : _saveLabel),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -727,7 +762,7 @@ class _DoorTypeChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final accent =
         parseGeneralScheduleUserColor(color, fallback: scheme.primary) ??
-            scheme.primary;
+        scheme.primary;
     final qty = quantity.clamp(0, 9999);
 
     return Material(
@@ -808,7 +843,8 @@ class _DoorTypeChip extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 6),
                         child: Text(
                           '$qty',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
                                 fontWeight: FontWeight.w800,
                                 color: accent,
                               ),
@@ -823,7 +859,8 @@ class _DoorTypeChip extends StatelessWidget {
                       ),
                       Text(
                         '개',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
                               fontWeight: FontWeight.w600,
                               color: scheme.onSurfaceVariant,
                             ),
@@ -856,7 +893,9 @@ class _QtyIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: enabled ? accent.withValues(alpha: 0.12) : scheme.surfaceContainerHighest,
+      color: enabled
+          ? accent.withValues(alpha: 0.12)
+          : scheme.surfaceContainerHighest,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(
