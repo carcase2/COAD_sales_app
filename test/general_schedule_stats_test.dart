@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('computeMonthStats — 일 6칸 기준 합산', () {
+  test('computeMonthStats — 일 8칸 기준 합산', () {
     final grid = buildGeneralScheduleGrid([]);
     // 2026-06 has 30 days
     final stats = computeMonthStats(grid, 2026, 6);

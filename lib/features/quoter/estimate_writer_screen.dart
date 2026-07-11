@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
 import 'package:coad_customer_calls/models/estimate_document.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:file_saver/file_saver.dart';
@@ -607,7 +608,7 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                               keyboardType: TextInputType.number,
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly,
-                                _ThousandsFormatter(),
+                                const ThousandsFormatter(),
                               ],
                               decoration: const InputDecoration(
                                 labelText: '기본 금액',
@@ -947,7 +948,7 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                                         inputFormatters: [
                                           FilteringTextInputFormatter
                                               .digitsOnly,
-                                          _ThousandsFormatter(),
+                                          const ThousandsFormatter(),
                                         ],
                                         decoration: const InputDecoration(
                                           labelText: '금액',
@@ -1238,23 +1239,6 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
         label: const Text('견적서 작성'),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-    );
-  }
-}
-
-class _ThousandsFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (newValue.text.isEmpty) return newValue;
-    final intValue = int.tryParse(newValue.text.replaceAll(',', ''));
-    if (intValue == null) return oldValue;
-    final formatted = NumberFormat('#,###').format(intValue);
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

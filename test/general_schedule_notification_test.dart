@@ -20,8 +20,9 @@ GeneralScheduleRecord _record({
 
 void main() {
   test('countMonthEmptySlotsAfterToday — 오늘 이후 빈 칸만 집계', () {
+    final perDay = kGeneralScheduleSlotsPerDay;
     final grid = <String, List<GeneralScheduleCell?>>{
-      '2026-06-26': List<GeneralScheduleCell?>.filled(6, null)
+      '2026-06-26': emptyDaySlots()
         ..[0] = GeneralScheduleCell(
           scheduleId: 'x',
           site: 'A',
@@ -29,7 +30,7 @@ void main() {
           endDate: '2026-06-26',
         ),
       '2026-06-27': emptyDaySlots(),
-      '2026-06-28': List<GeneralScheduleCell?>.filled(6, null)
+      '2026-06-28': emptyDaySlots()
         ..[0] = GeneralScheduleCell(
           scheduleId: 'y',
           site: 'B',
@@ -45,8 +46,8 @@ void main() {
         month: 6,
         todayYmd: '2026-06-26',
       ),
-      // 27일 6칸 + 28일 5칸 + 29~30 각 6칸
-      6 + 5 + 6 + 6,
+      // 27일 전체 + 28일 (1칸 사용) + 29~30 전체
+      perDay + (perDay - 1) + perDay + perDay,
     );
   });
 

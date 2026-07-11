@@ -17,7 +17,7 @@ GeneralScheduleRecord _record({
 }
 
 void main() {
-  test('buildGeneralScheduleGrid — 날짜별 6칸 배치', () {
+  test('buildGeneralScheduleGrid — 날짜별 8칸 배치', () {
     final grid = buildGeneralScheduleGrid([
       _record(
         id: 'a',

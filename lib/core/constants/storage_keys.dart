@@ -8,6 +8,7 @@ abstract final class StorageKeys {
   static const autoLoginEnabled = 'auto_login_enabled';
   static const shutterPriceGridCache = 'shutter_price_grid_cache';
   static const shutterPriceUnitCache = 'shutter_price_unit_cache';
+  static const shutterPriceCompanyCache = 'shutter_price_company_cache';
   static const shutterPriceCachedAt = 'shutter_price_cached_at';
   /// 백그라운드 isolate 알림 탭 → 메인 앱으로 전달할 FCM/로컬 payload
   static const pendingNotificationPayload = 'pending_notification_payload';

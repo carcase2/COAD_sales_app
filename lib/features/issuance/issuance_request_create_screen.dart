@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1180,7 +1181,7 @@ class _IssuanceRequestCreateScreenState
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
-                    const _ThousandsFormatter(),
+                    const ThousandsFormatter(),
                   ],
                   validator: (v) =>
                       _parseMoney(v ?? '') <= 0 ? '총액을 입력하세요.' : null,
@@ -1567,7 +1568,7 @@ class _IssuanceRequestCreateScreenState
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
-                    const _ThousandsFormatter(),
+                    const ThousandsFormatter(),
                   ],
                   validator: (v) =>
                       _parseMoney(v ?? '') <= 0 ? '계약금액을 입력하세요.' : null,
@@ -2212,35 +2213,3 @@ class _IssuanceSubmitResult {
   final String displayName;
 }
 
-class _ThousandsFormatter extends TextInputFormatter {
-  const _ThousandsFormatter();
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll(',', '');
-    if (digits.isEmpty) return const TextEditingValue(text: '');
-    final number = int.tryParse(digits);
-    if (number == null) return oldValue;
-    final text = _format(number);
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
-
-  String _format(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      final idx = s.length - i;
-      buf.write(s[i]);
-      if (idx > 1 && idx % 3 == 1) {
-        buf.write(',');
-      }
-    }
-    return buf.toString();
-  }
-}

@@ -3,81 +3,26 @@ import 'dart:convert';
 
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
-import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/data/shutter_repository.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_company_models.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
+import 'package:coad_customer_calls/features/quoter/widgets/quoter_out_of_table_warning.dart';
+import 'package:coad_customer_calls/features/quoter/widgets/quoter_type_selector.dart';
+import 'package:coad_customer_calls/features/quoter/widgets/quoter_wizard_header.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/models/shutter_models.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-
-final shutterPriceRefreshKeyProvider = StateProvider<int>((ref) => 0);
-const Duration _shutterPriceCacheTtl = Duration(hours: 24);
-
-/// 견적기 마법사 단계별 악센트 (1=종류, 2=규격, 3=비용, 4=결과)
-const kQuoterStepAccents = <Color>[
-  Color(0xFF1565C0),
-  Color(0xFF00897B),
-  Color(0xFFE65100),
-  Color(0xFF6A1B9A),
-];
-
-final shutterPricesFutureProvider = FutureProvider((ref) async {
-  final repo = ref.read(shutterRepositoryProvider);
-  final prefs = ref.read(appDependenciesProvider).prefs;
-  final refreshKey = ref.watch(shutterPriceRefreshKeyProvider);
-  final forceNetwork = refreshKey > 0;
-
-  Future<Map<String, List<Map<String, dynamic>>>> fetchAndCache() async {
-    final grid = await repo.fetchGridPrices();
-    final unit = await repo.fetchUnitPrices();
-    final company = await repo.fetchCompanyPrices();
-    await prefs.setString(StorageKeys.shutterPriceGridCache, jsonEncode(grid));
-    await prefs.setString(StorageKeys.shutterPriceUnitCache, jsonEncode(unit));
-    await prefs.setString(
-      StorageKeys.shutterPriceCachedAt,
-      DateTime.now().toIso8601String(),
-    );
-    return {'grid': grid, 'unit': unit, 'company': company};
-  }
-
-  if (!forceNetwork) {
-    final cachedGrid = prefs.getString(StorageKeys.shutterPriceGridCache);
-    final cachedUnit = prefs.getString(StorageKeys.shutterPriceUnitCache);
-    final cachedAtRaw = prefs.getString(StorageKeys.shutterPriceCachedAt);
-    final cachedAt = cachedAtRaw == null
-        ? null
-        : DateTime.tryParse(cachedAtRaw);
-    final cacheIsFresh =
-        cachedAt != null &&
-        DateTime.now().difference(cachedAt) < _shutterPriceCacheTtl;
-
-    if (cachedGrid != null && cachedUnit != null && cacheIsFresh) {
-      final grid = List<Map<String, dynamic>>.from(
-        (jsonDecode(cachedGrid) as List).map(
-          (e) => Map<String, dynamic>.from(e as Map),
-        ),
-      );
-      final unit = List<Map<String, dynamic>>.from(
-        (jsonDecode(cachedUnit) as List).map(
-          (e) => Map<String, dynamic>.from(e as Map),
-        ),
-      );
-      final company = await repo.fetchCompanyPrices();
-      return {'grid': grid, 'unit': unit, 'company': company};
-    }
-  }
-
-  return fetchAndCache();
-});
 
 class QuoterScreen extends ConsumerStatefulWidget {
   const QuoterScreen({super.key, this.showQuickActions = true});
@@ -120,7 +65,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   final Set<String> _simulatedMotorIds = {};
   Map<String, List<Map<String, dynamic>>>? _latestPrices;
   String? _selectedCompanyId;
-  List<_CompanyComparisonRow> _companyComparisons = const [];
+  List<CompanyComparisonRow> _companyComparisons = const [];
 
   bool get _canCalculate {
     final w = double.tryParse(_widthController.text.replaceAll(',', '')) ?? 0;
@@ -144,40 +89,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         h > ShutterCalculator.maxBucket;
   }
 
-  Color _quoterStepAccent(int step) => kQuoterStepAccents[step - 1];
-
-  Widget _buildOutOfTableSizeWarning(ColorScheme scheme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: scheme.error.withValues(alpha: 0.6),
-          width: 1.3,
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.priority_high_rounded, size: 18, color: scheme.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '테이블 사이즈를 벗어났습니다. 별도로 문의하세요.',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: scheme.onErrorContainer,
-                height: 1.25,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   void initState() {
@@ -329,6 +240,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         selectedCompanyId: companyContext.selectedCompanyId,
       );
 
+      if (!mounted) return;
+
       setState(() {
         _result = res;
         _similarLookupInput = ShutterEstimateInput(
@@ -340,8 +253,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         _selectedCompanyId = companyContext.selectedCompanyId;
         _companyComparisons = comparisons;
       });
-
-      if (!mounted) return;
 
       HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context)
@@ -374,7 +285,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 'width_mm': input.widthMm.toInt(),
                 'height_mm': input.heightMm.toInt(),
                 // 웹과 동일한 모델 문자열 사용
-                'model_type': _getTypeLabel(_selectedType),
+                'model_type': QuoterTypeStyle.label(_selectedType),
                 // JSON number로 전송되도록 숫자 타입 유지
                 'total_price': res.totalAmount,
                 'created_at': DateTime.now().toIso8601String(),
@@ -424,7 +335,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
-  _CompanyContext _buildCompanyContext({
+  CompanyContext _buildCompanyContext({
     required Map<String, List<Map<String, dynamic>>> prices,
     required String? selectedCompanyId,
   }) {
@@ -433,7 +344,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       prices['unit'] as List<Map<String, dynamic>>,
     );
     if (!ShutterCalculator.isSecurityType(_selectedType) || companies.isEmpty) {
-      return _CompanyContext(
+      return CompanyContext(
         companies: companies,
         selectedCompanyId: null,
         selectedCompany: null,
@@ -441,8 +352,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       );
     }
 
-    _ShutterCompanyUnitPrice? selected;
-    _ShutterCompanyUnitPrice? defaultCompany;
+    ShutterCompanyUnitPrice? selected;
+    ShutterCompanyUnitPrice? defaultCompany;
     for (final company in companies) {
       if (company.id == selectedCompanyId) {
         selected = company;
@@ -452,7 +363,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       }
     }
     final resolved = selected ?? defaultCompany ?? companies.first;
-    return _CompanyContext(
+    return CompanyContext(
       companies: companies,
       selectedCompanyId: resolved.id,
       selectedCompany: resolved,
@@ -460,7 +371,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
-  List<_CompanyComparisonRow> _buildCompanyComparisons({
+  List<CompanyComparisonRow> _buildCompanyComparisons({
     required Map<String, List<Map<String, dynamic>>> prices,
     required ShutterEstimateInput input,
     required String? selectedCompanyId,
@@ -483,7 +394,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         unitPrices: prices['unit'] as List<Map<String, dynamic>>,
         unitPriceOverrideMap: unitMap,
       );
-      return _CompanyComparisonRow(
+      return CompanyComparisonRow(
         company: company,
         totalAmount: estimate.totalAmount,
         slatAmount: ShutterCalculator.extractSlatPrice(estimate),
@@ -507,14 +418,14 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         .toList();
   }
 
-  List<_ShutterCompanyUnitPrice> _parseCompanyRows(
+  List<ShutterCompanyUnitPrice> _parseCompanyRows(
     List<Map<String, dynamic>> rawRows,
   ) {
     final rows = rawRows
         .asMap()
         .entries
         .map(
-          (entry) => _ShutterCompanyUnitPrice.fromJson(
+          (entry) => ShutterCompanyUnitPrice.fromJson(
             entry.value,
             fallbackId: 'company_${entry.key}',
           ),
@@ -530,7 +441,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   void _debugLogCompanyRows({
     required List<Map<String, dynamic>> rawRows,
-    required List<_ShutterCompanyUnitPrice> parsedRows,
+    required List<ShutterCompanyUnitPrice> parsedRows,
   }) {
     if (!kDebugMode) return;
     final rawNames = rawRows
@@ -848,7 +759,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   Widget _buildContent(ColorScheme scheme) {
     const bottomPad = 16.0;
-    final accent = _quoterStepAccent(_currentStep);
+    final accent = quoterStepAccent(_currentStep);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final panelTint = accent.withValues(alpha: isDark ? 0.12 : 0.085);
     final panelBorder = accent.withValues(alpha: isDark ? 0.52 : 0.34);
@@ -921,13 +832,17 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Future<void> _refreshPricesManually() async {
-    ref.read(shutterPriceRefreshKeyProvider.notifier).state++;
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    // 1회성 강제 갱신: 캐시 삭제 후 invalidate (sticky forceNetwork 없음)
+    await clearShutterPriceCache(prefs);
     ref.invalidate(shutterPricesFutureProvider);
     try {
       await ref.read(shutterPricesFutureProvider.future);
       if (!mounted) return;
-      setState(() => _lastPriceSyncAt = DateTime.now());
-      if (mounted) setState(() => _priceUpdateAvailable = false);
+      setState(() {
+        _lastPriceSyncAt = DateTime.now();
+        _priceUpdateAvailable = false;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('단가를 최신값으로 갱신했습니다.')));
@@ -1036,91 +951,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Widget _buildWizardHeader(ColorScheme scheme) {
-    Widget stepChip(int step, String label) {
-      final accent = kQuoterStepAccents[step - 1];
-      final active = _currentStep == step;
-      final done = step < _currentStep || (step == 4 && _result != null);
-      final isDark = Theme.of(context).brightness == Brightness.dark;
-      final surface = scheme.surface;
-
-      final double activeTint = isDark ? 0.34 : 0.17;
-      final double doneTint = isDark ? 0.16 : 0.10;
-      final Color bg;
-      final Color borderColor;
-      final Color stepNumColor;
-      final Color nameColor;
-
-      if (active) {
-        bg = Color.alphaBlend(accent.withValues(alpha: activeTint), surface);
-        borderColor = accent;
-        stepNumColor = accent;
-        nameColor = scheme.onSurface;
-      } else if (done) {
-        bg = Color.alphaBlend(accent.withValues(alpha: doneTint), surface);
-        borderColor = accent.withValues(alpha: isDark ? 0.55 : 0.42);
-        stepNumColor = accent.withValues(alpha: isDark ? 0.95 : 0.92);
-        nameColor = scheme.onSurfaceVariant;
-      } else {
-        bg = scheme.surfaceContainerHighest.withValues(
-          alpha: isDark ? 0.65 : 0.55,
-        );
-        borderColor = scheme.outlineVariant.withValues(
-          alpha: isDark ? 0.55 : 0.4,
-        );
-        stepNumColor = scheme.onSurfaceVariant;
-        nameColor = scheme.onSurfaceVariant;
-      }
-
-      return Expanded(
-        child: InkWell(
-          onTap: () => _goToStep(step),
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: borderColor, width: active ? 2 : 1),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$step단계',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: stepNumColor,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: nameColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        stepChip(1, '종류'),
-        const SizedBox(width: 6),
-        stepChip(2, '규격'),
-        const SizedBox(width: 6),
-        stepChip(3, '비용'),
-        const SizedBox(width: 6),
-        stepChip(4, '결과'),
-      ],
+    return QuoterWizardHeader(
+      currentStep: _currentStep,
+      hasResult: _result != null,
+      onStepTap: (step) => unawaited(_goToStep(step)),
     );
   }
 
@@ -1148,7 +982,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         );
       case 4:
       default:
-        final a4 = _quoterStepAccent(4);
+        final a4 = quoterStepAccent(4);
         return Container(
           key: const ValueKey('step4'),
           child: Column(
@@ -1192,7 +1026,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Widget _buildStep4Placeholder(ColorScheme scheme) {
-    final a = _quoterStepAccent(4);
+    final a = quoterStepAccent(4);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -1230,7 +1064,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       return canNext;
     }
 
-    final navAccent = _quoterStepAccent(_currentStep);
+    final navAccent = quoterStepAccent(_currentStep);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
@@ -1312,107 +1146,16 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────
-  // 셔터 종류 선택
-  // ─────────────────────────────────────────────────
   Widget _buildTypeSelector(ColorScheme scheme) {
-    final a = _quoterStepAccent(1);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Row(
-            children: [
-              Icon(Icons.view_module_rounded, size: 18, color: a),
-              const SizedBox(width: 8),
-              Text(
-                '1단계 · 셔터 종류 선택',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: a,
-                ),
-              ),
-            ],
-          ),
-        ),
-        GridView.count(
-          shrinkWrap: true,
-          padding: EdgeInsets.zero,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.9,
-          children: ShutterType.values.map((t) {
-            final isSelected = _selectedType == t;
-            final color = _getTypeColor(t);
-            final icon = _getTypeIcon(t);
-            return GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() => _selectedType = t);
-                _invalidateCalculatedResult();
-                if (_currentStep == 1) {
-                  unawaited(_goToStep(2));
-                }
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  color: isSelected ? color : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isSelected ? color : color.withValues(alpha: 0.25),
-                    width: isSelected ? 2 : 1.5,
-                  ),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: color.withValues(alpha: 0.30),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ]
-                      : [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 18,
-                      color: isSelected ? Colors.white : color,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        _getTypeLabel(t),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: isSelected
-                              ? Colors.white
-                              : color.withValues(alpha: 0.85),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
+    return QuoterTypeSelector(
+      selectedType: _selectedType,
+      onSelected: (t) {
+        setState(() => _selectedType = t);
+        _invalidateCalculatedResult();
+        if (_currentStep == 1) {
+          unawaited(_goToStep(2));
+        }
+      },
     );
   }
 
@@ -1420,7 +1163,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // 규격 입력
   // ─────────────────────────────────────────────────
   Widget _buildSizeInput(ColorScheme scheme) {
-    final a = _quoterStepAccent(2);
+    final a = quoterStepAccent(2);
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: _widthController,
       builder: (_, __, ___) {
@@ -1556,7 +1299,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   _buildDimensionLivePanel(scheme),
                   if (_isOutOfTableSizeRange) ...[
                     const SizedBox(height: 12),
-                    _buildOutOfTableSizeWarning(scheme),
+                    const QuoterOutOfTableWarning(),
                   ],
                 ],
               ),
@@ -1717,7 +1460,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // 비용 설정 (접이식)
   // ─────────────────────────────────────────────────
   Widget _buildCostSettings(ColorScheme scheme) {
-    final a = _quoterStepAccent(3);
+    final a = quoterStepAccent(3);
     return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -1943,7 +1686,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
-                    _ThousandsFormatter(),
+                    const ThousandsFormatter(),
                   ],
                   onChanged: (_) => _invalidateCalculatedResult(),
                   style: TextStyle(
@@ -2018,7 +1761,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // 견적 산출 버튼
   // ─────────────────────────────────────────────────
   Widget _buildCalculateButton(ColorScheme scheme) {
-    final typeColor = _getTypeColor(_selectedType);
+    final typeColor = QuoterTypeStyle.color(_selectedType);
     final enabled = _canCalculate && !_isCalculating;
     return GestureDetector(
       onTap: enabled ? _calculate : null,
@@ -2085,7 +1828,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Widget _buildStep4ResultTopBar(ColorScheme scheme) {
-    final typeColor = _getTypeColor(_selectedType);
+    final typeColor = QuoterTypeStyle.color(_selectedType);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2127,7 +1870,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // 결과 카드
   // ─────────────────────────────────────────────────
   Widget _buildResultCard(ColorScheme scheme) {
-    final typeColor = _getTypeColor(_selectedType);
+    final typeColor = QuoterTypeStyle.color(_selectedType);
 
     int slatTotal = 0;
     int installTotal = 0;
@@ -2201,7 +1944,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            _getTypeLabel(_selectedType),
+                            QuoterTypeStyle.label(_selectedType),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
@@ -2262,7 +2005,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   children: [
                     _buildMetaPill(
                       label: '셔터 종류',
-                      value: _getTypeLabel(_selectedType),
+                      value: QuoterTypeStyle.label(_selectedType),
                       scheme: scheme,
                     ),
                     _buildMetaPill(
@@ -2275,7 +2018,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 ),
                 if (_isOutOfTableSizeRange) ...[
                   const SizedBox(height: 10),
-                  _buildOutOfTableSizeWarning(scheme),
+                  const QuoterOutOfTableWarning(),
                 ],
                 const SizedBox(height: 4),
                 FittedBox(
@@ -2364,7 +2107,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   Widget _buildResultCompactCard(ColorScheme scheme) {
     final result = _result!;
-    final typeColor = _getTypeColor(_selectedType);
+    final typeColor = QuoterTypeStyle.color(_selectedType);
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () => _showResultActionSheet(scheme),
@@ -2838,7 +2581,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         : _heightController.text.trim();
     final sb = StringBuffer();
     sb.writeln('[셔터 견적서]');
-    sb.writeln('셔터 종류: ${_getTypeLabel(_selectedType)}');
+    sb.writeln('셔터 종류: ${QuoterTypeStyle.label(_selectedType)}');
     sb.writeln('규격(mm): $width x $height');
     sb.writeln('브라켓 종류: ${r.bracketType}');
     sb.writeln('총액: ${_krwFormat.format(r.totalAmount)}');
@@ -2984,7 +2727,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     final sorted = [..._companyComparisons]
       ..sort((a, b) => a.totalAmount.compareTo(b.totalAmount));
     final minRow = sorted.first;
-    _CompanyComparisonRow? selectedRow;
+    CompanyComparisonRow? selectedRow;
     for (final row in _companyComparisons) {
       if (row.company.id == _selectedCompanyId) {
         selectedRow = row;
@@ -3069,7 +2812,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   Widget _buildCompanyComparisonRow({
     required ColorScheme scheme,
-    required _CompanyComparisonRow row,
+    required CompanyComparisonRow row,
   }) {
     final isSelected = row.company.id == _selectedCompanyId;
     final delta = row.deltaFromSelected;
@@ -3174,7 +2917,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Widget _buildCompanyDeltaSummaryCard(ColorScheme scheme) {
-    _CompanyComparisonRow? selectedRow;
+    CompanyComparisonRow? selectedRow;
     for (final row in _companyComparisons) {
       if (row.company.id == _selectedCompanyId) {
         selectedRow = row;
@@ -3568,7 +3311,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                             ),
                           ),
                         Text(
-                          est.modelName ?? _getTypeLabel(_selectedType),
+                          est.modelName ?? QuoterTypeStyle.label(_selectedType),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -3607,56 +3350,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
-  String _getTypeLabel(ShutterType type) {
-    switch (type) {
-      case ShutterType.doubleExtrusion:
-        return '이중압출';
-      case ShutterType.doubleExtrusionInsulated:
-        return '이중압출단열';
-      case ShutterType.windproof:
-        return '내풍압';
-      case ShutterType.windproofInsulated:
-        return '내풍압단열';
-      case ShutterType.fireSteel:
-        return '철제방화';
-      case ShutterType.fireScreen:
-        return '스크린방화';
-    }
-  }
-
-  IconData _getTypeIcon(ShutterType type) {
-    switch (type) {
-      case ShutterType.doubleExtrusion:
-        return Icons.layers_rounded;
-      case ShutterType.doubleExtrusionInsulated:
-        return Icons.layers_clear_rounded;
-      case ShutterType.windproof:
-        return Icons.air_rounded;
-      case ShutterType.windproofInsulated:
-        return Icons.shield_rounded;
-      case ShutterType.fireSteel:
-        return Icons.local_fire_department_rounded;
-      case ShutterType.fireScreen:
-        return Icons.fire_extinguisher_rounded;
-    }
-  }
-
-  Color _getTypeColor(ShutterType type) {
-    switch (type) {
-      case ShutterType.doubleExtrusion:
-        return const Color(0xFF1565C0);
-      case ShutterType.doubleExtrusionInsulated:
-        return const Color(0xFF0277BD);
-      case ShutterType.windproof:
-        return const Color(0xFF283593);
-      case ShutterType.windproofInsulated:
-        return const Color(0xFF4527A0);
-      case ShutterType.fireSteel:
-        return const Color(0xFF37474F);
-      case ShutterType.fireScreen:
-        return const Color(0xFFE65100);
-    }
-  }
 }
 
 class _QuoterQuickActionItem {
@@ -3671,108 +3364,4 @@ class _QuoterQuickActionItem {
   final Color color;
   final IconData icon;
   final Future<void> Function() onTap;
-}
-
-class _ShutterCompanyUnitPrice {
-  const _ShutterCompanyUnitPrice({
-    required this.id,
-    required this.companyName,
-    required this.unitPriceGeneral,
-    required this.unitPriceInsulated,
-    required this.isDefault,
-    required this.sortOrder,
-  });
-
-  factory _ShutterCompanyUnitPrice.fromJson(
-    Map<String, dynamic> json, {
-    required String fallbackId,
-  }) {
-    int parseInt(dynamic value) {
-      if (value is int) return value;
-      if (value is num) return value.toInt();
-      return int.tryParse(value?.toString() ?? '') ?? 0;
-    }
-
-    final parsedId = (json['id'] ?? '').toString().trim();
-    return _ShutterCompanyUnitPrice(
-      id: parsedId.isEmpty ? fallbackId : parsedId,
-      companyName: (json['company_name'] ?? '').toString().trim().isEmpty
-          ? '이름 미등록'
-          : (json['company_name'] ?? '').toString().trim(),
-      unitPriceGeneral: parseInt(json['unit_price_general']),
-      unitPriceInsulated: parseInt(json['unit_price_insulated']),
-      isDefault: json['is_default'] == true,
-      sortOrder: parseInt(json['sort_order']),
-    );
-  }
-
-  final String id;
-  final String companyName;
-  final int unitPriceGeneral;
-  final int unitPriceInsulated;
-  final bool isDefault;
-  final int sortOrder;
-
-  Map<String, dynamic> toJson() => <String, dynamic>{
-    'id': id,
-    'company_name': companyName,
-    'unit_price_general': unitPriceGeneral,
-    'unit_price_insulated': unitPriceInsulated,
-    'is_default': isDefault,
-    'sort_order': sortOrder,
-  };
-}
-
-class _CompanyComparisonRow {
-  const _CompanyComparisonRow({
-    required this.company,
-    required this.totalAmount,
-    required this.slatAmount,
-    this.deltaFromSelected = 0,
-  });
-
-  final _ShutterCompanyUnitPrice company;
-  final int totalAmount;
-  final int slatAmount;
-  final int deltaFromSelected;
-
-  _CompanyComparisonRow copyWith({int? deltaFromSelected}) {
-    return _CompanyComparisonRow(
-      company: company,
-      totalAmount: totalAmount,
-      slatAmount: slatAmount,
-      deltaFromSelected: deltaFromSelected ?? this.deltaFromSelected,
-    );
-  }
-}
-
-class _CompanyContext {
-  const _CompanyContext({
-    required this.companies,
-    required this.selectedCompanyId,
-    required this.selectedCompany,
-    required this.fallbackUnitPriceMap,
-  });
-
-  final List<_ShutterCompanyUnitPrice> companies;
-  final String? selectedCompanyId;
-  final _ShutterCompanyUnitPrice? selectedCompany;
-  final Map<String, int> fallbackUnitPriceMap;
-}
-
-class _ThousandsFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (newValue.text.isEmpty) return newValue;
-    final intValue = int.tryParse(newValue.text.replaceAll(',', ''));
-    if (intValue == null) return oldValue;
-    final formatted = NumberFormat('#,###').format(intValue);
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-  }
 }
