@@ -138,9 +138,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
   Future<void> _openCombinedPendingPage() async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => const _CombinedIssuancePendingPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const _CombinedIssuancePendingPage()),
     );
     if (!mounted) return;
     await _refreshIssuanceData();
@@ -148,9 +146,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
   Future<void> _openCombinedTodayIssuedPage() async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => const _CombinedTodayIssuedPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const _CombinedTodayIssuedPage()),
     );
     if (!mounted) return;
     await _refreshIssuanceData();
@@ -177,7 +173,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
         if (!mounted) return;
         unawaited(_consumePendingLaunch());
       });
-      ref.listen<IssuanceLaunchTarget?>(pendingIssuanceLaunchProvider, (_, next) {
+      ref.listen<IssuanceLaunchTarget?>(pendingIssuanceLaunchProvider, (
+        _,
+        next,
+      ) {
         if (!mounted || next == null) return;
         unawaited(_consumePendingLaunch());
       });
@@ -194,21 +193,27 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     final bondPendingCount = bondPendingCountAsync.valueOrNull;
     final pendingCountsLoading =
         taxPendingCountAsync.isLoading || bondPendingCountAsync.isLoading;
-    final combinedPendingCount = (taxPendingCount ?? 0) + (bondPendingCount ?? 0);
+    final combinedPendingCount =
+        (taxPendingCount ?? 0) + (bondPendingCount ?? 0);
     final combinedPendingDisplay =
-        pendingCountsLoading && taxPendingCount == null && bondPendingCount == null
+        pendingCountsLoading &&
+            taxPendingCount == null &&
+            bondPendingCount == null
         ? null
         : combinedPendingCount;
 
-    AsyncValue<List<IssuanceRequestRow>> partialAsync =
-        const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> partialAsync = const AsyncValue.data(
+      [],
+    );
     AsyncValue<List<IssuanceRequestRow>> fullyCompletedAsync =
         const AsyncValue.data([]);
     AsyncValue<List<IssuanceRequestRow>> allAsync = const AsyncValue.data([]);
-    AsyncValue<List<IssuanceRequestRow>> completedAsync =
-        const AsyncValue.data([]);
-    AsyncValue<List<IssuanceRequestRow>> cancelledAsync =
-        const AsyncValue.data([]);
+    AsyncValue<List<IssuanceRequestRow>> completedAsync = const AsyncValue.data(
+      [],
+    );
+    AsyncValue<List<IssuanceRequestRow>> cancelledAsync = const AsyncValue.data(
+      [],
+    );
     AsyncValue<List<IssuanceRequestRow>> taxCompletedAsync =
         const AsyncValue.data([]);
     AsyncValue<List<IssuanceRequestRow>> bondCompletedAsync =
@@ -230,18 +235,17 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       );
     }
 
-    bool isTodayIssued(IssuanceRequestRow row) =>
-        issuanceIsTodayIssuedRow(row);
+    bool isTodayIssued(IssuanceRequestRow row) => issuanceIsTodayIssuedRow(row);
 
     final todayTaxIssued = _hubDetailReady
         ? (taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-            .where(isTodayIssued)
-            .length
+              .where(isTodayIssued)
+              .length
         : null;
     final todayBondIssued = _hubDetailReady
         ? (bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-            .where(isTodayIssued)
-            .length
+              .where(isTodayIssued)
+              .length
         : null;
     final todayIssuedCount = todayTaxIssued == null || todayBondIssued == null
         ? null
@@ -295,10 +299,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         onPressed: _refreshing
                             ? null
                             : () => unawaited(
-                                  _refreshIssuanceData(
-                                    showCompletionSnackBar: true,
-                                  ),
+                                _refreshIssuanceData(
+                                  showCompletionSnackBar: true,
                                 ),
+                              ),
                         icon: issuanceRefreshButtonIcon(
                           loading: _refreshing,
                           size: 18,
@@ -403,55 +407,69 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     onTap: _openCombinedTodayIssuedPage,
                   ),
                   const SizedBox(height: 8),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 2.1,
-                    children: [
-                      if (isTax)
-                        _HubMenuTile(
-                          icon: IssuanceListKind.partial.icon,
-                          title: IssuanceListKind.partial.title,
-                          count: countRows(partialAsync),
-                          accent: IssuanceVisual.partialTileAccent(scheme),
-                          onTap: () => _openListPage(IssuanceListKind.partial),
+                  // aspectRatio 대신 고정 높이 — 큰 글꼴/좁은 폭에서도 overflow 방지
+                  Builder(
+                    builder: (context) {
+                      final textScale = MediaQuery.textScalerOf(context)
+                          .clamp(minScaleFactor: 1.0, maxScaleFactor: 1.4)
+                          .scale(1.0);
+                      final tileExtent = (88.0 * textScale).clamp(88.0, 122.0);
+                      return GridView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          mainAxisExtent: tileExtent,
                         ),
-                      if (isTax)
-                        _HubMenuTile(
-                          icon: IssuanceListKind.fullyCompleted.icon,
-                          title: IssuanceListKind.fullyCompleted.title,
-                          count: countRows(fullyCompletedAsync),
-                          accent: IssuanceVisual.completedTileAccent(scheme),
-                          onTap: () => _openListPage(
-                            IssuanceListKind.fullyCompleted,
+                        children: [
+                          if (isTax)
+                            _HubMenuTile(
+                              icon: IssuanceListKind.partial.icon,
+                              title: IssuanceListKind.partial.title,
+                              count: countRows(partialAsync),
+                              accent: IssuanceVisual.partialTileAccent(scheme),
+                              onTap: () =>
+                                  _openListPage(IssuanceListKind.partial),
+                            ),
+                          if (isTax)
+                            _HubMenuTile(
+                              icon: IssuanceListKind.fullyCompleted.icon,
+                              title: IssuanceListKind.fullyCompleted.title,
+                              count: countRows(fullyCompletedAsync),
+                              accent: IssuanceVisual.completedTileAccent(
+                                scheme,
+                              ),
+                              onTap: () => _openListPage(
+                                IssuanceListKind.fullyCompleted,
+                              ),
+                            ),
+                          _HubMenuTile(
+                            icon: Icons.check_circle_outline_rounded,
+                            title: '발급완료',
+                            count: countRows(completedAsync),
+                            accent: IssuanceVisual.completedTileAccent(scheme),
+                            onTap: _openCompletedListPage,
                           ),
-                        ),
-                      _HubMenuTile(
-                        icon: Icons.check_circle_outline_rounded,
-                        title: '발급완료',
-                        count: countRows(completedAsync),
-                        accent: IssuanceVisual.completedTileAccent(scheme),
-                        onTap: _openCompletedListPage,
-                      ),
-                      _HubMenuTile(
-                        icon: IssuanceListKind.cancelled.icon,
-                        title: IssuanceListKind.cancelled.title,
-                        count: countRows(cancelledAsync),
-                        accent: IssuanceVisual.cancelledTileAccent(scheme),
-                        onTap: () =>
-                            _openListPage(IssuanceListKind.cancelled),
-                      ),
-                      _HubMenuTile(
-                        icon: IssuanceListKind.all.icon,
-                        title: IssuanceListKind.all.title,
-                        count: countRows(allAsync),
-                        accent: scheme.onSurfaceVariant,
-                        onTap: () => _openListPage(IssuanceListKind.all),
-                      ),
-                    ],
+                          _HubMenuTile(
+                            icon: IssuanceListKind.cancelled.icon,
+                            title: IssuanceListKind.cancelled.title,
+                            count: countRows(cancelledAsync),
+                            accent: IssuanceVisual.cancelledTileAccent(scheme),
+                            onTap: () =>
+                                _openListPage(IssuanceListKind.cancelled),
+                          ),
+                          _HubMenuTile(
+                            icon: IssuanceListKind.all.icon,
+                            title: IssuanceListKind.all.title,
+                            count: countRows(allAsync),
+                            accent: scheme.onSurfaceVariant,
+                            onTap: () => _openListPage(IssuanceListKind.all),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -545,13 +563,15 @@ class _HubMenuTile extends StatelessWidget {
     return Material(
       color: scheme.surfaceContainerLowest,
       borderRadius: BorderRadius.circular(large ? 14 : 12),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         borderRadius: BorderRadius.circular(large ? 14 : 12),
         onTap: onTap,
         child: Container(
+          width: double.infinity,
           padding: EdgeInsets.symmetric(
             horizontal: large ? 14 : 10,
-            vertical: large ? 14 : 8,
+            vertical: large ? 12 : 8,
           ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(large ? 14 : 12),
@@ -583,6 +603,7 @@ class _HubMenuTile extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
@@ -593,19 +614,19 @@ class _HubMenuTile extends StatelessWidget {
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                               color: scheme.onSurface,
+                              height: 1.15,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            subtitle == null
-                                ? '발급대기 목록'
-                                : subtitle!,
+                            subtitle == null ? '발급대기 목록' : subtitle!,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: scheme.onSurfaceVariant,
+                              height: 1.2,
                             ),
                           ),
                         ],
@@ -617,7 +638,7 @@ class _HubMenuTile extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         color: accent,
-                        fontSize: 30,
+                        fontSize: 28,
                         height: 1,
                       ),
                     ),
@@ -625,12 +646,12 @@ class _HubMenuTile extends StatelessWidget {
                 )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(icon, color: accent, size: 18),
+                        Icon(icon, color: accent, size: 17),
                         const Spacer(),
                         if (subtitle != null) ...[
                           Flexible(
@@ -643,6 +664,7 @@ class _HubMenuTile extends StatelessWidget {
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
                                 color: scheme.onSurfaceVariant,
+                                height: 1.1,
                               ),
                             ),
                           ),
@@ -651,7 +673,7 @@ class _HubMenuTile extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 7,
-                            vertical: 2,
+                            vertical: 1,
                           ),
                           decoration: BoxDecoration(
                             color: accent.withValues(alpha: 0.12),
@@ -663,21 +685,25 @@ class _HubMenuTile extends StatelessWidget {
                               fontWeight: FontWeight.w800,
                               color: accent,
                               fontSize: 12,
+                              height: 1.15,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: scheme.onSurface,
-                        letterSpacing: -0.2,
+                    const SizedBox(height: 4),
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onSurface,
+                          letterSpacing: -0.2,
+                          height: 1.15,
+                        ),
                       ),
                     ),
                   ],
@@ -698,15 +724,14 @@ class _CombinedIssuancePendingPage extends ConsumerStatefulWidget {
 
 class _CombinedIssuancePendingPageState
     extends ConsumerState<_CombinedIssuancePendingPage> {
-
   Future<void> _openTaxIssueSheet(IssuanceRequestRow row) async {
     final ok = await showTaxInvoiceIssueSheet(context: context, row: row);
     if (ok == true && mounted) {
       await _refresh();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('발급요청이 등록되었습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('발급요청이 등록되었습니다.')));
     }
   }
 
@@ -724,10 +749,7 @@ class _CombinedIssuancePendingPageState
     final name = row.domain == IssuanceDomain.taxInvoice
         ? (row.master['customer_name'] ?? row.title).toString()
         : (row.master['company_name'] ?? row.title).toString();
-    final reason = await showIssuanceCancelDialog(
-      context,
-      targetName: name,
-    );
+    final reason = await showIssuanceCancelDialog(context, targetName: name);
     if (!mounted) return;
     if (reason == null || reason.trim().isEmpty) return;
     try {
@@ -757,7 +779,9 @@ class _CombinedIssuancePendingPageState
     invalidateIssuanceCore(ref);
     await Future.wait([
       ref.read(issuanceRequestRowsProvider(IssuanceDomain.taxInvoice).future),
-      ref.read(issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future),
+      ref.read(
+        issuanceRequestRowsProvider(IssuanceDomain.performanceBond).future,
+      ),
     ]);
   }
 
@@ -798,9 +822,9 @@ class _CombinedIssuancePendingPageState
               child: Text(
                 '전체 대기',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -918,11 +942,7 @@ class _CombinedIssuancePendingPageState
             children: [
               IssuanceRequestCard(
                 row: row,
-                isOwn: issuanceIsOwnRequest(
-                  row,
-                  user?.name,
-                  userId: user?.id,
-                ),
+                isOwn: issuanceIsOwnRequest(row, user?.name, userId: user?.id),
                 large: true,
                 onTap: () => showIssuanceRequestDetail(context, row),
               ),
@@ -1020,14 +1040,10 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
     final hasError = taxAsync.hasError || bondAsync.hasError;
 
     final taxMineCount = taxRows
-        .where(
-          (r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id),
-        )
+        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
         .length;
     final bondMineCount = bondRows
-        .where(
-          (r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id),
-        )
+        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
         .length;
 
     return Scaffold(
@@ -1100,11 +1116,7 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: 10),
             child: IssuanceRequestCard(
               row: row,
-              isOwn: issuanceIsOwnRequest(
-                row,
-                user?.name,
-                userId: user?.id,
-              ),
+              isOwn: issuanceIsOwnRequest(row, user?.name, userId: user?.id),
               large: true,
               onTap: () => showIssuanceRequestDetail(context, row),
             ),
@@ -1130,11 +1142,7 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
           padding: const EdgeInsets.only(bottom: 10),
           child: IssuanceRequestCard(
             row: row,
-            isOwn: issuanceIsOwnRequest(
-              row,
-              user?.name,
-              userId: user?.id,
-            ),
+            isOwn: issuanceIsOwnRequest(row, user?.name, userId: user?.id),
             large: true,
             onTap: () => showIssuanceRequestDetail(context, row),
           ),

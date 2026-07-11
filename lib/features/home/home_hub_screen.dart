@@ -247,31 +247,41 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         children: [
           Row(
             children: [
-              _buildMiniPeriodChip(
-                scheme: scheme,
-                step: HubNavStep.day,
-                label: '일',
+              Expanded(
+                child: _buildMiniPeriodChip(
+                  scheme: scheme,
+                  step: HubNavStep.day,
+                  label: '일',
+                ),
               ),
               const SizedBox(width: 4),
-              _buildMiniPeriodChip(
-                scheme: scheme,
-                step: HubNavStep.week,
-                label: '주',
+              Expanded(
+                child: _buildMiniPeriodChip(
+                  scheme: scheme,
+                  step: HubNavStep.week,
+                  label: '주',
+                ),
               ),
               const SizedBox(width: 4),
-              _buildMiniPeriodChip(
-                scheme: scheme,
-                step: HubNavStep.month,
-                label: '월',
+              Expanded(
+                child: _buildMiniPeriodChip(
+                  scheme: scheme,
+                  step: HubNavStep.month,
+                  label: '월',
+                ),
               ),
-              const SizedBox(width: 4),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
               IconButton(
                 onPressed: () => _shiftHubNav(-1),
                 tooltip: '이전 기간',
                 icon: const Icon(Icons.chevron_left_rounded, size: 20),
                 style: IconButton.styleFrom(
                   foregroundColor: scheme.onPrimary,
-                  minimumSize: const Size(36, 36),
+                  minimumSize: const Size(32, 30),
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
                 ),
@@ -283,7 +293,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w900,
                     color: scheme.onPrimary,
                     height: 1.1,
@@ -291,18 +301,22 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 ),
               ),
               IconButton(
-                onPressed: _canShiftHubNavNewer() ? () => _shiftHubNav(1) : null,
+                onPressed: _canShiftHubNavNewer()
+                    ? () => _shiftHubNav(1)
+                    : null,
                 tooltip: '다음 기간',
                 icon: const Icon(Icons.chevron_right_rounded, size: 20),
                 style: IconButton.styleFrom(
                   foregroundColor: scheme.onPrimary,
-                  disabledForegroundColor:
-                      scheme.onPrimary.withValues(alpha: 0.35),
-                  minimumSize: const Size(36, 36),
+                  disabledForegroundColor: scheme.onPrimary.withValues(
+                    alpha: 0.35,
+                  ),
+                  minimumSize: const Size(32, 30),
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
                 ),
               ),
+              const SizedBox(width: 3),
               _buildTodayJumpButton(scheme),
             ],
           ),
@@ -325,8 +339,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => _selectHubNavStep(step),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(vertical: 7),
           child: Text(
             label,
             style: TextStyle(
@@ -349,8 +364,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final bgColor = enabled
         ? scheme.surface
         : scheme.onPrimary.withValues(alpha: 0.1);
-    final fgColor =
-        enabled ? scheme.primary : scheme.onPrimary.withValues(alpha: 0.45);
+    final fgColor = enabled
+        ? scheme.primary
+        : scheme.onPrimary.withValues(alpha: 0.45);
     return Tooltip(
       message: enabled ? _hubJumpPeriodTooltip() : '이미 현재 기준',
       child: Material(
@@ -586,9 +602,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           onTap: enabled ? _resetHubFlowAnchorToCurrent : null,
           borderRadius: BorderRadius.circular(compact ? 8 : 10),
           child: Container(
-            constraints: BoxConstraints(
-              minHeight: compact ? 27 : 0,
-            ),
+            constraints: BoxConstraints(minHeight: compact ? 27 : 0),
             padding: EdgeInsets.symmetric(
               horizontal: compact ? 10 : 10,
               vertical: compact ? 7 : 7,
@@ -880,10 +894,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     }
     List<SalesCall> rows;
     try {
-      rows = await _withFreshDataLoading(() async {
-        ref.invalidate(hubPendingUncalledCallsProvider);
-        return ref.read(hubPendingUncalledCallsProvider.future);
-      }) ??
+      rows =
+          await _withFreshDataLoading(() async {
+            ref.invalidate(hubPendingUncalledCallsProvider);
+            return ref.read(hubPendingUncalledCallsProvider.future);
+          }) ??
           const [];
     } catch (_) {
       if (!mounted) return;
@@ -897,8 +912,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
     if (!mounted) return;
 
-    final overrides =
-        await ref.read(tempManagerOverridesProvider.future);
+    final overrides = await ref.read(tempManagerOverridesProvider.future);
     final counts = _countsFromRows(
       rows,
       (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
@@ -929,7 +943,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
-  Future<void> _pushIncompleteListForDate(String anchorYmd, String assignee) async {
+  Future<void> _pushIncompleteListForDate(
+    String anchorYmd,
+    String assignee,
+  ) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SalesCallListScreen(
@@ -1021,8 +1038,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final key = (period: scope, anchorYmd: _hubFlowAnchorYmd);
     List<SalesCall> rows;
     try {
-      final bundle =
-          await ref.read(hubPeriodReceptionBundleProvider(key).future);
+      final bundle = await ref.read(
+        hubPeriodReceptionBundleProvider(key).future,
+      );
       rows = bundle.calls;
     } catch (_) {
       if (!mounted) return;
@@ -1056,8 +1074,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final key = (period: scope, anchorYmd: _hubFlowAnchorYmd);
     List<SalesCall> rows;
     try {
-      final snapshot =
-          await ref.read(hubPeriodFollowSnapshotProvider(key).future);
+      final snapshot = await ref.read(
+        hubPeriodFollowSnapshotProvider(key).future,
+      );
       rows = snapshot.remainingCalls;
     } catch (_) {
       if (!mounted) return;
@@ -1150,8 +1169,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
     if (!mounted) return;
 
-    final overrides =
-        await ref.read(tempManagerOverridesProvider.future);
+    final overrides = await ref.read(tempManagerOverridesProvider.future);
     final counts = _countsFromRows(
       rows,
       (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
@@ -1170,7 +1188,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     await _pushIncompleteList(scope, selected);
   }
 
-  Future<void> _openPreviousDayIncompletePicker({bool forcePicker = false}) async {
+  Future<void> _openPreviousDayIncompletePicker({
+    bool forcePicker = false,
+  }) async {
     if (forcePicker && _showLongPressHint) {
       _dismissLongPressHint();
     }
@@ -1187,15 +1207,16 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('전일 미통화 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')),
+        const SnackBar(
+          content: Text('전일 미통화 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+        ),
       );
       return;
     }
 
     if (!mounted) return;
 
-    final overrides =
-        await ref.read(tempManagerOverridesProvider.future);
+    final overrides = await ref.read(tempManagerOverridesProvider.future);
     final counts = _countsFromRows(
       rows,
       (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
@@ -1595,8 +1616,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   Future<void> _loadHomeFlowPrefs() async {
     final prefs = ref.read(appDependenciesProvider).prefs;
     final hidden = prefs.getBool(_longPressHintHiddenPrefKey) ?? false;
-    final noUncalledPopup =
-        prefs.getBool(homeFlowUncalledPopupPrefKey) ?? true;
+    final noUncalledPopup = prefs.getBool(homeFlowUncalledPopupPrefKey) ?? true;
     if (!mounted) return;
     setState(() {
       _showLongPressHint = !hidden;
@@ -1646,7 +1666,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       if (_hubNavStep == next) return;
       setState(() => _hubNavStep = next);
     });
-    _hubAnchorSub = ref.listenManual(homeHubFlowAnchorYmdProvider, (prev, next) {
+    _hubAnchorSub = ref.listenManual(homeHubFlowAnchorYmdProvider, (
+      prev,
+      next,
+    ) {
       if (_hubFlowAnchorYmd == next) return;
       setState(() => _hubFlowAnchorYmd = next);
     });
@@ -1732,8 +1755,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     };
 
     bool showsCountBadge(HomeHubSection section) =>
-        section == HomeHubSection.flow ||
-        section == HomeHubSection.calendar;
+        section == HomeHubSection.flow || section == HomeHubSection.calendar;
 
     final trackColor = embedded
         ? scheme.onPrimary.withValues(alpha: 0.1)
@@ -1753,7 +1775,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           for (final (section, label, icon) in sections)
             Builder(
               builder: (context) {
-                final accent = HomeHubVisual.sectionTone(section, scheme).accent;
+                final accent = HomeHubVisual.sectionTone(
+                  section,
+                  scheme,
+                ).accent;
                 final selectedBg = embedded
                     ? accent.withValues(alpha: 0.22)
                     : accent.withValues(alpha: 0.14);
@@ -1769,69 +1794,75 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 7),
                       // 섹션별 고유 톤으로 선택 상태를 분리해 시인성을 높인다.
                       decoration: BoxDecoration(
-                    color: _section == section
-                        ? selectedBg
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(9),
-                    border: _section == section
-                        ? Border.all(
-                            color: accent.withValues(alpha: embedded ? 0.55 : 0.45),
-                          )
-                        : null,
-                    boxShadow: _section == section
-                        ? [
-                            BoxShadow(
-                              color: accent.withValues(alpha: embedded ? 0.24 : 0.16),
-                              blurRadius: 5,
-                              offset: const Offset(0, 1),
-                            ),
-                          ]
-                        : null,
-                  ),
-                      child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        icon,
-                        size: 15,
                         color: _section == section
-                            ? selectedFg
-                            : (embedded
-                                  ? scheme.onPrimary.withValues(alpha: 0.9)
-                                  : scheme.onSurfaceVariant),
+                            ? selectedBg
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        border: _section == section
+                            ? Border.all(
+                                color: accent.withValues(
+                                  alpha: embedded ? 0.55 : 0.45,
+                                ),
+                              )
+                            : null,
+                        boxShadow: _section == section
+                            ? [
+                                BoxShadow(
+                                  color: accent.withValues(
+                                    alpha: embedded ? 0.24 : 0.16,
+                                  ),
+                                  blurRadius: 5,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ]
+                            : null,
                       ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: _section == section
-                                ? FontWeight.w800
-                                : FontWeight.w600,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            icon,
+                            size: 15,
                             color: _section == section
                                 ? selectedFg
                                 : (embedded
-                                      ? scheme.onPrimary.withValues(alpha: 0.92)
+                                      ? scheme.onPrimary.withValues(alpha: 0.9)
                                       : scheme.onSurfaceVariant),
                           ),
-                        ),
-                      ),
-                      if (showsCountBadge(section)) ...[
-                        const SizedBox(width: 5),
-                        _buildSectionCountBadge(
-                          count: badgeCountFor(section),
-                          accent: HomeHubVisual.sectionTone(
-                            section,
-                            scheme,
-                          ).accent,
-                          selected: _section == section,
-                          onPrimary: embedded && _section != section,
-                        ),
-                      ],
-                    ],
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: _section == section
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                color: _section == section
+                                    ? selectedFg
+                                    : (embedded
+                                          ? scheme.onPrimary.withValues(
+                                              alpha: 0.92,
+                                            )
+                                          : scheme.onSurfaceVariant),
+                              ),
+                            ),
+                          ),
+                          if (showsCountBadge(section)) ...[
+                            const SizedBox(width: 5),
+                            _buildSectionCountBadge(
+                              count: badgeCountFor(section),
+                              accent: HomeHubVisual.sectionTone(
+                                section,
+                                scheme,
+                              ).accent,
+                              selected: _section == section,
+                              onPrimary: embedded && _section != section,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),
@@ -1951,17 +1982,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: () => _openPreviousDayIncompletePicker(),
-          onLongPress: () => _openPreviousDayIncompletePicker(forcePicker: true),
+          onLongPress: () =>
+              _openPreviousDayIncompletePicker(forcePicker: true),
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
-                Icon(
-                  Icons.history_rounded,
-                  size: 18,
-                  color: scheme.tertiary,
-                ),
+                Icon(Icons.history_rounded, size: 18, color: scheme.tertiary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -2014,57 +2042,55 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Material(
-          color: scheme.errorContainer.withValues(alpha: 0.42),
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            onTap: () => _openPendingUncalledPicker(),
-            onLongPress: () =>
-                _openPendingUncalledPicker(forcePicker: true),
+            color: scheme.errorContainer.withValues(alpha: 0.42),
             borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.schedule_rounded,
-                    size: 18,
-                    color: scheme.error,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '처리할 미통화 $count',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: scheme.onErrorContainer,
-                          ),
-                        ),
-                        Text(
-                          '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onErrorContainer.withValues(
-                              alpha: 0.82,
+            child: InkWell(
+              onTap: () => _openPendingUncalledPicker(),
+              onLongPress: () => _openPendingUncalledPicker(forcePicker: true),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.schedule_rounded, size: 18, color: scheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '처리할 미통화 $count',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: scheme.onErrorContainer,
                             ),
                           ),
-                        ),
-                      ],
+                          Text(
+                            '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onErrorContainer.withValues(
+                                alpha: 0.82,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: scheme.onErrorContainer.withValues(alpha: 0.7),
-                  ),
-                ],
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: scheme.onErrorContainer.withValues(alpha: 0.7),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
         );
       },
       loading: () => Padding(
@@ -2119,8 +2145,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final deltaColor = delta == 0
         ? scheme.onSurfaceVariant
         : delta > 0
-            ? scheme.tertiary
-            : scheme.error;
+        ? scheme.tertiary
+        : scheme.error;
 
     return Container(
       width: double.infinity,
@@ -2190,7 +2216,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         final reception = s.todayCount ?? 0;
         final incomplete = s.incompleteCount ?? 0;
         final followSnapshot = followSnapshotAsync.valueOrNull;
-        final followCount = followSnapshot?.remaining ??
+        final followCount =
+            followSnapshot?.remaining ??
             followOverviewAsync.valueOrNull?.total ??
             0;
         final followProgressHint = followSnapshot == null
@@ -2297,7 +2324,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                       if (_showLongPressHint) ...[
                         const SizedBox(height: 6),
                         Material(
-                          color: scheme.secondaryContainer.withValues(alpha: 0.45),
+                          color: scheme.secondaryContainer.withValues(
+                            alpha: 0.45,
+                          ),
                           borderRadius: BorderRadius.circular(10),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
@@ -2359,9 +2388,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                       hubPeriodLightStatsProvider(_previousPeriodKey),
                     );
                     ref.invalidate(hubPeriodFollowSnapshotProvider(periodKey));
-                    ref.invalidate(
-                      hubPeriodQualityOverviewProvider(periodKey),
-                    );
+                    ref.invalidate(hubPeriodQualityOverviewProvider(periodKey));
                   },
                 ),
               ),
