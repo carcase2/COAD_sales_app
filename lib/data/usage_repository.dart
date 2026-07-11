@@ -4,49 +4,60 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UsageRepository {
   UsageRepository({SupabaseClient? client})
-      : _client = client ?? Supabase.instance.client;
+    : _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
 
-  /// 최근 [days]일 **앱 사용 기록이 있는 사용자**만 합산한다.
-  Future<List<AppUsageSummary>> fetchSummaries({int days = 7}) async {
-    final end = DateTime.now();
-    final start = end.subtract(Duration(days: days - 1));
-    final startYmd = ymdSeoulFromDateTime(start);
+  /// [startYmd]~[endYmd](포함) 구간의 앱 사용 기록이 있는 사용자만 합산한다.
+  /// [days]만 주면 오늘 기준 최근 N일(오늘 포함)로 조회한다.
+  Future<List<AppUsageSummary>> fetchSummaries({
+    int days = 7,
+    String? startYmd,
+    String? endYmd,
+  }) async {
+    final resolvedEnd = endYmd ?? todayYmdSeoul();
+    final resolvedStart =
+        startYmd ?? addDaysToYmd(resolvedEnd, -(days - 1).clamp(0, 366));
 
     final usageRes = await _client
         .from('app_usage_daily')
-        .select('user_id, user_name, usage_date, app_opens, tab_counts, updated_at')
-        .gte('usage_date', startYmd)
+        .select(
+          'user_id, user_name, usage_date, app_opens, tab_counts, updated_at',
+        )
+        .gte('usage_date', resolvedStart)
+        .lte('usage_date', resolvedEnd)
         .order('usage_date', ascending: false);
 
     final usageByUser = _aggregateUsage(
       List<Map<String, dynamic>>.from(usageRes as List),
     );
 
-    final summaries = usageByUser.entries
-        .where((e) => _hasUsageInPeriod(e.value))
-        .map(
-          (e) => _summaryForUser(
-            e.key,
-            e.value.name.isNotEmpty ? e.value.name : e.key,
-            e.value,
-          ),
-        )
-        .toList()
-      ..sort((a, b) {
-        final byOpens = b.weekOpens.compareTo(a.weekOpens);
-        if (byOpens != 0) return byOpens;
-        final byDays = b.activeDays.compareTo(a.activeDays);
-        if (byDays != 0) return byDays;
-        return a.userName.compareTo(b.userName);
-      });
+    final summaries =
+        usageByUser.entries
+            .where((e) => _hasUsageInPeriod(e.value))
+            .map(
+              (e) => _summaryForUser(
+                e.key,
+                e.value.name.isNotEmpty ? e.value.name : e.key,
+                e.value,
+              ),
+            )
+            .toList()
+          ..sort((a, b) {
+            final byOpens = b.weekOpens.compareTo(a.weekOpens);
+            if (byOpens != 0) return byOpens;
+            final byDays = b.activeDays.compareTo(a.activeDays);
+            if (byDays != 0) return byDays;
+            return a.userName.compareTo(b.userName);
+          });
 
     return summaries;
   }
 
   bool _hasUsageInPeriod(_Agg agg) =>
-      agg.weekOpens > 0 || agg.activeDays.isNotEmpty || agg.tabCounts.isNotEmpty;
+      agg.weekOpens > 0 ||
+      agg.activeDays.isNotEmpty ||
+      agg.tabCounts.isNotEmpty;
 
   Map<String, _Agg> _aggregateUsage(List<Map<String, dynamic>> rows) {
     final byUser = <String, _Agg>{};
@@ -98,11 +109,7 @@ class UsageRepository {
     return byUser;
   }
 
-  AppUsageSummary _summaryForUser(
-    String userId,
-    String userName,
-    _Agg? agg,
-  ) {
+  AppUsageSummary _summaryForUser(String userId, String userName, _Agg? agg) {
     return AppUsageSummary(
       userId: userId,
       userName: userName.isNotEmpty ? userName : userId,

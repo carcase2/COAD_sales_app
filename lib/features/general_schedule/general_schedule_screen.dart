@@ -33,7 +33,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   int _earliestAddCursorSlot = 0;
   String _searchQuery = '';
   String _selectedAssigneeFilter = kGeneralScheduleAllAssignees;
-  GeneralScheduleCalendarView _calendarView = GeneralScheduleCalendarView.week;
+  GeneralScheduleCalendarView _calendarView = GeneralScheduleCalendarView.month;
   DateTime _monthFocusedDay = DateTime.parse(todayYmdSeoul());
   bool _returnToMonthViewOnBack = false;
 

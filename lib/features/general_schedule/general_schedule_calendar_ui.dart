@@ -469,7 +469,12 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
     return Column(
       children: [
         for (var i = 0; i < kGeneralScheduleSlotsPerDay; i++) ...[
-          if (i > 0) SizedBox(height: siteRowGap),
+          if (i > 0)
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: scheme.outline.withValues(alpha: 0.45),
+            ),
           Expanded(
             child: _siteRow(
               cell: filledSlot(safeSlots[i]) ? safeSlots[i] : null,

@@ -163,6 +163,32 @@ class _GeneralScheduleMonthCalendarState
               todayTextStyle: const TextStyle(fontSize: 0),
               todayDecoration: const BoxDecoration(),
               cellMargin: EdgeInsets.zero,
+              tableBorder: TableBorder(
+                horizontalInside: BorderSide(
+                  color: scheme.outline.withValues(alpha: 0.55),
+                  width: 1.1,
+                ),
+                verticalInside: BorderSide(
+                  color: scheme.outline.withValues(alpha: 0.55),
+                  width: 1.1,
+                ),
+                top: BorderSide(
+                  color: scheme.outline.withValues(alpha: 0.7),
+                  width: 1.2,
+                ),
+                bottom: BorderSide(
+                  color: scheme.outline.withValues(alpha: 0.7),
+                  width: 1.2,
+                ),
+                left: BorderSide(
+                  color: scheme.outline.withValues(alpha: 0.7),
+                  width: 1.2,
+                ),
+                right: BorderSide(
+                  color: scheme.outline.withValues(alpha: 0.7),
+                  width: 1.2,
+                ),
+              ),
             ),
             calendarBuilders: CalendarBuilders(
               dowBuilder: (context, day) {
@@ -254,12 +280,15 @@ class _GeneralScheduleMonthCalendarState
               ? Border.all(
                   color: isToday
                       ? scheme.primary
-                      : scheme.error.withValues(alpha: 0.75),
-                  width: isToday ? 2 : 1.5,
+                      : scheme.error.withValues(alpha: 0.85),
+                  width: isToday ? 2 : 1.6,
                 )
               : isToday
                   ? Border.all(color: scheme.primary, width: 2)
-                  : null,
+                  : Border.all(
+                      color: scheme.outline.withValues(alpha: 0.42),
+                      width: 1,
+                    ),
           borderRadius: BorderRadius.circular(6),
         ),
         child: Column(

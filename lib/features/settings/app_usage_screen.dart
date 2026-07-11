@@ -1,15 +1,80 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/models/app_usage_summary.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-final appUsageSummariesProvider = FutureProvider.autoDispose
-    .family<List<AppUsageSummary>, int>((ref, days) async {
-  final repo = ref.watch(usageRepositoryProvider);
-  return repo.fetchSummaries(days: days);
-});
+class UsagePeriod {
+  const UsagePeriod({
+    required this.id,
+    required this.menuLabel,
+    required this.shortLabel,
+    required this.opensLabel,
+    required this.startYmd,
+    required this.endYmd,
+  });
+
+  final String id;
+  final String menuLabel;
+  final String shortLabel;
+  final String opensLabel;
+  final String startYmd;
+  final String endYmd;
+
+  static const List<String> ids = ['today', 'yesterday', '7', '14', '30'];
+
+  static UsagePeriod resolve(String id) {
+    final today = todayYmdSeoul();
+    final yesterday = addDaysToYmd(today, -1);
+    return switch (id) {
+      'today' => UsagePeriod(
+        id: id,
+        menuLabel: '금일',
+        shortLabel: '금일',
+        opensLabel: '금일 실행',
+        startYmd: today,
+        endYmd: today,
+      ),
+      'yesterday' => UsagePeriod(
+        id: id,
+        menuLabel: '전일',
+        shortLabel: '전일',
+        opensLabel: '전일 실행',
+        startYmd: yesterday,
+        endYmd: yesterday,
+      ),
+      '14' => UsagePeriod(
+        id: id,
+        menuLabel: '최근 14일',
+        shortLabel: '14일',
+        opensLabel: '14일 실행',
+        startYmd: addDaysToYmd(today, -13),
+        endYmd: today,
+      ),
+      '30' => UsagePeriod(
+        id: id,
+        menuLabel: '최근 30일',
+        shortLabel: '30일',
+        opensLabel: '30일 실행',
+        startYmd: addDaysToYmd(today, -29),
+        endYmd: today,
+      ),
+      _ => UsagePeriod(
+        id: '7',
+        menuLabel: '최근 7일',
+        shortLabel: '7일',
+        opensLabel: '7일 실행',
+        startYmd: addDaysToYmd(today, -6),
+        endYmd: today,
+      ),
+    };
+  }
+}
 
 class AppUsageScreen extends ConsumerStatefulWidget {
   const AppUsageScreen({super.key});
@@ -19,7 +84,39 @@ class AppUsageScreen extends ConsumerStatefulWidget {
 }
 
 class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
-  int _days = 7;
+  String _periodId = 'today';
+  AsyncValue<List<AppUsageSummary>> _summaries = const AsyncLoading();
+
+  UsagePeriod get _period => UsagePeriod.resolve(_periodId);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_load());
+    });
+  }
+
+  Future<void> _load() async {
+    setState(() => _summaries = const AsyncLoading());
+    try {
+      final period = UsagePeriod.resolve(_periodId);
+      final list = await ref
+          .read(usageRepositoryProvider)
+          .fetchSummaries(startYmd: period.startYmd, endYmd: period.endYmd);
+      if (!mounted) return;
+      setState(() => _summaries = AsyncData(list));
+    } catch (e, st) {
+      if (!mounted) return;
+      setState(() => _summaries = AsyncError(e, st));
+    }
+  }
+
+  void _selectPeriod(String id) {
+    if (_periodId == id) return;
+    setState(() => _periodId = id);
+    unawaited(_load());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,20 +129,22 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
     }
 
     final scheme = Theme.of(context).colorScheme;
-    final summariesAsync = ref.watch(appUsageSummariesProvider(_days));
+    final period = _period;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('앱 사용량'),
         actions: [
-          PopupMenuButton<int>(
+          PopupMenuButton<String>(
             tooltip: '기간',
-            initialValue: _days,
-            onSelected: (days) => setState(() => _days = days),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 7, child: Text('최근 7일')),
-              PopupMenuItem(value: 14, child: Text('최근 14일')),
-              PopupMenuItem(value: 30, child: Text('최근 30일')),
+            initialValue: _periodId,
+            onSelected: _selectPeriod,
+            itemBuilder: (context) => [
+              for (final id in UsagePeriod.ids)
+                PopupMenuItem(
+                  value: id,
+                  child: Text(UsagePeriod.resolve(id).menuLabel),
+                ),
             ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -53,7 +152,7 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '$_days일',
+                    period.shortLabel,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -67,33 +166,29 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
           ),
         ],
       ),
-      body: summariesAsync.when(
+      body: _summaries.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorBody(
-          message: '사용량을 불러오지 못했습니다.\n$e',
-          onRetry: () => ref.invalidate(appUsageSummariesProvider(_days)),
+          message: '사용량을 불러오지 못했습니다.\n${koreanErrorMessage(e)}',
+          onRetry: () => unawaited(_load()),
         ),
         data: (summaries) {
           if (summaries.isEmpty) {
             return _ErrorBody(
-              message: '최근 $_days일간 앱 사용 기록이 없습니다.',
-              onRetry: () => ref.invalidate(appUsageSummariesProvider(_days)),
+              message: '${period.menuLabel} 앱 사용 기록이 없습니다.',
+              onRetry: () => unawaited(_load()),
             );
           }
           return RefreshIndicator(
-            onRefresh: () async {
-              ref.invalidate(appUsageSummariesProvider(_days));
-              await ref.read(appUsageSummariesProvider(_days).future);
-            },
+            onRefresh: _load,
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               itemCount: summaries.length + 1,
-              separatorBuilder: (_, index) =>
-                  index == 0 ? const SizedBox(height: 10) : const SizedBox(height: 10),
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 if (index == 0) {
                   return Text(
-                    '앱 사용자 ${summaries.length}명 · 최근 $_days일',
+                    '앱 사용자 ${summaries.length}명 · ${period.menuLabel}',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -102,7 +197,7 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
                   );
                 }
                 final row = summaries[index - 1];
-                return _UsageCard(row: row, days: _days);
+                return _UsageCard(row: row, opensLabel: period.opensLabel);
               },
             ),
           );
@@ -113,10 +208,16 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
 }
 
 class _UsageCard extends StatelessWidget {
-  const _UsageCard({required this.row, required this.days});
+  const _UsageCard({required this.row, required this.opensLabel});
 
   final AppUsageSummary row;
-  final int days;
+  final String opensLabel;
+
+  String get _initial {
+    final name = row.userName.trim();
+    if (name.isEmpty) return '?';
+    return String.fromCharCodes(name.runes.take(1));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +240,7 @@ class _UsageCard extends StatelessWidget {
                   radius: 18,
                   backgroundColor: scheme.primaryContainer,
                   child: Text(
-                    row.userName.isNotEmpty ? row.userName.characters.first : '?',
+                    _initial,
                     style: TextStyle(
                       color: scheme.onPrimaryContainer,
                       fontWeight: FontWeight.w800,
@@ -176,7 +277,7 @@ class _UsageCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _StatChip(
-                  label: '$days일 실행',
+                  label: opensLabel,
                   value: '${row.weekOpens}회',
                   scheme: scheme,
                 ),
@@ -190,11 +291,7 @@ class _UsageCard extends StatelessWidget {
                   value: appUsageTabLabel(row.topTabKey),
                   scheme: scheme,
                 ),
-                _StatChip(
-                  label: '마지막',
-                  value: lastUsed,
-                  scheme: scheme,
-                ),
+                _StatChip(label: '마지막', value: lastUsed, scheme: scheme),
               ],
             ),
           ],

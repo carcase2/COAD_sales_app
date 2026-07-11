@@ -867,9 +867,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     AppUpdateStatus? updateStatus,
     AppUser? user,
   ) {
+    // 드로어 context로 닫은 뒤, 호스트(메인) context로 push 해야 unmounted 오류가 없다.
+    final hostContext = this.context;
     void closeDrawerThen(VoidCallback action) {
       Navigator.pop(context);
-      action();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        action();
+      });
     }
 
     return AppMenuCatalog(
@@ -942,7 +947,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             final repository = ref.read(salesCallsRepositoryProvider);
             final calls = ref.read(todayCallsContentProvider).value ?? [];
             showSearch(
-              context: context,
+              context: hostContext,
               delegate: SalesCallSearchDelegate(
                 initialItems: calls,
                 repository: repository,
@@ -961,7 +966,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             quickLabel: '사용량',
             keywords: const ['사용량', '통계', '관리'],
             onTap: () => closeDrawerThen(() {
-              Navigator.of(context).push(
+              Navigator.of(hostContext).push(
                 MaterialPageRoute<void>(builder: (_) => const AppUsageScreen()),
               );
             }),
@@ -977,7 +982,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           keywords: const ['환경', '업데이트', '미통화 안내'],
           onTap: () => closeDrawerThen(() {
             _trackTab(user, 'settings');
-            Navigator.of(context).push(
+            Navigator.of(hostContext).push(
               MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             );
           }),
@@ -990,28 +995,31 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           quickAccess: true,
           quickLabel: '로그아웃',
           keywords: const ['로그아웃', '종료'],
-          onTap: () async {
+          onTap: () {
             Navigator.pop(context);
-            final confirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('로그아웃'),
-                content: const Text('정말 로그아웃 하시겠습니까?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('취소'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('로그아웃'),
-                  ),
-                ],
-              ),
-            );
-            if (confirm == true) {
-              await ref.read(authControllerProvider.notifier).logout();
-            }
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              if (!mounted) return;
+              final confirm = await showDialog<bool>(
+                context: hostContext,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('로그아웃'),
+                  content: const Text('정말 로그아웃 하시겠습니까?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('취소'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('로그아웃'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true && mounted) {
+                await ref.read(authControllerProvider.notifier).logout();
+              }
+            });
           },
         ),
       ],
