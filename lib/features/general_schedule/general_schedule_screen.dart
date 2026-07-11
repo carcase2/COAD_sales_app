@@ -54,7 +54,16 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   }
 
   void _goToToday() {
-    _selectDayAndScroll(todayYmdSeoul());
+    final today = todayYmdSeoul();
+    final todayDt = DateTime.parse(today);
+    _ensureHistoryWindowCovers(today);
+    setState(() {
+      _selectedDay = todayDt;
+      _monthFocusedDay = DateTime(todayDt.year, todayDt.month, 1);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _weekPanelKey.currentState?.scrollStripToCenter();
+    });
   }
 
   void _selectDayAndScroll(String ymd, {bool fromMonthPick = false}) {
@@ -838,53 +847,52 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                 onSelected: (name) =>
                     setState(() => _selectedAssigneeFilter = name),
               ),
-              if (isWeekView) ...[
+              if (isWeekView)
                 GeneralScheduleCollapsibleMonthStats(stats: monthStats),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _goToToday,
-                          style: OutlinedButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                          ),
-                          icon: Icon(
-                            Icons.today_rounded,
-                            size: 16,
-                            color: isToday ? scheme.primary : null,
-                          ),
-                          label: Text(
-                            isToday ? '오늘' : '오늘로',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _goToToday,
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
+                        icon: Icon(
+                          Icons.today_rounded,
+                          size: 16,
+                          color: isToday ? scheme.primary : null,
+                        ),
+                        label: Text(
+                          isToday ? '오늘' : '오늘로',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton.tonalIcon(
-                          onPressed: recordsAsync.isLoading
-                              ? null
-                              : () => unawaited(_onQuickAddEarliest(grid)),
-                          style: FilledButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                          ),
-                          icon: const Icon(Icons.bolt_rounded, size: 16),
-                          label: const Text(
-                            '빈 칸 추가',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: recordsAsync.isLoading
+                            ? null
+                            : () => unawaited(_onQuickAddEarliest(grid)),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
+                        icon: const Icon(Icons.bolt_rounded, size: 16),
+                        label: const Text(
+                          '빈 칸 추가',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
               Expanded(
                 child: isWeekView
                     ? GeneralScheduleWeekPanel(

@@ -498,14 +498,24 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
     required bool filled,
   }) {
     if (!filled || cell == null) {
-      return Center(
-        child: Text(
-          '·',
-          style: TextStyle(
-            fontSize: 7,
-            height: 1.0,
-            fontWeight: FontWeight.w700,
-            color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(2),
+          border: Border.all(
+            color: scheme.primary.withValues(alpha: 0.28),
+            width: 0.6,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            '+',
+            style: TextStyle(
+              fontSize: 10,
+              height: 1.0,
+              fontWeight: FontWeight.w900,
+              color: scheme.primary.withValues(alpha: 0.72),
+            ),
           ),
         ),
       );
@@ -682,13 +692,14 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
                       : accent.withValues(alpha: 0.18))
                   : (onPrimary
                       ? scheme.onPrimary.withValues(alpha: 0.15)
-                      : scheme.surfaceContainerHighest
-                          .withValues(alpha: 0.75)),
+                      : scheme.primary.withValues(alpha: 0.07)),
               borderRadius: radius,
               border: Border.all(
                 color: filled
                     ? accent.withValues(alpha: onPrimary ? 0.55 : 0.4)
-                    : scheme.outlineVariant.withValues(alpha: 0.35),
+                    : (onPrimary
+                        ? scheme.onPrimary.withValues(alpha: 0.35)
+                        : scheme.primary.withValues(alpha: 0.32)),
                 width: 0.5,
               ),
             ),
@@ -706,15 +717,14 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
                     )
                   : Center(
                       child: Text(
-                        compact ? '·' : '+',
+                        '+',
                         style: TextStyle(
-                          fontSize: compact ? 8 : 11,
-                          fontWeight: FontWeight.w700,
+                          fontSize: compact ? 10 : 11,
+                          fontWeight: FontWeight.w900,
                           height: 1.0,
                           color: onPrimary
-                              ? scheme.onPrimary.withValues(alpha: 0.45)
-                              : scheme.onSurfaceVariant
-                                  .withValues(alpha: 0.55),
+                              ? scheme.onPrimary.withValues(alpha: 0.7)
+                              : scheme.primary.withValues(alpha: 0.75),
                         ),
                       ),
                     ),
