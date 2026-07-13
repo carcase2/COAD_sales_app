@@ -647,20 +647,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     createdAt: c.createdAt,
   );
 
-  String _elapsedLabelSince(DateTime? receptionSeoul) {
-    if (receptionSeoul == null) return '';
-    final diff = DateTime.now().difference(receptionSeoul);
-    if (diff.isNegative) return '방금 접수';
-    if (diff.inMinutes < 1) return '방금 전';
-    if (diff.inHours < 1) return '${diff.inMinutes}분 경과';
-    if (diff.inDays < 1) {
-      final hours = diff.inHours;
-      final mins = diff.inMinutes % 60;
-      if (mins == 0) return '${hours}시간 경과';
-      return '${hours}시간 ${mins}분 경과';
-    }
-    return '${diff.inDays}일 경과';
-  }
+  String _elapsedLabelSince(DateTime? receptionSeoul) =>
+      elapsedLabelSinceReceptionSeoul(receptionSeoul);
 
   Future<void> _openCreateShortcut() async {
     final created = await Navigator.of(context).push<bool>(

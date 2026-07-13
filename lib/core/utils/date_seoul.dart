@@ -124,11 +124,56 @@ DateTime _utcToSeoul(DateTime utc) {
   try {
     return tz.TZDateTime.from(asUtc, tz.local);
   } catch (_) {
-    return asUtc.add(const Duration(hours: 9));
+    // 타임존 미초기화 — 서울 벽시계 숫자만 가진 로컬 DateTime으로 반환
+    final seoul = asUtc.add(const Duration(hours: 9));
+    return DateTime(
+      seoul.year,
+      seoul.month,
+      seoul.day,
+      seoul.hour,
+      seoul.minute,
+      seoul.second,
+      seoul.millisecond,
+      seoul.microsecond,
+    );
   }
 }
 
+/// 서울 기준 현재 시각 — 접수 `call_date` / `call_time` 저장용.
+({String ymd, String hms}) seoulNowCallDateTimeParts({DateTime? now}) {
+  late final DateTime n;
+  if (now != null) {
+    n = now;
+  } else {
+    try {
+      n = tz.TZDateTime.now(tz.local);
+    } catch (_) {
+      // 테스트 등 timezone 미초기화 — UTC+9 벽시계
+      n = DateTime.now().toUtc().add(const Duration(hours: 9));
+    }
+  }
+  final ymd =
+      '${n.year.toString().padLeft(4, '0')}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  final hms =
+      '${n.hour.toString().padLeft(2, '0')}:${n.minute.toString().padLeft(2, '0')}:${n.second.toString().padLeft(2, '0')}';
+  return (ymd: ymd, hms: hms);
+}
+
+/// DB UTC `now()` 벽시계를 KST로 그대로 읽은 경우 — 시계면이 약 9시간 차이.
+///
+/// `Duration`이 아닌 시·분을 비교한다(디바이스 TZ·UTC DateTime 혼용에도 안전).
+bool isLikelyUtcWallClockReadAsKst(DateTime wallClock, DateTime createdSeoul) {
+  final wallMins = wallClock.hour * 60 + wallClock.minute;
+  final createdMins = createdSeoul.hour * 60 + createdSeoul.minute;
+  var delta = createdMins - wallMins;
+  if (delta < 0) delta += 24 * 60;
+  return delta >= 9 * 60 - 5 && delta <= 9 * 60 + 5;
+}
+
 /// 고객전화 접수 시각 — `call_date`/`call_time` 우선, 없으면 `created_at`.
+///
+/// `call_*`가 타임존 없는 UTC 벽시계(DB 기본값)로 들어온 경우
+/// `created_at`과 약 9시간 어긋나면 `created_at`을 사용한다.
 DateTime? resolveSalesCallReceptionSeoul({
   String? callDate,
   String? callTime,
@@ -137,29 +182,65 @@ DateTime? resolveSalesCallReceptionSeoul({
   final d = callDate?.trim() ?? '';
   final t = callTime?.trim() ?? '';
 
+  DateTime? fromCreated;
+  if (createdAt != null && createdAt.trim().isNotEmpty) {
+    try {
+      fromCreated = parseSupabaseTimestampAsSeoul(createdAt.trim());
+    } catch (_) {}
+  }
+
+  DateTime? fromCall;
   if (d.isNotEmpty) {
     if (_hasTimeComponent(d) || t.isNotEmpty) {
       final combined = t.isNotEmpty && !_hasTimeComponent(d) ? '$d $t' : d;
       try {
-        return parseSalesCallReceptionWallClock(combined);
+        fromCall = parseSalesCallReceptionWallClock(combined);
       } catch (_) {}
-    } else if (createdAt != null && createdAt.trim().isNotEmpty) {
-      try {
-        return parseSupabaseTimestampAsSeoul(createdAt.trim());
-      } catch (_) {}
+    } else if (fromCreated != null) {
+      return fromCreated;
     } else {
       try {
-        return parseSalesCallReceptionWallClock(d);
+        fromCall = parseSalesCallReceptionWallClock(d);
       } catch (_) {}
     }
   }
 
-  if (createdAt != null && createdAt.trim().isNotEmpty) {
-    try {
-      return parseSupabaseTimestampAsSeoul(createdAt.trim());
-    } catch (_) {}
+  if (fromCall != null && fromCreated != null) {
+    if (isLikelyUtcWallClockReadAsKst(fromCall, fromCreated)) {
+      return fromCreated;
+    }
+    return fromCall;
   }
-  return null;
+  return fromCall ?? fromCreated;
+}
+
+/// 접수 후 경과 표기 — `방금 전`, `N분 경과`, `N시간 경과` 등.
+String elapsedLabelSinceReceptionSeoul(
+  DateTime? receptionSeoul, {
+  DateTime? now,
+}) {
+  if (receptionSeoul == null) return '';
+  late final DateTime anchorNow;
+  if (now != null) {
+    anchorNow = now;
+  } else {
+    try {
+      anchorNow = tz.TZDateTime.now(tz.local);
+    } catch (_) {
+      anchorNow = DateTime.now();
+    }
+  }
+  final diff = anchorNow.difference(receptionSeoul);
+  if (diff.isNegative) return '방금 접수';
+  if (diff.inMinutes < 1) return '방금 전';
+  if (diff.inHours < 1) return '${diff.inMinutes}분 경과';
+  if (diff.inDays < 1) {
+    final hours = diff.inHours;
+    final mins = diff.inMinutes % 60;
+    if (mins == 0) return '${hours}시간 경과';
+    return '${hours}시간 ${mins}분 경과';
+  }
+  return '${diff.inDays}일 경과';
 }
 
 String formatSalesCallReceptionDateTime({

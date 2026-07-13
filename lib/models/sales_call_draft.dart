@@ -1,3 +1,5 @@
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+
 class SalesCallDraft {
   const SalesCallDraft({
     required this.customerName,
@@ -13,6 +15,8 @@ class SalesCallDraft {
     this.createdBy,
     this.callStage,
     this.images = const <String>[],
+    this.callDateYmd,
+    this.callTimeHms,
   });
 
   final String customerName;
@@ -29,8 +33,13 @@ class SalesCallDraft {
   /// DB `sales_calls.call_stage` — 정수(0=미통화, 1+=상담 단계)
   final Object? callStage;
   final List<String> images;
+  /// 서울 현지 `yyyy-MM-dd`. null이면 [toInsertJson]에서 현재 시각으로 채움.
+  final String? callDateYmd;
+  /// 서울 현지 `HH:mm:ss`. null이면 [toInsertJson]에서 현재 시각으로 채움.
+  final String? callTimeHms;
 
   Map<String, dynamic> toInsertJson() {
+    final parts = seoulNowCallDateTimeParts();
     return {
       'customer_name': customerName,
       'customer_phone': customerPhone,
@@ -39,6 +48,13 @@ class SalesCallDraft {
       'region_sido': regionSido,
       'region_name': regionName,
       'assigned_to': assignedTo,
+      // DB UTC 기본값에 의존하지 않음 — 웹과 동일하게 KST 벽시계로 저장
+      'call_date': (callDateYmd != null && callDateYmd!.trim().isNotEmpty)
+          ? callDateYmd!.trim()
+          : parts.ymd,
+      'call_time': (callTimeHms != null && callTimeHms!.trim().isNotEmpty)
+          ? callTimeHms!.trim()
+          : parts.hms,
       if (productCategoryId != null) 'product_category_id': productCategoryId,
       if (inquiryMethodId != null) 'inquiry_method_id': inquiryMethodId,
       'status_id': statusId,
