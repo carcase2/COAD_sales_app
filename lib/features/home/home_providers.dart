@@ -382,10 +382,13 @@ TodayStats _statsFromReceptionCalls(List<SalesCall> calls) {
 }
 
 /// 접수 bundle에서 파생 — 별도 stats API·Future 없음.
+/// reload/refresh 중에는 이전 수치를 유지해 카드가 잠깐 0으로 떨어지지 않게 한다.
 final hubPeriodStatsProvider = Provider.autoDispose
     .family<AsyncValue<TodayStats>, HubPeriodKey>((ref, key) {
   final bundleAsync = ref.watch(hubPeriodReceptionBundleProvider(key));
   return bundleAsync.when(
+    skipLoadingOnReload: true,
+    skipLoadingOnRefresh: true,
     data: (bundle) => AsyncValue.data(_statsFromReceptionCalls(bundle.calls)),
     loading: () => const AsyncValue.loading(),
     error: (e, st) => AsyncValue.error(e, st),
@@ -519,6 +522,8 @@ final hubPeriodFollowOverviewProvider = Provider.autoDispose
     .family<AsyncValue<AssigneeOverview>, HubPeriodKey>((ref, key) {
   final snapshotAsync = ref.watch(hubPeriodFollowSnapshotProvider(key));
   return snapshotAsync.when(
+    skipLoadingOnReload: true,
+    skipLoadingOnRefresh: true,
     data: (snapshot) => AsyncValue.data(snapshot.incompleteOverview),
     loading: () => const AsyncValue.loading(),
     error: (e, st) => AsyncValue.error(e, st),
@@ -548,17 +553,53 @@ void prefetchHubPeriodFlow(
   unawaited(Future.wait(futures).catchError((_) => <Object?>[]));
 }
 
+/// day 기간 접수/미통화 카드는 [hubDayReceptionCallsProvider]가 실제 소스다.
+/// bundle만 invalidate하면 day 캐시(빈 목록 포함)가 재사용되어 카드가 0에 고정될 수 있다.
+void invalidateHubPeriodReceptionSources(
+  void Function(ProviderOrFamily provider) invalidate,
+  HubPeriodKey key,
+) {
+  if (key.period == HubPeriod.day) {
+    invalidate(hubDayReceptionCallsProvider(key.anchorYmd));
+    invalidate(hubDayUncalledCallsProvider(key.anchorYmd));
+  }
+  invalidate(hubPeriodReceptionBundleProvider(key));
+  invalidate(hubPeriodQualityOverviewProvider(key));
+}
+
+/// pull-to-refresh / 재시도 — 흐름 탭 활성 기간 데이터를 서버에서 다시 조회.
+Future<void> refreshHubPeriodFlow(
+  WidgetRef ref,
+  HubPeriodKey key, {
+  HubPeriodKey? previousKey,
+}) async {
+  invalidateHubPeriodReceptionSources(ref.invalidate, key);
+  ref.invalidate(hubPeriodFollowSnapshotProvider(key));
+  ref.invalidate(hubPendingUncalledCallsProvider);
+  if (previousKey != null) {
+    ref.invalidate(hubPeriodLightStatsProvider(previousKey));
+  }
+
+  final futures = <Future<Object?>>[
+    ref.read(hubPeriodReceptionBundleProvider(key).future),
+    ref.read(hubPeriodFollowSnapshotProvider(key).future),
+    ref.read(hubPeriodQualityOverviewProvider(key).future),
+    ref.read(hubPendingUncalledSummaryProvider.future),
+  ];
+  if (previousKey != null) {
+    futures.add(ref.read(hubPeriodLightStatsProvider(previousKey).future));
+  }
+  // RefreshIndicator 완료용 — 개별 provider 오류는 각 AsyncValue에 남긴다.
+  await Future.wait(futures.map((f) => f.catchError((_) => null)));
+}
+
 /// 흐름 카드 탭 시 — 화면 숫자와 무관하게 서버에서 다시 조회.
 Future<HubPeriodReceptionBundle> refreshHubPeriodUncalledBundle(
   WidgetRef ref,
   HubPeriodKey key,
 ) async {
-  ref.invalidate(hubPeriodReceptionBundleProvider(key));
-  if (key.period == HubPeriod.day) {
-    ref.invalidate(hubDayReceptionCallsProvider(key.anchorYmd));
-    ref.invalidate(hubDayUncalledCallsProvider(key.anchorYmd));
-  }
-  await ref.read(hubPeriodReceptionBundleProvider(key).future);
+  // day 소스를 먼저 무효화한 뒤 bundle을 다시 읽어 빈 day 캐시 재사용을 막는다.
+  invalidateHubPeriodReceptionSources(ref.invalidate, key);
   return ref.read(hubPeriodReceptionBundleProvider(key).future);
 }
 

@@ -1701,20 +1701,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   Future<void> _refreshActiveFlowPeriod() async {
-    final active = _activeFlowPeriodKey;
-    final previous = _previousPeriodKey;
-    ref.invalidate(hubPeriodReceptionBundleProvider(active));
-    ref.invalidate(hubPeriodLightStatsProvider(previous));
-    ref.invalidate(hubPeriodFollowSnapshotProvider(active));
-    ref.invalidate(hubPeriodQualityOverviewProvider(active));
-    ref.invalidate(hubPendingUncalledCallsProvider);
-    await Future.wait([
-      ref.read(hubPeriodReceptionBundleProvider(active).future),
-      ref.read(hubPeriodLightStatsProvider(previous).future),
-      ref.read(hubPeriodFollowSnapshotProvider(active).future),
-      ref.read(hubPeriodQualityOverviewProvider(active).future),
-      ref.read(hubPendingUncalledSummaryProvider.future),
-    ]).catchError((_) => <void>[]);
+    // day 기간은 hubDayReceptionCallsProvider까지 무효화해야 카드 숫자가 갱신된다.
+    // bundle만 invalidate하면 빈 day 캐시가 재사용되어 0으로 남을 수 있다.
+    await refreshHubPeriodFlow(
+      ref,
+      _activeFlowPeriodKey,
+      previousKey: _previousPeriodKey,
+    );
   }
 
   void _invalidateSegmentBadges() {
@@ -2215,15 +2208,27 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       data: (s) {
         final reception = s.todayCount ?? 0;
         final incomplete = s.incompleteCount ?? 0;
-        final followSnapshot = followSnapshotAsync.valueOrNull;
-        final followCount =
-            followSnapshot?.remaining ??
+        // reload/refresh 중 이전 스냅샷을 유지해 follow 카드가 0으로 깜빡이지 않게 한다.
+        final followSnapshot = followSnapshotAsync.when(
+          skipLoadingOnReload: true,
+          skipLoadingOnRefresh: true,
+          data: (snap) => snap,
+          loading: () => followSnapshotAsync.valueOrNull,
+          error: (_, _) => followSnapshotAsync.valueOrNull,
+        );
+        final int followCount = followSnapshot?.remaining ??
             followOverviewAsync.valueOrNull?.total ??
             0;
         final followProgressHint = followSnapshot == null
             ? null
             : '전체 ${followSnapshot.total} · 완료 ${followSnapshot.completed} · 남음 ${followSnapshot.remaining}';
-        final quality = qualityAsync.valueOrNull;
+        final quality = qualityAsync.when(
+          skipLoadingOnReload: true,
+          skipLoadingOnRefresh: true,
+          data: (q) => q,
+          loading: () => qualityAsync.valueOrNull,
+          error: (_, _) => qualityAsync.valueOrNull,
+        );
         final prevReception = prevStatsAsync.valueOrNull?.todayCount ?? 0;
         final prevIncomplete = prevStatsAsync.valueOrNull?.incompleteCount ?? 0;
         final previousDayYmd = scope == HubPeriod.day
@@ -2383,12 +2388,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 child: HomeFlowErrorPanel(
                   message: koreanErrorMessage(e),
                   onRetry: () {
-                    ref.invalidate(hubPeriodReceptionBundleProvider(periodKey));
-                    ref.invalidate(
-                      hubPeriodLightStatsProvider(_previousPeriodKey),
+                    unawaited(
+                      refreshHubPeriodFlow(
+                        ref,
+                        periodKey,
+                        previousKey: _previousPeriodKey,
+                      ),
                     );
-                    ref.invalidate(hubPeriodFollowSnapshotProvider(periodKey));
-                    ref.invalidate(hubPeriodQualityOverviewProvider(periodKey));
                   },
                 ),
               ),
