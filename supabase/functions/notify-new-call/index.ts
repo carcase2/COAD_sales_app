@@ -32,8 +32,8 @@ type PushUser = {
 
 /**
  * 접수 푸시 수신 대상.
- * - 관리자(role=admin 또는 관리자 그룹) + 담당자(이름 일치)
- * - 담당자 미지정: 관리자만 수신
+ * - 관리자(role=admin 또는 관리자·총무부 그룹) + 담당자(이름 일치)
+ * - 담당자 미지정: 관리자·총무부 그룹만 수신
  */
 async function resolvePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
@@ -49,7 +49,7 @@ async function resolvePushRecipients(
   const admins = (users ?? []).filter((u) => {
     const role = (u.role ?? '').toString().trim().toLowerCase()
     const groupName = (u.groups?.name ?? '').toString().trim()
-    return role === 'admin' || groupName === '관리자'
+    return role === 'admin' || groupName === '관리자' || groupName === '총무부'
   })
 
   const trimmed = (assigneeName ?? '').trim()

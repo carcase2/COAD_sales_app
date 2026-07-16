@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
 
-const ALLOWED_GROUP_NAMES = ['본사영업', '관리자']
+const ALLOWED_GROUP_NAMES = ['본사영업', '관리자', '총무부']
 
 type PushUser = { id: string; name: string; role: string; fcm_token: string }
 
@@ -52,7 +52,7 @@ function buildDataBody(body: string): string {
   return body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
 }
 
-/** 본사일반 FCM — 본사영업·관리자 그룹 + role=admin */
+/** 본사일반 FCM — 본사영업·관리자·총무부 그룹 + role=admin */
 async function resolveGeneralSchedulePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
 ): Promise<PushUser[]> {
@@ -109,12 +109,12 @@ serve(async (req) => {
     )
 
     if (tokens.length === 0) {
-      console.log('No general schedule FCM recipients in 본사영업/관리자')
+      console.log('No general schedule FCM recipients in 본사영업/관리자/총무부')
       return new Response(
         JSON.stringify({
           success: true,
           recipientCount: 0,
-          message: 'No FCM recipients in 본사영업/관리자',
+          message: 'No FCM recipients in 본사영업/관리자/총무부',
         }),
         { headers: { 'Content-Type': 'application/json' }, status: 200 },
       )

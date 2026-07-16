@@ -53,7 +53,7 @@ async function resolveAssigneeName(
   return assigneeFromMasterRow(data as Record<string, unknown> | null)
 }
 
-/** 발급요청·완료 푸시: role admin 또는 관리자 그룹 + 해당 건 담당자(requester) */
+/** 발급요청·완료 푸시: role admin 또는 관리자·총무부 그룹 + 해당 건 담당자(requester) */
 async function resolveIssuancePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
   assigneeName: string | null,
@@ -68,7 +68,7 @@ async function resolveIssuancePushRecipients(
   const admins = (users ?? []).filter((u) => {
     const role = (u.role ?? '').toString().trim().toLowerCase()
     const groupName = (u.groups?.name ?? '').toString().trim()
-    return role === 'admin' || groupName === '관리자'
+    return role === 'admin' || groupName === '관리자' || groupName === '총무부'
   })
 
   const trimmed = (assigneeName ?? '').trim()
