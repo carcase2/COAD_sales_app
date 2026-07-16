@@ -11,7 +11,13 @@ type NotifyPayload = {
   body: string
 }
 
-type PushUser = { id: string; name: string; role: string; fcm_token: string }
+type PushUser = {
+  id: string
+  name: string
+  role: string
+  fcm_token: string
+  groups?: { name?: string | null } | null
+}
 
 function assigneeFromMasterRow(
   row: Record<string, unknown> | null | undefined,
@@ -47,25 +53,30 @@ async function resolveAssigneeName(
   return assigneeFromMasterRow(data as Record<string, unknown> | null)
 }
 
-/** 발급요청·완료 푸시: 관리자 전원 + 해당 건 담당자(requester) */
+/** 발급요청·완료 푸시: role admin 또는 관리자 그룹 + 해당 건 담당자(requester) */
 async function resolveIssuancePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
   assigneeName: string | null,
 ): Promise<PushUser[]> {
-  const { data: admins, error: adminError } = await supabaseAdmin
+  const { data: users, error: adminError } = await supabaseAdmin
     .from('users')
-    .select('id, name, role, fcm_token')
-    .eq('role', 'admin')
+    .select('id, name, role, fcm_token, groups(name)')
     .not('fcm_token', 'is', null)
 
   if (adminError) throw adminError
+
+  const admins = (users ?? []).filter((u) => {
+    const role = (u.role ?? '').toString().trim().toLowerCase()
+    const groupName = (u.groups?.name ?? '').toString().trim()
+    return role === 'admin' || groupName === '관리자'
+  })
 
   const trimmed = (assigneeName ?? '').trim()
   let assigneeUsers: PushUser[] = []
   if (trimmed && trimmed !== '미지정') {
     const { data, error: assigneeError } = await supabaseAdmin
       .from('users')
-      .select('id, name, role, fcm_token')
+      .select('id, name, role, fcm_token, groups(name)')
       .eq('name', trimmed)
       .not('fcm_token', 'is', null)
 
@@ -406,7 +417,7 @@ serve(async (req) => {
     }
 
     console.log(
-      `Routing issuance ${notify.event} push to admins + assignee=${assigneeName} (${tokens.length} token(s))`,
+      `Routing issuance ${notify.event} push to admin(role/group) + assignee=${assigneeName} (${tokens.length} token(s))`,
     )
 
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')

@@ -22,39 +22,44 @@ function isYmdInInclusiveRange(
   return true
 }
 
-type PushUser = { id: string; name: string; role: string; fcm_token: string }
+type PushUser = {
+  id: string
+  name: string
+  role: string
+  fcm_token: string
+  groups?: { name?: string | null } | null
+}
 
 /**
  * 접수 푸시 수신 대상.
- * - 담당자 지정: 관리자 전원 + 담당자(이름 일치)
- * - 담당자 미지정: FCM 토큰 있는 전체 사용자(기존 브로드캐스트)
+ * - 관리자(role=admin 또는 관리자 그룹) + 담당자(이름 일치)
+ * - 담당자 미지정: 관리자만 수신
  */
 async function resolvePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
   assigneeName: string | null,
 ): Promise<PushUser[]> {
-  const trimmed = (assigneeName ?? '').trim()
-  if (!trimmed || trimmed === '미지정') {
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .select('id, name, role, fcm_token')
-      .not('fcm_token', 'is', null)
-
-    if (error) throw error
-    return data ?? []
-  }
-
-  const { data: admins, error: adminError } = await supabaseAdmin
+  const { data: users, error: adminError } = await supabaseAdmin
     .from('users')
-    .select('id, name, role, fcm_token')
-    .eq('role', 'admin')
+    .select('id, name, role, fcm_token, groups(name)')
     .not('fcm_token', 'is', null)
 
   if (adminError) throw adminError
 
+  const admins = (users ?? []).filter((u) => {
+    const role = (u.role ?? '').toString().trim().toLowerCase()
+    const groupName = (u.groups?.name ?? '').toString().trim()
+    return role === 'admin' || groupName === '관리자'
+  })
+
+  const trimmed = (assigneeName ?? '').trim()
+  if (!trimmed || trimmed === '미지정') {
+    return admins
+  }
+
   const { data: assigneeUsers, error: assigneeError } = await supabaseAdmin
     .from('users')
-    .select('id, name, role, fcm_token')
+    .select('id, name, role, fcm_token, groups(name)')
     .eq('name', trimmed)
     .not('fcm_token', 'is', null)
 
