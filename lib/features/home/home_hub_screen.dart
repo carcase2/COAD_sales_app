@@ -1711,8 +1711,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   void _invalidateSegmentBadges() {
-    ref.invalidate(hubPendingUncalledSummaryProvider);
+    // 요약만 invalidate하면 상위(calls/overrides) 오류 캐시가 그대로 재사용된다.
     ref.invalidate(hubPendingUncalledCallsProvider);
+    ref.invalidate(tempManagerOverridesProvider);
+    ref.invalidate(hubPendingUncalledSummaryProvider);
   }
 
   Future<void> _onRefresh() async {
@@ -2094,13 +2096,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           backgroundColor: scheme.errorContainer.withValues(alpha: 0.2),
         ),
       ),
-      error: (_, __) => Padding(
+      error: (error, _) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Material(
           color: scheme.errorContainer.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
-            onTap: () => ref.invalidate(hubPendingUncalledSummaryProvider),
+            onTap: _invalidateSegmentBadges,
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2110,7 +2112,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '처리할 미통화를 불러오지 못했습니다 · 탭하여 다시 시도',
+                      '처리할 미통화를 불러오지 못했습니다 · 탭하여 다시 시도\n'
+                      '${koreanErrorMessage(error)}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,

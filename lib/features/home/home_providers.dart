@@ -603,6 +603,15 @@ Future<HubPeriodReceptionBundle> refreshHubPeriodUncalledBundle(
   return ref.read(hubPeriodReceptionBundleProvider(key).future);
 }
 
+/// 임시 담당 오버라이드 — 실패해도 빈 목록으로 진행(미통화 조회 자체를 막지 않음).
+Future<List<TempManagerOverride>> _pendingUncalledOverrides(Ref ref) async {
+  try {
+    return await ref.watch(tempManagerOverridesProvider.future);
+  } catch (_) {
+    return const <TempManagerOverride>[];
+  }
+}
+
 /// 최근 [pendingUncalledLookbackDays]일 내 미해결 미통화 — 접수일 무관.
 /// 배지·담당자 집계 전용 경량 조회(필요 컬럼만) — 목록 화면은 자체 전체 조회 사용.
 final hubPendingUncalledCallsProvider =
@@ -612,14 +621,14 @@ final hubPendingUncalledCallsProvider =
   final calls = await repo.fetchPendingUncalledLite(
     fromYmd: pendingUncalledFromYmd(anchor),
   );
-  final overrides = await ref.watch(tempManagerOverridesProvider.future);
+  final overrides = await _pendingUncalledOverrides(ref);
   return applyCallDisplayOverrides(calls, overrides, DateTime.now());
 });
 
 final hubPendingUncalledSummaryProvider =
     FutureProvider.autoDispose<PendingUncalledSummary>((ref) async {
   final calls = await ref.watch(hubPendingUncalledCallsProvider.future);
-  final overrides = await ref.watch(tempManagerOverridesProvider.future);
+  final overrides = await _pendingUncalledOverrides(ref);
   return summarizePendingUncalled(
     calls: calls,
     todayYmd: todayYmdSeoul(),

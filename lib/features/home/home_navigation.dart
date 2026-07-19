@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(hubPeriodFollowSnapshotProvider);
   invalidate(hubPeriodQualityOverviewProvider);
   invalidate(hubPendingUncalledCallsProvider);
+  invalidate(tempManagerOverridesProvider);
   invalidate(hubPendingUncalledSummaryProvider);
 }
 
