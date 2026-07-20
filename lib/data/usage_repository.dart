@@ -1,5 +1,7 @@
+import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/app_usage_summary.dart';
+import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UsageRepository {
@@ -19,7 +21,7 @@ class UsageRepository {
     final resolvedStart =
         startYmd ?? addDaysToYmd(resolvedEnd, -(days - 1).clamp(0, 366));
 
-    final usageRes = await _client
+    final usageFuture = _client
         .from('app_usage_daily')
         .select(
           'user_id, user_name, usage_date, app_opens, tab_counts, updated_at',
@@ -27,6 +29,10 @@ class UsageRepository {
         .gte('usage_date', resolvedStart)
         .lte('usage_date', resolvedEnd)
         .order('usage_date', ascending: false);
+    final adminFuture = _fetchAdminUserIds();
+
+    final usageRes = await usageFuture;
+    final adminIds = await adminFuture;
 
     final usageByUser = _aggregateUsage(
       List<Map<String, dynamic>>.from(usageRes as List),
@@ -40,6 +46,7 @@ class UsageRepository {
                 e.key,
                 e.value.name.isNotEmpty ? e.value.name : e.key,
                 e.value,
+                isAdmin: adminIds.contains(e.key),
               ),
             )
             .toList()
@@ -52,6 +59,29 @@ class UsageRepository {
           });
 
     return summaries;
+  }
+
+  Future<Set<String>> _fetchAdminUserIds() async {
+    try {
+      final res = await _client
+          .from('users')
+          .select('id, role, permissions, groups(name)');
+      final ids = <String>{};
+      for (final row in List<Map<String, dynamic>>.from(res as List)) {
+        final map = Map<String, dynamic>.from(row);
+        final groups = map['groups'];
+        if (groups is Map) {
+          map['groupName'] = groups['name']?.toString();
+        }
+        final user = AppUser.fromJson(map);
+        if (user.id.isEmpty) continue;
+        if (isAppAdmin(user)) ids.add(user.id);
+      }
+      return ids;
+    } catch (_) {
+      // 관리자 조회 실패 시 제외 필터만 비활성 — 사용량 자체는 표시
+      return {};
+    }
   }
 
   bool _hasUsageInPeriod(_Agg agg) =>
@@ -109,14 +139,22 @@ class UsageRepository {
     return byUser;
   }
 
-  AppUsageSummary _summaryForUser(String userId, String userName, _Agg? agg) {
+  AppUsageSummary _summaryForUser(
+    String userId,
+    String userName,
+    _Agg? agg, {
+    bool isAdmin = false,
+  }) {
+    final tabs = Map<String, int>.from(agg?.tabCounts ?? const {});
     return AppUsageSummary(
       userId: userId,
       userName: userName.isNotEmpty ? userName : userId,
       weekOpens: agg?.weekOpens ?? 0,
       activeDays: agg?.activeDays.length ?? 0,
-      topTabKey: topTabKeyFromCounts(agg?.tabCounts ?? const {}),
+      topTabKey: topTabKeyFromCounts(tabs),
+      tabCounts: tabs,
       lastUsed: agg?.lastUsed,
+      isAdmin: isAdmin,
     );
   }
 }
