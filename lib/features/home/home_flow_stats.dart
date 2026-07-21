@@ -2,45 +2,53 @@ import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 홈 흐름 탭 — 접수/미통화/팔로우 통계 카드.
+/// 홈 흐름 탭 — 접수/미통화/팔로우/업데이트 통계 카드.
 class HomeMiniStatsWidget extends StatefulWidget {
   const HomeMiniStatsWidget({
     super.key,
     required this.receptionLabel,
     required this.incompleteLabel,
     required this.followLabel,
+    required this.updatedLabel,
     required this.today,
     required this.incomplete,
     required this.todayFollow,
+    required this.updated,
     this.followProgressHint,
     required this.uncalledRateText,
     required this.avgFirstResponseText,
     required this.onTapToday,
     required this.onTapIncomplete,
     required this.onTapTodayFollow,
+    required this.onTapUpdated,
     required this.onTapUncalledRate,
     required this.onTapFirstResponse,
     this.onLongPressToday,
     this.onLongPressIncomplete,
     this.onLongPressTodayFollow,
+    this.onLongPressUpdated,
     this.compact = false,
   });
 
   final String receptionLabel;
   final String incompleteLabel;
   final String followLabel;
+  final String updatedLabel;
   final int today;
   final int incomplete;
   final int todayFollow;
+  final int updated;
   final String? followProgressHint;
   final String uncalledRateText;
   final String avgFirstResponseText;
   final VoidCallback onTapToday;
   final VoidCallback onTapIncomplete;
   final VoidCallback onTapTodayFollow;
+  final VoidCallback onTapUpdated;
   final VoidCallback? onLongPressToday;
   final VoidCallback? onLongPressIncomplete;
   final VoidCallback? onLongPressTodayFollow;
+  final VoidCallback? onLongPressUpdated;
   final VoidCallback onTapUncalledRate;
   final VoidCallback onTapFirstResponse;
   final bool compact;
@@ -56,6 +64,7 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final compact = widget.compact;
+    final gap = compact ? 6.0 : 8.0;
     return Container(
       padding: EdgeInsets.all(compact ? 10 : 12),
       decoration: HomeHubVisual.elevatedCard(scheme),
@@ -78,7 +87,7 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
                         '${widget.receptionLabel} ${widget.today}건. 탭하면 목록, 메뉴로 담당자 선택',
                   ),
                 ),
-                SizedBox(width: compact ? 6 : 8),
+                SizedBox(width: gap),
                 Expanded(
                   child: _FlowStatTile(
                     icon: Icons.phone_missed_rounded,
@@ -92,19 +101,39 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
                         '${widget.incompleteLabel} ${widget.incomplete}건. 탭하면 목록, 메뉴로 담당자 선택',
                   ),
                 ),
-                SizedBox(width: compact ? 6 : 8),
+              ],
+            ),
+          ),
+          SizedBox(height: gap),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Expanded(
                   child: _FlowStatTile(
                     icon: Icons.event_available_rounded,
                     label: widget.followLabel,
                     value: widget.todayFollow.toString(),
-                    hint: widget.followProgressHint,
                     color: scheme.tertiary,
                     onTap: widget.onTapTodayFollow,
                     onLongPress: widget.onLongPressTodayFollow,
                     compact: compact,
                     semanticsLabel:
                         '${widget.followLabel} ${widget.todayFollow}건. 탭하면 목록, 메뉴로 담당자 선택',
+                  ),
+                ),
+                SizedBox(width: gap),
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.update_rounded,
+                    label: widget.updatedLabel,
+                    value: widget.updated.toString(),
+                    color: scheme.secondary,
+                    onTap: widget.onTapUpdated,
+                    onLongPress: widget.onLongPressUpdated,
+                    compact: compact,
+                    semanticsLabel:
+                        '${widget.updatedLabel} ${widget.updated}건. 탭하면 목록, 메뉴로 담당자 선택',
                   ),
                 ),
               ],
@@ -216,7 +245,6 @@ class _FlowStatTile extends StatelessWidget {
     required this.value,
     required this.color,
     required this.onTap,
-    this.hint,
     this.onLongPress,
     this.compact = false,
     this.semanticsLabel,
@@ -224,7 +252,6 @@ class _FlowStatTile extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final String? hint;
   final String value;
   final Color color;
   final VoidCallback onTap;
@@ -255,15 +282,14 @@ class _FlowStatTile extends StatelessWidget {
             children: [
               Padding(
                 padding: EdgeInsets.fromLTRB(
-                  4,
-                  compact ? 8 : 10,
-                  onLongPress != null ? 22 : 4,
-                  compact ? 8 : 10,
+                  8,
+                  compact ? 10 : 12,
+                  8,
+                  compact ? 10 : 12,
                 ),
                 child: _StatItem(
                   icon: icon,
                   label: label,
-                  hint: hint,
                   value: value,
                   color: color,
                   compact: compact,
@@ -271,8 +297,8 @@ class _FlowStatTile extends StatelessWidget {
               ),
               if (onLongPress != null)
                 Positioned(
-                  top: 0,
-                  right: 0,
+                  top: 2,
+                  right: 2,
                   child: IconButton(
                     tooltip: '담당자 선택',
                     visualDensity: VisualDensity.compact,
@@ -383,13 +409,11 @@ class _StatItem extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
-    this.hint,
     this.compact = false,
   });
 
   final IconData icon;
   final String label;
-  final String? hint;
   final String value;
   final Color color;
   final bool compact;
@@ -397,53 +421,49 @@ class _StatItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final valueSize = compact ? 18.0 : 20.0;
+    final labelSize = compact ? 12.0 : 13.0;
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(
           icon,
-          size: compact ? 15 : 17,
-          color: color.withValues(alpha: 0.75),
+          size: compact ? 16 : 18,
+          color: color.withValues(alpha: 0.8),
         ),
-        SizedBox(height: compact ? 4 : 6),
-        Text(
-          value,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: compact ? 18 : 21,
-            fontWeight: FontWeight.w800,
-            color: scheme.onSurface,
-            letterSpacing: -0.5,
-            height: 1.0,
+        SizedBox(height: compact ? 8 : 10),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: labelSize,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: valueSize,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                  letterSpacing: -0.4,
+                  height: 1.2,
+                ),
+              ),
+            ],
           ),
         ),
-        SizedBox(height: compact ? 2 : 4),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: compact ? 10 : 11,
-            height: 1.15,
-            fontWeight: FontWeight.w800,
-            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
-          ),
-        ),
-        if (hint != null && hint!.isNotEmpty) ...[
-          const SizedBox(height: 2),
-          Text(
-            hint!,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
-            ),
-          ),
-        ],
       ],
     );
   }

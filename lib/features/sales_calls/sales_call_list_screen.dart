@@ -36,6 +36,9 @@ enum ListQueryMode {
 
   /// `next_scheduled_date` 팔로우 구간 (양끝 포함). [date]·[dateEndInclusive] 필수.
   followRange,
+
+  /// `updated_at` 서울 일자 구간. [date] 필수, [dateEndInclusive] 없으면 당일만.
+  updatedRange,
 }
 
 class SalesCallListScreen extends ConsumerStatefulWidget {
@@ -376,7 +379,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     if (widget.mode != ListQueryMode.incompleteByDate &&
         widget.mode != ListQueryMode.dateRange &&
         widget.mode != ListQueryMode.followRange &&
-        widget.mode != ListQueryMode.pendingUncalled) {
+        widget.mode != ListQueryMode.pendingUncalled &&
+        widget.mode != ListQueryMode.updatedRange) {
       try {
         final cacheDate = switch (widget.mode) {
           ListQueryMode.today => widget.date ?? todayYmdSeoul(),
@@ -387,6 +391,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           ListQueryMode.incompleteByDate => null,
           ListQueryMode.dateRange => null,
           ListQueryMode.followRange => null,
+          ListQueryMode.updatedRange => null,
         };
         final cacheIncompleteOnly =
             widget.mode == ListQueryMode.incomplete ||
@@ -556,6 +561,15 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           limit: _pageSize,
           offset: offset,
         );
+      case ListQueryMode.updatedRange:
+        return repo.fetchCallsPage(
+          updatedAtRangeStartYmd: widget.date ?? todayYmdSeoul(),
+          updatedAtRangeEndInclusiveYmd:
+              widget.dateEndInclusive ?? widget.date ?? todayYmdSeoul(),
+          includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
+        );
     }
   }
 
@@ -595,6 +609,14 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           return '팔로우 $start ~ $end';
         }
         return '팔로우 ${widget.date ?? ''} ~ ${widget.dateEndInclusive ?? ''}';
+      case ListQueryMode.updatedRange:
+        final start = widget.date ?? todayYmdSeoul();
+        final end = widget.dateEndInclusive ?? start;
+        if (start == end) {
+          if (start == todayYmdSeoul()) return '금일 업데이트';
+          return '${formatYmdFlowLabelKo(start)} 업데이트';
+        }
+        return '업데이트 ${formatYmdFlowLabelKo(start)} ~ ${formatYmdFlowLabelKo(end)}';
     }
   }
 

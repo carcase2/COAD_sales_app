@@ -1099,6 +1099,84 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     await _pushFollowList(scope, selected);
   }
 
+  Future<void> _openUpdatedPicker(
+    HubPeriod scope, {
+    bool forcePicker = false,
+  }) async {
+    if (forcePicker && _showLongPressHint) {
+      _dismissLongPressHint();
+    }
+    final key = (period: scope, anchorYmd: _hubFlowAnchorYmd);
+    List<SalesCall> rows;
+    try {
+      rows = await ref.read(hubPeriodUpdatedCallsProvider(key).future);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('업데이트 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final counts = _countsFromRows(rows, _callAssigneeOf);
+    if (!forcePicker && rows.isEmpty) {
+      await _showAutoCloseInfoDialog('업데이트가 없습니다.');
+      return;
+    }
+    final selected = await _pickHubAssignee(
+      title: '업데이트 담당자 선택',
+      subtitle: _hubPeriodScopeLabel(scope),
+      counts: counts,
+      forcePicker: forcePicker,
+    );
+    if (!mounted || selected == null) return;
+    await _pushUpdatedList(scope, selected);
+  }
+
+  Future<void> _pushUpdatedList(HubPeriod scope, String assignee) async {
+    final ia = _listInitialAssignee(assignee);
+    final weekR = seoulWeekRangeContaining(_hubFlowAnchorYmd);
+    final monthR = seoulMonthRangeContaining(_hubFlowAnchorYmd);
+    switch (scope) {
+      case HubPeriod.day:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.updatedRange,
+              date: _hubFlowAnchorYmd,
+              initialAssignee: ia,
+            ),
+          ),
+        );
+      case HubPeriod.week:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.updatedRange,
+              date: weekR.$1,
+              dateEndInclusive: weekR.$2,
+              initialAssignee: ia,
+            ),
+          ),
+        );
+      case HubPeriod.month:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SalesCallListScreen(
+              mode: ListQueryMode.updatedRange,
+              date: monthR.$1,
+              dateEndInclusive: monthR.$2,
+              initialAssignee: ia,
+            ),
+          ),
+        );
+    }
+  }
+
   Future<T?> _withFreshDataLoading<T>(Future<T> Function() load) async {
     if (!mounted) return null;
     final navigator = Navigator.of(context, rootNavigator: true);
@@ -1943,6 +2021,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           HubNavStep.week => '이번 주 팔로우',
           HubNavStep.month => '이번 달 팔로우',
         },
+        updatedLabel: switch (_hubNavStep) {
+          HubNavStep.day => '금일 업데이트',
+          HubNavStep.week => '금주 업데이트',
+          HubNavStep.month => '금월 업데이트',
+        },
       ),
     );
   }
@@ -2193,6 +2276,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     required String receptionLabel,
     required String incompleteLabel,
     required String followLabel,
+    required String updatedLabel,
   }) {
     final statsAsync = ref.watch(hubPeriodStatsProvider(periodKey));
     final prevStatsAsync = ref.watch(
@@ -2203,6 +2287,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
     final followSnapshotAsync = ref.watch(
       hubPeriodFollowSnapshotProvider(periodKey),
+    );
+    final updatedOverviewAsync = ref.watch(
+      hubPeriodUpdatedOverviewProvider(periodKey),
     );
     final qualityAsync = ref.watch(hubPeriodQualityOverviewProvider(periodKey));
     final scope = periodKey.period;
@@ -2225,6 +2312,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         final followProgressHint = followSnapshot == null
             ? null
             : '전체 ${followSnapshot.total} · 완료 ${followSnapshot.completed} · 남음 ${followSnapshot.remaining}';
+        final updatedCount = updatedOverviewAsync.when(
+          skipLoadingOnReload: true,
+          skipLoadingOnRefresh: true,
+          data: (o) => o.total,
+          loading: () => updatedOverviewAsync.valueOrNull?.total ?? 0,
+          error: (_, _) => updatedOverviewAsync.valueOrNull?.total ?? 0,
+        );
         final quality = qualityAsync.when(
           skipLoadingOnReload: true,
           skipLoadingOnRefresh: true,
@@ -2270,9 +2364,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         receptionLabel: receptionLabel,
                         incompleteLabel: incompleteLabel,
                         followLabel: followLabel,
+                        updatedLabel: updatedLabel,
                         today: reception,
                         incomplete: incomplete,
                         todayFollow: followCount,
+                        updated: updatedCount,
                         followProgressHint: followProgressHint,
                         uncalledRateText: quality == null
                             ? '-'
@@ -2289,6 +2385,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                         onTapTodayFollow: () => _openFollowPicker(scope),
                         onLongPressTodayFollow: () =>
                             _openFollowPicker(scope, forcePicker: true),
+                        onTapUpdated: () => _openUpdatedPicker(scope),
+                        onLongPressUpdated: () =>
+                            _openUpdatedPicker(scope, forcePicker: true),
                         onTapUncalledRate: () => _openQualityPicker(
                           forUncalledRate: true,
                           scope: scope,

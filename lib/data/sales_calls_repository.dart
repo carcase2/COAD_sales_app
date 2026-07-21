@@ -329,6 +329,7 @@ class SalesCallsRepository {
   /// [followDate] `yyyy-MM-dd` — `next_scheduled_date`가 해당 날짜인 건만 (날짜 팔로우).
   /// [followRangeStart]·[followRangeEndInclusive] — 팔로우 날짜 **구간**(양끝 포함, `next_scheduled_date` 기준).
   /// [dateRangeStart]·[dateRangeEndInclusive] — 접수일 `call_date` **구간**(양끝 포함).
+  /// [updatedAtRangeStartYmd]·[updatedAtRangeEndInclusiveYmd] — `updated_at` 서울 일자 구간(양끝 포함).
   /// [date]가 함께 넘어오면 [followDate]가 우선이며, 접수일(`call_date`) 필터는 적용하지 않음.
   Future<List<SalesCall>> fetchCalls({
     String? date,
@@ -337,6 +338,8 @@ class SalesCallsRepository {
     String? followRangeEndInclusive,
     String? dateRangeStart,
     String? dateRangeEndInclusive,
+    String? updatedAtRangeStartYmd,
+    String? updatedAtRangeEndInclusiveYmd,
     String? fromDate,
     int? limit,
     int? offset,
@@ -356,6 +359,8 @@ class SalesCallsRepository {
       followRangeEndInclusive: followRangeEndInclusive,
       dateRangeStart: dateRangeStart,
       dateRangeEndInclusive: dateRangeEndInclusive,
+      updatedAtRangeStartYmd: updatedAtRangeStartYmd,
+      updatedAtRangeEndInclusiveYmd: updatedAtRangeEndInclusiveYmd,
       fromDate: fromDate,
       limit: limit,
       offset: offset,
@@ -380,6 +385,8 @@ class SalesCallsRepository {
     String? followRangeEndInclusive,
     String? dateRangeStart,
     String? dateRangeEndInclusive,
+    String? updatedAtRangeStartYmd,
+    String? updatedAtRangeEndInclusiveYmd,
     String? fromDate,
     int limit = listPageSize,
     int offset = 0,
@@ -400,6 +407,8 @@ class SalesCallsRepository {
       followRangeEndInclusive: followRangeEndInclusive,
       dateRangeStart: dateRangeStart,
       dateRangeEndInclusive: dateRangeEndInclusive,
+      updatedAtRangeStartYmd: updatedAtRangeStartYmd,
+      updatedAtRangeEndInclusiveYmd: updatedAtRangeEndInclusiveYmd,
       fromDate: fromDate,
       limit: limit,
       offset: offset,
@@ -430,6 +439,8 @@ class SalesCallsRepository {
     String? followRangeEndInclusive,
     String? dateRangeStart,
     String? dateRangeEndInclusive,
+    String? updatedAtRangeStartYmd,
+    String? updatedAtRangeEndInclusiveYmd,
     String? fromDate,
     bool includeCallHistory = true,
     bool callHistoryQualityOnly = false,
@@ -453,6 +464,8 @@ class SalesCallsRepository {
         followRangeEndInclusive: followRangeEndInclusive,
         dateRangeStart: dateRangeStart,
         dateRangeEndInclusive: dateRangeEndInclusive,
+        updatedAtRangeStartYmd: updatedAtRangeStartYmd,
+        updatedAtRangeEndInclusiveYmd: updatedAtRangeEndInclusiveYmd,
         fromDate: fromDate,
         limit: pageSize,
         offset: offset,
@@ -481,6 +494,8 @@ class SalesCallsRepository {
     String? followRangeEndInclusive,
     String? dateRangeStart,
     String? dateRangeEndInclusive,
+    String? updatedAtRangeStartYmd,
+    String? updatedAtRangeEndInclusiveYmd,
     String? fromDate,
     int? limit,
     int? offset,
@@ -511,6 +526,7 @@ class SalesCallsRepository {
 
       PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr);
 
+      final updatedStartYmd = updatedAtRangeStartYmd;
       if (followDate != null) {
         final endExclusive = _ymdPlusOneDay(followDate);
         queryBuilder = queryBuilder
@@ -521,6 +537,14 @@ class SalesCallsRepository {
         queryBuilder = queryBuilder
             .gte('next_scheduled_date', followRangeStart)
             .lt('next_scheduled_date', endExclusive);
+      } else if (updatedStartYmd != null) {
+        // 서울 일자 경계 — coad_home 금일 업데이트와 동일(updated_at 기준).
+        final endYmd = updatedAtRangeEndInclusiveYmd ?? updatedStartYmd;
+        final startIso = '${updatedStartYmd}T00:00:00+09:00';
+        final endExclusiveIso = '${_ymdPlusOneDay(endYmd)}T00:00:00+09:00';
+        queryBuilder = queryBuilder
+            .gte('updated_at', startIso)
+            .lt('updated_at', endExclusiveIso);
       } else if (date != null) {
         queryBuilder = queryBuilder
             .gte('call_date', '$date 00:00:00')
@@ -541,7 +565,11 @@ class SalesCallsRepository {
         // 미통화: 단순문의 제외하고 단계가 초기인 건
         queryBuilder = queryBuilder.neq('status_id', 4);
       }
-      PostgrestTransformBuilder<List<Map<String, dynamic>>> transformBuilder = queryBuilder.order('created_at', ascending: false);
+      PostgrestTransformBuilder<List<Map<String, dynamic>>> transformBuilder =
+          queryBuilder.order(
+        updatedStartYmd != null ? 'updated_at' : 'created_at',
+        ascending: false,
+      );
 
       if (limit != null) {
         int rTop = (offset ?? 0) + limit - 1;

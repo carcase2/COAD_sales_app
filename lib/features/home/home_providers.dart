@@ -530,6 +530,54 @@ final hubPeriodFollowOverviewProvider = Provider.autoDispose
   );
 });
 
+Future<List<SalesCall>> _fetchHubPeriodUpdatedCalls(
+  SalesCallsRepository repo,
+  HubPeriodKey key,
+) async {
+  switch (key.period) {
+    case HubPeriod.day:
+      return repo.fetchCallsAllPages(
+        updatedAtRangeStartYmd: key.anchorYmd,
+        includeCallHistory: false,
+      );
+    case HubPeriod.week:
+      final range = seoulWeekRangeContaining(key.anchorYmd);
+      return repo.fetchCallsAllPages(
+        updatedAtRangeStartYmd: range.$1,
+        updatedAtRangeEndInclusiveYmd: range.$2,
+        includeCallHistory: false,
+      );
+    case HubPeriod.month:
+      final range = seoulMonthRangeContaining(key.anchorYmd);
+      return repo.fetchCallsAllPages(
+        updatedAtRangeStartYmd: range.$1,
+        updatedAtRangeEndInclusiveYmd: range.$2,
+        includeCallHistory: false,
+      );
+  }
+}
+
+/// 기간 내 `updated_at` 건 — coad_home 「금일 업데이트」와 동일 기준.
+final hubPeriodUpdatedCallsProvider = FutureProvider.autoDispose
+    .family<List<SalesCall>, HubPeriodKey>((ref, key) async {
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  return _fetchHubPeriodUpdatedCalls(repo, key);
+});
+
+final hubPeriodUpdatedOverviewProvider = Provider.autoDispose
+    .family<AsyncValue<AssigneeOverview>, HubPeriodKey>((ref, key) {
+  final callsAsync = ref.watch(hubPeriodUpdatedCallsProvider(key));
+  return callsAsync.when(
+    skipLoadingOnReload: true,
+    skipLoadingOnRefresh: true,
+    data: (calls) => AsyncValue.data(
+      AssigneeOverview(total: calls.length, byAssignee: _groupByAssignee(calls)),
+    ),
+    loading: () => const AsyncValue.loading(),
+    error: (e, st) => AsyncValue.error(e, st),
+  );
+});
+
 final hubPeriodQualityOverviewProvider = FutureProvider.autoDispose
     .family<CallQualityOverview, HubPeriodKey>((ref, key) async {
   final bundle = await ref.watch(hubPeriodReceptionBundleProvider(key).future);
@@ -546,6 +594,7 @@ void prefetchHubPeriodFlow(
   final futures = <Future<Object?>>[
     ref.read(hubPeriodReceptionBundleProvider(key).future),
     ref.read(hubPeriodFollowSnapshotProvider(key).future),
+    ref.read(hubPeriodUpdatedCallsProvider(key).future),
   ];
   if (previousKey != null) {
     futures.add(ref.read(hubPeriodLightStatsProvider(previousKey).future));
@@ -575,6 +624,7 @@ Future<void> refreshHubPeriodFlow(
 }) async {
   invalidateHubPeriodReceptionSources(ref.invalidate, key);
   ref.invalidate(hubPeriodFollowSnapshotProvider(key));
+  ref.invalidate(hubPeriodUpdatedCallsProvider(key));
   ref.invalidate(hubPendingUncalledCallsProvider);
   if (previousKey != null) {
     ref.invalidate(hubPeriodLightStatsProvider(previousKey));
@@ -583,6 +633,7 @@ Future<void> refreshHubPeriodFlow(
   final futures = <Future<Object?>>[
     ref.read(hubPeriodReceptionBundleProvider(key).future),
     ref.read(hubPeriodFollowSnapshotProvider(key).future),
+    ref.read(hubPeriodUpdatedCallsProvider(key).future),
     ref.read(hubPeriodQualityOverviewProvider(key).future),
     ref.read(hubPendingUncalledSummaryProvider.future),
   ];
