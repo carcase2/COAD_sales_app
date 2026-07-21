@@ -24,6 +24,7 @@ class AppUpdateService {
     }
     try {
       final policy = await _fetchUpdatePolicy();
+      final playAvailable = await _isPlayUpdateAvailable();
       var shouldForce = false;
       var shouldRecommend = false;
       String? latestVersion;
@@ -34,21 +35,21 @@ class AppUpdateService {
         if (policy.storeUrl.isNotEmpty) storeUrl = policy.storeUrl;
         shouldForce = policy.forceUpdate ||
             _compareVersion(kAppVersion, policy.minVersion) < 0;
-        shouldRecommend =
+        final policyNewer =
             _compareVersion(kAppVersion, policy.latestVersion) < 0;
+        // 선택 업데이트는 Play에 실제 빌드가 반영된 뒤에만 배지/칩 표시
+        // (정책만 먼저 올리면 스토어에 없어 계속 눌러보게 됨)
+        shouldRecommend = policyNewer && playAvailable;
       }
 
-      // 정책과 무관하게 스토어에 더 새 빌드가 있으면 안내 (설정 > 업데이트 확인과 동일 기준)
-      if (!shouldForce && !shouldRecommend) {
-        final playAvailable = await _isPlayUpdateAvailable();
-        if (playAvailable) {
-          shouldRecommend = true;
-          latestVersion ??= policy?.latestVersion;
-          if (storeUrl == null &&
-              policy != null &&
-              policy.storeUrl.isNotEmpty) {
-            storeUrl = policy.storeUrl;
-          }
+      // 정책보다 Play에 먼저 새 빌드가 있으면 안내
+      if (!shouldForce && !shouldRecommend && playAvailable) {
+        shouldRecommend = true;
+        latestVersion ??= policy?.latestVersion;
+        if (storeUrl == null &&
+            policy != null &&
+            policy.storeUrl.isNotEmpty) {
+          storeUrl = policy.storeUrl;
         }
       }
 
@@ -93,6 +94,8 @@ class AppUpdateService {
       }
 
       if (!shouldRecommend) return;
+      // Play 반영 전에는 선택 업데이트 팝업을 띄우지 않음
+      if (!await _isPlayUpdateAvailable()) return;
 
       final now = DateTime.now();
       final cooldownOk = _lastInUsePromptAt == null ||
@@ -159,12 +162,15 @@ class AppUpdateService {
           shouldRecommend &&
           !_optionalDialogShown &&
           promptOptionalUpdate) {
-        _optionalDialogShown = true;
-        await _showOptionalUpdateDialog(
-          context,
-          policy,
-          preferredStoreUrl: preferredStoreUrl,
-        );
+        // 정책상 새 버전이어도 Play에 없으면 팝업/스토어 이동하지 않음
+        if (await _isPlayUpdateAvailable()) {
+          _optionalDialogShown = true;
+          await _showOptionalUpdateDialog(
+            context,
+            policy,
+            preferredStoreUrl: preferredStoreUrl,
+          );
+        }
       }
 
       if (promptOptionalUpdate) {
@@ -193,6 +199,30 @@ class AppUpdateService {
 
     final applied = await _tryImmediateInAppUpdate();
     if (applied) return;
+
+    final playAvailable = await _isPlayUpdateAvailable();
+    if (!playAvailable) {
+      if (!context.mounted) return;
+      if (shouldRecommend && policy != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'v${policy.latestVersion}이 Play에 곧 반영됩니다. '
+              '잠시 후 다시 확인해 주세요. (현재 v$kAppVersion)',
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('최신 버전입니다. (현재 v$kAppVersion)'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
 
     await _openStoreForInstall(
       context,
@@ -530,6 +560,22 @@ class AppUpdateService {
   }) async {
     final applied = await _tryImmediateInAppUpdate();
     if (applied) return;
+
+    final playAvailable = await _isPlayUpdateAvailable();
+    if (!playAvailable) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'v${policy.latestVersion}이 Play에 곧 반영됩니다. '
+            '잠시 후 다시 확인해 주세요. (현재 v$kAppVersion)',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
     await _fallbackToStoreOrNotify(
       context,
       policy: policy,
