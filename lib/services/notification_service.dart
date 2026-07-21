@@ -1158,6 +1158,8 @@ class NotificationService {
 
   /// 에뮬레이터·GMS 미설치 등으로 FCM 토큰을 받을 수 없을 때 true.
   static bool _fcmUnavailable = false;
+
+  static bool get _firebaseReady => Firebase.apps.isNotEmpty;
   static Future<void>? _tokenSyncInFlight;
   static String? _tokenSyncUserId;
 
@@ -1169,11 +1171,11 @@ class NotificationService {
   }
 
   static Future<String?> getToken() async {
-    if (_fcmUnavailable) return null;
+    if (_fcmUnavailable || !_firebaseReady) return null;
     try {
       return await FirebaseMessaging.instance.getToken();
     } catch (e) {
-      if (_isFcmUnavailableError(e)) {
+      if (_isFcmUnavailableError(e) || e.toString().contains('core/no-app')) {
         _fcmUnavailable = true;
         if (kDebugMode) {
           print(
@@ -1190,7 +1192,7 @@ class NotificationService {
   }
 
   static Future<void> updateTokenInSupabase(String userId) async {
-    if (_fcmUnavailable) return;
+    if (_fcmUnavailable || !_firebaseReady) return;
     final inFlight = _tokenSyncInFlight;
     if (inFlight != null && _tokenSyncUserId == userId) {
       return inFlight;
@@ -1237,26 +1239,34 @@ class NotificationService {
   }
 
   static void listenToTokenRefresh(String userId) {
-    FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+    if (_fcmUnavailable || !_firebaseReady) return;
+    try {
+      FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+        if (kDebugMode) {
+          print("[NotificationService] FCM Token refreshed: $token");
+        }
+        try {
+          await Supabase.instance.client
+              .from('users')
+              .update({'fcm_token': token})
+              .eq('id', userId);
+          if (kDebugMode) {
+            print(
+              "[NotificationService] Refreshed FCM Token synced with Supabase",
+            );
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print("[NotificationService] ERROR syncing refreshed token: $e");
+          }
+        }
+      });
+    } catch (e) {
+      _fcmUnavailable = true;
       if (kDebugMode) {
-        print("[NotificationService] FCM Token refreshed: $token");
+        print('[NotificationService] skip token refresh listener: $e');
       }
-      try {
-        await Supabase.instance.client
-            .from('users')
-            .update({'fcm_token': token})
-            .eq('id', userId);
-        if (kDebugMode) {
-          print(
-            "[NotificationService] Refreshed FCM Token synced with Supabase",
-          );
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print("[NotificationService] ERROR syncing refreshed token: $e");
-        }
-      }
-    });
+    }
   }
 
   static Future<void> showIssuanceCompletedAlert({
