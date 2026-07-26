@@ -21,6 +21,9 @@ Future<void> main() async {
   // 앱 시작 시 예기치 않은 중단을 방지하기 위해 전체를 보호합니다.
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // 이미지 캐시 여유 — 목록/첨부 스크롤 재디코드 완화
+    PaintingBinding.instance.imageCache.maximumSize = 200;
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 120 << 20; // 120MB
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,

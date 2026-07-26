@@ -1039,6 +1039,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 : ListView.builder(
                     controller: _listScrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
+                    // 스크롤 재빌드 여유 — 부드러운 관성 유지
+                    cacheExtent: 520,
+                    addAutomaticKeepAlives: false,
                     padding: EdgeInsets.fromLTRB(
                       16,
                       12,

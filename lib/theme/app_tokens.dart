@@ -23,9 +23,10 @@ class AppTokens {
   static const double minTouchTarget = 48;
   static const double primaryCtaHeight = 52;
 
-  // ── motion ──
-  static const Duration fast = Duration(milliseconds: 160);
-  static const Duration normal = Duration(milliseconds: 220);
+  // ── motion (AppMotion 과 맞춤 — 짧은 전환) ──
+  static const Duration instant = Duration(milliseconds: 90);
+  static const Duration fast = Duration(milliseconds: 140);
+  static const Duration normal = Duration(milliseconds: 200);
 
   /// 필수 업데이트 칩/배지.
   static Color updateForceBg(ColorScheme scheme) => scheme.error;

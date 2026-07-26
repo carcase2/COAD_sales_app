@@ -122,12 +122,14 @@ class AppTheme {
           foregroundColor: colorScheme.onSurfaceVariant,
         ),
       ),
+      // FadeUpwards — 짧고 가벼운 화면 전환 (const 가능)
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: ZoomPageTransitionsBuilder(),
-          TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.iOS: FadeUpwardsPageTransitionsBuilder(),
         },
       ),
+      splashFactory: InkSparkle.splashFactory,
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         side: BorderSide(

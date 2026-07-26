@@ -22,6 +22,7 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
+import 'package:coad_customer_calls/theme/app_motion.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
 import 'package:coad_customer_calls/navigation/app_menu_drawer.dart';
@@ -99,16 +100,24 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(seconds: 3), () {
+      Future<void>.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
         _startIssuanceCompletionWatcher();
       });
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(seconds: 4), () {
+      Future<void>.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
         ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
+      });
+    });
+
+    // 유휴 시 견적 단가 프리페치 — 견적 탭 첫 진입 체감 단축
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 900), () {
+        if (!mounted) return;
+        unawaited(ref.read(shutterPricesFutureProvider.future));
       });
     });
 
@@ -520,7 +529,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   Future<void> _openReceptionCreate() async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      AppMotion.fadeSlideRoute<void>(
         settings: const RouteSettings(name: kSalesCallCreateRouteName),
         builder: (_) => const SalesCallCreateScreen(),
       ),
@@ -834,7 +843,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 bottom: PreferredSize(
                   preferredSize: const Size.fromHeight(3),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
+                    duration: AppTokens.fast,
                     curve: Curves.easeOutCubic,
                     height: 3,
                     decoration: BoxDecoration(
@@ -883,30 +892,45 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               },
             ),
             Expanded(
-              child: IndexedStack(
-                index: _currentIndex,
-                children: _buildScreens(),
+              child: Builder(
+                builder: (context) {
+                  final screens = _buildScreens();
+                  // 비활성 탭 애니메이션 정지 + 리페인트 분리 → 탭 전환·스크롤 체감 개선
+                  return IndexedStack(
+                    index: _currentIndex,
+                    children: [
+                      for (var i = 0; i < screens.length; i++)
+                        TickerMode(
+                          enabled: i == _currentIndex,
+                          child: RepaintBoundary(child: screens[i]),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
           ],
         ),
         bottomNavigationBar: Consumer(
-          builder: (context, ref, _) => _MainBottomNavBar(
-            selectedIndex: _navSelectedIndex,
-            showGeneralSchedule: showGeneralSchedule,
-            issuanceBadgeAsync: ref.watch(
-              issuanceRequestBadgeCountVisibleProvider,
-            ),
-            onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
-            onLongPressHome: _openHomeFlowToday,
-            onTapReception: () => _onNavDestinationSelected(_navReceptionIndex),
-            onLongPressReception: _openReceptionQuickActions,
-            onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
-            onTapQuoter: () => _onNavDestinationSelected(_navQuoterIndex),
-            onTapGeneralSchedule: () =>
-                _onNavDestinationSelected(_navGeneralScheduleIndex),
-            onTapMenu: () => _onNavDestinationSelected(
-              _navMenuIndexFor(ref.read(authControllerProvider)),
+          builder: (context, ref, _) => RepaintBoundary(
+            child: _MainBottomNavBar(
+              selectedIndex: _navSelectedIndex,
+              showGeneralSchedule: showGeneralSchedule,
+              issuanceBadgeAsync: ref.watch(
+                issuanceRequestBadgeCountVisibleProvider,
+              ),
+              onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
+              onLongPressHome: _openHomeFlowToday,
+              onTapReception: () =>
+                  _onNavDestinationSelected(_navReceptionIndex),
+              onLongPressReception: _openReceptionQuickActions,
+              onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
+              onTapQuoter: () => _onNavDestinationSelected(_navQuoterIndex),
+              onTapGeneralSchedule: () =>
+                  _onNavDestinationSelected(_navGeneralScheduleIndex),
+              onTapMenu: () => _onNavDestinationSelected(
+                _navMenuIndexFor(ref.read(authControllerProvider)),
+              ),
             ),
           ),
         ),

@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/features/auth/login_screen.dart';
 import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
+import 'package:coad_customer_calls/theme/app_motion.dart';
 import 'package:coad_customer_calls/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -18,6 +19,7 @@ class CoadCustomerCallsApp extends ConsumerWidget {
       title: 'COAD 영업',
       navigatorKey: NotificationService.navigatorKey,
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const AppScrollBehavior(),
       locale: const Locale('ko', 'KR'),
       supportedLocales: const [
         Locale('ko', 'KR'),
@@ -37,6 +39,7 @@ class CoadCustomerCallsApp extends ConsumerWidget {
           minScaleFactor: 0.9,
           maxScaleFactor: 1.4,
         );
+        // 전역 스크롤·텍스트 스케일 + 부드러운 터치 피드백
         return MediaQuery(
           data: media.copyWith(textScaler: clampedScale),
           child: child ?? const SizedBox.shrink(),

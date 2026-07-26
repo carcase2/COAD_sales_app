@@ -879,7 +879,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                             const SizedBox(height: 10),
                             Expanded(
                               child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 220),
+                                duration: const Duration(milliseconds: 140),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
                                 child: _buildStepBody(scheme),
                               ),
                             ),
