@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/data/auth_controller.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_completed_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_page.dart';
@@ -12,7 +13,9 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_provider.
 import 'package:coad_customer_calls/features/issuance/issuance_tax_issue_sheet.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 발급요청 허브 — 메뉴에서 각 목록을 전용 화면으로 연다.
@@ -358,14 +361,21 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _openCreateForCurrentDomain,
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  unawaited(_openCreateForCurrentDomain());
+                },
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  minimumSize:
+                      const Size.fromHeight(AppTokens.primaryCtaHeight),
                 ),
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('발급 요청하기'),
+                label: Text(
+                  '${IssuanceVisual.domainLabel(_domain)} 요청하기',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
               ),
             ),
           ),
@@ -376,6 +386,22 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
+                  if ((combinedPendingDisplay ?? 0) > 0) ...[
+                    UxStatusHeroBanner(
+                      icon: Icons.pending_actions_rounded,
+                      title: '발급대기 ${combinedPendingDisplay}건',
+                      subtitle:
+                          '세금 ${issuanceCountLabel(taxPendingCount)} · '
+                          '이행 ${issuanceCountLabel(bondPendingCount)}',
+                      actionLabel: '지금 처리',
+                      tone: UxStatusHeroTone.attention,
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        unawaited(_openCombinedPendingPage());
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Text(
                     '목록 보기',
                     style: TextStyle(
@@ -395,7 +421,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         '이행 ${issuanceCountLabel(bondPendingCount)}',
                     accent: IssuanceVisual.pendingTileAccent(scheme),
                     large: true,
-                    onTap: _openCombinedPendingPage,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      unawaited(_openCombinedPendingPage());
+                    },
                   ),
                   const SizedBox(height: 8),
                   _HubMenuTile(
@@ -407,7 +436,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                         '이행 ${issuanceCountLabel(todayBondIssued)}',
                     accent: IssuanceVisual.todayTileAccent(scheme),
                     large: true,
-                    onTap: _openCombinedTodayIssuedPage,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      unawaited(_openCombinedTodayIssuedPage());
+                    },
                   ),
                   const SizedBox(height: 8),
                   Material(
@@ -565,10 +597,13 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: selected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
@@ -582,12 +617,12 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   color: selected
                       ? accent
                       : Colors.white.withValues(alpha: 0.92),
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
                 ),
               ),
               const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: selected
                       ? accent.withValues(alpha: 0.14)
@@ -598,7 +633,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   countText,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                     color: selected ? accent : Colors.white,
                   ),
                 ),
@@ -640,12 +675,16 @@ class _HubMenuTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         borderRadius: BorderRadius.circular(large ? 14 : 12),
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
         child: Container(
           width: double.infinity,
+          constraints: BoxConstraints(minHeight: large ? 72 : 56),
           padding: EdgeInsets.symmetric(
             horizontal: large ? 14 : 10,
-            vertical: large ? 12 : 8,
+            vertical: large ? 14 : 10,
           ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(large ? 14 : 12),
@@ -710,11 +749,15 @@ class _HubMenuTile extends StatelessWidget {
                     Text(
                       countLabel,
                       style: TextStyle(
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
                         color: accent,
                         fontSize: 28,
                         height: 1,
                       ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: accent.withValues(alpha: 0.7),
                     ),
                   ],
                 )

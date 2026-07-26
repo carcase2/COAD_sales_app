@@ -1,35 +1,194 @@
 import 'package:coad_customer_calls/models/shutter_models.dart';
 import 'package:intl/intl.dart';
 
+/// 셔터 견적 계산 — COAD_home `ShutterEstimatorWizard` + `shutterBoxBracketRules` 와 동일 규칙.
 class ShutterCalculator {
   static const int minBucket = 2000;
   static const int maxBucket = 8000;
   static const int stepMm = 500;
 
+  static const List<String> _motorModelOrder = [
+    'KEM-300',
+    'KEM-400',
+    'KEM-500',
+    'KEM-600',
+    'KEM-800',
+    'KEM-1000',
+    'KEM-1200',
+    'KEM-1500',
+    'KEM-1800',
+    'KEM-2000',
+  ];
+
+  /// 면적 공식: ((width + 100) / 1000) * ((height + 500) / 1000)
   static double calculateArea(double widthMm, double heightMm) {
-    // 공식: ((width + 100) / 1000) * ((height + 500) / 1000)
     return ((widthMm + 100) / 1000.0) * ((heightMm + 500) / 1000.0);
   }
 
+  /// 무게(kg). 철제방화/스크린방화는 0. 소수 1자리.
   static double calculateWeight(
     double widthMm,
     double heightMm,
     ShutterType type,
   ) {
-    final area = calculateArea(widthMm, heightMm);
-    final weightPerM2 = type.toString().contains('Insulated') ? 15.0 : 10.0;
-    return area * weightPerM2;
+    if (type == ShutterType.fireSteel || type == ShutterType.fireScreen) {
+      return 0;
+    }
+    final isInsulated = type == ShutterType.doubleExtrusionInsulated ||
+        type == ShutterType.windproofInsulated;
+    final weightPerM2 = isInsulated ? 15.0 : 10.0;
+    final calcWidth = widthMm + 100;
+    final calcHeight = heightMm + 500;
+    final weight = (calcWidth * calcHeight * weightPerM2) / 1000000.0;
+    return (weight * 10).roundToDouble() / 10.0;
   }
 
-  static String selectMotorModel(double weight) {
-    if (weight <= 270) return 'KEM-300';
-    if (weight <= 360) return 'KEM-400';
-    if (weight <= 420) return 'KEM-500';
-    if (weight <= 550) return 'KEM-600';
-    if (weight <= 750) return 'KEM-800';
-    if (weight <= 900) return 'KEM-1000';
-    if (weight <= 1200) return 'KEM-1300';
-    return 'KEM-2000';
+  /// 폭 7500mm 이상 = 8인치 롤파이프.
+  static bool isWide8InchRollPipe(double widthMm) => widthMm >= 7500;
+
+  static String getRollPipeType(double widthMm) =>
+      isWide8InchRollPipe(widthMm) ? '8인치 롤파이프' : '5인치 롤파이프';
+
+  /// 무게 → 모터 (안전 마진 10%, coad_home 동일).
+  static String selectMotorModel(double weightKg) {
+    if (weightKg <= 0) return '';
+    if (weightKg <= 270) return 'KEM-300';
+    if (weightKg <= 360) return 'KEM-400';
+    if (weightKg <= 450) return 'KEM-500';
+    if (weightKg <= 540) return 'KEM-600';
+    if (weightKg <= 720) return 'KEM-800';
+    if (weightKg <= 900) return 'KEM-1000';
+    if (weightKg <= 1080) return 'KEM-1200';
+    if (weightKg <= 1350) return 'KEM-1500';
+    if (weightKg <= 1620) return 'KEM-1800';
+    if (weightKg <= 1800) return 'KEM-2000';
+    return '문의';
+  }
+
+  /// 8인치 롤파이프면 모터 1단계 상향.
+  static String selectEffectiveMotorModel(double weightKg, double widthMm) {
+    final base = selectMotorModel(weightKg);
+    if (base.isEmpty || base == '문의' || !isWide8InchRollPipe(widthMm)) {
+      return base;
+    }
+    final idx = _motorModelOrder.indexOf(base);
+    if (idx < 0) return base;
+    return _motorModelOrder[
+        idx + 1 < _motorModelOrder.length ? idx + 1 : idx];
+  }
+
+  static String motorPowerByModel(String model) {
+    switch (model) {
+      case 'KEM-300':
+        return '500W';
+      case 'KEM-400':
+        return '600W';
+      case 'KEM-500':
+      case 'KEM-600':
+        return '1000W';
+      case 'KEM-800':
+        return '1500W';
+      case 'KEM-1000':
+        return '1700W';
+      case 'KEM-1200':
+        return '2000W';
+      case 'KEM-1500':
+        return '2200W';
+      case 'KEM-1800':
+      case 'KEM-2000':
+        return '2300W';
+      default:
+        return '-';
+    }
+  }
+
+  static bool _isMotorAtLeastKem800(double weightKg, double widthMm) {
+    final model = selectEffectiveMotorModel(weightKg, widthMm);
+    final modelIdx = _motorModelOrder.indexOf(model);
+    final kem800Idx = _motorModelOrder.indexOf('KEM-800');
+    return modelIdx >= kem800Idx && modelIdx >= 0;
+  }
+
+  static String _resolve500B800(String bracket, double weightKg, double widthMm) {
+    if (bracket != 'KEM-500B, KEM-800') return bracket;
+    if (weightKg <= 0) return 'KEM-500B, KEM-800';
+    return _isMotorAtLeastKem800(weightKg, widthMm) ? 'KEM-800' : 'KEM-500B';
+  }
+
+  /// 브라켓 종류 — coad_home `getBracketType`.
+  static String getBracketType({
+    required bool isInsulated,
+    required double heightMm,
+    double widthMm = 0,
+    double weightKg = 0,
+  }) {
+    if (heightMm <= 0) return '-';
+
+    if (isInsulated) {
+      if (heightMm <= 2000) return 'KEM-300, KEM-400';
+      if (heightMm <= 3500) return 'KEM-500, KEM-600';
+      if (heightMm <= 5500) {
+        return _resolve500B800('KEM-500B, KEM-800', weightKg, widthMm);
+      }
+      if (heightMm <= 8000) return 'KEM-800';
+      if (heightMm <= 9000) return 'KEM-1000';
+      return '-';
+    }
+
+    if (heightMm <= 2000) return 'KEM-150';
+    if (heightMm <= 2500) return 'KEM-300, KEM-400';
+    if (heightMm <= 3000) return 'KEM-300, KEM-400, 주문형 브라켓';
+    if (heightMm <= 5000) return 'KEM-500, 주문형 브라켓';
+    if (heightMm <= 8999) {
+      return _resolve500B800('KEM-500B, KEM-800', weightKg, widthMm);
+    }
+    return '-';
+  }
+
+  static String? _boxSizeForBracket(String bracket) {
+    switch (bracket) {
+      case 'KEM-150':
+      case 'KEM-300':
+      case 'KEM-400':
+        return '650*505';
+      case 'KEM-500':
+      case 'KEM-600':
+      case '주문형 브라켓':
+      case 'KEM-500B':
+        return '700*555';
+      case 'KEM-800':
+        return '800*655';
+      case 'KEM-1000':
+        return '855*700';
+      default:
+        return null;
+    }
+  }
+
+  /// 셔터박스 — coad_home `getShutterBoxSize`.
+  static String getShutterBoxSize({
+    required bool isInsulated,
+    required double heightMm,
+    double weightKg = 0,
+    double widthMm = 0,
+  }) {
+    final bracketStr = getBracketType(
+      isInsulated: isInsulated,
+      heightMm: heightMm,
+      widthMm: widthMm,
+      weightKg: weightKg,
+    );
+    final parts = bracketStr.split(',');
+    for (final part in parts) {
+      final size = _boxSizeForBracket(part.trim());
+      if (size != null) return size;
+    }
+
+    final wide = isWide8InchRollPipe(widthMm);
+    if (isInsulated && heightMm > (wide ? 8500 : 9000)) return '905*750';
+    if (isInsulated && heightMm > (wide ? 6500 : 7000)) return '855*700';
+    if (!isInsulated && heightMm > (wide ? 7999 : 8999)) return '855*700';
+    return '650*505';
   }
 
   static int toGridBucket(double value) {
@@ -45,20 +204,35 @@ class ShutterCalculator {
     Map<String, int>? unitPriceOverrideMap,
   }) {
     final area = calculateArea(input.widthMm, input.heightMm);
-    final weightKg = calculateWeight(input.widthMm, input.heightMm, input.type);
-    final motorModel = selectMotorModel(weightKg);
-
-    final breakdown = <ShutterBreakdownItem>[];
-    int total = 0;
-    int bodyPriceValue = 0; // 본체가 저장용
+    final weightKg =
+        calculateWeight(input.widthMm, input.heightMm, input.type);
+    final motorModel =
+        selectEffectiveMotorModel(weightKg, input.widthMm);
+    final powerSpec = motorPowerByModel(motorModel);
 
     final info = getDbInfo(input.type);
     final category = info['category']!;
     final modelType = info['model_type'];
+    final isInsulated = modelType?.contains('단열') ?? false;
+    final bracketType = getBracketType(
+      isInsulated: isInsulated,
+      heightMm: input.heightMm,
+      widthMm: input.widthMm,
+      weightKg: weightKg,
+    );
+    final boxSize = getShutterBoxSize(
+      isInsulated: isInsulated,
+      heightMm: input.heightMm,
+      weightKg: weightKg,
+      widthMm: input.widthMm,
+    );
+
+    final breakdown = <ShutterBreakdownItem>[];
+    var total = 0;
+    var bodyPriceValue = 0;
 
     final isFire = category.contains('방화');
 
-    // [0] 격자 데이터 조회 (공통 버킷)
     final wBucket = toGridBucket(input.widthMm);
     final hBucket = toGridBucket(input.heightMm);
     final gridEntry = gridPrices.firstWhere(
@@ -67,33 +241,33 @@ class ShutterCalculator {
           (isFire || e['model_type'] == modelType) &&
           e['width_mm'] == wBucket &&
           e['height_mm'] == hBucket,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     final gridPrice = (gridEntry['price'] as num?)?.toInt();
 
     if (isFire) {
-      // [A] 철제방화 / 스크린방화: 격자값 1개가 총액 (슬라트 계산 안함)
+      // 철제방화/스크린방화: 격자 시공비만 (부대비용 미적용)
       final finalPrice = gridPrice ?? 0;
       total += finalPrice;
       breakdown.add(
         ShutterBreakdownItem(
-          name: '기본 견적 (격자: ${wBucket}x$hBucket)',
+          name: '예상 시공비',
           amount: finalPrice,
-          note: '방화 모델은 격자 시공비가 총액으로 적용됩니다.',
+          note: gridPrice != null
+              ? '격자 단가 (${wBucket}x$hBucket)'
+              : '격자 미등록 — 별도 문의',
         ),
       );
     } else {
-      // [B] 방범 4종: 슬라트(공식) + 시공비(격자 or 600k) + 부대비용
+      // 방범: 슬라트 + 시공비(격자 or 기본) + 부대비용
 
-      // 1. 슬라트 금액 계산
       final unitEntry = unitPrices.firstWhere(
         (e) => e['category'] == category && e['model_type'] == modelType,
-        orElse: () => {},
+        orElse: () => <String, dynamic>{},
       );
-      int unitPriceValue = (unitEntry['unit_price'] as num?)?.toInt() ?? 0;
-      final overrideUnitPrice = modelType == null
-          ? null
-          : unitPriceOverrideMap?[modelType];
+      var unitPriceValue = (unitEntry['unit_price'] as num?)?.toInt() ?? 0;
+      final overrideUnitPrice =
+          modelType == null ? null : unitPriceOverrideMap?[modelType];
       if ((overrideUnitPrice ?? 0) > 0) {
         unitPriceValue = overrideUnitPrice!;
       }
@@ -111,8 +285,9 @@ class ShutterCalculator {
         ),
       );
 
-      // 2. 시공비 (격자 있으면 격자값, 없으면 600,000원)
-      final installCost = gridPrice ?? 600000;
+      // 시공비: 격자 우선, 없으면 입력 override 또는 기본 800,000 (웹 기본값)
+      final defaultInstall = input.overrideInstallCost ?? 800000;
+      final installCost = gridPrice ?? defaultInstall;
       total += installCost;
       breakdown.add(
         ShutterBreakdownItem(
@@ -124,20 +299,32 @@ class ShutterCalculator {
         ),
       );
 
-      // 3. 기타 고정 부대비용
       final motorCost = input.overrideMotorCost ?? 400000;
       final equipCost = input.overrideEquipCost ?? 200000;
       final bendingCost = input.overrideBendingCost ?? 500000;
-      total += (motorCost + equipCost + bendingCost);
-      breakdown.add(ShutterBreakdownItem(name: '모터', amount: motorCost));
-      breakdown.add(ShutterBreakdownItem(name: '장비대', amount: equipCost));
-      breakdown.add(ShutterBreakdownItem(name: '절곡비용', amount: bendingCost));
+      if (input.includeMotor) {
+        total += motorCost;
+        breakdown.add(
+          ShutterBreakdownItem(
+            name: '모터',
+            amount: motorCost,
+            note: motorModel.isEmpty ? null : '$motorModel · $powerSpec',
+          ),
+        );
+      }
+      if (input.includeEquipment) {
+        total += equipCost;
+        breakdown.add(ShutterBreakdownItem(name: '장비대', amount: equipCost));
+      }
+      if (input.includeBending) {
+        total += bendingCost;
+        breakdown.add(ShutterBreakdownItem(name: '절곡비용', amount: bendingCost));
+      }
 
-      // 4. 내풍압 특화 비용
+      // 내풍압: 윈드락 + 프레임
       if (modelType?.contains('내풍압') ?? false) {
-        // 윈드락: ceil((height+400)/72/10) * 2
-        final windlockQty = (((input.heightMm + 400) / 72 / 10).ceil() * 2)
-            .toInt();
+        final windlockQty =
+            (((input.heightMm + 400) / 72 / 10).ceil() * 2).toInt();
         final windlockUnitCost = modelType!.contains('단열') ? 10000 : 8000;
         final windlockTotal = windlockQty * windlockUnitCost;
         total += windlockTotal;
@@ -148,14 +335,12 @@ class ShutterCalculator {
           ),
         );
 
-        // 프레임: ((height+200)*2/1000) * 70000
-        final framePrice = (((input.heightMm + 200) * 2 / 1000.0) * 70000)
-            .round();
+        final framePrice =
+            (((input.heightMm + 200) * 2 / 1000.0) * 70000).round();
         total += framePrice;
-        breakdown.add(ShutterBreakdownItem(name: '프레임비', amount: framePrice));
+        breakdown.add(ShutterBreakdownItem(name: '프레임', amount: framePrice));
       }
 
-      // 5. 당사이익
       if (input.includeProfit) {
         final profitPrice = input.overrideProfitCost ?? 800000;
         total += profitPrice;
@@ -163,13 +348,14 @@ class ShutterCalculator {
       }
     }
 
-    // 공통 추가 항목
     for (final item in input.extraItems) {
       final itemTotal = item.price * item.quantity;
       total += itemTotal;
       breakdown.add(
         ShutterBreakdownItem(
-          name: '${item.name} (${item.quantity}개)',
+          name: item.quantity > 1
+              ? '${item.name} (${item.quantity}개)'
+              : item.name,
           amount: itemTotal,
         ),
       );
@@ -181,11 +367,11 @@ class ShutterCalculator {
       breakdown: breakdown,
       area: area,
       weightKg: weightKg,
-      motorModel: motorModel,
-      powerSpec: '500W',
-      boxSize: '700*555',
-      bracketType: '주문형 브라켓',
-      slatPriceNote: !isFire
+      motorModel: motorModel.isEmpty ? '-' : motorModel,
+      powerSpec: powerSpec,
+      boxSize: boxSize,
+      bracketType: bracketType,
+      slatPriceNote: !isFire && area > 0 && bodyPriceValue > 0
           ? '${area.toStringAsFixed(2)}㎡ × ${NumberFormat('#,###').format((bodyPriceValue / area).round())}원'
           : null,
       calculatedAt: DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),

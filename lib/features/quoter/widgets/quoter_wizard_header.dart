@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// 견적 마법사 상단 단계 칩 (1–4).
 class QuoterWizardHeader extends StatelessWidget {
@@ -55,10 +56,13 @@ class QuoterWizardHeader extends StatelessWidget {
 
       return Expanded(
         child: InkWell(
-          onTap: () => onStepTap(step),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onStepTap(step);
+          },
           borderRadius: BorderRadius.circular(10),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
             decoration: BoxDecoration(
               color: bg,
               borderRadius: BorderRadius.circular(10),

@@ -14,6 +14,9 @@ import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -43,13 +46,18 @@ class MainTabScreen extends ConsumerStatefulWidget {
 
 class _MainTabScreenState extends ConsumerState<MainTabScreen>
     with WidgetsBindingObserver {
+  // IndexedStack 본문 탭 (접수·더보기는 네비 전용)
   static const int _homeTabIndex = 0;
   static const int _issuanceTabIndex = 1;
-  static const int _generalScheduleTabIndex = 2;
+  static const int _quoterTabIndex = 2;
+  static const int _generalScheduleTabIndex = 3;
+
+  // 하단 네비: 홈 · 접수 · 발급 · 견적 · (본사일반) · 더보기
   static const int _navHomeIndex = 0;
   static const int _navReceptionIndex = 1;
   static const int _navIssuanceIndex = 2;
-  static const int _navGeneralScheduleIndex = 3;
+  static const int _navQuoterIndex = 3;
+  static const int _navGeneralScheduleIndex = 4;
   int _currentIndex = 0;
   int _navSelectedIndex = _navHomeIndex;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
@@ -402,17 +410,35 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     _trackTab(ref.read(authControllerProvider), 'issuance');
   }
 
+  void _selectQuoterTab() {
+    HapticFeedback.selectionClick();
+    _loadedIndices.add(_quoterTabIndex);
+    if (_navSelectedIndex == _navQuoterIndex &&
+        _currentIndex == _quoterTabIndex) {
+      return;
+    }
+    setState(() {
+      _navSelectedIndex = _navQuoterIndex;
+      _currentIndex = _quoterTabIndex;
+      _loadedIndices.add(_quoterTabIndex);
+      _lastBackExitHintAt = null;
+    });
+    _trackTab(ref.read(authControllerProvider), 'quoter');
+  }
+
   bool _showGeneralScheduleInNav(AppUser? user) =>
       user != null && canAccessGeneralSchedule(user);
 
+  /// 홈(0) 접수(1) 발급(2) 견적(3) [본사일반(4)] 더보기
   int _navMenuIndexFor(AppUser? user) =>
-      _showGeneralScheduleInNav(user) ? 4 : 3;
+      _showGeneralScheduleInNav(user) ? 5 : 4;
 
   void _syncNavFromCurrentTab() {
     final user = ref.read(authControllerProvider);
     setState(() {
       _navSelectedIndex = switch (_currentIndex) {
         _issuanceTabIndex => _navIssuanceIndex,
+        _quoterTabIndex => _navQuoterIndex,
         _generalScheduleTabIndex =>
           _showGeneralScheduleInNav(user)
               ? _navGeneralScheduleIndex
@@ -467,6 +493,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     if (_showGeneralScheduleInNav(user) &&
         navIndex == _navGeneralScheduleIndex) {
       _selectGeneralScheduleTab();
+      return;
+    }
+    if (navIndex == _navQuoterIndex) {
+      _selectQuoterTab();
       return;
     }
     if (navIndex == _navReceptionIndex) {
@@ -537,30 +567,41 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                   icon: const Icon(Icons.add_ic_call_rounded),
                   label: const Text('새 접수 등록'),
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size.fromHeight(AppTokens.primaryCtaHeight),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  minVerticalPadding: 12,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   leading: Icon(Icons.list_alt_rounded, color: scheme.primary),
-                  title: const Text('오늘 접수 목록'),
+                  title: const Text(
+                    '오늘 접수 목록',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                   subtitle: const Text('금일 접수 건 조회'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => Navigator.of(context).pop('today'),
                 ),
                 ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  minVerticalPadding: 12,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   leading: Icon(
                     Icons.phone_missed_rounded,
                     color: scheme.error,
                   ),
-                  title: const Text('오늘 미통화 목록'),
+                  title: const Text(
+                    '오늘 미통화 목록',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                   subtitle: const Text('금일 미통화 건 조회'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => Navigator.of(context).pop('incomplete'),
                 ),
               ],
@@ -623,6 +664,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     _loadedIndices.contains(_issuanceTabIndex)
         ? const IssuanceRequestScreen()
         : const AppLoading(message: '발급 화면 준비 중…'),
+    _loadedIndices.contains(_quoterTabIndex)
+        ? const QuoterHubScreen(showAppBar: true)
+        : const AppLoading(message: '견적 화면 준비 중…'),
     _loadedIndices.contains(_generalScheduleTabIndex)
         ? const GeneralScheduleScreen(embedded: true)
         : const SizedBox.shrink(),
@@ -643,6 +687,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       ref.read(pendingGeneralScheduleLaunchProvider.notifier).state = false;
       NotificationService.clearPendingGeneralScheduleNavigation();
       _selectGeneralScheduleTab();
+    });
+    ref.listen(pendingQuoterLaunchProvider, (prev, next) {
+      if (next != true || !context.mounted) return;
+      ref.read(pendingQuoterLaunchProvider.notifier).state = false;
+      _selectQuoterTab();
     });
 
     final scheme = Theme.of(context).colorScheme;
@@ -715,8 +764,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             return _buildAppMenuDrawer(context, user, scheme, updateStatus);
           },
         ),
-        // 본사일반은 자체 AppBar(검색·새로고침)를 쓰므로 메인 AppBar를 숨긴다.
-        appBar: _currentIndex == _generalScheduleTabIndex
+        // 본사일반·견적은 자체 AppBar를 쓰므로 메인 AppBar를 숨긴다.
+        appBar: (_currentIndex == _generalScheduleTabIndex ||
+                _currentIndex == _quoterTabIndex)
             ? null
             : AppBar(
                 title: Row(
@@ -852,10 +902,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             onTapReception: () => _onNavDestinationSelected(_navReceptionIndex),
             onLongPressReception: _openReceptionQuickActions,
             onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
+            onTapQuoter: () => _onNavDestinationSelected(_navQuoterIndex),
             onTapGeneralSchedule: () =>
                 _onNavDestinationSelected(_navGeneralScheduleIndex),
-            onTapMenu: () =>
-                _onNavDestinationSelected(showGeneralSchedule ? 4 : 3),
+            onTapMenu: () => _onNavDestinationSelected(
+              _navMenuIndexFor(ref.read(authControllerProvider)),
+            ),
           ),
         ),
       ),
@@ -879,10 +931,30 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
     return AppMenuCatalog(
       sections: const [
+        AppMenuSection(id: 'tools', title: '업무 도구'),
         AppMenuSection(id: 'shortcuts', title: '바로가기'),
         AppMenuSection(id: 'account', title: '계정'),
       ],
       entries: [
+        AppMenuEntry(
+          id: 'shutter_quoter',
+          sectionId: 'tools',
+          icon: Icons.calculate_rounded,
+          title: '셔터 견적기',
+          subtitle: 'COAD_home과 동일 계산 · 견적서 작성',
+          quickAccess: true,
+          quickLabel: '견적',
+          keywords: const [
+            '견적',
+            '셔터',
+            '견적기',
+            'estimator',
+            '단가',
+            '모터',
+            '슬라트',
+          ],
+          onTap: () => closeDrawerThen(_selectQuoterTab),
+        ),
         AppMenuEntry(
           id: 'home_pending_uncalled',
           sectionId: 'shortcuts',
@@ -968,6 +1040,25 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             onTap: () => closeDrawerThen(() {
               Navigator.of(hostContext).push(
                 MaterialPageRoute<void>(builder: (_) => const AppUsageScreen()),
+              );
+            }),
+          ),
+        if (isAppAdmin(user))
+          AppMenuEntry(
+            id: 'shutter_estimator_log',
+            sectionId: 'account',
+            icon: Icons.history_edu_rounded,
+            title: '견적기 사용 이력',
+            subtitle: '셔터 견적기 사용 통계 (COAD_home 동일)',
+            quickAccess: true,
+            quickLabel: '견적이력',
+            keywords: const ['견적', '이력', '통계', '관리', '셔터'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'quoter_log');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ShutterEstimatorLogScreen(),
+                ),
               );
             }),
           ),
@@ -1239,6 +1330,7 @@ class _MainBottomNavBar extends StatelessWidget {
     required this.onTapReception,
     required this.onLongPressReception,
     required this.onTapIssuance,
+    required this.onTapQuoter,
     required this.onTapGeneralSchedule,
     required this.onTapMenu,
   });
@@ -1251,6 +1343,7 @@ class _MainBottomNavBar extends StatelessWidget {
   final VoidCallback onTapReception;
   final VoidCallback onLongPressReception;
   final VoidCallback onTapIssuance;
+  final VoidCallback onTapQuoter;
   final VoidCallback onTapGeneralSchedule;
   final VoidCallback onTapMenu;
 
@@ -1260,8 +1353,17 @@ class _MainBottomNavBar extends StatelessWidget {
     final homeAccent = scheme.primary;
     final receptionAccent = AppTokens.receptionAccent(scheme);
     final issuanceAccent = IssuanceVisual.navAccent(scheme);
+    // 견적 탭 — 접수 다음으로 눈에 띄는 틸/그린 톤
+    final quoterAccent = Color.lerp(
+      const Color(0xFF0D9488),
+      scheme.primary,
+      0.15,
+    )!;
     final generalScheduleAccent = AppTokens.generalScheduleAccent(scheme);
-    final menuIndex = showGeneralSchedule ? 4 : 3;
+    // 홈0 접수1 발급2 견적3 [본사4] 더보기4or5
+    final menuIndex = showGeneralSchedule ? 5 : 4;
+    final gsIndex = 4;
+    final quoterSelected = selectedIndex == 3;
     return SafeArea(
       top: false,
       child: Container(
@@ -1272,9 +1374,17 @@ class _MainBottomNavBar extends StatelessWidget {
               color: scheme.outlineVariant.withValues(alpha: 0.35),
             ),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.shadow.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, -2),
+            ),
+          ],
         ),
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
               child: _BottomNavItem(
@@ -1287,16 +1397,12 @@ class _MainBottomNavBar extends StatelessWidget {
                 onLongPress: onLongPressHome,
               ),
             ),
+            // 테슬라 컨트롤식 프라이머리 CTA — 새 접수를 가장 크게
             Expanded(
-              child: _BottomNavItem(
-                label: '접수',
-                selected: selectedIndex == 1,
-                selectedIcon: Icons.add_ic_call_rounded,
-                unselectedIcon: Icons.add_ic_call_rounded,
+              child: _ReceptionPrimaryNavItem(
                 accentColor: receptionAccent,
                 onTap: onTapReception,
                 onLongPress: onLongPressReception,
-                // 롱프레스 힌트는 tooltip으로
               ),
             ),
             Expanded(
@@ -1312,6 +1418,13 @@ class _MainBottomNavBar extends StatelessWidget {
                 onTap: onTapIssuance,
               ),
             ),
+            Expanded(
+              child: _QuoterNavItem(
+                selected: quoterSelected,
+                accentColor: quoterAccent,
+                onTap: onTapQuoter,
+              ),
+            ),
             if (showGeneralSchedule)
               Expanded(
                 child: _BottomNavItem(
@@ -1319,7 +1432,7 @@ class _MainBottomNavBar extends StatelessWidget {
                   tag: kGeneralScheduleTestLabel.isEmpty
                       ? null
                       : kGeneralScheduleTestLabel,
-                  selected: selectedIndex == 3,
+                  selected: selectedIndex == gsIndex,
                   selectedIcon: Icons.engineering_rounded,
                   unselectedIcon: Icons.engineering_outlined,
                   accentColor: generalScheduleAccent,
@@ -1337,6 +1450,161 @@ class _MainBottomNavBar extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 하단 견적 탭 — 아이콘 칩으로 한눈에 구분.
+class _QuoterNavItem extends StatelessWidget {
+  const _QuoterNavItem({
+    required this.selected,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '견적',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: selected ? 44 : 40,
+                  height: selected ? 36 : 32,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? accentColor
+                        : accentColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: selected
+                        ? [
+                            BoxShadow(
+                              color: accentColor.withValues(alpha: 0.35),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Icon(
+                    Icons.calculate_rounded,
+                    size: selected ? 22 : 20,
+                    color: selected ? scheme.onPrimary : accentColor,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '견적',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                    color: selected
+                        ? accentColor
+                        : scheme.onSurfaceVariant.withValues(alpha: 0.95),
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 하단 네비 중앙 프라이머리 — 큰 터치·즉시 등록.
+class _ReceptionPrimaryNavItem extends StatelessWidget {
+  const _ReceptionPrimaryNavItem({
+    required this.accentColor,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final Color accentColor;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: '접수',
+      hint: '짧게 누르면 새 접수, 길게 누르면 오늘 목록 메뉴',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            onTap();
+          },
+          onLongPress: () {
+            HapticFeedback.mediumImpact();
+            onLongPress();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accentColor.withValues(alpha: 0.38),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.add_ic_call_rounded,
+                    color: scheme.onPrimary,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '접수',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: accentColor,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

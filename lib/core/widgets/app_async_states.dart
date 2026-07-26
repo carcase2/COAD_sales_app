@@ -96,8 +96,15 @@ class AppEmpty extends StatelessWidget {
               ),
             ],
             if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 16),
-              TextButton(onPressed: onAction, child: Text(actionLabel!)),
+              const SizedBox(height: 20),
+              FilledButton.tonalIcon(
+                onPressed: onAction,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(actionLabel!),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(160, 48),
+                ),
+              ),
             ],
           ],
         ),
@@ -142,11 +149,14 @@ class AppErrorState extends StatelessWidget {
                   ),
             ),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               FilledButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: Text(retryLabel),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(180, 48),
+                ),
               ),
             ],
           ],

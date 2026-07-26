@@ -11,6 +11,7 @@ import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_estimate_notice.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
 import 'package:coad_customer_calls/features/quoter/widgets/quoter_out_of_table_warning.dart';
 import 'package:coad_customer_calls/features/quoter/widgets/quoter_type_selector.dart';
@@ -54,8 +55,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   final FocusNode _heightFocusNode = FocusNode();
 
   // 비용 직접 수정용 컨트롤러
+  // 기본 비용 — COAD_home ShutterEstimatorWizard DEFAULT_COSTS 와 동일
   final _motorCostController = TextEditingController(text: '400,000');
-  final _installCostController = TextEditingController(text: '600,000');
+  final _installCostController = TextEditingController(text: '800,000');
   final _equipCostController = TextEditingController(text: '200,000');
   final _bendingCostController = TextEditingController(text: '500,000');
   final _profitCostController = TextEditingController(text: '800,000');
@@ -149,8 +151,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   void _resetToDefaults() {
     setState(() {
+      // COAD_home DEFAULT_COSTS 와 동일
       _motorCostController.text = '400,000';
-      _installCostController.text = '600,000';
+      _installCostController.text = '800,000';
       _equipCostController.text = '200,000';
       _bendingCostController.text = '500,000';
       _profitCostController.text = '800,000';
@@ -174,6 +177,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   void _onDimensionChanged(String _) {
     _invalidateCalculatedResult();
+    // 폭/높이 입력 중 하단「견적 산출」활성 여부는
+    // ListenableBuilder 가 컨트롤러를 구독해 갱신한다 (setState 불필요).
   }
 
   Future<void> _goToStep(int step) async {
@@ -221,23 +226,39 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         rawRows: prices['company'] ?? const [],
         parsedRows: companyContext.companies,
       );
-      final selectedCompany = companyContext.selectedCompany;
-      final unitMap = selectedCompany == null
+      // 1차: 현재 선택(또는 기본) 업체로 비교표 구성
+      var comparisons = _buildCompanyComparisons(
+        prices: prices,
+        input: input,
+        selectedCompanyId: companyContext.selectedCompanyId,
+      );
+      // 웹과 동일: 산출 직후 최저가 업체로 자동 적용
+      final lowestId = _lowestCompanyId(comparisons);
+      final preferredId = lowestId ?? companyContext.selectedCompanyId;
+      final preferredContext = preferredId == companyContext.selectedCompanyId
+          ? companyContext
+          : _buildCompanyContext(
+              prices: prices,
+              selectedCompanyId: preferredId,
+            );
+      final preferredCompany = preferredContext.selectedCompany;
+      final preferredUnitMap = preferredCompany == null ||
+              preferredCompany.id == _baseCompanyId
           ? null
           : ShutterCalculator.unitPriceMapFromCompany(
-              selectedCompany.toJson(),
-              companyContext.fallbackUnitPriceMap,
+              preferredCompany.toJson(),
+              preferredContext.fallbackUnitPriceMap,
             );
       final res = ShutterCalculator.calculate(
         input: input,
         gridPrices: prices['grid'] as List<Map<String, dynamic>>,
         unitPrices: prices['unit'] as List<Map<String, dynamic>>,
-        unitPriceOverrideMap: unitMap,
+        unitPriceOverrideMap: preferredUnitMap,
       );
-      final comparisons = _buildCompanyComparisons(
+      comparisons = _buildCompanyComparisons(
         prices: prices,
         input: input,
-        selectedCompanyId: companyContext.selectedCompanyId,
+        selectedCompanyId: preferredContext.selectedCompanyId,
       );
 
       if (!mounted) return;
@@ -250,7 +271,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           heightMm: h,
         );
         _currentStep = 4;
-        _selectedCompanyId = companyContext.selectedCompanyId;
+        _selectedCompanyId = preferredContext.selectedCompanyId;
         _companyComparisons = comparisons;
       });
 
@@ -335,13 +356,20 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
+  /// COAD_home: 기준 단가(비와이메탈) + 등록 업체 목록.
+  static const _baseCompanyId = '__base_unit_price__';
+  static const _baseCompanyName = '비와이메탈';
+
   CompanyContext _buildCompanyContext({
     required Map<String, List<Map<String, dynamic>>> prices,
     required String? selectedCompanyId,
   }) {
-    final companies = _parseCompanyRows(prices['company'] ?? const []);
     final fallbackMap = ShutterCalculator.buildSecurityFallbackUnitPriceMap(
       prices['unit'] as List<Map<String, dynamic>>,
+    );
+    final companies = _comparisonCompanies(
+      rawRows: prices['company'] ?? const [],
+      fallbackMap: fallbackMap,
     );
     if (!ShutterCalculator.isSecurityType(_selectedType) || companies.isEmpty) {
       return CompanyContext(
@@ -371,23 +399,51 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
+  /// 웹과 동일: 비와이메탈(기준) + 회사 단가 테이블 업체.
+  List<ShutterCompanyUnitPrice> _comparisonCompanies({
+    required List<Map<String, dynamic>> rawRows,
+    required Map<String, int> fallbackMap,
+  }) {
+    final registered = _parseCompanyRows(rawRows);
+    final hasBaseName = registered.any(
+      (c) => c.companyName.replaceAll(' ', '') == _baseCompanyName,
+    );
+    if (hasBaseName) return registered;
+
+    final base = ShutterCompanyUnitPrice(
+      id: _baseCompanyId,
+      companyName: _baseCompanyName,
+      unitPriceGeneral: fallbackMap['이중압출'] ?? 81000,
+      unitPriceInsulated: fallbackMap['이중압출단열'] ?? 144000,
+      isDefault: true,
+      sortOrder: -1,
+    );
+    return [base, ...registered];
+  }
+
   List<CompanyComparisonRow> _buildCompanyComparisons({
     required Map<String, List<Map<String, dynamic>>> prices,
     required ShutterEstimateInput input,
     required String? selectedCompanyId,
   }) {
     if (!ShutterCalculator.isSecurityType(_selectedType)) return const [];
-    final companies = _parseCompanyRows(prices['company'] ?? const []);
-    if (companies.isEmpty) return const [];
-
     final fallbackMap = ShutterCalculator.buildSecurityFallbackUnitPriceMap(
       prices['unit'] as List<Map<String, dynamic>>,
     );
+    final companies = _comparisonCompanies(
+      rawRows: prices['company'] ?? const [],
+      fallbackMap: fallbackMap,
+    );
+    if (companies.isEmpty) return const [];
+
     final rows = companies.map((company) {
-      final unitMap = ShutterCalculator.unitPriceMapFromCompany(
-        company.toJson(),
-        fallbackMap,
-      );
+      // 기준(비와이메탈)은 unit 테이블 단가, 그 외는 회사 단가 오버라이드
+      final Map<String, int>? unitMap = company.id == _baseCompanyId
+          ? null
+          : ShutterCalculator.unitPriceMapFromCompany(
+              company.toJson(),
+              fallbackMap,
+            );
       final estimate = ShutterCalculator.calculate(
         input: input,
         gridPrices: prices['grid'] as List<Map<String, dynamic>>,
@@ -416,6 +472,19 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           ),
         )
         .toList();
+  }
+
+  /// 산출 직 최저가 업체 자동 선택 (COAD_home generateEstimate).
+  String? _lowestCompanyId(List<CompanyComparisonRow> rows) {
+    if (rows.isEmpty) return null;
+    CompanyComparisonRow? minRow;
+    for (final row in rows) {
+      if (row.totalAmount <= 0) continue;
+      if (minRow == null || row.totalAmount < minRow.totalAmount) {
+        minRow = row;
+      }
+    }
+    return minRow?.company.id;
   }
 
   List<ShutterCompanyUnitPrice> _parseCompanyRows(
@@ -468,7 +537,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       selectedCompanyId: companyId,
     );
     final selectedCompany = companyContext.selectedCompany;
-    final unitMap = selectedCompany == null
+    final unitMap = selectedCompany == null ||
+            selectedCompany.id == _baseCompanyId
         ? null
         : ShutterCalculator.unitPriceMapFromCompany(
             selectedCompany.toJson(),
@@ -966,9 +1036,21 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           child: _buildTypeSelector(scheme),
         );
       case 2:
-        return SingleChildScrollView(
+        // 상단: 입력 스크롤 / 하단: 견적 산출 고정 — 한 화면에서 버튼 보이게
+        return Column(
           key: const ValueKey('step2'),
-          child: _buildSizeInput(scheme),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  bottom: 8 + MediaQuery.viewInsetsOf(context).bottom * 0.15,
+                ),
+                child: _buildSizeInput(scheme),
+              ),
+            ),
+            _buildStep2CalculateBar(scheme),
+          ],
         );
       case 3:
         return LayoutBuilder(
@@ -983,44 +1065,77 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       case 4:
       default:
         final a4 = quoterStepAccent(4);
-        return Container(
+        final typeLabel = QuoterTypeStyle.label(_selectedType);
+        final isFire = _isFireDoorType;
+        // 고정 헤더 + 스크롤 본문 — 유사 견적(방화)이 길어도 overflow 없음
+        return Column(
           key: const ValueKey('step4'),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 10),
-                child: Row(
-                  children: [
-                    Icon(Icons.insights_rounded, size: 18, color: a4),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '4단계 · 최종 견적',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: a4,
-                        ),
-                      ),
-                    ),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    a4.withValues(alpha: 0.16),
+                    a4.withValues(alpha: 0.06),
                   ],
                 ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: a4.withValues(alpha: 0.35)),
               ),
-              _result == null
-                  ? _buildCalculateButton(scheme)
-                  : _buildStep4ResultTopBar(scheme),
-              if (_selectedType == ShutterType.fireSteel ||
-                  _selectedType == ShutterType.fireScreen)
-                _buildSimilarEstimatesSection(scheme),
-              const SizedBox(height: 10),
-              Expanded(
-                child: _result == null
-                    ? _buildStep4Placeholder(scheme)
-                    : _buildResultCompactCard(scheme),
+              child: Row(
+                children: [
+                  Icon(
+                    isFire
+                        ? Icons.local_fire_department_rounded
+                        : Icons.insights_rounded,
+                    size: 20,
+                    color: a4,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isFire ? '방화 견적 결과' : '견적 결과',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: a4,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isFire
+                              ? '$typeLabel · 격자·유사 견적 참고'
+                              : '$typeLabel · 총액·제조사 비교',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (_result == null)
+              _buildCalculateButton(scheme)
+            else
+              _buildStep4ResultTopBar(scheme),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _result == null
+                  ? _buildStep4Placeholder(scheme)
+                  : _buildResultCompactCard(scheme),
+            ),
+          ],
         );
     }
   }
@@ -1056,14 +1171,71 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Widget _buildWizardActions(ColorScheme scheme) {
-    final canNext = _currentStep < 4;
-    final canPrev = _currentStep > 1;
-
-    bool nextEnabled() {
-      if (_currentStep == 2) return _canCalculate;
-      return canNext;
+    // 2단계(규격): 견적 산출은 화면 안 버튼만 사용 — 하단 중복 제거
+    if (_currentStep == 2) {
+      return Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  unawaited(_goToStep(1));
+                },
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text(
+                  '이전',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  unawaited(_goToStep(3));
+                },
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text(
+                  '비용 설정',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+            if (_hasAnyInput) ...[
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: '다시 견적내기',
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  _newEstimate();
+                },
+                icon: const Icon(Icons.restart_alt_rounded),
+              ),
+            ],
+          ],
+        ),
+      );
     }
 
+    final canNext = _currentStep < 4;
+    final canPrev = _currentStep > 1;
+    final nextEnabled = _currentStep != 4 && canNext;
     final navAccent = quoterStepAccent(_currentStep);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -1101,41 +1273,46 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     onPressed: canPrev
                         ? () {
                             HapticFeedback.lightImpact();
-                            _goToStep(_currentStep - 1);
+                            unawaited(_goToStep(_currentStep - 1));
                           }
                         : null,
                     style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      minimumSize: const Size.fromHeight(52),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       foregroundColor: scheme.onSurface,
                       side: BorderSide(
                         color: scheme.outlineVariant.withValues(alpha: 0.8),
                       ),
                     ),
-                    child: const Text('이전'),
+                    child: const Text(
+                      '이전',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
+                  flex: 2,
                   child: FilledButton.icon(
-                    onPressed: !nextEnabled()
+                    onPressed: !nextEnabled
                         ? null
                         : () async {
-                            HapticFeedback.lightImpact();
-                            // 2단계(규격)에서는 비용(3단계)을 건너뛰고 바로 4단계(결과)로 이동
-                            final nextStep = _currentStep == 2
-                                ? 4
-                                : (_currentStep < 4 ? _currentStep + 1 : null);
+                            HapticFeedback.mediumImpact();
+                            final nextStep =
+                                _currentStep < 4 ? _currentStep + 1 : null;
                             if (nextStep != null) await _goToStep(nextStep);
                           },
                     style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      minimumSize: const Size.fromHeight(52),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       backgroundColor: navAccent,
                       foregroundColor: Colors.white,
                     ),
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                    label: Text(_currentStep == 2 ? '견적 산출' : '다음'),
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    label: const Text(
+                      '다음',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ),
               ],
@@ -1162,6 +1339,81 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   // ─────────────────────────────────────────────────
   // 규격 입력
   // ─────────────────────────────────────────────────
+  /// 2단계 하단 고정 — 스크롤 없이 항상 보이는 견적 산출 CTA
+  Widget _buildStep2CalculateBar(ColorScheme scheme) {
+    final a = quoterStepAccent(2);
+    return ListenableBuilder(
+      listenable: Listenable.merge([_widthController, _heightController]),
+      builder: (context, _) {
+        final enabled = _canCalculate && !_isCalculating;
+        return Material(
+          color: scheme.surface,
+          elevation: 2,
+          shadowColor: scheme.shadow.withValues(alpha: 0.12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.45),
+                ),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!enabled)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6, left: 4, right: 4),
+                    child: Text(
+                      '폭과 높이를 모두 입력하면 견적 산출이 활성화됩니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                FilledButton.icon(
+                  onPressed: !enabled
+                      ? null
+                      : () {
+                          HapticFeedback.mediumImpact();
+                          FocusScope.of(context).unfocus();
+                          unawaited(_goToStep(4));
+                        },
+                  icon: _isCalculating
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.calculate_rounded),
+                  label: Text(
+                    _isCalculating ? '산출 중…' : '견적 산출',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                    backgroundColor: a,
+                    disabledBackgroundColor:
+                        scheme.onSurface.withValues(alpha: 0.12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSizeInput(ColorScheme scheme) {
     final a = quoterStepAccent(2);
     return ValueListenableBuilder<TextEditingValue>(
@@ -1171,10 +1423,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           valueListenable: _heightController,
           builder: (_, __, ___) {
             return Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               decoration: BoxDecoration(
                 color: scheme.surface,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: a.withValues(alpha: 0.42),
                   width: 1.5,
@@ -1195,110 +1447,82 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 360;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.straighten_rounded,
-                                size: 18,
-                                color: a,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '2단계 · 규격 입력 (mm)',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w800,
-                                    color: a,
-                                  ),
-                                ),
-                              ),
-                              if (!compact && _result != null)
-                                TextButton.icon(
-                                  onPressed: _newEstimate,
-                                  icon: const Icon(
-                                    Icons.restart_alt_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text(
-                                    '초기화',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: scheme.error,
-                                    visualDensity: VisualDensity.compact,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                    ),
-                                  ),
-                                ),
-                            ],
+                  Row(
+                    children: [
+                      Icon(Icons.straighten_rounded, size: 18, color: a),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '2단계 · 규격 입력 (mm)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: a,
                           ),
-                          if (compact && _result != null)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton.icon(
-                                onPressed: _newEstimate,
-                                icon: const Icon(
-                                  Icons.restart_alt_rounded,
-                                  size: 16,
-                                ),
-                                label: const Text(
-                                  '초기화',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: scheme.error,
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                ),
-                              ),
+                        ),
+                      ),
+                      if (_result != null)
+                        TextButton(
+                          onPressed: _newEstimate,
+                          style: TextButton.styleFrom(
+                            foregroundColor: scheme.error,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          child: const Text(
+                            '초기화',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
                             ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _buildSizeField(
-                    label: '폭 (W)',
-                    controller: _widthController,
-                    scheme: scheme,
-                    hint: '3000',
-                    focusNode: _widthFocusNode,
-                    textInputAction: TextInputAction.next,
-                    onSubmitted: (_) =>
-                        FocusScope.of(context).requestFocus(_heightFocusNode),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSizeField(
-                    label: '높이 (H)',
-                    controller: _heightController,
-                    scheme: scheme,
-                    hint: '3000',
-                    focusNode: _heightFocusNode,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 10),
+                  // 폭·높이 한 줄 배치로 세로 공간 절약
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _buildSizeField(
+                          label: '폭 (W)',
+                          controller: _widthController,
+                          scheme: scheme,
+                          hint: '3000',
+                          focusNode: _widthFocusNode,
+                          textInputAction: TextInputAction.next,
+                          compact: true,
+                          onSubmitted: (_) => FocusScope.of(context)
+                              .requestFocus(_heightFocusNode),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildSizeField(
+                          label: '높이 (H)',
+                          controller: _heightController,
+                          scheme: scheme,
+                          hint: '3000',
+                          focusNode: _heightFocusNode,
+                          textInputAction: TextInputAction.done,
+                          compact: true,
+                          onSubmitted: (_) {
+                            FocusScope.of(context).unfocus();
+                            if (_canCalculate && !_isCalculating) {
+                              unawaited(_goToStep(4));
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   _buildDimensionLivePanel(scheme),
                   if (_isOutOfTableSizeRange) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     const QuoterOutOfTableWarning(),
                   ],
                 ],
@@ -1318,7 +1542,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     FocusNode? focusNode,
     TextInputAction? textInputAction,
     ValueChanged<String>? onSubmitted,
+    bool compact = false,
   }) {
+    final fieldSize = compact ? 18.0 : 22.0;
+    final padV = compact ? 12.0 : 18.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1330,7 +1557,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
             color: scheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: compact ? 6 : 8),
         Row(
           children: [
             Expanded(
@@ -1339,7 +1566,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 focusNode: focusNode,
                 keyboardType: TextInputType.number,
                 textInputAction: textInputAction,
-                scrollPadding: const EdgeInsets.only(bottom: 180),
+                scrollPadding: const EdgeInsets.only(bottom: 120),
                 // Numeric keyboard is enough here; hard filtering can hide
                 // composing text on some Android keyboards while typing.
                 inputFormatters: const [],
@@ -1348,13 +1575,13 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 autocorrect: false,
                 enableSuggestions: false,
                 style: TextStyle(
-                  fontSize: 22,
+                  fontSize: fieldSize,
                   fontWeight: FontWeight.w800,
                   color: Colors.black,
                   height: 1.25,
                 ),
-                strutStyle: const StrutStyle(
-                  fontSize: 22,
+                strutStyle: StrutStyle(
+                  fontSize: fieldSize,
                   height: 1.25,
                   forceStrutHeight: true,
                 ),
@@ -1367,7 +1594,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   fillColor: Colors.white,
                   hintText: hint,
                   hintStyle: TextStyle(
-                    fontSize: 20,
+                    fontSize: compact ? 16 : 20,
                     fontWeight: FontWeight.w400,
                     color: Colors.grey.shade500,
                   ),
@@ -1383,14 +1610,14 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide(color: scheme.primary, width: 1.8),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 18,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: compact ? 10 : 14,
+                    vertical: padV,
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: compact ? 4 : 8),
             Text(
               'mm',
               style: TextStyle(
@@ -1829,36 +2056,60 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   Widget _buildStep4ResultTopBar(ColorScheme scheme) {
     final typeColor = QuoterTypeStyle.color(_selectedType);
+    final w = _result?.input.widthMm.round() ?? 0;
+    final h = _result?.input.heightMm.round() ?? 0;
+    final sizeLabel = (w > 0 && h > 0)
+        ? '${NumberFormat('#,###').format(w)}×${NumberFormat('#,###').format(h)}mm'
+        : '';
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: typeColor.withValues(alpha: 0.08),
+        color: typeColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: typeColor.withValues(alpha: 0.22)),
+        border: Border.all(color: typeColor.withValues(alpha: 0.28), width: 1.5),
       ),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              '최종 견적 결과',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: typeColor,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isFireDoorType ? '산출 완료 · 유사 견적 확인' : '산출 완료 · 총액 확인',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: typeColor,
+                  ),
+                ),
+                if (sizeLabel.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '${QuoterTypeStyle.label(_selectedType)} · $sizeLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: 8),
-          OutlinedButton.icon(
+          FilledButton.tonalIcon(
             onPressed: _isCalculating ? null : _calculate,
             icon: const Icon(Icons.refresh_rounded, size: 15),
             label: const Text('다시 산출'),
-            style: OutlinedButton.styleFrom(
+            style: FilledButton.styleFrom(
               visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              foregroundColor: typeColor,
             ),
           ),
         ],
@@ -2034,6 +2285,18 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     ),
                   ),
                 ),
+                if (ShutterCalculator.isSecurityType(_selectedType)) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    kShutterSlatUnitPriceNotice,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ],
                 if (ShutterCalculator.isSecurityType(_selectedType) &&
                     _result != null &&
                     _canCalculate &&
@@ -2105,59 +2368,272 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
+  bool get _isFireDoorType =>
+      _selectedType == ShutterType.fireSteel ||
+      _selectedType == ShutterType.fireScreen;
+
   Widget _buildResultCompactCard(ColorScheme scheme) {
+    // 방화: 현재 총액 대신 격자 안내 + 유사 견적 중심
+    if (_isFireDoorType) {
+      return _buildFireDoorResultBody(scheme);
+    }
+
     final result = _result!;
     final typeColor = QuoterTypeStyle.color(_selectedType);
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () => _showResultActionSheet(scheme),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          color: scheme.surface,
-          border: Border.all(color: typeColor.withValues(alpha: 0.18)),
-          boxShadow: [
-            BoxShadow(
-              color: typeColor.withValues(alpha: 0.08),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '현재 총액',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurfaceVariant,
-                ),
+    final selectedName = () {
+      for (final row in _companyComparisons) {
+        if (row.company.id == _selectedCompanyId) {
+          return row.company.companyName;
+        }
+      }
+      return null;
+    }();
+
+    // 방범: 총액 + 제조사별 가격
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 12),
+      children: [
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: scheme.surface,
+            border: Border.all(color: typeColor.withValues(alpha: 0.18)),
+            boxShadow: [
+              BoxShadow(
+                color: typeColor.withValues(alpha: 0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
-              const SizedBox(height: 4),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _krwFormat.format(result.totalAmount),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '현재 총액',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    if (selectedName != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: typeColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          selectedName,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                            color: typeColor,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _krwFormat.format(result.totalAmount),
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      color: typeColor,
+                      letterSpacing: -1.1,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  kShutterSlatUnitPriceNotice,
                   style: TextStyle(
-                    fontSize: 34,
+                    fontSize: 11,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showBreakdownSheet(scheme),
+                        icon: const Icon(Icons.receipt_long_rounded, size: 16),
+                        label: const Text('견적 내역'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showSpecsSheet(scheme),
+                        icon: const Icon(Icons.memory_rounded, size: 16),
+                        label: const Text('기술 사양'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_companyComparisons.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildCompanyComparisonCard(scheme),
+        ],
+      ],
+    );
+  }
+
+  /// 철제방화/스크린방화 결과 — 총액 강조 없이 격자 안내 + 유사 견적.
+  Widget _buildFireDoorResultBody(ColorScheme scheme) {
+    final result = _result!;
+    final typeColor = QuoterTypeStyle.color(_selectedType);
+    final typeLabel = QuoterTypeStyle.label(_selectedType);
+    final w = result.input.widthMm.round();
+    final h = result.input.heightMm.round();
+    String? installNote;
+    for (final e in result.breakdown) {
+      if (e.name.contains('시공')) {
+        installNote = e.note;
+        break;
+      }
+    }
+    final hasGridPrice = result.totalAmount > 0;
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 12),
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: typeColor.withValues(alpha: 0.07),
+            border: Border.all(color: typeColor.withValues(alpha: 0.28)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(QuoterTypeStyle.icon(_selectedType),
+                      size: 18, color: typeColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      typeLabel,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: typeColor,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${NumberFormat('#,###').format(w)}×'
+                    '${NumberFormat('#,###').format(h)} mm',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (hasGridPrice) ...[
+                Text(
+                  '격자 예상 시공비',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_krwFormat.format(result.totalAmount)}',
+                  style: TextStyle(
+                    fontSize: 22,
                     fontWeight: FontWeight.w900,
                     color: typeColor,
-                    letterSpacing: -1.1,
+                    letterSpacing: -0.5,
                   ),
+                ),
+                if (installNote != null && installNote.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    installNote,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ] else ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 18,
+                      color: scheme.tertiary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '이 사이즈는 단가 격자에 없어 총액 산출이 없습니다. '
+                        '아래 비슷한 사이즈 이전 견적을 참고하거나 담당자에게 문의해 주세요.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                '방화 모델은 스라트·모터 합산 견적이 아닌 격자 시공비·유사 사례 중심입니다.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
         ),
-      ),
+        _buildSimilarEstimatesSection(scheme),
+      ],
     );
   }
 
@@ -2529,10 +3005,27 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                             _result!.bracketType,
                             scheme,
                           ),
-                          const Expanded(child: SizedBox.shrink()),
+                          _buildSpecItem(
+                            '롤파이프',
+                            ShutterCalculator.getRollPipeType(
+                              _result!.input.widthMm,
+                            ),
+                            scheme,
+                          ),
                         ],
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '브라켓·박스 규칙은 COAD_home 견적기와 동일합니다. '
+                  '폭 7,500mm 이상이면 8인치 롤파이프 및 모터 1단계 상향이 적용됩니다.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -2724,8 +3217,13 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     if (_companyComparisons.isEmpty) {
       return const SizedBox.shrink();
     }
+    // 총액 낮은 순 (웹 목록과 같이 한눈에 비교)
     final sorted = [..._companyComparisons]
-      ..sort((a, b) => a.totalAmount.compareTo(b.totalAmount));
+      ..sort((a, b) {
+        final byPrice = a.totalAmount.compareTo(b.totalAmount);
+        if (byPrice != 0) return byPrice;
+        return a.company.companyName.compareTo(b.company.companyName);
+      });
     final minRow = sorted.first;
     CompanyComparisonRow? selectedRow;
     for (final row in _companyComparisons) {
@@ -2743,34 +3241,36 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(14),
+        color: scheme.primaryContainer.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.45),
+          color: scheme.primary.withValues(alpha: 0.28),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          Row(
             children: [
-              Text(
-                '제조사별 가격 (스라트 변경)',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
+              Expanded(
+                child: Text(
+                  '제조사별 가격',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: scheme.onSurface,
+                  ),
                 ),
               ),
               FilledButton.tonalIcon(
                 onPressed: isMinAlreadySelected
                     ? null
-                    : () => _onSelectCompany(minRow.company.id),
-                icon: const Icon(Icons.trending_down_rounded, size: 16),
-                label: const Text('최소값 적용'),
+                    : () {
+                        HapticFeedback.selectionClick();
+                        unawaited(_onSelectCompany(minRow.company.id));
+                      },
+                icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                label: const Text('최저가 선택'),
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(
@@ -2784,20 +3284,17 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           const SizedBox(height: 6),
           Text(
             isMinAlreadySelected
-                ? '현재 최저가 업체가 적용중입니다 (${minRow.company.companyName})'
+                ? '현재 최저가 업체가 적용 중 · ${minRow.company.companyName}'
                 : '최저가: ${minRow.company.companyName} · 현재 대비 -${NumberFormat('#,###').format(savingFromSelected)}원',
             style: TextStyle(
-              fontSize: 11.5,
+              fontSize: 12,
               color: scheme.onSurfaceVariant,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 8),
-          for (final row in _companyComparisons)
-            _buildCompanyComparisonRow(scheme: scheme, row: row),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text(
-            '관리자에 등록된 회사 ㎡ 단가(일반·단열)로 스라트만 바꾼 금액입니다. 모터·시공비·부대비용은 동일합니다.',
+            '스라트(㎡) 단가만 업체별로 바꿉니다. 모터·시공·부대는 동일합니다.',
             style: TextStyle(
               fontSize: 11.5,
               color: scheme.onSurfaceVariant,
@@ -2805,6 +3302,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
+          const SizedBox(height: 10),
+          for (final row in sorted)
+            _buildCompanyComparisonRow(scheme: scheme, row: row),
         ],
       ),
     );
@@ -3044,8 +3544,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         final withoutMotor = list.where((e) => !e.estimate.hasMotor).toList();
 
         return Padding(
-          padding: const EdgeInsets.only(top: 16),
+          padding: const EdgeInsets.only(top: 16, bottom: 8),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -3112,11 +3613,14 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         );
       },
       loading: () => const Padding(
-        padding: EdgeInsets.only(top: 16),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        padding: EdgeInsets.only(top: 16, bottom: 8),
+        child: SizedBox(
+          height: 48,
+          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
       ),
       error: (e, _) => Padding(
-        padding: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.only(top: 12, bottom: 8),
         child: Text(
           '유사 데이터 로딩 실패: $e',
           style: TextStyle(
@@ -3152,6 +3656,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(

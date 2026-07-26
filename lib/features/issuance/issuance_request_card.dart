@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// 이행증권 종류 칩 색상 — 등록 화면(`issuance_request_create_screen`)과 동일.
 ({Color background, Color foreground}) issuanceBondTypeChipColors(String type) {
@@ -165,7 +166,10 @@ class IssuanceRequestCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(radius),
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
         child: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(

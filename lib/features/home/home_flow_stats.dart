@@ -275,8 +275,16 @@ class _FlowStatTile extends StatelessWidget {
           ),
         ),
         child: InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          onLongPress: onLongPress == null
+              ? null
+              : () {
+                  HapticFeedback.mediumImpact();
+                  onLongPress!();
+                },
           borderRadius: BorderRadius.circular(11),
           child: Stack(
             children: [

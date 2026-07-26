@@ -1,7 +1,9 @@
 // lib/theme/app_theme.dart
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 
-/// 영업 현장용 — 가독성·대비·여백 위주의 Material 3 테마
+/// 영업 현장용 — 가독성·대비·원탭 액션 위주의 Material 3 테마
+/// (테슬라 앱: 상태 우선 · 큰 터치 · 최소 크롬)
 class AppTheme {
   AppTheme._();
 
@@ -91,10 +93,11 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           elevation: 0,
+          minimumSize: const Size(64, AppTokens.primaryCtaHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w800,
             fontSize: 15,
             letterSpacing: -0.2,
           ),
@@ -104,6 +107,7 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          minimumSize: const Size(64, AppTokens.primaryCtaHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           side: BorderSide(
             color: colorScheme.outlineVariant.withValues(alpha: 0.5),
@@ -113,10 +117,16 @@ class AppTheme {
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
+          minimumSize: const Size(AppTokens.minTouchTarget, AppTokens.minTouchTarget),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           foregroundColor: colorScheme.onSurfaceVariant,
-          visualDensity: VisualDensity.compact,
         ),
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+        },
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -202,7 +212,7 @@ class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
         backgroundColor: navBg,
-        height: 64,
+        height: 68,
         indicatorColor: colorScheme.primaryContainer.withValues(alpha: 0.62),
         labelTextStyle: WidgetStateTextStyle.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
@@ -294,11 +304,12 @@ class AppTheme {
   }
 
   static ThemeData dark() {
+    // 테슬라식 깊은 다크 — 대비 높은 표면, 낮은 채도
     final colorScheme = ColorScheme.fromSeed(
       seedColor: _seed,
       brightness: Brightness.dark,
-      surface: const Color(0xFF12141A),
-      surfaceContainerLowest: const Color(0xFF1A1D26),
+      surface: const Color(0xFF0B0C10),
+      surfaceContainerLowest: const Color(0xFF14161C),
     );
 
     final baseTextTheme =

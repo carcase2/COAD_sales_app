@@ -7,6 +7,8 @@ import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
+import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart';
@@ -737,8 +739,11 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       ),
       body: _buildBody(),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openCreateShortcut,
-        icon: const Icon(Icons.add_rounded),
+        onPressed: () {
+          HapticFeedback.mediumImpact();
+          _openCreateShortcut();
+        },
+        icon: const Icon(Icons.add_ic_call_rounded),
         label: const Text('새 접수'),
       ),
     );
@@ -814,8 +819,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     final overrides =
         ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
     if (items.isEmpty) {
+      final emptyMessage = switch (widget.mode) {
+        ListQueryMode.incomplete ||
+        ListQueryMode.pendingUncalled =>
+          '처리할 미통화가 없습니다.',
+        ListQueryMode.today => '오늘 접수가 아직 없습니다.',
+        ListQueryMode.completedToday => '오늘 완료된 건이 없습니다.',
+        _ => '목록이 비어 있습니다.',
+      };
       return AppEmpty(
-        message: '목록이 비어 있습니다.',
+        message: emptyMessage,
+        detail: '아래로 당겨 새로고침하거나 새 접수를 등록해 보세요.',
+        icon: Icons.inbox_outlined,
         actionLabel: '새로고침',
         onAction: _loadWithCache,
       );
@@ -1309,7 +1324,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                 ),
                                 const SizedBox(height: 10),
 
-                                // Call & Quick Actions Bar
+                                // Call & Quick Actions — 전화가 1순위 액션
                                 Row(
                                   children: [
                                     Expanded(
@@ -1318,25 +1333,33 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                         query: _searchQuery,
                                         style: TextStyle(
                                           fontSize: 15,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w700,
                                           color: scheme.primary,
+                                          letterSpacing: -0.2,
                                         ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    // Quick Actions
-                                    _buildQuickAction(
-                                      Icons.call,
-                                      scheme.secondary,
-                                      () => LauncherUtils.makePhoneCall(
+                                    UxQuickRoundAction(
+                                      icon: Icons.call_rounded,
+                                      color: AppTokens.success(scheme),
+                                      filled: c.isMissed ||
+                                          widget.mode ==
+                                              ListQueryMode.incomplete ||
+                                          widget.mode ==
+                                              ListQueryMode.pendingUncalled,
+                                      tooltip: '전화 걸기',
+                                      onTap: () => LauncherUtils.makePhoneCall(
                                         c.customerPhone ?? '',
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    _buildQuickAction(
-                                      Icons.message_rounded,
-                                      scheme.primary,
-                                      () => LauncherUtils.sendSMS(
+                                    UxQuickRoundAction(
+                                      icon: Icons.message_rounded,
+                                      color: scheme.primary,
+                                      tooltip: '문자 보내기',
+                                      size: 44,
+                                      onTap: () => LauncherUtils.sendSMS(
                                         c.customerPhone ?? '',
                                       ),
                                     ),
@@ -1454,25 +1477,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildQuickAction(IconData icon, Color color, VoidCallback onTap) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        shape: BoxShape.circle,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(22),
-          child: Icon(icon, size: 20, color: color),
-        ),
-      ),
     );
   }
 

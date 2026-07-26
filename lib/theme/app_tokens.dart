@@ -19,8 +19,13 @@ class AppTokens {
   static const double radiusLg = 18;
   static const double radiusPill = 999;
 
-  // ── touch ──
-  static const double minTouchTarget = 44;
+  // ── touch (테슬라식 한 손 조작 — 넉넉한 타깃) ──
+  static const double minTouchTarget = 48;
+  static const double primaryCtaHeight = 52;
+
+  // ── motion ──
+  static const Duration fast = Duration(milliseconds: 160);
+  static const Duration normal = Duration(milliseconds: 220);
 
   /// 필수 업데이트 칩/배지.
   static Color updateForceBg(ColorScheme scheme) => scheme.error;

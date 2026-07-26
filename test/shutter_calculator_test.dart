@@ -26,12 +26,59 @@ void main() {
     });
   });
 
-  group('ShutterCalculator.selectMotorModel', () {
+  group('ShutterCalculator.selectMotorModel (coad_home)', () {
     test('무게 구간별 모델', () {
       expect(ShutterCalculator.selectMotorModel(100), 'KEM-300');
       expect(ShutterCalculator.selectMotorModel(270), 'KEM-300');
       expect(ShutterCalculator.selectMotorModel(271), 'KEM-400');
-      expect(ShutterCalculator.selectMotorModel(2000), 'KEM-2000');
+      expect(ShutterCalculator.selectMotorModel(450), 'KEM-500');
+      expect(ShutterCalculator.selectMotorModel(451), 'KEM-600');
+      expect(ShutterCalculator.selectMotorModel(720), 'KEM-800');
+      expect(ShutterCalculator.selectMotorModel(1080), 'KEM-1200');
+      expect(ShutterCalculator.selectMotorModel(1800), 'KEM-2000');
+      expect(ShutterCalculator.selectMotorModel(2000), '문의');
+    });
+
+    test('폭 7500↑ 시 모터 1단계 상향', () {
+      // 270kg → KEM-300, 8인치면 KEM-400
+      expect(
+        ShutterCalculator.selectEffectiveMotorModel(270, 7500),
+        'KEM-400',
+      );
+      expect(
+        ShutterCalculator.selectEffectiveMotorModel(270, 7400),
+        'KEM-300',
+      );
+    });
+  });
+
+  group('ShutterCalculator.bracket / box (coad_home)', () {
+    test('일반 높이 구간 브라켓', () {
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: false, heightMm: 1800),
+        'KEM-150',
+      );
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: false, heightMm: 2400),
+        'KEM-300, KEM-400',
+      );
+    });
+
+    test('브라켓→박스 매핑', () {
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: false,
+          heightMm: 1800,
+        ),
+        '650*505',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: false,
+          heightMm: 4000,
+        ),
+        '700*555',
+      );
     });
   });
 
@@ -87,6 +134,9 @@ void main() {
       expect(result.breakdown.any((e) => e.name.contains('시공')), isTrue);
       expect(result.breakdown.any((e) => e.name == '모터'), isTrue);
       expect(result.breakdown.any((e) => e.name == '당사이익'), isTrue);
+      expect(result.motorModel, isNot(equals('-')));
+      expect(result.boxSize, isNotEmpty);
+      expect(result.bracketType, isNot(equals('-')));
 
       final slat = ShutterCalculator.extractSlatPrice(result);
       expect(slat, greaterThan(0));

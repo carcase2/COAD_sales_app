@@ -31,12 +31,26 @@ Future<void> showUxOnboardingIfNeeded(
                       fontWeight: FontWeight.w800,
                     ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                '현장 한 손 조작에 맞춰 설계했습니다.',
+                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
               const SizedBox(height: 16),
               _OnboardingRow(
                 icon: Icons.add_ic_call_rounded,
                 color: scheme.tertiary,
-                title: '접수',
-                body: '하단 「접수」를 짧게 누르면 바로 등록, 길게 누르면 오늘 목록·미통화 메뉴가 열립니다.',
+                title: '접수 (큰 버튼)',
+                body: '하단 가운데 큰 「접수」를 누르면 바로 등록. 길게 누르면 오늘 목록·미통화 메뉴.',
+              ),
+              const SizedBox(height: 12),
+              _OnboardingRow(
+                icon: Icons.phone_missed_rounded,
+                color: scheme.error,
+                title: '지금 할 일',
+                body: '홈 상단 「지금 처리」로 미통화를 바로 엽니다. 목록에서는 녹색 전화 버튼으로 즉시 통화.',
               ),
               const SizedBox(height: 12),
               _OnboardingRow(
@@ -49,12 +63,15 @@ Future<void> showUxOnboardingIfNeeded(
               _OnboardingRow(
                 icon: Icons.touch_app_rounded,
                 color: scheme.secondary,
-                title: '홈 통계',
-                body: '흐름 카드 오른쪽 ⋮ 또는 길게 누르면 담당자를 고를 수 있습니다.',
+                title: '홈 통계 · 상세',
+                body: '통계 카드 길게 누르기 = 담당자 선택. 상세 화면 하단에서 전화·문자·상담 입력.',
               ),
               const SizedBox(height: 20),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
                 child: const Text('시작하기'),
               ),
             ],

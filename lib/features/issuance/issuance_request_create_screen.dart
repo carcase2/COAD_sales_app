@@ -1010,9 +1010,15 @@ class _IssuanceRequestCreateScreenState
             right: 16,
             bottom: actionsBottom,
             child: FloatingActionButton.extended(
-              onPressed: _saving ? null : _onSavePressed,
+              onPressed: _saving
+                  ? null
+                  : () {
+                      HapticFeedback.mediumImpact();
+                      _onSavePressed();
+                    },
               backgroundColor: accent,
               foregroundColor: Colors.white,
+              extendedPadding: const EdgeInsets.symmetric(horizontal: 22),
               icon: _saving
                   ? const SizedBox(
                       width: 16,
@@ -1023,7 +1029,10 @@ class _IssuanceRequestCreateScreenState
                       ),
                     )
                   : const Icon(Icons.save_rounded),
-              label: Text(_saving ? '저장 중...' : '저장'),
+              label: Text(
+                _saving ? '저장 중...' : '저장',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
             ),
           ),
         ],

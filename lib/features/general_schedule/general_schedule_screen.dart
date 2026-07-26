@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_form_screen.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_calendar_ui.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_month_sheet.dart';
@@ -11,7 +12,9 @@ import 'package:coad_customer_calls/features/general_schedule/general_schedule_s
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_stats.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class GeneralScheduleScreen extends ConsumerStatefulWidget {
@@ -54,6 +57,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   }
 
   void _goToToday() {
+    HapticFeedback.selectionClick();
     final today = todayYmdSeoul();
     final todayDt = DateTime.parse(today);
     _ensureHistoryWindowCovers(today);
@@ -792,22 +796,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
         ],
       ),
       body: recordsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(koreanErrorMessage(e), textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => unawaited(_reload()),
-                  child: const Text('다시 시도'),
-                ),
-              ],
-            ),
-          ),
+        loading: () => const AppLoading(message: '일정을 불러오는 중…'),
+        error: (e, _) => AppErrorState(
+          message: koreanErrorMessage(e),
+          onRetry: () => unawaited(_reload()),
         ),
         data: (_) {
           final isWeekView = _calendarView == GeneralScheduleCalendarView.week;
@@ -827,66 +819,82 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
               ),
               GeneralScheduleCalendarViewToggle(
                 view: _calendarView,
-                onChanged: (view) => setState(() {
-                  _calendarView = view;
-                  if (view == GeneralScheduleCalendarView.month) {
-                    _monthFocusedDay = DateTime(
-                      _selectedDay.year,
-                      _selectedDay.month,
-                      1,
-                    );
-                    _returnToMonthViewOnBack = false;
-                  }
-                }),
+                onChanged: (view) {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    _calendarView = view;
+                    if (view == GeneralScheduleCalendarView.month) {
+                      _monthFocusedDay = DateTime(
+                        _selectedDay.year,
+                        _selectedDay.month,
+                        1,
+                      );
+                      _returnToMonthViewOnBack = false;
+                    }
+                  });
+                },
               ),
               GeneralScheduleAssigneeFilterBar(
                 assignees: monthAssignees,
                 counts: monthAssigneeCounts,
                 selected: _selectedAssigneeFilter,
                 colorForAssignee: colorForAssignee,
-                onSelected: (name) =>
-                    setState(() => _selectedAssigneeFilter = name),
+                onSelected: (name) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selectedAssigneeFilter = name);
+                },
               ),
               if (isWeekView)
                 GeneralScheduleCollapsibleMonthStats(stats: monthStats),
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
                 child: Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _goToToday,
                         style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          minimumSize:
+                              const Size.fromHeight(AppTokens.minTouchTarget),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                         ),
                         icon: Icon(
                           Icons.today_rounded,
-                          size: 16,
+                          size: 18,
                           color: isToday ? scheme.primary : null,
                         ),
                         label: Text(
                           isToday ? '오늘' : '오늘로',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: FilledButton.tonalIcon(
+                      flex: 2,
+                      child: FilledButton.icon(
                         onPressed: recordsAsync.isLoading
                             ? null
-                            : () => unawaited(_onQuickAddEarliest(grid)),
+                            : () {
+                                HapticFeedback.mediumImpact();
+                                unawaited(_onQuickAddEarliest(grid));
+                              },
                         style: FilledButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          minimumSize:
+                              const Size.fromHeight(AppTokens.minTouchTarget),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          backgroundColor:
+                              AppTokens.generalScheduleAccent(scheme),
+                          foregroundColor: scheme.onPrimary,
                         ),
-                        icon: const Icon(Icons.bolt_rounded, size: 16),
+                        icon: const Icon(Icons.bolt_rounded, size: 18),
                         label: const Text(
-                          '빈 칸 추가',
+                          '가장 빠른 빈 칸',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ),
                     ),

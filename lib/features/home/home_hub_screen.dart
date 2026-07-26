@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
 import 'package:coad_customer_calls/features/home/home_flow_stats.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_day_follow_pager_screen.dart';
@@ -2053,57 +2055,19 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     required int count,
     required String anchorYmd,
   }) {
+    // 0건이면 숨김 — 상태 우선 UI는 할 일만 노출
+    if (count <= 0) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: scheme.tertiaryContainer.withValues(alpha: 0.38),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: () => _openPreviousDayIncompletePicker(),
-          onLongPress: () =>
-              _openPreviousDayIncompletePicker(forcePicker: true),
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Icon(Icons.history_rounded, size: 18, color: scheme.tertiary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '전일 미통화 $count',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: scheme.onTertiaryContainer,
-                        ),
-                      ),
-                      Text(
-                        count > 0
-                            ? '${formatYmdFlowLabelKo(anchorYmd)} 접수 · 늦은 문의 확인'
-                            : '${formatYmdFlowLabelKo(anchorYmd)} 접수 · 미통화 없음',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onTertiaryContainer.withValues(
-                            alpha: 0.82,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: scheme.onTertiaryContainer.withValues(alpha: 0.7),
-                ),
-              ],
-            ),
-          ),
-        ),
+      child: UxStatusHeroBanner(
+        icon: Icons.history_rounded,
+        title: '전일 미통화 $count건',
+        subtitle: '${formatYmdFlowLabelKo(anchorYmd)} 접수 · 늦은 문의 확인',
+        actionLabel: '지금 확인',
+        tone: UxStatusHeroTone.info,
+        onTap: () => _openPreviousDayIncompletePicker(),
+        onLongPress: () =>
+            _openPreviousDayIncompletePicker(forcePicker: true),
       ),
     );
   }
@@ -2119,55 +2083,15 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         if (count == 0) return const SizedBox.shrink();
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: scheme.errorContainer.withValues(alpha: 0.42),
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: () => _openPendingUncalledPicker(),
-              onLongPress: () => _openPendingUncalledPicker(forcePicker: true),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.schedule_rounded, size: 18, color: scheme.error),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '처리할 미통화 $count',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: scheme.onErrorContainer,
-                            ),
-                          ),
-                          Text(
-                            '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onErrorContainer.withValues(
-                                alpha: 0.82,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: scheme.onErrorContainer.withValues(alpha: 0.7),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          child: UxStatusHeroBanner(
+            icon: Icons.phone_missed_rounded,
+            title: '처리할 미통화 $count건',
+            subtitle:
+                '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount} · 탭하면 바로 목록',
+            actionLabel: '지금 처리',
+            tone: UxStatusHeroTone.attention,
+            onTap: () => _openPendingUncalledPicker(),
+            onLongPress: () => _openPendingUncalledPicker(forcePicker: true),
           ),
         );
       },
@@ -2397,6 +2321,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           scope: scope,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      _HomeQuoterShortcutCard(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          ref.read(pendingQuoterLaunchProvider.notifier).state =
+                              true;
+                        },
+                      ),
                       const SizedBox(height: 4),
                       Align(
                         alignment: Alignment.centerRight,
@@ -2550,6 +2482,108 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 홈 흐름 — 셔터 견적 바로가기 (한눈에 구분되는 카드).
+class _HomeQuoterShortcutCard extends StatelessWidget {
+  const _HomeQuoterShortcutCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.12)!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent,
+                Color.lerp(accent, scheme.primary, 0.35)!,
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.32),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.calculate_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '셔터 견적기',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '규격 입력 → 바로 산출 · 업체 비교',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '바로가기',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

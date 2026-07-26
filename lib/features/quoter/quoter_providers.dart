@@ -147,3 +147,6 @@ final shutterPricesFutureProvider = FutureProvider((ref) async {
     fetchCompany: repo.fetchCompanyPrices,
   );
 });
+
+/// 홈 등에서 true 로 두면 메인 탭이 견적 화면으로 전환.
+final pendingQuoterLaunchProvider = StateProvider<bool>((ref) => false);

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
 import 'package:coad_customer_calls/models/estimate_document.dart';
@@ -1175,9 +1176,18 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
             const SizedBox(height: 10),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const AppLoading(message: '견적서를 불러오는 중…')
                   : _items.isEmpty
-                  ? const Center(child: Text('저장된 견적서가 없습니다.'))
+                  ? AppEmpty(
+                      message: '저장된 견적서가 없습니다.',
+                      detail: '새 견적서를 작성해 고객에게 공유해 보세요.',
+                      icon: Icons.description_outlined,
+                      actionLabel: '견적서 작성',
+                      onAction: () {
+                        HapticFeedback.mediumImpact();
+                        unawaited(_openForm());
+                      },
+                    )
                   : ListView.separated(
                       itemBuilder: (context, index) {
                         final item = _items[index];
@@ -1190,10 +1200,14 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
                           title: SearchHighlightText(
                             text: '${item.category} · ${item.modelName}',
                             query: q,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           subtitle: SearchHighlightText(
                             text:
@@ -1223,7 +1237,10 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
                               PopupMenuItem(value: 'delete', child: Text('삭제')),
                             ],
                           ),
-                          onTap: () => _openForm(item),
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            unawaited(_openForm(item));
+                          },
                         );
                       },
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -1234,8 +1251,11 @@ class _EstimateWriterScreenState extends ConsumerState<EstimateWriterScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openForm,
-        icon: const Icon(Icons.add),
+        onPressed: () {
+          HapticFeedback.mediumImpact();
+          unawaited(_openForm());
+        },
+        icon: const Icon(Icons.add_rounded),
         label: const Text('견적서 작성'),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,

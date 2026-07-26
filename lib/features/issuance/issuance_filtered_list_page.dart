@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/auth_controller.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_domain_tab.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
@@ -647,18 +648,12 @@ class _IssuanceFilteredListPageState
           physics: const AlwaysScrollableScrollPhysics(),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+            child: AppEmpty(
+              message: message,
+              detail: '아래로 당겨 새로고침할 수 있습니다.',
+              icon: Icons.inbox_outlined,
+              actionLabel: '새로고침',
+              onAction: () => _refresh(showCompletionSnackBar: true),
             ),
           ),
         ),
@@ -714,8 +709,8 @@ class _IssuanceFilteredListPageState
             ),
           Expanded(
             child: rowsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => issuanceListErrorScrollable(
+              loading: () => const AppLoading(message: '발급 목록을 불러오는 중…'),
+              error: (e, _) => AppErrorState(
                 message:
                     '목록을 불러오지 못했습니다.\n${issuanceUserErrorMessage(e)}',
                 onRetry: _refresh,

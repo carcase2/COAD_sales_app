@@ -1,0 +1,316 @@
+import 'package:coad_customer_calls/theme/app_tokens.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+/// 테슬라 앱식 하단 액션 독 — 한 손 조작용 고정 컨트롤.
+class UxActionDock extends StatelessWidget {
+  const UxActionDock({
+    super.key,
+    required this.children,
+    this.padding,
+  });
+
+  final List<Widget> children;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return Material(
+      elevation: 8,
+      shadowColor: scheme.shadow.withValues(alpha: 0.18),
+      color: scheme.surfaceContainerLow.withValues(alpha: 0.98),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: scheme.outlineVariant.withValues(alpha: 0.35),
+            ),
+          ),
+        ),
+        padding: padding ??
+            EdgeInsets.fromLTRB(
+              AppTokens.spaceLg,
+              AppTokens.spaceSm + 2,
+              AppTokens.spaceLg,
+              AppTokens.spaceSm + bottom,
+            ),
+        child: Row(
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: children[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 독/카드용 큰 액션 버튼.
+class UxDockButton extends StatelessWidget {
+  const UxDockButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.emphasized = false,
+    this.color,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+  final bool emphasized;
+  final Color? color;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = color ?? scheme.primary;
+    final active = enabled && onPressed != null;
+
+    void handleTap() {
+      if (!active) return;
+      HapticFeedback.lightImpact();
+      onPressed!();
+    }
+
+    if (emphasized) {
+      return FilledButton.icon(
+        onPressed: active ? handleTap : null,
+        icon: Icon(icon, size: 20),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: scheme.onPrimary,
+          minimumSize: const Size.fromHeight(AppTokens.minTouchTarget + 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          ),
+        ),
+      );
+    }
+
+    return OutlinedButton.icon(
+      onPressed: active ? handleTap : null,
+      icon: Icon(icon, size: 18, color: active ? accent : null),
+      label: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: active ? accent : null,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: accent,
+        minimumSize: const Size.fromHeight(AppTokens.minTouchTarget + 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        side: BorderSide(
+          color: accent.withValues(alpha: active ? 0.45 : 0.2),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+        ),
+      ),
+    );
+  }
+}
+
+/// 상태 우선 배너 — 지금 할 일 + 원탭 CTA.
+class UxStatusHeroBanner extends StatelessWidget {
+  const UxStatusHeroBanner({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+    this.actionLabel = '지금 처리',
+    this.tone = UxStatusHeroTone.attention,
+    this.onLongPress,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+  final String actionLabel;
+  final UxStatusHeroTone tone;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg, iconColor, btnBg, btnFg) = switch (tone) {
+      UxStatusHeroTone.attention => (
+          scheme.errorContainer.withValues(alpha: 0.5),
+          scheme.onErrorContainer,
+          scheme.error,
+          scheme.error,
+          scheme.onError,
+        ),
+      UxStatusHeroTone.info => (
+          scheme.tertiaryContainer.withValues(alpha: 0.45),
+          scheme.onTertiaryContainer,
+          scheme.tertiary,
+          scheme.tertiary,
+          scheme.onTertiary,
+        ),
+      UxStatusHeroTone.neutral => (
+          scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+          scheme.onSurface,
+          scheme.primary,
+          scheme.primary,
+          scheme.onPrimary,
+        ),
+    };
+
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        onLongPress: onLongPress == null
+            ? null
+            : () {
+                HapticFeedback.mediumImpact();
+                onLongPress!();
+              },
+        borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: iconColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                        color: fg,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                        color: fg.withValues(alpha: 0.82),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              FilledButton(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  onTap();
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: btnBg,
+                  foregroundColor: btnFg,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  minimumSize: const Size(0, 40),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                child: Text(actionLabel),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum UxStatusHeroTone { attention, info, neutral }
+
+/// 원탭 원형 액션 — 목록 카드용 (전화/문자).
+class UxQuickRoundAction extends StatelessWidget {
+  const UxQuickRoundAction({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.filled = false,
+    this.tooltip,
+    this.size = 48,
+  });
+
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final bool filled;
+  final String? tooltip;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final child = Material(
+      color: filled ? color : color.withValues(alpha: 0.14),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Icon(
+            icon,
+            size: size * 0.42,
+            color: filled ? scheme.onPrimary : color,
+          ),
+        ),
+      ),
+    );
+    if (tooltip == null) return child;
+    return Tooltip(message: tooltip!, child: child);
+  }
+}

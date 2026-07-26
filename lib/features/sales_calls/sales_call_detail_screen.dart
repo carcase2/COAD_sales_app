@@ -9,6 +9,7 @@ import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
+import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -859,62 +860,58 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
           ],
         ),
-        floatingActionButton:
-            (!_isEditMode &&
-                _model != null &&
-                !_loading &&
-                _canEnterFurtherConsultation)
-            ? FloatingActionButton.extended(
-                onPressed: () =>
-                    masterAsync.whenData((m) => _showConsultationDialog(m)),
-                icon: const Icon(Icons.add_comment_rounded),
-                label: Text('${_inputStageLabel(_model)} 상담내용 입력'),
-              )
-            : null,
+        // 하단 액션 독 — 한 손 조작 (전화·문자·상담 / 수정 저장)
+        floatingActionButton: null,
         bottomNavigationBar: _isEditMode
             ? masterAsync.maybeWhen(
-                data: (master) => SafeArea(
-                  top: false,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.06),
-                          blurRadius: 10,
-                          offset: const Offset(0, -4),
-                        ),
-                      ],
+                data: (master) => UxActionDock(
+                  children: [
+                    UxDockButton(
+                      icon: _saving
+                          ? Icons.hourglass_top_rounded
+                          : Icons.save_as_rounded,
+                      label: _saving ? '저장 중…' : '수정 저장',
+                      emphasized: true,
+                      enabled: !_saving,
+                      onPressed: _saving ? null : () => _save(master),
                     ),
-                    child: SizedBox(
-                      height: 56,
-                      child: FilledButton.icon(
-                        onPressed: _saving ? null : () => _save(master),
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save_as_rounded),
-                        label: Text(
-                          _saving ? '저장 중...' : '전체 정보 수정 저장',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  ],
                 ),
                 orElse: () => null,
               )
-            : null,
+            : (_model != null && !_loading)
+                ? UxActionDock(
+                    children: [
+                      UxDockButton(
+                        icon: Icons.call_rounded,
+                        label: '전화',
+                        emphasized: true,
+                        color: AppTokens.success(
+                          Theme.of(context).colorScheme,
+                        ),
+                        onPressed: () => LauncherUtils.makePhoneCall(
+                          _model?.customerPhone ?? '',
+                        ),
+                      ),
+                      UxDockButton(
+                        icon: Icons.message_rounded,
+                        label: '문자',
+                        onPressed: () => LauncherUtils.sendSMS(
+                          _model?.customerPhone ?? '',
+                        ),
+                      ),
+                      if (_canEnterFurtherConsultation)
+                        UxDockButton(
+                          icon: Icons.add_comment_rounded,
+                          label: '${_inputStageLabel(_model)} 상담',
+                          emphasized: true,
+                          onPressed: () => masterAsync.whenData(
+                            (m) => _showConsultationDialog(m),
+                          ),
+                        ),
+                    ],
+                  )
+                : null,
         body: masterAsync.when(
           data: (master) => _buildScrollable(master),
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -1150,7 +1147,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
           ),
 
-          SizedBox(height: _isEditMode ? 110 + bottomInset : 88 + bottomInset),
+          // 하단 액션 독(전화·문자·상담 / 저장)에 콘텐츠가 가리지 않도록
+          SizedBox(
+            height: (_isEditMode || m != null) ? 100 + bottomInset : 24,
+          ),
         ],
       ),
     );
@@ -1528,57 +1528,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _buildLargeQuickAction(
-                Icons.call,
-                '전화',
-                () => LauncherUtils.makePhoneCall(m.customerPhone ?? ''),
-              ),
-              const SizedBox(width: 12),
-              _buildLargeQuickAction(
-                Icons.message_rounded,
-                '문자',
-                () => LauncherUtils.sendSMS(m.customerPhone ?? ''),
-              ),
-            ],
-          ),
+          // 전화/문자는 하단 액션 독으로 이동 — 헤로는 상태·이름 중심
+          const SizedBox(height: 4),
         ],
-      ),
-    );
-  }
-
-  Widget _buildLargeQuickAction(
-    IconData icon,
-    String label,
-    VoidCallback onTap,
-  ) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: Colors.white, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
