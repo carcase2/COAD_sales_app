@@ -42,38 +42,33 @@ class QuoterHubScreen extends StatelessWidget {
               ),
               tabs: [
                 const Tab(
-                  height: AppTokens.minTouchTarget + 8,
-                  icon: Icon(Icons.calculate_rounded, size: 20),
+                  height: 40,
                   text: '셔터 견적기',
                 ),
                 Tab(
-                  height: AppTokens.minTouchTarget + 8,
-                  icon: const Icon(Icons.description_rounded, size: 20),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        '견적서 작성',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
+                  height: 40,
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        const TextSpan(
+                          text: '견적서 작성 ',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                      Text(
-                        '(테스트중)',
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
-                          color: scheme.tertiary,
+                        TextSpan(
+                          text: '(테스트중)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.tertiary,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -95,8 +90,11 @@ class QuoterHubScreen extends StatelessWidget {
 
     final canPop = Navigator.of(context).canPop();
     return Scaffold(
+      // 규격 입력 시 숫자 키보드가 칸을 가리지 않도록 body 축소
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('셔터 견적'),
+        toolbarHeight: 48,
         automaticallyImplyLeading: canPop,
         actions: [
           if (canPop)

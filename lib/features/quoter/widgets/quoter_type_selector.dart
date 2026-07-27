@@ -3,7 +3,7 @@ import 'package:coad_customer_calls/models/shutter_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 1단계 · 셔터 종류 그리드.
+/// 1단계 · 셔터 종류 — 낮은 높이 2열 그리드 (본문 공간 최대화).
 class QuoterTypeSelector extends StatelessWidget {
   const QuoterTypeSelector({
     super.key,
@@ -14,103 +14,140 @@ class QuoterTypeSelector extends StatelessWidget {
   final ShutterType selectedType;
   final ValueChanged<ShutterType> onSelected;
 
+  static const double _rowH = 44;
+  static const double _gap = 6;
+
   @override
   Widget build(BuildContext context) {
     final a = quoterStepAccent(1);
     final scheme = Theme.of(context).colorScheme;
     final unselectedFill = scheme.surfaceContainerHighest;
+    final types = ShutterType.values;
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          padding: const EdgeInsets.only(left: 2, bottom: 6),
           child: Row(
             children: [
-              Icon(Icons.view_module_rounded, size: 18, color: a),
-              const SizedBox(width: 8),
+              Icon(Icons.view_module_rounded, size: 14, color: a),
+              const SizedBox(width: 5),
               Text(
-                '1단계 · 셔터 종류 선택',
+                '셔터 종류',
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 12,
                   fontWeight: FontWeight.w800,
                   color: a,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '탭하면 바로 규격으로',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
         ),
-        GridView.count(
-          shrinkWrap: true,
-          padding: EdgeInsets.zero,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.9,
-          children: ShutterType.values.map((t) {
-            final isSelected = selectedType == t;
-            final color = QuoterTypeStyle.color(t);
-            final icon = QuoterTypeStyle.icon(t);
-            return GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                onSelected(t);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  color: isSelected ? color : unselectedFill,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isSelected ? color : color.withValues(alpha: 0.25),
-                    width: isSelected ? 2 : 1.5,
+        // 고정 높이 3행 — 화면을 채우지 않고 컴팩트하게
+        for (var r = 0; r < 3; r++) ...[
+          if (r > 0) const SizedBox(height: _gap),
+          SizedBox(
+            height: _rowH,
+            child: Row(
+              children: [
+                for (var c = 0; c < 2; c++) ...[
+                  if (c > 0) const SizedBox(width: _gap),
+                  Expanded(
+                    child: _TypeChip(
+                      type: types[r * 2 + c],
+                      selected: selectedType == types[r * 2 + c],
+                      unselectedFill: unselectedFill,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onSelected(types[r * 2 + c]);
+                      },
+                    ),
                   ),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: color.withValues(alpha: 0.30),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ]
-                      : [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 18,
-                      color: isSelected ? Colors.white : color,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        QuoterTypeStyle.label(t),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: isSelected
-                              ? Colors.white
-                              : color.withValues(alpha: 0.85),
-                        ),
-                      ),
-                    ),
-                  ],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _TypeChip extends StatelessWidget {
+  const _TypeChip({
+    required this.type,
+    required this.selected,
+    required this.unselectedFill,
+    required this.onTap,
+  });
+
+  final ShutterType type;
+  final bool selected;
+  final Color unselectedFill;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = QuoterTypeStyle.color(type);
+    final icon = QuoterTypeStyle.icon(type);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? color : unselectedFill,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? color : color.withValues(alpha: 0.28),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 17,
+                color: selected ? Colors.white : color,
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  QuoterTypeStyle.label(type),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                    color: selected
+                        ? Colors.white
+                        : color.withValues(alpha: 0.92),
+                  ),
                 ),
               ),
-            );
-          }).toList(),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }

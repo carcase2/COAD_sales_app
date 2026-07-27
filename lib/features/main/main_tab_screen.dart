@@ -911,29 +911,34 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             ),
           ],
         ),
-        bottomNavigationBar: Consumer(
-          builder: (context, ref, _) => RepaintBoundary(
-            child: _MainBottomNavBar(
-              selectedIndex: _navSelectedIndex,
-              showGeneralSchedule: showGeneralSchedule,
-              issuanceBadgeAsync: ref.watch(
-                issuanceRequestBadgeCountVisibleProvider,
+        // 키보드 올라오면 하단 네비 숨김 — 견적 규격 입력 등이 가려지지 않게
+        bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
+            ? null
+            : Consumer(
+                builder: (context, ref, _) => RepaintBoundary(
+                  child: _MainBottomNavBar(
+                    selectedIndex: _navSelectedIndex,
+                    showGeneralSchedule: showGeneralSchedule,
+                    issuanceBadgeAsync: ref.watch(
+                      issuanceRequestBadgeCountVisibleProvider,
+                    ),
+                    onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
+                    onLongPressHome: _openHomeFlowToday,
+                    onTapReception: () =>
+                        _onNavDestinationSelected(_navReceptionIndex),
+                    onLongPressReception: _openReceptionQuickActions,
+                    onTapIssuance: () =>
+                        _onNavDestinationSelected(_navIssuanceIndex),
+                    onTapQuoter: () =>
+                        _onNavDestinationSelected(_navQuoterIndex),
+                    onTapGeneralSchedule: () =>
+                        _onNavDestinationSelected(_navGeneralScheduleIndex),
+                    onTapMenu: () => _onNavDestinationSelected(
+                      _navMenuIndexFor(ref.read(authControllerProvider)),
+                    ),
+                  ),
+                ),
               ),
-              onTapHome: () => _onNavDestinationSelected(_navHomeIndex),
-              onLongPressHome: _openHomeFlowToday,
-              onTapReception: () =>
-                  _onNavDestinationSelected(_navReceptionIndex),
-              onLongPressReception: _openReceptionQuickActions,
-              onTapIssuance: () => _onNavDestinationSelected(_navIssuanceIndex),
-              onTapQuoter: () => _onNavDestinationSelected(_navQuoterIndex),
-              onTapGeneralSchedule: () =>
-                  _onNavDestinationSelected(_navGeneralScheduleIndex),
-              onTapMenu: () => _onNavDestinationSelected(
-                _navMenuIndexFor(ref.read(authControllerProvider)),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -1406,7 +1411,7 @@ class _MainBottomNavBar extends StatelessWidget {
             ),
           ],
         ),
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -1421,9 +1426,13 @@ class _MainBottomNavBar extends StatelessWidget {
                 onLongPress: onLongPressHome,
               ),
             ),
-            // 테슬라 컨트롤식 프라이머리 CTA — 새 접수를 가장 크게
+            // 접수: 다른 탭과 동일 크기 (탭=새 접수, 길게=목록)
             Expanded(
-              child: _ReceptionPrimaryNavItem(
+              child: _BottomNavItem(
+                label: '접수',
+                selected: false,
+                selectedIcon: Icons.add_ic_call_rounded,
+                unselectedIcon: Icons.add_ic_call_outlined,
                 accentColor: receptionAccent,
                 onTap: onTapReception,
                 onLongPress: onLongPressReception,
@@ -1443,8 +1452,11 @@ class _MainBottomNavBar extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: _QuoterNavItem(
+              child: _BottomNavItem(
+                label: '견적',
                 selected: quoterSelected,
+                selectedIcon: Icons.calculate_rounded,
+                unselectedIcon: Icons.calculate_outlined,
                 accentColor: quoterAccent,
                 onTap: onTapQuoter,
               ),
@@ -1474,161 +1486,6 @@ class _MainBottomNavBar extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 하단 견적 탭 — 아이콘 칩으로 한눈에 구분.
-class _QuoterNavItem extends StatelessWidget {
-  const _QuoterNavItem({
-    required this.selected,
-    required this.accentColor,
-    required this.onTap,
-  });
-
-  final bool selected;
-  final Color accentColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: '견적',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () {
-            HapticFeedback.selectionClick();
-            onTap();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: selected ? 44 : 40,
-                  height: selected ? 36 : 32,
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? accentColor
-                        : accentColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: selected
-                        ? [
-                            BoxShadow(
-                              color: accentColor.withValues(alpha: 0.35),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Icon(
-                    Icons.calculate_rounded,
-                    size: selected ? 22 : 20,
-                    color: selected ? scheme.onPrimary : accentColor,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '견적',
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-                    color: selected
-                        ? accentColor
-                        : scheme.onSurfaceVariant.withValues(alpha: 0.95),
-                    height: 1.1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 하단 네비 중앙 프라이머리 — 큰 터치·즉시 등록.
-class _ReceptionPrimaryNavItem extends StatelessWidget {
-  const _ReceptionPrimaryNavItem({
-    required this.accentColor,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  final Color accentColor;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      label: '접수',
-      hint: '짧게 누르면 새 접수, 길게 누르면 오늘 목록 메뉴',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            onTap();
-          },
-          onLongPress: () {
-            HapticFeedback.mediumImpact();
-            onLongPress();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: accentColor,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accentColor.withValues(alpha: 0.38),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.add_ic_call_rounded,
-                    color: scheme.onPrimary,
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '접수',
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    color: accentColor,
-                    height: 1.1,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );
