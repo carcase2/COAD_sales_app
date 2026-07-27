@@ -7,7 +7,6 @@ import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
 import 'package:coad_customer_calls/features/home/home_flow_stats.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_day_follow_pager_screen.dart';
@@ -2321,14 +2320,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           scope: scope,
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      _HomeQuoterShortcutCard(
-                        onTap: () {
-                          HapticFeedback.mediumImpact();
-                          ref.read(pendingQuoterLaunchProvider.notifier).state =
-                              true;
-                        },
-                      ),
                       const SizedBox(height: 4),
                       Align(
                         alignment: Alignment.centerRight,
@@ -2482,108 +2473,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// 홈 흐름 — 셔터 견적 바로가기 (한눈에 구분되는 카드).
-class _HomeQuoterShortcutCard extends StatelessWidget {
-  const _HomeQuoterShortcutCard({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent = Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.12)!;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                accent,
-                Color.lerp(accent, scheme.primary, 0.35)!,
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: accent.withValues(alpha: 0.32),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.calculate_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '셔터 견적기',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '규격 입력 → 바로 산출 · 업체 비교',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.95),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '바로가기',
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
