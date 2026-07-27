@@ -21,11 +21,14 @@ class ShutterEstimatorLogScreen extends ConsumerStatefulWidget {
 
 class _ShutterEstimatorLogScreenState
     extends ConsumerState<ShutterEstimatorLogScreen> {
+  /// `0` = 전체 기간.
   int _periodDays = 30;
   AsyncValue<ShutterEstimatorLogBundle> _data = const AsyncLoading();
 
   final _won = NumberFormat('#,###');
   final _dt = DateFormat('yyyy.MM.dd HH:mm');
+
+  static const _periodAll = 0;
 
   @override
   void initState() {
@@ -49,7 +52,9 @@ class _ShutterEstimatorLogScreenState
 
     setState(() => _data = const AsyncLoading());
     try {
-      final since = DateTime.now().subtract(Duration(days: _periodDays));
+      final since = _periodDays == _periodAll
+          ? null
+          : DateTime.now().subtract(Duration(days: _periodDays));
       final bundle = await ref
           .read(shutterRepositoryProvider)
           .fetchEstimatorLogs(since: since, limit: 200);
@@ -94,7 +99,8 @@ class _ShutterEstimatorLogScreenState
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   '기간',
@@ -103,28 +109,47 @@ class _ShutterEstimatorLogScreenState
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 7, label: Text('7일')),
-                      ButtonSegment(value: 30, label: Text('30일')),
-                      ButtonSegment(value: 90, label: Text('90일')),
-                      ButtonSegment(value: 365, label: Text('1년')),
-                    ],
-                    selected: {_periodDays},
-                    onSelectionChanged: (s) {
-                      HapticFeedback.selectionClick();
-                      setState(() => _periodDays = s.first);
-                      unawaited(_load());
-                    },
-                    style: ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      textStyle: WidgetStatePropertyAll(
-                        Theme.of(context).textTheme.labelMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
+                const SizedBox(height: 8),
+                SegmentedButton<int>(
+                  // 선택 체크 아이콘이 좁은 세그먼트에서 라벨 줄바꿈을 유발함
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: _periodAll,
+                      label: Text('전체', maxLines: 1),
+                    ),
+                    ButtonSegment(
+                      value: 7,
+                      label: Text('7일', maxLines: 1),
+                    ),
+                    ButtonSegment(
+                      value: 30,
+                      label: Text('30일', maxLines: 1),
+                    ),
+                    ButtonSegment(
+                      value: 90,
+                      label: Text('90일', maxLines: 1),
+                    ),
+                    ButtonSegment(
+                      value: 365,
+                      label: Text('1년', maxLines: 1),
+                    ),
+                  ],
+                  selected: {_periodDays},
+                  onSelectionChanged: (s) {
+                    HapticFeedback.selectionClick();
+                    setState(() => _periodDays = s.first);
+                    unawaited(_load());
+                  },
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    padding: const WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                    textStyle: WidgetStatePropertyAll(
+                      Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
                     ),
                   ),
                 ),

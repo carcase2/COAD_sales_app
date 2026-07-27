@@ -97,24 +97,29 @@ class ShutterRepository {
   }
 
   /// 관리자용 견적기 사용 이력 + 사용자별 통계 (coad_home API GET 과 동일 데이터).
+  /// [since]가 null이면 기간 제한 없이 전체 조회.
   Future<ShutterEstimatorLogBundle> fetchEstimatorLogs({
-    required DateTime since,
+    DateTime? since,
     int limit = 200,
   }) async {
     final capped = limit.clamp(1, 500);
-    final sinceIso = since.toUtc().toIso8601String();
+    final sinceIso = since?.toUtc().toIso8601String();
 
-    final historyRes = await _client
-        .from('shutter_estimator_log')
-        .select()
-        .gte('created_at', sinceIso)
+    var historyQuery = _client.from('shutter_estimator_log').select();
+    if (sinceIso != null) {
+      historyQuery = historyQuery.gte('created_at', sinceIso);
+    }
+    final historyRes = await historyQuery
         .order('created_at', ascending: false)
         .limit(capped);
 
-    final statsRes = await _client
+    var statsQuery = _client
         .from('shutter_estimator_log')
-        .select('user_id, user_name, total_price')
-        .gte('created_at', sinceIso);
+        .select('user_id, user_name, total_price');
+    if (sinceIso != null) {
+      statsQuery = statsQuery.gte('created_at', sinceIso);
+    }
+    final statsRes = await statsQuery;
 
     final history = List<Map<String, dynamic>>.from(historyRes)
         .map(ShutterEstimatorLogEntry.fromJson)
