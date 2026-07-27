@@ -37,7 +37,6 @@ class QuoterScreen extends ConsumerStatefulWidget {
 
 class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   int _currentStep = 1;
-  bool _isCostSettingsExpanded = false;
   bool _isCalculating = false;
   bool _quickActionsOpen = false;
   DateTime? _lastPriceSyncAt;
@@ -258,7 +257,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     }
     setState(() {
       _currentStep = step;
-      if (step == 3) _isCostSettingsExpanded = true;
       if (step == 2) _prepareSizeEditing();
     });
     if (step == 4 && _canCalculate && !_isCalculating) {
@@ -1249,17 +1247,25 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   Widget _buildWizardActions(ColorScheme scheme) {
+    // 이전/다음 — 낮은 높이로 본문 공간 확보
+    const btnH = 36.0;
+    final btnStyle = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size.fromHeight(btnH)),
+      maximumSize: const WidgetStatePropertyAll(Size.fromHeight(btnH)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+      ),
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      textStyle: const WidgetStatePropertyAll(
+        TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+      ),
+    );
+
     // 2단계(규격): 견적 산출은 화면 안 버튼만 사용 — 하단 중복 제거
     if (_currentStep == 2) {
-      return Container(
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.4),
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 2),
         child: Row(
           children: [
             Expanded(
@@ -1268,42 +1274,33 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   HapticFeedback.lightImpact();
                   unawaited(_goToStep(1));
                 },
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                child: const Text(
-                  '이전',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
+                style: btnStyle,
+                child: const Text('이전'),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton(
                 onPressed: () {
                   HapticFeedback.selectionClick();
                   unawaited(_goToStep(3));
                 },
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                child: const Text(
-                  '비용 설정',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
+                style: btnStyle,
+                child: const Text('비용 설정'),
               ),
             ),
             if (_hasAnyInput) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               IconButton(
                 tooltip: '다시 견적내기',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: EdgeInsets.zero,
                 onPressed: () {
                   HapticFeedback.mediumImpact();
                   _newEstimate();
                 },
-                icon: const Icon(Icons.restart_alt_rounded),
+                icon: const Icon(Icons.restart_alt_rounded, size: 20),
               ),
             ],
           ],
@@ -1315,88 +1312,64 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     final canPrev = _currentStep > 1;
     final nextEnabled = _currentStep != 4 && canNext;
     final navAccent = quoterStepAccent(_currentStep);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          navAccent.withValues(alpha: isDark ? 0.10 : 0.06),
-          scheme.surface,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: navAccent.withValues(alpha: isDark ? 0.38 : 0.26),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-        child: Column(
-          children: [
-            if (_hasAnyInput)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () {
-                    HapticFeedback.mediumImpact();
-                    _newEstimate();
-                  },
-                  icon: const Icon(Icons.restart_alt_rounded, size: 18),
-                  label: const Text('다시 견적내기'),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: canPrev
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      unawaited(_goToStep(_currentStep - 1));
+                    }
+                  : null,
+              style: btnStyle.copyWith(
+                foregroundColor: WidgetStatePropertyAll(scheme.onSurface),
+                side: WidgetStatePropertyAll(
+                  BorderSide(
+                    color: scheme.outlineVariant.withValues(alpha: 0.8),
+                  ),
                 ),
               ),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: canPrev
-                        ? () {
-                            HapticFeedback.lightImpact();
-                            unawaited(_goToStep(_currentStep - 1));
-                          }
-                        : null,
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      foregroundColor: scheme.onSurface,
-                      side: BorderSide(
-                        color: scheme.outlineVariant.withValues(alpha: 0.8),
-                      ),
-                    ),
-                    child: const Text(
-                      '이전',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: FilledButton.icon(
-                    onPressed: !nextEnabled
-                        ? null
-                        : () async {
-                            HapticFeedback.mediumImpact();
-                            final nextStep =
-                                _currentStep < 4 ? _currentStep + 1 : null;
-                            if (nextStep != null) await _goToStep(nextStep);
-                          },
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      backgroundColor: navAccent,
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                    label: const Text(
-                      '다음',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                ),
-              ],
+              child: const Text('이전'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: FilledButton(
+              onPressed: !nextEnabled
+                  ? null
+                  : () async {
+                      HapticFeedback.mediumImpact();
+                      final nextStep =
+                          _currentStep < 4 ? _currentStep + 1 : null;
+                      if (nextStep != null) await _goToStep(nextStep);
+                    },
+              style: btnStyle.copyWith(
+                backgroundColor: WidgetStatePropertyAll(navAccent),
+                foregroundColor: const WidgetStatePropertyAll(Colors.white),
+              ),
+              child: const Text('다음'),
+            ),
+          ),
+          if (_hasAnyInput) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: '다시 견적내기',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                _newEstimate();
+              },
+              icon: const Icon(Icons.restart_alt_rounded, size: 20),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1415,170 +1388,164 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   // ─────────────────────────────────────────────────
-  // 비용 설정 (접이식)
+  // 비용 설정 — 한 줄 행 · 작은 글씨로 한눈에
   // ─────────────────────────────────────────────────
   Widget _buildCostSettings(ColorScheme scheme) {
     final a = quoterStepAccent(3);
+
     return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: a.withValues(alpha: 0.42), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: a.withValues(alpha: 0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: a.withValues(alpha: 0.4), width: 1.3),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 헤더 (탭해서 펼치기)
-          InkWell(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(
-                () => _isCostSettingsExpanded = !_isCostSettingsExpanded,
-              );
-            },
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: a.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.tune_rounded, size: 18, color: a),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '3단계 · 비용 설정',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: a,
-                          ),
-                        ),
-                        Text(
-                          _isCostSettingsExpanded ? '탭하여 접기' : '탭하여 상세 비용 조정',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: scheme.onSurfaceVariant.withValues(
-                              alpha: 0.6,
-                            ),
-                          ),
-                        ),
-                      ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
+            child: Row(
+              children: [
+                Icon(Icons.tune_rounded, size: 16, color: a),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '비용 설정',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w900,
+                      color: a,
                     ),
                   ),
-
-                  AnimatedRotation(
-                    turns: _isCostSettingsExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: scheme.onSurfaceVariant,
+                ),
+                TextButton(
+                  onPressed: _resetToDefaults,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: scheme.onSurfaceVariant,
+                  ),
+                  child: const Text(
+                    '기본값',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          // 펼쳐지는 내용
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: _buildCostFields(scheme),
-            crossFadeState: _isCostSettingsExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 300),
-            sizeCurve: Curves.easeOutCubic,
+          // 요약 한 줄 — 접혀 있어도 금액 파악
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: _buildCostSummaryStrip(scheme),
           ),
+          Divider(
+            height: 1,
+            color: scheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+          _buildCostFields(scheme),
         ],
       ),
     );
   }
 
-  Widget _buildCostFields(ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      child: Column(
-        children: [
+  /// 모터·시공 등 현재 값을 한 줄 요약
+  Widget _buildCostSummaryStrip(ColorScheme scheme) {
+    String short(TextEditingController c) {
+      final v = int.tryParse(c.text.replaceAll(',', '')) ?? 0;
+      if (v >= 10000) {
+        final man = v / 10000;
+        if (man == man.roundToDouble()) {
+          return '${man.round()}만';
+        }
+        return '${man.toStringAsFixed(man < 10 ? 1 : 0)}만';
+      }
+      return NumberFormat('#,###').format(v);
+    }
+
+    final items = [
+      ('모터', short(_motorCostController)),
+      ('시공', short(_installCostController)),
+      ('장비', short(_equipCostController)),
+      ('절곡', short(_bendingCostController)),
+      ('이익', short(_profitCostController)),
+    ];
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        for (final e in items)
           Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(14),
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(6),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              children: [
-                _buildSettingsField(
-                  label: '모터가격',
-                  icon: Icons.settings_remote_rounded,
-                  controller: _motorCostController,
-                  scheme: scheme,
-                ),
-                const Divider(height: 1),
-                _buildSettingsField(
-                  label: '시공비',
-                  icon: Icons.construction_rounded,
-                  controller: _installCostController,
-                  scheme: scheme,
-                ),
-                const Divider(height: 1),
-                _buildSettingsField(
-                  label: '장비대',
-                  icon: Icons.precision_manufacturing_rounded,
-                  controller: _equipCostController,
-                  scheme: scheme,
-                ),
-                const Divider(height: 1),
-                _buildSettingsField(
-                  label: '절곡비용',
-                  icon: Icons.architecture_rounded,
-                  controller: _bendingCostController,
-                  scheme: scheme,
-                ),
-                const Divider(height: 1),
-                _buildSettingsField(
-                  label: '당사이익',
-                  icon: Icons.trending_up_rounded,
-                  controller: _profitCostController,
-                  scheme: scheme,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _resetToDefaults,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: const Text('기본값으로 초기화', style: TextStyle(fontSize: 13)),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                side: BorderSide(color: scheme.outlineVariant),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+            child: Text(
+              '${e.$1} ${e.$2}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+                height: 1.1,
               ),
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildCostFields(ColorScheme scheme) {
+    final fields = <({String label, IconData icon, TextEditingController c})>[
+      (
+        label: '모터가격',
+        icon: Icons.settings_remote_rounded,
+        c: _motorCostController,
+      ),
+      (
+        label: '시공비',
+        icon: Icons.construction_rounded,
+        c: _installCostController,
+      ),
+      (
+        label: '장비대',
+        icon: Icons.precision_manufacturing_rounded,
+        c: _equipCostController,
+      ),
+      (
+        label: '절곡비용',
+        icon: Icons.architecture_rounded,
+        c: _bendingCostController,
+      ),
+      (
+        label: '당사이익',
+        icon: Icons.trending_up_rounded,
+        c: _profitCostController,
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
+      child: Column(
+        children: [
+          for (var i = 0; i < fields.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                color: scheme.outlineVariant.withValues(alpha: 0.25),
+              ),
+            _buildSettingsField(
+              label: fields[i].label,
+              icon: fields[i].icon,
+              controller: fields[i].c,
+              scheme: scheme,
+            ),
+          ],
         ],
       ),
     );
@@ -1590,7 +1557,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     required TextEditingController controller,
     required ColorScheme scheme,
   }) {
-    // 5만 원 단위 조정 함수
     void adjustPrice(int delta) {
       final currentText = controller.text.replaceAll(',', '');
       final currentValue = int.tryParse(currentText) ?? 0;
@@ -1601,92 +1567,99 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         selection: TextSelection.collapsed(offset: formatted.length),
       );
       HapticFeedback.lightImpact();
-      // 즉시 계산 반영을 원할 수도 있지만, 여기서는 UI 업데이트만 수행
+      setState(() {}); // 요약 칩 갱신
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurface,
-                ),
-              ),
-            ],
+          Icon(
+            icon,
+            size: 15,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              _buildAdjustButton(
-                icon: Icons.remove_rounded,
-                onPressed: () => adjustPrice(-50000),
-                scheme: scheme,
+          const SizedBox(width: 6),
+          // 모터가격·시공비 등 — 글자 수만큼 공간 확보 (잘림 방지)
+          Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurface,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(width: 6),
+          _buildAdjustButton(
+            icon: Icons.remove_rounded,
+            onPressed: () => adjustPrice(-50000),
+            scheme: scheme,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                const ThousandsFormatter(),
+              ],
+              onChanged: (_) {
+                _invalidateCalculatedResult();
+                setState(() {});
+              },
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+                height: 1.15,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    const ThousandsFormatter(),
-                  ],
-                  onChanged: (_) => _invalidateCalculatedResult(),
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurface,
-                  ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    filled: true,
-                    fillColor: scheme.surface,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 11,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: scheme.outlineVariant),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: scheme.primary, width: 1.6),
-                    ),
-                  ),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: scheme.surfaceContainerLowest,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
                 ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '원',
-                style: TextStyle(
-                  fontSize: 13,
+                suffixText: '원',
+                suffixStyle: TextStyle(
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: scheme.onSurfaceVariant,
                 ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: scheme.outlineVariant.withValues(alpha: 0.6),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: scheme.outlineVariant.withValues(alpha: 0.5),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: quoterStepAccent(3),
+                    width: 1.4,
+                  ),
+                ),
               ),
-              const SizedBox(width: 8),
-              _buildAdjustButton(
-                icon: Icons.add_rounded,
-                onPressed: () => adjustPrice(50000),
-                scheme: scheme,
-              ),
-            ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          _buildAdjustButton(
+            icon: Icons.add_rounded,
+            onPressed: () => adjustPrice(50000),
+            scheme: scheme,
           ),
         ],
       ),
@@ -1700,17 +1673,19 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }) {
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.all(6),
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(8),
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.3),
+            color: scheme.outlineVariant.withValues(alpha: 0.35),
           ),
         ),
-        child: Icon(icon, size: 16, color: scheme.primary),
+        child: Icon(icon, size: 15, color: scheme.primary),
       ),
     );
   }
