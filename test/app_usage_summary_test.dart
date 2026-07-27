@@ -13,6 +13,8 @@ void main() {
   test('appUsageTabLabel maps known keys', () {
     expect(appUsageTabLabel('home'), '홈');
     expect(appUsageTabLabel('reception'), '접수');
+    expect(appUsageTabLabel('quoter'), '견적');
+    expect(appUsageTabLabel('quoter_log'), '견적 로그');
     expect(appUsageTabLabel('unknown'), 'unknown');
     expect(appUsageTabLabel(''), '—');
   });

@@ -7,10 +7,14 @@ class UxActionDock extends StatelessWidget {
   const UxActionDock({
     super.key,
     required this.children,
+    this.flexes,
     this.padding,
   });
 
   final List<Widget> children;
+
+  /// 각 자식 `Expanded` 비율. 없으면 균등 분할.
+  final List<int>? flexes;
   final EdgeInsetsGeometry? padding;
 
   @override
@@ -31,16 +35,19 @@ class UxActionDock extends StatelessWidget {
         ),
         padding: padding ??
             EdgeInsets.fromLTRB(
-              AppTokens.spaceLg,
+              AppTokens.spaceMd,
               AppTokens.spaceSm + 2,
-              AppTokens.spaceLg,
+              AppTokens.spaceMd,
               AppTokens.spaceSm + bottom,
             ),
         child: Row(
           children: [
             for (var i = 0; i < children.length; i++) ...[
-              if (i > 0) const SizedBox(width: 10),
-              Expanded(child: children[i]),
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(
+                flex: (flexes != null && i < flexes!.length) ? flexes![i] : 1,
+                child: children[i],
+              ),
             ],
           ],
         ),
@@ -49,7 +56,7 @@ class UxActionDock extends StatelessWidget {
   }
 }
 
-/// 독/카드용 큰 액션 버튼.
+/// 독/카드용 큰 액션 버튼 — 아이콘 위 · 라벨 아래 (좁은 폭에서도 글씨 유지).
 class UxDockButton extends StatelessWidget {
   const UxDockButton({
     super.key,
@@ -73,56 +80,57 @@ class UxDockButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final accent = color ?? scheme.primary;
     final active = enabled && onPressed != null;
+    final fg = emphasized
+        ? (active ? scheme.onPrimary : scheme.onSurface.withValues(alpha: 0.38))
+        : (active ? accent : scheme.onSurface.withValues(alpha: 0.38));
+    final bg = emphasized
+        ? (active ? accent : scheme.onSurface.withValues(alpha: 0.12))
+        : Colors.transparent;
+    final borderColor = emphasized
+        ? Colors.transparent
+        : accent.withValues(alpha: active ? 0.45 : 0.2);
 
-    void handleTap() {
-      if (!active) return;
-      HapticFeedback.lightImpact();
-      onPressed!();
-    }
-
-    if (emphasized) {
-      return FilledButton.icon(
-        onPressed: active ? handleTap : null,
-        icon: Icon(icon, size: 20),
-        label: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
-        style: FilledButton.styleFrom(
-          backgroundColor: accent,
-          foregroundColor: scheme.onPrimary,
-          minimumSize: const Size.fromHeight(AppTokens.minTouchTarget + 4),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-          ),
-        ),
-      );
-    }
-
-    return OutlinedButton.icon(
-      onPressed: active ? handleTap : null,
-      icon: Icon(icon, size: 18, color: active ? accent : null),
-      label: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontWeight: FontWeight.w800,
-          color: active ? accent : null,
-        ),
+    return Material(
+      color: bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+        side: BorderSide(color: borderColor),
       ),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: accent,
-        minimumSize: const Size.fromHeight(AppTokens.minTouchTarget + 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        side: BorderSide(
-          color: accent.withValues(alpha: active ? 0.45 : 0.2),
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: !active
+            ? null
+            : () {
+                HapticFeedback.lightImpact();
+                onPressed!();
+              },
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: AppTokens.minTouchTarget + 4,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 20, color: fg),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.15,
+                    fontWeight: FontWeight.w800,
+                    color: fg,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

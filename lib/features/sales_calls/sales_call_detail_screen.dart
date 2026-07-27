@@ -881,6 +881,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               )
             : (_model != null && !_loading)
                 ? UxActionDock(
+                    // 상담 라벨이 길어 더 넓은 비율 부여
+                    flexes: _canEnterFurtherConsultation
+                        ? const [2, 2, 3]
+                        : const [1, 1],
                     children: [
                       UxDockButton(
                         icon: Icons.call_rounded,
@@ -903,7 +907,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       if (_canEnterFurtherConsultation)
                         UxDockButton(
                           icon: Icons.add_comment_rounded,
-                          label: '${_inputStageLabel(_model)} 상담',
+                          label: '${_inputStageLabel(_model)} 상담내용',
                           emphasized: true,
                           onPressed: () => masterAsync.whenData(
                             (m) => _showConsultationDialog(m),
