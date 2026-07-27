@@ -95,100 +95,197 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
               ),
             ),
           ),
-          if (showGrid) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '바로가기',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: GridView.count(
-                crossAxisCount: 3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.08,
-                children: [
-                  for (final entry in _quickEntries)
-                    _GridMenuTile(entry: entry, scheme: scheme),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
-          ],
-          if (searching)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '검색 결과',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
+          // 그리드+목록을 한 스크롤로 — 하단 overflow 방지
           Expanded(
-            child: visibleList.isEmpty
-                ? Center(
+            child: CustomScrollView(
+              physics: const ClampingScrollPhysics(),
+              slivers: [
+                if (showGrid) ...[
+                  SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
                       child: Text(
-                        searching ? '검색 결과가 없습니다.' : '추가 메뉴가 없습니다.',
-                        style: TextStyle(color: scheme.onSurfaceVariant),
+                        '바로가기',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // 3열 그리드 — 남는 높이 강제 없이 콘텐츠 높이만 사용
+                  // (항상 스크롤 부모 안이므로 overflow 없음)
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    sliver: _QuickGridSliver(
+                      entries: _quickEntries,
+                      scheme: scheme,
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                ],
+                if (searching)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                      child: Text(
+                        '검색 결과',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (visibleList.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          searching ? '검색 결과가 없습니다.' : '추가 메뉴가 없습니다.',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
                       ),
                     ),
                   )
-                : ListView(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    children: [
-                      if (!searching)
-                        for (final section in widget.catalog.sections)
-                          if (visibleList.any(
-                            (e) => e.sectionId == section.id,
-                          )) ...[
-                            _SectionTitle(title: section.title, scheme: scheme),
+                else if (!searching)
+                  SliverList(
+                    delegate: SliverChildListDelegate([
+                      for (final section in widget.catalog.sections)
+                        if (visibleList.any((e) => e.sectionId == section.id))
+                          ...[
+                            _SectionTitle(
+                              title: section.title,
+                              scheme: scheme,
+                            ),
                             for (final entry in visibleList.where(
                               (e) => e.sectionId == section.id,
                             ))
                               _MenuListTile(entry: entry, scheme: scheme),
-                          ]
-                      else
-                        for (final entry in visibleList)
-                          _MenuListTile(entry: entry, scheme: scheme),
-                    ],
+                          ],
+                      const SizedBox(height: 8),
+                    ]),
+                  )
+                else
+                  SliverList(
+                    delegate: SliverChildListDelegate([
+                      for (final entry in visibleList)
+                        _MenuListTile(entry: entry, scheme: scheme),
+                      const SizedBox(height: 8),
+                    ]),
                   ),
+              ],
+            ),
           ),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'COAD Sales App v$kAppVersion',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-                ),
+          // 더보기(드로어)에서 바로 버전 확인 — 고정 하단
+          SafeArea(
+            top: false,
+            minimum: const EdgeInsets.only(bottom: 4),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'COAD Sales App',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Text(
+                      'v$kAppVersion',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 바로가기 3열 그리드 (슬라버) — 행 수에 맞게 높이 계산.
+class _QuickGridSliver extends StatelessWidget {
+  const _QuickGridSliver({
+    required this.entries,
+    required this.scheme,
+  });
+
+  final List<AppMenuEntry> entries;
+  final ColorScheme scheme;
+
+  static const _cols = 3;
+  static const _gap = 8.0;
+  // 셀 대략 높이 (아이콘+라벨) — LayoutBuilder로 폭 기준 보정
+  static const _minCellH = 72.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.crossAxisExtent;
+        final cellW = (maxW - _gap * (_cols - 1)) / _cols;
+        // 약간 납작하게 — 세로 overflow 여유
+        final cellH = (cellW / 1.08).clamp(_minCellH, 96.0);
+        final rows = (entries.length / _cols).ceil();
+        final totalH =
+            rows * cellH + (rows > 0 ? (rows - 1) * _gap : 0);
+
+        return SliverToBoxAdapter(
+          child: SizedBox(
+            height: totalH,
+            child: GridView.builder(
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: entries.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _cols,
+                mainAxisSpacing: _gap,
+                crossAxisSpacing: _gap,
+                mainAxisExtent: cellH,
+              ),
+              itemBuilder: (context, i) =>
+                  _GridMenuTile(entry: entries[i], scheme: scheme),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -277,14 +374,14 @@ class _GridMenuTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: entry.onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Icon(entry.icon, size: 24, color: scheme.primary),
+                  Icon(entry.icon, size: 22, color: scheme.primary),
                   if (entry.badge != null)
                     Positioned(
                       right: -10,
@@ -310,7 +407,7 @@ class _GridMenuTile extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 label,
                 textAlign: TextAlign.center,
@@ -319,7 +416,7 @@ class _GridMenuTile extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  height: 1.15,
+                  height: 1.1,
                   color: scheme.onSurface,
                 ),
               ),
