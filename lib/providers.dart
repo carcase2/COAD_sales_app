@@ -28,8 +28,14 @@ final usageRepositoryProvider = Provider<UsageRepository>((ref) {
   return UsageRepository();
 });
 
-final generalScheduleRepositoryProvider = Provider<GeneralScheduleRepository>((ref) {
-  return GeneralScheduleRepository(ref.watch(appDependenciesProvider));
+/// 본사일반 일정 저장소. 대구지사는 `scheduleRepositoryProvider(ScheduleBranch.daegu)`.
+final generalScheduleRepositoryProvider = Provider<GeneralScheduleRepository>((
+  ref,
+) {
+  return GeneralScheduleRepository(
+    ref.watch(appDependenciesProvider),
+    // default branch = headOffice
+  );
 });
 
 final b2UploadRepositoryProvider = Provider<B2UploadRepository>((ref) {

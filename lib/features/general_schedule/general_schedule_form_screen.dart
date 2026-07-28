@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_stats.dart';
@@ -13,11 +14,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class GeneralScheduleFormScreen extends ConsumerStatefulWidget {
   const GeneralScheduleFormScreen({
     super.key,
+    this.branch = ScheduleBranch.headOffice,
     this.editing,
     this.initialStartYmd,
     this.initialSlotIndex,
   });
 
+  final ScheduleBranch branch;
   final GeneralScheduleRecord? editing;
   final String? initialStartYmd;
 
@@ -42,6 +45,8 @@ class _GeneralScheduleFormScreenState
 
   final Map<String, int> _doorTypeQuantities = {};
   final Set<String> _selectedDoorCodes = {};
+
+  ScheduleBranch get _branch => widget.branch;
 
   @override
   void initState() {
@@ -235,7 +240,7 @@ class _GeneralScheduleFormScreenState
     final startYmd = _ymd(_startDate);
     final endYmd = _ymd(_endDate);
     final doorTypes =
-        ref.read(generalScheduleDoorTypesProvider).valueOrNull ?? [];
+        ref.read(scheduleDoorTypesProvider(_branch)).valueOrNull ?? [];
     final models = _buildModels(doorTypes);
     final doorTypeCodes = _selectedDoorCodes.toList();
     final confirmed = await _confirmSlotRegistration(
@@ -246,7 +251,7 @@ class _GeneralScheduleFormScreenState
     );
     if (!confirmed || !mounted) return;
 
-    final grid = ref.read(generalScheduleGridProvider);
+    final grid = ref.read(scheduleGridProvider(_branch));
     final editingId = widget.editing?.id;
 
     final SlotAssignmentResult assignment;
@@ -298,7 +303,7 @@ class _GeneralScheduleFormScreenState
 
     setState(() => _saving = true);
     try {
-      final repo = ref.read(generalScheduleRepositoryProvider);
+      final repo = ref.read(scheduleRepositoryProvider(_branch));
       GeneralScheduleRecord saved;
       if (widget.editing != null) {
         await repo.update(
@@ -330,7 +335,7 @@ class _GeneralScheduleFormScreenState
             actorName: user.name,
           );
         } catch (e) {
-          debugPrint('[general-schedule] push after update failed: $e');
+          debugPrint('[${_branch.sourceTab}] push after update failed: $e');
         }
       } else {
         saved = await repo.create(
@@ -358,7 +363,7 @@ class _GeneralScheduleFormScreenState
             actorName: user.name,
           );
         } catch (e) {
-          debugPrint('[general-schedule] push after create failed: $e');
+          debugPrint('[${_branch.sourceTab}] push after create failed: $e');
         }
       }
 
@@ -391,7 +396,7 @@ class _GeneralScheduleFormScreenState
           .toList(),
       'door_types': doorTypes,
       'user_name': userName,
-      'sourceTab': 'general_schedule',
+      'sourceTab': _branch.sourceTab,
       ..._optionalPayloadField('old_start_date', oldStart),
       ..._optionalPayloadField('old_end_date', oldEnd),
     };
@@ -400,19 +405,42 @@ class _GeneralScheduleFormScreenState
   Map<String, dynamic> _optionalPayloadField(String key, String? value) =>
       value == null ? const <String, dynamic>{} : <String, dynamic>{key: value};
 
+  /// 하단 CTA — 충분한 폭이 있어 안내 문구를 길게 쓸 수 있다.
   String get _saveLabel {
     if (widget.editing != null) return '수정 저장';
     if (widget.initialSlotIndex != null) return '그날 일정 추가';
     return '등록';
   }
 
+  /// AppBar 액션 — 짧아야 제목이 잘리지 않는다.
+  String get _appBarSaveLabel {
+    if (widget.editing != null) return '저장';
+    return '등록';
+  }
+
+  String get _appBarTitle {
+    if (widget.editing != null) return '일정 수정';
+    return '일정 등록';
+  }
+
+  /// 날짜 버튼용 짧은 표기 `7/28(월)`.
+  String _compactDateLabel(DateTime d) {
+    final ymd = _ymd(d);
+    final parts = ymd.split('-');
+    if (parts.length != 3) return ymd;
+    final m = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (m == null || day == null) return ymd;
+    const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+    final wd = weekdays[(d.weekday - 1).clamp(0, 6)];
+    return '$m/$day($wd)';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isEdit = widget.editing != null;
-    final slotIndex = widget.initialSlotIndex;
-    final doorTypesAsync = ref.watch(generalScheduleDoorTypesProvider);
+    final doorTypesAsync = ref.watch(scheduleDoorTypesProvider(_branch));
     ref.listen<AsyncValue<List<DoorTypeOption>>>(
-      generalScheduleDoorTypesProvider,
+      scheduleDoorTypesProvider(_branch),
       (previous, next) {
         next.whenData((doorTypes) {
           final editing = widget.editing;
@@ -435,11 +463,9 @@ class _GeneralScheduleFormScreenState
       child: Scaffold(
         appBar: AppBar(
           title: Text(
-            isEdit
-                ? '일정 수정'
-                : slotIndex != null
-                ? '일정 등록 · ${slotIndex + 1}칸'
-                : '일정 등록',
+            _appBarTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           actions: [
             IconButton(
@@ -459,7 +485,7 @@ class _GeneralScheduleFormScreenState
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(_saveLabel),
+                  : Text(_appBarSaveLabel),
             ),
           ],
         ),
@@ -514,18 +540,20 @@ class _GeneralScheduleFormScreenState
                     Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton(
+                          child: _DatePickButton(
+                            label: '시작',
+                            dateText: _compactDateLabel(_startDate),
                             onPressed: () =>
                                 unawaited(_pickDate(isStart: true)),
-                            child: Text('시작: ${_ymd(_startDate)}'),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: OutlinedButton(
+                          child: _DatePickButton(
+                            label: '종료',
+                            dateText: _compactDateLabel(_endDate),
                             onPressed: () =>
                                 unawaited(_pickDate(isStart: false)),
-                            child: Text('종료: ${_ymd(_endDate)}'),
                           ),
                         ),
                       ],
@@ -735,6 +763,68 @@ class _GeneralScheduleFormScreenState
       ),
     );
     return ok == true;
+  }
+}
+
+/// 시작·종료 날짜 선택 — 라벨 + 짧은 날짜를 한 칸에 정리해 줄바꿈·잘림을 막는다.
+class _DatePickButton extends StatelessWidget {
+  const _DatePickButton({
+    required this.label,
+    required this.dateText,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String dateText;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        minimumSize: const Size.fromHeight(52),
+        alignment: Alignment.centerLeft,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  dateText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.calendar_today_rounded,
+            size: 16,
+            color: scheme.primary,
+          ),
+        ],
+      ),
+    );
   }
 }
 

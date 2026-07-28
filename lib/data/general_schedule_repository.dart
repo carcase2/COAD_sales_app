@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_notification.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
@@ -10,10 +11,36 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class GeneralScheduleRepository {
-  GeneralScheduleRepository(this._deps);
+  GeneralScheduleRepository(
+    this._deps, {
+    this.branch = ScheduleBranch.headOffice,
+  });
 
+  // 다른 repository 와 동일하게 주입 유지 (향후 로깅·캐시 등).
+  // ignore: unused_field
   final AppDependencies _deps;
+  final ScheduleBranch branch;
   final SupabaseClient _client = Supabase.instance.client;
+
+  String get _scheduleTable => branch.scheduleTable;
+  String get _slotsTable => branch.slotsTable;
+
+  String get _selectWithSlots {
+    final modelsCol = branch.supportsModels ? 'models,' : '';
+    return '''
+        id,
+        site,
+        start,
+        end_date,
+        user_id,
+        created_by,
+        updated_by,
+        door_types,
+        $modelsCol
+        model_name,
+        slots:$_slotsTable(date, slot)
+      ''';
+  }
 
   Future<List<GeneralScheduleRecord>> _parseRecords(
     List<Map<String, dynamic>> rows,
@@ -71,19 +98,7 @@ class GeneralScheduleRepository {
   /// [endDateFromYmd] — 종료일이 이 날짜 이후인 일정만 (과거 이력 제한).
   /// 미래 일정은 빈 칸 탐색 정확성을 위해 항상 전부 포함해야 하므로 상한은 두지 않음.
   Future<List<GeneralScheduleRecord>> fetchAll({String? endDateFromYmd}) async {
-    var query = _client.from('sales_schedule').select('''
-        id,
-        site,
-        start,
-        end_date,
-        user_id,
-        created_by,
-        updated_by,
-        door_types,
-        models,
-        model_name,
-        slots:schedule_slots(date, slot)
-      ''');
+    var query = _client.from(_scheduleTable).select(_selectWithSlots);
     if (endDateFromYmd != null) {
       query = query.gte('end_date', endDateFromYmd);
     }
@@ -96,19 +111,11 @@ class GeneralScheduleRepository {
   }
 
   Future<GeneralScheduleRecord> fetchById(String scheduleId) async {
-    final row = await _client.from('sales_schedule').select('''
-        id,
-        site,
-        start,
-        end_date,
-        user_id,
-        created_by,
-        updated_by,
-        door_types,
-        models,
-        model_name,
-        slots:schedule_slots(date, slot)
-      ''').eq('id', scheduleId).single();
+    final row = await _client
+        .from(_scheduleTable)
+        .select(_selectWithSlots)
+        .eq('id', scheduleId)
+        .single();
     final parsed = await _parseRecords([Map<String, dynamic>.from(row)]);
     if (parsed.isEmpty) {
       throw ApiException('일정을 불러오지 못했습니다.');
@@ -150,21 +157,22 @@ class GeneralScheduleRepository {
     List<ScheduleModelEntry> models = const [],
     Map<String, List<int>>? extraTeamSlots,
   }) async {
-    final insertRes = await _client
-        .from('sales_schedule')
-        .insert({
-          'site': site,
-          'start': startYmd,
-          'end_date': endYmd,
-          'user_id': userId,
-          'created_by': userId,
-          'updated_by': userId,
-          'door_types': doorTypes,
-          'model_name': modelName,
-          'models': models.map((e) => e.toJson()).toList(),
-        })
-        .select()
-        .single();
+    final body = <String, dynamic>{
+      'site': site,
+      'start': startYmd,
+      'end_date': endYmd,
+      'user_id': userId,
+      'created_by': userId,
+      'updated_by': userId,
+      'door_types': doorTypes,
+      'model_name': modelName,
+    };
+    if (branch.supportsModels) {
+      body['models'] = models.map((e) => e.toJson()).toList();
+    }
+
+    final insertRes =
+        await _client.from(_scheduleTable).insert(body).select().single();
 
     final scheduleId = insertRes['id'].toString();
     await _insertSlots(scheduleId, slotMap, extraTeamSlots);
@@ -184,7 +192,7 @@ class GeneralScheduleRepository {
     List<ScheduleModelEntry> models = const [],
     Map<String, List<int>>? extraTeamSlots,
   }) async {
-    await _client.from('sales_schedule').update({
+    final body = <String, dynamic>{
       'site': site,
       'start': startYmd,
       'end_date': endYmd,
@@ -192,15 +200,19 @@ class GeneralScheduleRepository {
       'updated_at': DateTime.now().toUtc().toIso8601String(),
       'door_types': doorTypes,
       'model_name': modelName,
-      'models': models.map((e) => e.toJson()).toList(),
-    }).eq('id', id);
+    };
+    if (branch.supportsModels) {
+      body['models'] = models.map((e) => e.toJson()).toList();
+    }
 
-    await _client.from('schedule_slots').delete().eq('schedule_id', id);
+    await _client.from(_scheduleTable).update(body).eq('id', id);
+
+    await _client.from(_slotsTable).delete().eq('schedule_id', id);
     await _insertSlots(id, slotMap, extraTeamSlots);
   }
 
   Future<void> delete(String id) async {
-    await _client.from('sales_schedule').delete().eq('id', id);
+    await _client.from(_scheduleTable).delete().eq('id', id);
   }
 
   /// enrich 실패 시 [base]만으로 FCM 전송 (접수 등록과 동일하게 await 호출).
@@ -210,6 +222,9 @@ class GeneralScheduleRepository {
     required GeneralScheduleRecord record,
     required String actorName,
   }) async {
+    final fn = branch.notifyFunctionName;
+    if (fn == null) return;
+
     Map<String, dynamic> payload;
     try {
       payload = await enrichScheduleNotificationData(
@@ -229,24 +244,22 @@ class GeneralScheduleRepository {
     required String action,
     required Map<String, dynamic> scheduleData,
   }) async {
+    final fn = branch.notifyFunctionName;
+    if (fn == null) return;
     try {
       final res = await _client.functions.invoke(
-        'notify-general-schedule',
+        fn,
         body: {
           'action': action,
           'scheduleData': scheduleData,
         },
       );
-      debugPrint(
-        '[notify-general-schedule] status=${res.status} data=${res.data}',
-      );
+      debugPrint('[$fn] status=${res.status} data=${res.data}');
       if (res.status >= 400) {
-        debugPrint(
-          '[notify-general-schedule] push invoke returned error status=${res.status}',
-        );
+        debugPrint('[$fn] push invoke returned error status=${res.status}');
       }
     } catch (e, st) {
-      debugPrint('[notify-general-schedule] invoke failed: $e');
+      debugPrint('[$fn] invoke failed: $e');
       debugPrint('$st');
     }
   }
@@ -266,6 +279,7 @@ class GeneralScheduleRepository {
         record: record,
         actorName: actorName,
         todayYmd: todayYmdSeoul(),
+        allowedGroupNames: branch.allowedGroupNames,
       );
       return mergeGeneralScheduleTelegramPayload(base: base, alarm: alarm);
     } catch (e) {
@@ -306,7 +320,7 @@ class GeneralScheduleRepository {
     if (rows.isEmpty) {
       throw ApiException('배치할 slot이 없습니다.');
     }
-    await _client.from('schedule_slots').insert(rows);
+    await _client.from(_slotsTable).insert(rows);
   }
 
   void _normalizeModelsField(Map<String, dynamic> row) {

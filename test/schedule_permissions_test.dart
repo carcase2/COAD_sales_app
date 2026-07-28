@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -39,5 +40,38 @@ void main() {
       ),
       isFalse,
     );
+    expect(canAccessGeneralSchedule(_user(groupName: '대구지사장')), isFalse);
+  });
+
+  test('canAccessDaeguSchedule — 대구지사장·관리자만 허용', () {
+    expect(canAccessDaeguSchedule(_user(groupName: '대구지사장')), isTrue);
+    expect(canAccessDaeguSchedule(_user(groupName: '관리자')), isTrue);
+    expect(canAccessDaeguSchedule(_user(groupName: ' 대구지사장 ')), isTrue);
+  });
+
+  test('canAccessDaeguSchedule — 그 외 그룹 거부', () {
+    expect(canAccessDaeguSchedule(_user(groupName: '본사영업')), isFalse);
+    expect(canAccessDaeguSchedule(_user(groupName: '대구지사')), isFalse);
+    expect(canAccessDaeguSchedule(_user(groupName: null)), isFalse);
+    expect(
+      canAccessDaeguSchedule(
+        AppUser(
+          id: '1',
+          name: 'x',
+          role: 'admin',
+          permissions: const ['daegu_schedule', 'all'],
+          groupName: '영업1팀',
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  test('ScheduleBranch titles and tables', () {
+    expect(ScheduleBranch.headOffice.title, '본사일반');
+    expect(ScheduleBranch.daegu.title, '대구지사');
+    expect(ScheduleBranch.headOffice.scheduleTable, 'sales_schedule');
+    expect(ScheduleBranch.daegu.scheduleTable, 'sales_schedule_daegu');
+    expect(ScheduleBranch.daegu.slotsTable, 'schedule_slots_daegu');
   });
 }

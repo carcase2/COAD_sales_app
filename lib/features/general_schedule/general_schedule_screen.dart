@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_form_screen.dart';
@@ -18,10 +19,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class GeneralScheduleScreen extends ConsumerStatefulWidget {
-  const GeneralScheduleScreen({super.key, this.embedded = false});
+  const GeneralScheduleScreen({
+    super.key,
+    this.embedded = false,
+    this.branch = ScheduleBranch.headOffice,
+  });
 
   /// 메인 하단 탭에 임베드될 때 true — 뒤로가기 대신 탭 전환으로 메인 이동.
   final bool embedded;
+
+  /// 본사일반 / 대구지사.
+  final ScheduleBranch branch;
 
   @override
   ConsumerState<GeneralScheduleScreen> createState() =>
@@ -40,9 +48,11 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   DateTime _monthFocusedDay = DateTime.parse(todayYmdSeoul());
   bool _returnToMonthViewOnBack = false;
 
+  ScheduleBranch get _branch => widget.branch;
+
   Future<void> _reload() async {
-    ref.invalidate(generalScheduleRecordsProvider);
-    await ref.read(generalScheduleRecordsProvider.future);
+    ref.invalidate(scheduleRecordsProvider(_branch));
+    await ref.read(scheduleRecordsProvider(_branch).future);
   }
 
   String _ymd(DateTime d) => ymdSeoulFromDateTime(d);
@@ -50,9 +60,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   /// 선택일 주변(날짜 스트립 ±60일)이 조회 구간 밖이면 하한을 앞당겨 재조회.
   void _ensureHistoryWindowCovers(String ymd) {
     final needed = addDaysToYmd(ymd, -GeneralScheduleWeekPanel.centerIndex);
-    final current = ref.read(generalScheduleWindowStartProvider);
+    final current = ref.read(scheduleWindowStartProvider(_branch));
     if (needed.compareTo(current) < 0) {
-      ref.read(generalScheduleWindowStartProvider.notifier).state = needed;
+      ref.read(scheduleWindowStartProvider(_branch).notifier).state = needed;
     }
   }
 
@@ -152,7 +162,8 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     int slotIndex,
     String ymd,
   ) async {
-    final records = ref.read(generalScheduleRecordsProvider).valueOrNull ?? [];
+    final records =
+        ref.read(scheduleRecordsProvider(_branch)).valueOrNull ?? [];
     final record = findGeneralScheduleById(records, cell.scheduleId);
     if (record == null) {
       if (!mounted) return;
@@ -223,7 +234,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     if (finalOk != true || !mounted) return;
 
     try {
-      final repo = ref.read(generalScheduleRepositoryProvider);
+      final repo = ref.read(scheduleRepositoryProvider(_branch));
       await repo.delete(record.id);
       final user = ref.read(authControllerProvider);
       try {
@@ -234,13 +245,13 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
             'start_date': record.start,
             'end_date': record.endDate,
             'user_name': user?.name ?? record.userName ?? '시스템',
-            'sourceTab': 'general_schedule',
+            'sourceTab': _branch.sourceTab,
           },
           record: record,
           actorName: user?.name ?? record.userName ?? '시스템',
         );
       } catch (e) {
-        debugPrint('[general-schedule] push after delete failed: $e');
+        debugPrint('[${_branch.sourceTab}] push after delete failed: $e');
       }
       await _reload();
       if (!mounted) return;
@@ -263,6 +274,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => GeneralScheduleFormScreen(
+          branch: _branch,
           editing: editing,
           initialStartYmd: initialStartYmd,
           initialSlotIndex: initialSlotIndex,
@@ -633,7 +645,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           await _reload();
           if (!hostContext.mounted) return;
           final records =
-              ref.read(generalScheduleRecordsProvider).valueOrNull ?? [];
+              ref.read(scheduleRecordsProvider(_branch)).valueOrNull ?? [];
           final refreshed = records
               .where((r) => r.id == current.id)
               .cast<GeneralScheduleRecord?>()
@@ -651,7 +663,8 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   }
 
   Future<void> _openSearchResults() async {
-    final records = ref.read(generalScheduleRecordsProvider).valueOrNull ?? [];
+    final records =
+        ref.read(scheduleRecordsProvider(_branch)).valueOrNull ?? [];
     if (records.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -676,19 +689,19 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
-    if (user == null || !canAccessGeneralSchedule(user)) {
+    if (user == null || !canAccessScheduleBranch(user, _branch)) {
       return Scaffold(
         appBar: AppBar(
           centerTitle: false,
-          title: const Text('본사일반'),
+          title: Text(_branch.title),
           automaticallyImplyLeading: !widget.embedded,
         ),
-        body: const Center(child: Text('본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.')),
+        body: Center(child: Text(_branch.accessDeniedMessage)),
       );
     }
 
-    final recordsAsync = ref.watch(generalScheduleRecordsProvider);
-    final grid = ref.watch(generalScheduleGridProvider);
+    final recordsAsync = ref.watch(scheduleRecordsProvider(_branch));
+    final grid = ref.watch(scheduleGridProvider(_branch));
     final scheme = Theme.of(context).colorScheme;
     final selectedYmd = _ymd(_selectedDay);
     final statsAnchor = _calendarView == GeneralScheduleCalendarView.month
@@ -718,7 +731,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final scaffold = Scaffold(
       appBar: AppBar(
         centerTitle: false,
-        title: const Text('본사일반'),
+        title: Text(_branch.title),
         automaticallyImplyLeading: !widget.embedded,
         actions: [
           IconButton(

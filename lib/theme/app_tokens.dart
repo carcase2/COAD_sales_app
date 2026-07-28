@@ -42,6 +42,10 @@ class AppTokens {
   static Color generalScheduleAccent(ColorScheme scheme) =>
       Color.lerp(scheme.tertiary, scheme.error, 0.35)!;
 
+  /// 하단 네비 — 대구지사 일정 (핑크 톤, COAD_home 과 유사).
+  static Color daeguScheduleAccent(ColorScheme scheme) =>
+      Color.lerp(const Color(0xFFDB2777), scheme.primary, 0.2)!;
+
   /// 접수 네비.
   static Color receptionAccent(ColorScheme scheme) => scheme.tertiary;
 

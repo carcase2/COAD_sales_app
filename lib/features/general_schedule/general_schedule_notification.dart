@@ -13,6 +13,7 @@ class GeneralScheduleAlarmContext {
     required this.monthRemainingSlotsAfterToday,
     this.earliestEmptySlotYmd,
     this.earliestEmptySlotNumber,
+    this.allowedGroupNames = kGeneralScheduleAllowedGroupNames,
   });
 
   final String site;
@@ -22,6 +23,7 @@ class GeneralScheduleAlarmContext {
   final int monthRemainingSlotsAfterToday;
   final String? earliestEmptySlotYmd;
   final int? earliestEmptySlotNumber;
+  final List<String> allowedGroupNames;
 
   Map<String, dynamic> toPayload() => {
         'site': site,
@@ -36,7 +38,7 @@ class GeneralScheduleAlarmContext {
         'alarm_lines': alarmLines(),
         'alarm_text': alarmLines().join('\n'),
         'notify_audience': {
-          'group_names': kGeneralScheduleAllowedGroupNames,
+          'group_names': allowedGroupNames,
           'include_admin_role': true,
         },
       };
@@ -64,6 +66,7 @@ GeneralScheduleAlarmContext buildGeneralScheduleAlarmContext({
   required GeneralScheduleRecord record,
   required String actorName,
   required String todayYmd,
+  List<String> allowedGroupNames = kGeneralScheduleAllowedGroupNames,
 }) {
   final startParts = record.start.split('-');
   final year = int.parse(startParts[0]);
@@ -92,6 +95,7 @@ GeneralScheduleAlarmContext buildGeneralScheduleAlarmContext({
     ),
     earliestEmptySlotYmd: earliest?.ymd,
     earliestEmptySlotNumber: earliest == null ? null : earliest.slotIndex + 1,
+    allowedGroupNames: allowedGroupNames,
   );
 }
 

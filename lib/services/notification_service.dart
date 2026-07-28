@@ -64,12 +64,12 @@ class NotificationService {
 
   static const String _androidChannelCallName = '새 접수 알림';
   static const String _androidChannelIssuanceName = '발급요청 알림';
-  static const String _androidChannelScheduleName = '본사일반 일정 알림';
+  static const String _androidChannelScheduleName = '일정 알림';
   static const String _androidChannelGeneralName = '일반 알림';
 
   static const String _androidChannelCallDesc = '새 통화 접수 알림';
   static const String _androidChannelIssuanceDesc = '세금계산서/이행증권 발급 알림';
-  static const String _androidChannelScheduleDesc = '본사일반 일정 변경 알림';
+  static const String _androidChannelScheduleDesc = '본사일반·대구지사 일정 변경 알림';
   static const String _androidChannelGeneralDesc = '앱 업데이트 등 일반 알림';
 
   /// Navigation key to support navigation without context
@@ -103,6 +103,8 @@ class NotificationService {
   static const String prefKeyNotifyIssuance = 'notify_enabled_issuance_v1';
   static const String prefKeyNotifyGeneralSchedule =
       'notify_enabled_general_schedule_v1';
+  static const String prefKeyNotifyDaeguSchedule =
+      'notify_enabled_daegu_schedule_v1';
 
   /// 사용자가 해당 카테고리 알림을 꺼두었으면 false.
   /// 앱 업데이트 등 분류 불가 알림은 항상 표시.
@@ -111,6 +113,8 @@ class NotificationService {
     if (_isIssuanceCompletedNotification(data) ||
         _isIssuanceRequestNotification(data)) {
       key = prefKeyNotifyIssuance;
+    } else if (_isDaeguScheduleNotification(data)) {
+      key = prefKeyNotifyDaeguSchedule;
     } else if (_isGeneralScheduleNotification(data)) {
       key = prefKeyNotifyGeneralSchedule;
     } else if (_extractCallIdFromData(data) != null) {
@@ -130,7 +134,8 @@ class NotificationService {
         _isIssuanceRequestNotification(data)) {
       return _androidChannelIssuanceId;
     }
-    if (_isGeneralScheduleNotification(data)) {
+    if (_isGeneralScheduleNotification(data) ||
+        _isDaeguScheduleNotification(data)) {
       return _androidChannelScheduleId;
     }
     if (_extractCallIdFromData(data) != null) {
@@ -459,11 +464,16 @@ class NotificationService {
     final titleBody = _titleAndBodyFromMessage(message);
     var title = titleBody.$1;
     var body = titleBody.$2;
-    if (_isGeneralScheduleNotification(data)) {
+    if (_isGeneralScheduleNotification(data) ||
+        _isDaeguScheduleNotification(data)) {
       body = body.replaceAll(r'\n', '\n');
     }
     if (title.isEmpty && body.isEmpty) {
-      if (_isGeneralScheduleNotification(data)) {
+      if (_isDaeguScheduleNotification(data)) {
+        title = (data['title'] ?? '[대구지사] 일정').toString();
+        body = (data['body'] ?? '알림을 탭하면 대구지사 일정으로 이동합니다.')
+            .toString();
+      } else if (_isGeneralScheduleNotification(data)) {
         title = (data['title'] ?? '[본사일반] 일정').toString();
         body = (data['body'] ?? '알림을 탭하면 본사일반 일정으로 이동합니다.')
             .toString();
@@ -505,13 +515,17 @@ class NotificationService {
     }
 
     final callId = _extractCallIdFromData(data);
-    final notificationId = _isGeneralScheduleNotification(data)
-        ? ('general_schedule:${data['action'] ?? 'open'}').hashCode &
-            0x7fffffff
-        : _notificationIdFor(callId, message);
-    final tag = _isGeneralScheduleNotification(data)
-        ? 'general_schedule'
-        : callId;
+    final notificationId = _isDaeguScheduleNotification(data)
+        ? ('daegu_schedule:${data['action'] ?? 'open'}').hashCode & 0x7fffffff
+        : _isGeneralScheduleNotification(data)
+            ? ('general_schedule:${data['action'] ?? 'open'}').hashCode &
+                0x7fffffff
+            : _notificationIdFor(callId, message);
+    final tag = _isDaeguScheduleNotification(data)
+        ? 'daegu_schedule'
+        : _isGeneralScheduleNotification(data)
+            ? 'general_schedule'
+            : callId;
     _log(
       'showRemoteMessageNotification callId=$callId titleLen=${title.length} bodyLen=${body.length}',
     );
@@ -557,6 +571,12 @@ class NotificationService {
     }
     if (_isIssuanceRequestNotification(data)) {
       return jsonEncode(_issuancePayloadFromData(data, completed: false));
+    }
+    if (_isDaeguScheduleNotification(data)) {
+      return jsonEncode({
+        'type': 'daegu_schedule',
+        'action': 'open_daegu_schedule',
+      });
     }
     if (_isGeneralScheduleNotification(data)) {
       return jsonEncode({
@@ -678,6 +698,10 @@ class NotificationService {
       _openIssuanceRequest(data);
       return;
     }
+    if (_isDaeguScheduleNotification(data)) {
+      _openDaeguScheduleHub(data);
+      return;
+    }
     if (_isGeneralScheduleNotification(data)) {
       _openGeneralScheduleHub(data);
       return;
@@ -715,6 +739,15 @@ class NotificationService {
         .toLowerCase();
     final action = (data['action'] ?? '').toString().trim().toLowerCase();
     return type == 'general_schedule' || action == 'open_general_schedule';
+  }
+
+  static bool _isDaeguScheduleNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'daegu_schedule' || action == 'open_daegu_schedule';
   }
 
   static IssuanceDomain _parseIssuanceDomain(Object? raw) {
@@ -764,9 +797,40 @@ class NotificationService {
     }
   }
 
+  static void _openDaeguScheduleHub(Map<String, dynamic> data) {
+    const payload = {
+      'type': 'daegu_schedule',
+      'action': 'open_daegu_schedule',
+    };
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) {
+      _queuePendingData(payload);
+      return;
+    }
+    try {
+      final container = ProviderScope.containerOf(ctx);
+      if (container.read(authControllerProvider) == null) {
+        _queuePendingData(payload);
+        return;
+      }
+      container.read(pendingDaeguScheduleLaunchProvider.notifier).state = true;
+      _log('queue daegu schedule launch');
+    } catch (_) {
+      _queuePendingData(payload);
+    }
+  }
+
   static void clearPendingGeneralScheduleNavigation() {
     final type = (_pendingMessageData?['type'] ?? '').toString();
     if (type == 'general_schedule') {
+      _pendingMessageData = null;
+    }
+    unawaited(_clearStoredNotificationPayload());
+  }
+
+  static void clearPendingDaeguScheduleNavigation() {
+    final type = (_pendingMessageData?['type'] ?? '').toString();
+    if (type == 'daegu_schedule') {
       _pendingMessageData = null;
     }
     unawaited(_clearStoredNotificationPayload());

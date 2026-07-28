@@ -23,6 +23,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late bool _notifyNewCall;
   late bool _notifyIssuance;
   late bool _notifyGeneralSchedule;
+  late bool _notifyDaeguSchedule;
   int _updateHistoryReloadToken = 0;
 
   @override
@@ -36,6 +37,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _notifyGeneralSchedule =
         prefs.getBool(NotificationService.prefKeyNotifyGeneralSchedule) ??
             true;
+    _notifyDaeguSchedule =
+        prefs.getBool(NotificationService.prefKeyNotifyDaeguSchedule) ?? true;
     _loadFlowUncalledPref();
   }
 
@@ -299,6 +302,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               setState(() => _notifyGeneralSchedule = v);
               _setNotifyPref(
                 NotificationService.prefKeyNotifyGeneralSchedule,
+                v,
+              );
+            },
+          ),
+          _buildNotifyToggle(
+            title: '대구지사 일정 알림',
+            subtitle: '대구지사 일정 등록·변경 알림을 받습니다.',
+            value: _notifyDaeguSchedule,
+            onChanged: (v) {
+              setState(() => _notifyDaeguSchedule = v);
+              _setNotifyPref(
+                NotificationService.prefKeyNotifyDaeguSchedule,
                 v,
               );
             },

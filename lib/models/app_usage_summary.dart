@@ -142,6 +142,7 @@ const List<String> appUsageKnownTabKeys = [
   'quoter',
   'quoter_log',
   'general_schedule',
+  'daegu_schedule',
   'menu',
   'settings',
 ];
@@ -160,6 +161,8 @@ String appUsageTabLabel(String key) {
       return '견적 로그';
     case 'general_schedule':
       return '본사일반';
+    case 'daegu_schedule':
+      return '대구지사';
     case 'menu':
       return '메뉴';
     case 'settings':

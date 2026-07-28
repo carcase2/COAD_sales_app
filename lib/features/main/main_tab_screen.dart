@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/ux_onboarding_sheet.dart';
@@ -52,13 +53,15 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   static const int _issuanceTabIndex = 1;
   static const int _quoterTabIndex = 2;
   static const int _generalScheduleTabIndex = 3;
+  static const int _daeguScheduleTabIndex = 4;
 
-  // 하단 네비: 홈 · 접수 · 발급 · 견적 · (본사일반) · 더보기
+  // 하단 네비: 홈 · 접수 · 발급 · 견적 · (본사일반?) · (대구지사?) · 더보기
+  // 일정 탭은 권한에 따라 동적으로 붙으며, 고정 인덱스는 0~3만 사용한다.
   static const int _navHomeIndex = 0;
   static const int _navReceptionIndex = 1;
   static const int _navIssuanceIndex = 2;
   static const int _navQuoterIndex = 3;
-  static const int _navGeneralScheduleIndex = 4;
+  static const int _navScheduleBaseIndex = 4;
   int _currentIndex = 0;
   int _navSelectedIndex = _navHomeIndex;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
@@ -438,28 +441,50 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   bool _showGeneralScheduleInNav(AppUser? user) =>
       user != null && canAccessGeneralSchedule(user);
 
-  /// 홈(0) 접수(1) 발급(2) 견적(3) [본사일반(4)] 더보기
+  bool _showDaeguScheduleInNav(AppUser? user) =>
+      user != null && canAccessDaeguSchedule(user);
+
+  int _scheduleTabCount(AppUser? user) {
+    var n = 0;
+    if (_showGeneralScheduleInNav(user)) n++;
+    if (_showDaeguScheduleInNav(user)) n++;
+    return n;
+  }
+
+  /// 홈(0) 접수(1) 발급(2) 견적(3) [일정들] 더보기
   int _navMenuIndexFor(AppUser? user) =>
-      _showGeneralScheduleInNav(user) ? 5 : 4;
+      _navScheduleBaseIndex + _scheduleTabCount(user);
+
+  int? _navGeneralScheduleIndex(AppUser? user) {
+    if (!_showGeneralScheduleInNav(user)) return null;
+    return _navScheduleBaseIndex;
+  }
+
+  int? _navDaeguScheduleIndex(AppUser? user) {
+    if (!_showDaeguScheduleInNav(user)) return null;
+    return _showGeneralScheduleInNav(user)
+        ? _navScheduleBaseIndex + 1
+        : _navScheduleBaseIndex;
+  }
 
   void _syncNavFromCurrentTab() {
     final user = ref.read(authControllerProvider);
     setState(() {
+      final generalNav = _navGeneralScheduleIndex(user);
+      final daeguNav = _navDaeguScheduleIndex(user);
       _navSelectedIndex = switch (_currentIndex) {
         _issuanceTabIndex => _navIssuanceIndex,
         _quoterTabIndex => _navQuoterIndex,
-        _generalScheduleTabIndex =>
-          _showGeneralScheduleInNav(user)
-              ? _navGeneralScheduleIndex
-              : _navHomeIndex,
+        _generalScheduleTabIndex => generalNav ?? _navHomeIndex,
+        _daeguScheduleTabIndex => daeguNav ?? _navHomeIndex,
         _ => _navHomeIndex,
       };
-      if (_navSelectedIndex == _navGeneralScheduleIndex &&
-          !_showGeneralScheduleInNav(user)) {
+      if (_currentIndex == _generalScheduleTabIndex && generalNav == null) {
         _navSelectedIndex = _navHomeIndex;
-        if (_currentIndex == _generalScheduleTabIndex) {
-          _currentIndex = _homeTabIndex;
-        }
+        _currentIndex = _homeTabIndex;
+      } else if (_currentIndex == _daeguScheduleTabIndex && daeguNav == null) {
+        _navSelectedIndex = _navHomeIndex;
+        _currentIndex = _homeTabIndex;
       }
     });
   }
@@ -474,22 +499,44 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _selectGeneralScheduleTab() {
     final user = ref.read(authControllerProvider);
-    if (!_showGeneralScheduleInNav(user)) {
+    final navIndex = _navGeneralScheduleIndex(user);
+    if (navIndex == null) {
       _selectHomeTab();
       return;
     }
     HapticFeedback.lightImpact();
-    if (_navSelectedIndex == _navGeneralScheduleIndex &&
+    if (_navSelectedIndex == navIndex &&
         _currentIndex == _generalScheduleTabIndex) {
       return;
     }
     setState(() {
-      _navSelectedIndex = _navGeneralScheduleIndex;
+      _navSelectedIndex = navIndex;
       _currentIndex = _generalScheduleTabIndex;
       _loadedIndices.add(_generalScheduleTabIndex);
       _lastBackExitHintAt = null;
     });
-    _trackTab(user, 'general_schedule');
+    _trackTab(user, ScheduleBranch.headOffice.usageTabKey);
+  }
+
+  void _selectDaeguScheduleTab() {
+    final user = ref.read(authControllerProvider);
+    final navIndex = _navDaeguScheduleIndex(user);
+    if (navIndex == null) {
+      _selectHomeTab();
+      return;
+    }
+    HapticFeedback.lightImpact();
+    if (_navSelectedIndex == navIndex &&
+        _currentIndex == _daeguScheduleTabIndex) {
+      return;
+    }
+    setState(() {
+      _navSelectedIndex = navIndex;
+      _currentIndex = _daeguScheduleTabIndex;
+      _loadedIndices.add(_daeguScheduleTabIndex);
+      _lastBackExitHintAt = null;
+    });
+    _trackTab(user, ScheduleBranch.daegu.usageTabKey);
   }
 
   void _onNavDestinationSelected(int navIndex) {
@@ -499,9 +546,14 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       _openMenuDrawer();
       return;
     }
-    if (_showGeneralScheduleInNav(user) &&
-        navIndex == _navGeneralScheduleIndex) {
+    final generalNav = _navGeneralScheduleIndex(user);
+    if (generalNav != null && navIndex == generalNav) {
       _selectGeneralScheduleTab();
+      return;
+    }
+    final daeguNav = _navDaeguScheduleIndex(user);
+    if (daeguNav != null && navIndex == daeguNav) {
+      _selectDaeguScheduleTab();
       return;
     }
     if (navIndex == _navQuoterIndex) {
@@ -677,7 +729,16 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         ? const QuoterHubScreen(showAppBar: true)
         : const AppLoading(message: '견적 화면 준비 중…'),
     _loadedIndices.contains(_generalScheduleTabIndex)
-        ? const GeneralScheduleScreen(embedded: true)
+        ? const GeneralScheduleScreen(
+            embedded: true,
+            branch: ScheduleBranch.headOffice,
+          )
+        : const SizedBox.shrink(),
+    _loadedIndices.contains(_daeguScheduleTabIndex)
+        ? const GeneralScheduleScreen(
+            embedded: true,
+            branch: ScheduleBranch.daegu,
+          )
         : const SizedBox.shrink(),
   ];
 
@@ -697,6 +758,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       NotificationService.clearPendingGeneralScheduleNavigation();
       _selectGeneralScheduleTab();
     });
+    ref.listen(pendingDaeguScheduleLaunchProvider, (prev, next) {
+      if (next != true || !context.mounted) return;
+      ref.read(pendingDaeguScheduleLaunchProvider.notifier).state = false;
+      NotificationService.clearPendingDaeguScheduleNavigation();
+      _selectDaeguScheduleTab();
+    });
     ref.listen(pendingQuoterLaunchProvider, (prev, next) {
       if (next != true || !context.mounted) return;
       ref.read(pendingQuoterLaunchProvider.notifier).state = false;
@@ -714,6 +781,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final showGeneralSchedule = ref.watch(
       authControllerProvider.select(
         (u) => u != null && canAccessGeneralSchedule(u),
+      ),
+    );
+    final showDaeguSchedule = ref.watch(
+      authControllerProvider.select(
+        (u) => u != null && canAccessDaeguSchedule(u),
       ),
     );
     return PopScope(
@@ -773,8 +845,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             return _buildAppMenuDrawer(context, user, scheme, updateStatus);
           },
         ),
-        // 본사일반·견적은 자체 AppBar를 쓰므로 메인 AppBar를 숨긴다.
+        // 일정·견적은 자체 AppBar를 쓰므로 메인 AppBar를 숨긴다.
         appBar: (_currentIndex == _generalScheduleTabIndex ||
+                _currentIndex == _daeguScheduleTabIndex ||
                 _currentIndex == _quoterTabIndex)
             ? null
             : AppBar(
@@ -919,6 +992,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                   child: _MainBottomNavBar(
                     selectedIndex: _navSelectedIndex,
                     showGeneralSchedule: showGeneralSchedule,
+                    showDaeguSchedule: showDaeguSchedule,
                     issuanceBadgeAsync: ref.watch(
                       issuanceRequestBadgeCountVisibleProvider,
                     ),
@@ -931,8 +1005,18 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                         _onNavDestinationSelected(_navIssuanceIndex),
                     onTapQuoter: () =>
                         _onNavDestinationSelected(_navQuoterIndex),
-                    onTapGeneralSchedule: () =>
-                        _onNavDestinationSelected(_navGeneralScheduleIndex),
+                    onTapGeneralSchedule: () {
+                      final idx = _navGeneralScheduleIndex(
+                        ref.read(authControllerProvider),
+                      );
+                      if (idx != null) _onNavDestinationSelected(idx);
+                    },
+                    onTapDaeguSchedule: () {
+                      final idx = _navDaeguScheduleIndex(
+                        ref.read(authControllerProvider),
+                      );
+                      if (idx != null) _onNavDestinationSelected(idx);
+                    },
                     onTapMenu: () => _onNavDestinationSelected(
                       _navMenuIndexFor(ref.read(authControllerProvider)),
                     ),
@@ -1353,6 +1437,7 @@ class _MainBottomNavBar extends StatelessWidget {
   const _MainBottomNavBar({
     required this.selectedIndex,
     required this.showGeneralSchedule,
+    required this.showDaeguSchedule,
     required this.issuanceBadgeAsync,
     required this.onTapHome,
     required this.onLongPressHome,
@@ -1361,11 +1446,13 @@ class _MainBottomNavBar extends StatelessWidget {
     required this.onTapIssuance,
     required this.onTapQuoter,
     required this.onTapGeneralSchedule,
+    required this.onTapDaeguSchedule,
     required this.onTapMenu,
   });
 
   final int selectedIndex;
   final bool showGeneralSchedule;
+  final bool showDaeguSchedule;
   final AsyncValue<int> issuanceBadgeAsync;
   final VoidCallback onTapHome;
   final VoidCallback onLongPressHome;
@@ -1374,6 +1461,7 @@ class _MainBottomNavBar extends StatelessWidget {
   final VoidCallback onTapIssuance;
   final VoidCallback onTapQuoter;
   final VoidCallback onTapGeneralSchedule;
+  final VoidCallback onTapDaeguSchedule;
   final VoidCallback onTapMenu;
 
   @override
@@ -1389,9 +1477,12 @@ class _MainBottomNavBar extends StatelessWidget {
       0.15,
     )!;
     final generalScheduleAccent = AppTokens.generalScheduleAccent(scheme);
-    // 홈0 접수1 발급2 견적3 [본사4] 더보기4or5
-    final menuIndex = showGeneralSchedule ? 5 : 4;
-    final gsIndex = 4;
+    final daeguScheduleAccent = AppTokens.daeguScheduleAccent(scheme);
+    // 홈0 접수1 발급2 견적3 [본사?] [대구?] 더보기
+    var nextIndex = 4;
+    final gsIndex = showGeneralSchedule ? nextIndex++ : -1;
+    final daeguIndex = showDaeguSchedule ? nextIndex++ : -1;
+    final menuIndex = nextIndex;
     final quoterSelected = selectedIndex == 3;
     return SafeArea(
       top: false,
@@ -1473,6 +1564,20 @@ class _MainBottomNavBar extends StatelessWidget {
                   unselectedIcon: Icons.engineering_outlined,
                   accentColor: generalScheduleAccent,
                   onTap: onTapGeneralSchedule,
+                ),
+              ),
+            if (showDaeguSchedule)
+              Expanded(
+                child: _BottomNavItem(
+                  label: '대구지사',
+                  tag: kDaeguScheduleTestLabel.isEmpty
+                      ? null
+                      : kDaeguScheduleTestLabel,
+                  selected: selectedIndex == daeguIndex,
+                  selectedIcon: Icons.apartment_rounded,
+                  unselectedIcon: Icons.apartment_outlined,
+                  accentColor: daeguScheduleAccent,
+                  onTap: onTapDaeguSchedule,
                 ),
               ),
             Expanded(

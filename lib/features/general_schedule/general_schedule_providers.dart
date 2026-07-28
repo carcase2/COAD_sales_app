@@ -1,4 +1,6 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
+import 'package:coad_customer_calls/data/general_schedule_repository.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -11,27 +13,60 @@ const int kGeneralScheduleHistoryDays = 62;
 String defaultGeneralScheduleWindowStart() =>
     addDaysToYmd(todayYmdSeoul(), -kGeneralScheduleHistoryDays);
 
-final generalScheduleWindowStartProvider =
-    StateProvider<String>((ref) => defaultGeneralScheduleWindowStart());
+final scheduleRepositoryProvider =
+    Provider.family<GeneralScheduleRepository, ScheduleBranch>((ref, branch) {
+  return GeneralScheduleRepository(
+    ref.watch(appDependenciesProvider),
+    branch: branch,
+  );
+});
 
-final generalScheduleRecordsProvider =
-    FutureProvider.autoDispose<List<GeneralScheduleRecord>>((ref) async {
-  final repo = ref.watch(generalScheduleRepositoryProvider);
-  final windowStart = ref.watch(generalScheduleWindowStartProvider);
+final scheduleWindowStartProvider =
+    StateProvider.family<String, ScheduleBranch>((ref, branch) {
+  return defaultGeneralScheduleWindowStart();
+});
+
+final scheduleRecordsProvider = FutureProvider.autoDispose
+    .family<List<GeneralScheduleRecord>, ScheduleBranch>((ref, branch) async {
+  final repo = ref.watch(scheduleRepositoryProvider(branch));
+  final windowStart = ref.watch(scheduleWindowStartProvider(branch));
   return repo.fetchAll(endDateFromYmd: windowStart);
 });
 
-final generalScheduleGridProvider =
-    Provider.autoDispose<GeneralScheduleDayGrid>((ref) {
-  final records = ref.watch(generalScheduleRecordsProvider).valueOrNull ?? [];
+final scheduleGridProvider =
+    Provider.autoDispose.family<GeneralScheduleDayGrid, ScheduleBranch>((
+  ref,
+  branch,
+) {
+  final records =
+      ref.watch(scheduleRecordsProvider(branch)).valueOrNull ?? [];
   return buildGeneralScheduleGrid(records);
 });
 
-final generalScheduleDoorTypesProvider =
-    FutureProvider.autoDispose<List<DoorTypeOption>>((ref) async {
-  final repo = ref.watch(generalScheduleRepositoryProvider);
+/// door_types 는 본사·대구 공용 마스터.
+final scheduleDoorTypesProvider =
+    FutureProvider.autoDispose.family<List<DoorTypeOption>, ScheduleBranch>((
+  ref,
+  branch,
+) async {
+  final repo = ref.watch(scheduleRepositoryProvider(branch));
   return repo.fetchDoorTypes();
 });
+
+// ── 본사일반 호환 별칭 ──────────────────────────────────────────
+
+final generalScheduleWindowStartProvider = scheduleWindowStartProvider(
+  ScheduleBranch.headOffice,
+);
+
+final generalScheduleRecordsProvider =
+    scheduleRecordsProvider(ScheduleBranch.headOffice);
+
+final generalScheduleGridProvider =
+    scheduleGridProvider(ScheduleBranch.headOffice);
+
+final generalScheduleDoorTypesProvider =
+    scheduleDoorTypesProvider(ScheduleBranch.headOffice);
 
 GeneralScheduleRecord? findGeneralScheduleById(
   List<GeneralScheduleRecord> records,
@@ -60,3 +95,6 @@ Map<String, int> occupancyByDateInMonth(
 
 /// FCM 탭 시 본사일반 화면 열기.
 final pendingGeneralScheduleLaunchProvider = StateProvider<bool>((ref) => false);
+
+/// FCM 탭 시 대구지사 화면 열기 (향후 FCM 연동용).
+final pendingDaeguScheduleLaunchProvider = StateProvider<bool>((ref) => false);
