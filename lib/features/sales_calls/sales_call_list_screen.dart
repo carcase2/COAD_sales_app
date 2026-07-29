@@ -89,7 +89,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   bool _isLoadingMore = false;
   static const int _pageSize = SalesCallsRepository.listPageSize;
 
-  bool _isSearching = false;
+  final bool _isSearching = false;
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
   String _debouncedSearchQuery = '';
@@ -828,7 +828,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
 
     final items = _items;
     final overrides =
-        ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
+        ref.watch(tempManagerOverridesProvider.select((v) => v.valueOrNull)) ??
+        const [];
     if (items.isEmpty) {
       final emptyMessage = switch (widget.mode) {
         ListQueryMode.incomplete ||
@@ -852,6 +853,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     final filteredItems = listData.filteredItems;
     final assigneeById = listData.assigneeById;
     final activeAssignee = _activeAssignee;
+    final scheme = Theme.of(context).colorScheme;
 
     // 전달받은/자동 선택 담당자가 현재 목록에 없으면 빈 결과가 되므로 '전체'로 보정
     if (!_sharedAssigneeFilter && !sortedAssignees.contains(activeAssignee)) {
@@ -917,12 +919,10 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           height: 64,
           width: double.infinity,
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: scheme.surface,
             border: Border(
               bottom: BorderSide(
-                color: Theme.of(
-                  context,
-                ).colorScheme.outlineVariant.withValues(alpha: 0.35),
+                color: scheme.outlineVariant.withValues(alpha: 0.35),
               ),
             ),
           ),
@@ -936,10 +936,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
               final assignee = sortedAssignees[idx];
               final count = counts[assignee] ?? 0;
               final isSelected = activeAssignee == assignee;
-              final color = _colorForAssignee(
-                assignee,
-                Theme.of(context).colorScheme,
-              );
+              final color = _colorForAssignee(assignee, scheme);
 
               return Padding(
                 padding: const EdgeInsets.only(right: 12),
@@ -959,12 +956,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                     ),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: isSelected ? color : color.withOpacity(0.15),
+                      color: isSelected ? color : color.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: isSelected
                           ? [
                               BoxShadow(
-                                color: color.withOpacity(0.3),
+                                color: color.withValues(alpha: 0.3),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -973,7 +970,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       border: Border.all(
                         color: isSelected
                             ? Colors.transparent
-                            : color.withOpacity(0.2),
+                            : color.withValues(alpha: 0.2),
                         width: 1,
                       ),
                     ),
@@ -1005,8 +1002,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                 ? Theme.of(context)
                                       .colorScheme
                                       .surfaceContainerLowest
-                                      .withOpacity(0.7)
-                                : color.withOpacity(0.2),
+                                      .withValues(alpha: 0.7)
+                                : color.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -1050,8 +1047,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                 : ListView.builder(
                     controller: _listScrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
-                    // 스크롤 재빌드 여유 — 부드러운 관성 유지
-                    cacheExtent: 520,
                     addAutomaticKeepAlives: false,
                     padding: EdgeInsets.fromLTRB(
                       16,
@@ -1094,7 +1089,6 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       final showElapsed = c.isMissed && elapsedLabel.isNotEmpty;
                       final stageLabel = c.displayStageLabel;
                       final inquiryMethod = c.displayInquiryMethod;
-                      final scheme = Theme.of(context).colorScheme;
                       final displayAssignee =
                           assigneeById[c.id] ?? _assigneeForMode(c, overrides);
                       final assignColor = _colorForAssignee(
@@ -1184,7 +1178,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       style: TextStyle(
                                         fontSize: 11,
                                         color: scheme.onSurfaceVariant
-                                            .withOpacity(0.55),
+                                            .withValues(alpha: 0.55),
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -1202,7 +1196,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           ),
                                           decoration: BoxDecoration(
                                             color: scheme.tertiaryContainer
-                                                .withOpacity(0.85),
+                                                .withValues(alpha: 0.85),
                                             borderRadius: BorderRadius.circular(
                                               999,
                                             ),
@@ -1226,7 +1220,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           ),
                                           decoration: BoxDecoration(
                                             color: scheme.errorContainer
-                                                .withOpacity(0.55),
+                                                .withValues(alpha: 0.55),
                                             borderRadius: BorderRadius.circular(
                                               999,
                                             ),
@@ -1249,7 +1243,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: scheme.secondaryContainer
-                                              .withOpacity(0.8),
+                                              .withValues(alpha: 0.8),
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
@@ -1274,7 +1268,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: scheme.secondaryContainer
-                                          .withOpacity(0.8),
+                                          .withValues(alpha: 0.8),
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
@@ -1298,7 +1292,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                         Icons.location_on_outlined,
                                         size: 14,
                                         color: scheme.onSurfaceVariant
-                                            .withOpacity(0.6),
+                                            .withValues(alpha: 0.6),
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(
@@ -1308,7 +1302,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: scheme.onSurfaceVariant
-                                                .withOpacity(0.7),
+                                                .withValues(alpha: 0.7),
                                             fontWeight: FontWeight.w500,
                                           ),
                                           maxLines: 1,
@@ -1322,7 +1316,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                         Icons.inventory_2_outlined,
                                         size: 14,
                                         color: scheme.onSurfaceVariant
-                                            .withOpacity(0.6),
+                                            .withValues(alpha: 0.6),
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
@@ -1330,7 +1324,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: scheme.onSurfaceVariant
-                                              .withOpacity(0.7),
+                                              .withValues(alpha: 0.7),
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
@@ -1396,7 +1390,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       border: Border(
                                         left: BorderSide(
                                           color: scheme.outlineVariant
-                                              .withOpacity(0.5),
+                                              .withValues(alpha: 0.5),
                                           width: 3,
                                         ),
                                       ),
@@ -1406,8 +1400,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       query: _searchQuery,
                                       style: TextStyle(
                                         fontSize: 14,
-                                        color: scheme.onSurface.withOpacity(
-                                          0.8,
+                                        color: scheme.onSurface.withValues(
+                                          alpha: 0.8,
                                         ),
                                         height: 1.4,
                                       ),
@@ -1429,7 +1423,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           vertical: 6,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: assignColor.withOpacity(0.15),
+                                          color: assignColor.withValues(
+                                            alpha: 0.15,
+                                          ),
                                           borderRadius: BorderRadius.circular(
                                             12,
                                           ),
@@ -1505,7 +1501,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: bgColor.withOpacity(0.8),
+        color: bgColor.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
