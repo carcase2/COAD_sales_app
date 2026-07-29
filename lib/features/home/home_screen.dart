@@ -179,12 +179,6 @@ class _HomeFollowCalendarPanelState
     _animateToWeekPage(_weekPageIndex + dir);
   }
 
-  void _shiftFocusedMonth(int dir) {
-    final dt = _focusedDay;
-    final next = DateTime(dt.year, dt.month + dir, 1);
-    setState(() => _focusedDay = next);
-  }
-
   void _onCalendarPageChanged(DateTime focusedDay) {
     if (_focusedDay.year == focusedDay.year &&
         _focusedDay.month == focusedDay.month &&
@@ -502,49 +496,6 @@ class _HomeFollowCalendarPanelState
     );
   }
 
-  Widget _buildInlineWeekNav(ColorScheme scheme) {
-    return SizedBox(
-      height: 22,
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => _shiftFocusedWeek(-1),
-            icon: const Icon(Icons.chevron_left_rounded, size: 20),
-            style: IconButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(28, 26),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              _focusedWeekRangeLabel(),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: scheme.onSurface,
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: () => _shiftFocusedWeek(1),
-            icon: const Icon(Icons.chevron_right_rounded, size: 20),
-            style: IconButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(28, 26),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildVerticalWeekBoard({
     required ColorScheme scheme,
     required List<String> weekKeys,
@@ -723,7 +674,7 @@ class _HomeFollowCalendarPanelState
                     ? Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          '${_selectedAssignee} ${dayMap[_selectedAssignee] ?? 0}건',
+                          '$_selectedAssignee ${dayMap[_selectedAssignee] ?? 0}건',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -904,127 +855,6 @@ class _HomeFollowCalendarPanelState
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCompactFormatToggleRow(ColorScheme scheme) {
-    final isWeek = _calendarFormat == CalendarFormat.week;
-    final shortcutColor = isWeek ? Colors.teal : Colors.indigo;
-
-    Widget formatChip({
-      required bool selected,
-      required String label,
-      required IconData icon,
-      required Color activeColor,
-      required VoidCallback onTap,
-    }) {
-      return Expanded(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            decoration: BoxDecoration(
-              color: selected ? scheme.surface : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: selected
-                    ? activeColor.withValues(alpha: 0.35)
-                    : scheme.outlineVariant.withValues(alpha: 0.25),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 12,
-                  color: selected ? activeColor : scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: selected ? activeColor : scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isWeek) ...[
-            _buildInlineWeekNav(scheme),
-            const SizedBox(height: 2),
-          ],
-          Row(
-            children: [
-              formatChip(
-                selected: isWeek,
-                label: '주간',
-                icon: Icons.view_week_rounded,
-                activeColor: Colors.teal,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  _jumpToThisWeek();
-                },
-              ),
-              const SizedBox(width: 4),
-              formatChip(
-                selected: !isWeek,
-                label: '월간',
-                icon: Icons.calendar_month_rounded,
-                activeColor: Colors.indigo,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  _jumpToThisMonth();
-                },
-              ),
-              const SizedBox(width: 6),
-              InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: isWeek ? _jumpToThisWeek : _jumpToThisMonth,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: shortcutColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: shortcutColor.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  child: Text(
-                    isWeek ? '이번주' : '이번달',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: shortcutColor,
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -1931,10 +1761,12 @@ class _HomeFollowCalendarPanelState
                   dowBuilder: (context, day) {
                     final txt = _weekdayKo(day.weekday);
                     Color color = scheme.onSurfaceVariant;
-                    if (day.weekday == DateTime.saturday)
+                    if (day.weekday == DateTime.saturday) {
                       color = Colors.blueAccent;
-                    if (day.weekday == DateTime.sunday)
+                    }
+                    if (day.weekday == DateTime.sunday) {
                       color = Colors.redAccent;
+                    }
                     return Center(
                       child: Text(
                         txt,
