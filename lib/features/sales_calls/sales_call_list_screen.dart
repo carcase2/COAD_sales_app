@@ -111,6 +111,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
   Map<String, int>? _memoCounts;
   List<String>? _memoSortedAssignees;
   List<SalesCall>? _memoFilteredItems;
+  Map<String, String>? _memoAssigneeById;
 
   bool get _sharedAssigneeFilter => widget.onAssigneeChanged != null;
 
@@ -240,6 +241,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     Map<String, int> counts,
     List<String> sortedAssignees,
     List<SalesCall> filteredItems,
+    Map<String, String> assigneeById,
   })
   _resolveListData(List<SalesCall> items, List<TempManagerOverride> overrides) {
     final activeAssignee = _activeAssignee;
@@ -249,17 +251,29 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         _memoOverridesLen == overrides.length &&
         _memoCounts != null &&
         _memoSortedAssignees != null &&
-        _memoFilteredItems != null) {
+        _memoFilteredItems != null &&
+        _memoAssigneeById != null) {
       return (
         counts: _memoCounts!,
         sortedAssignees: _memoSortedAssignees!,
         filteredItems: _memoFilteredItems!,
+        assigneeById: _memoAssigneeById!,
       );
     }
 
+    final assigneeById = <String, String>{};
+    String assigneeOf(SalesCall c) =>
+        assigneeById.putIfAbsent(c.id, () => _assigneeForMode(c, overrides));
+
+    final queryTerms = _debouncedSearchQuery
+        .toLowerCase()
+        .split(' ')
+        .where((t) => t.isNotEmpty)
+        .toList(growable: false);
+
     final counts = <String, int>{'전체': items.length};
     for (final c in items) {
-      final a = _assigneeForMode(c, overrides);
+      final a = assigneeOf(c);
       counts[a] = (counts[a] ?? 0) + 1;
     }
 
@@ -282,18 +296,12 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       });
 
     final filteredItems = items.where((c) {
-      final a = _assigneeForMode(c, overrides);
+      final a = assigneeOf(c);
       final matchesAssignee = activeAssignee == '전체' || a == activeAssignee;
 
-      if (_debouncedSearchQuery.isEmpty) {
+      if (queryTerms.isEmpty) {
         return matchesAssignee;
       }
-
-      final queryTerms = _debouncedSearchQuery
-          .toLowerCase()
-          .split(' ')
-          .where((t) => t.isNotEmpty);
-      if (queryTerms.isEmpty) return matchesAssignee;
 
       final matchesSearch = queryTerms.every(
         (term) => termMatchesSalesCallSearch(
@@ -316,11 +324,13 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     _memoCounts = counts;
     _memoSortedAssignees = sortedAssignees;
     _memoFilteredItems = filteredItems;
+    _memoAssigneeById = assigneeById;
 
     return (
       counts: counts,
       sortedAssignees: sortedAssignees,
       filteredItems: filteredItems,
+      assigneeById: assigneeById,
     );
   }
 
@@ -332,6 +342,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     _memoCounts = null;
     _memoSortedAssignees = null;
     _memoFilteredItems = null;
+    _memoAssigneeById = null;
   }
 
   bool _callBelongsInCurrentList(SalesCall c) {
@@ -821,8 +832,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     if (items.isEmpty) {
       final emptyMessage = switch (widget.mode) {
         ListQueryMode.incomplete ||
-        ListQueryMode.pendingUncalled =>
-          '처리할 미통화가 없습니다.',
+        ListQueryMode.pendingUncalled => '처리할 미통화가 없습니다.',
         ListQueryMode.today => '오늘 접수가 아직 없습니다.',
         ListQueryMode.completedToday => '오늘 완료된 건이 없습니다.',
         _ => '목록이 비어 있습니다.',
@@ -840,6 +850,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     final counts = listData.counts;
     final sortedAssignees = listData.sortedAssignees;
     final filteredItems = listData.filteredItems;
+    final assigneeById = listData.assigneeById;
     final activeAssignee = _activeAssignee;
 
     // 전달받은/자동 선택 담당자가 현재 목록에 없으면 빈 결과가 되므로 '전체'로 보정
@@ -1084,7 +1095,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                       final stageLabel = c.displayStageLabel;
                       final inquiryMethod = c.displayInquiryMethod;
                       final scheme = Theme.of(context).colorScheme;
-                      final displayAssignee = _assigneeForMode(c, overrides);
+                      final displayAssignee =
+                          assigneeById[c.id] ?? _assigneeForMode(c, overrides);
                       final assignColor = _colorForAssignee(
                         displayAssignee,
                         scheme,
@@ -1346,7 +1358,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                     UxQuickRoundAction(
                                       icon: Icons.call_rounded,
                                       color: AppTokens.success(scheme),
-                                      filled: c.isMissed ||
+                                      filled:
+                                          c.isMissed ||
                                           widget.mode ==
                                               ListQueryMode.incomplete ||
                                           widget.mode ==
