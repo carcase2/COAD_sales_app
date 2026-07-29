@@ -55,6 +55,7 @@ class SalesCall {
   final String? regionLabel;
   final String? statusLabel;
   final List<Map<String, dynamic>> callHistory;
+
   /// 메인 Supabase `sales_calls.images` (`text[]`) — 첨부마다 B2 공개 HTTPS URL 문자열.
   ///
   /// 웹 고객전화 주 흐름과 동일. 레거시 `sales_call_images` 행과의 동기는 서버/웹에서 처리할 수 있음.
@@ -86,18 +87,30 @@ class SalesCall {
       customerName: _pick(json, const ['customer_name', 'customerName']),
       customerPhone: _pick(json, const ['customer_phone', 'customerPhone']),
       inquiryContent: _pick(json, const ['inquiry_content', 'inquiryContent']),
-      productCategoryId: _pick(json, const ['product_category_id', 'productCategoryId']),
-      inquiryMethodId: _pick(json, const ['inquiry_method_id', 'inquiryMethodId']),
+      productCategoryId: _pick(json, const [
+        'product_category_id',
+        'productCategoryId',
+      ]),
+      inquiryMethodId: _pick(json, const [
+        'inquiry_method_id',
+        'inquiryMethodId',
+      ]),
       regionId: _pick(json, const ['region_id', 'regionId']),
       statusId: statusId,
       assignedTo: _pick(json, const ['assigned_to', 'assignedTo']),
       createdBy: _pick(json, const ['created_by', 'createdBy']),
       callStage: _pick(json, const ['call_stage', 'callStage']),
-      nextScheduledDate: _pick(json, const ['next_scheduled_date', 'nextScheduledDate']),
+      nextScheduledDate: _pick(json, const [
+        'next_scheduled_date',
+        'nextScheduledDate',
+      ]),
       regionSido: _pick(json, const ['region_sido', 'regionSido']),
       regionName: _pick(json, const ['region_name', 'regionName']),
       regionManager: _pick(json, const ['region_manager', 'regionManager']),
-      regionBranchType: _pick(json, const ['region_branch_type', 'regionBranchType']),
+      regionBranchType: _pick(json, const [
+        'region_branch_type',
+        'regionBranchType',
+      ]),
       createdAt: _pick(json, const ['created_at', 'createdAt']),
       updatedAt: _pick(json, const ['updated_at', 'updatedAt']),
       productCategoryName: _nestedName(json, const [
@@ -157,12 +170,18 @@ class SalesCall {
     return statusIdFromStatusName(statusLabel);
   }
 
-  bool canEnterFurtherConsultationRound({List<Map<String, dynamic>>? orderedHistory}) =>
-      canEnterFurtherConsultation(effectiveStatusId(orderedHistory: orderedHistory));
+  bool canEnterFurtherConsultationRound({
+    List<Map<String, dynamic>>? orderedHistory,
+  }) => canEnterFurtherConsultation(
+    effectiveStatusId(orderedHistory: orderedHistory),
+  );
 
   /// 미수주일 때 최신 이력의 `unsuccessful_reason`.
-  String? effectiveUnsuccessfulReason({List<Map<String, dynamic>>? orderedHistory}) {
-    if (effectiveStatusId(orderedHistory: orderedHistory) != CallStatusIds.lost) {
+  String? effectiveUnsuccessfulReason({
+    List<Map<String, dynamic>>? orderedHistory,
+  }) {
+    if (effectiveStatusId(orderedHistory: orderedHistory) !=
+        CallStatusIds.lost) {
       return null;
     }
     final history = orderedHistory ?? orderCallHistoryForDisplay(callHistory);
@@ -212,7 +231,10 @@ class SalesCall {
 List<String> _parseImageUrls(dynamic raw) {
   if (raw == null) return [];
   if (raw is List) {
-    return raw.map((e) => e.toString()).where((s) => s.trim().isNotEmpty).toList();
+    return raw
+        .map((e) => e.toString())
+        .where((s) => s.trim().isNotEmpty)
+        .toList();
   }
   return [];
 }
@@ -247,20 +269,37 @@ String? _nestedName(Map<String, dynamic> json, List<String> keys) {
 }
 
 String? _regionLabel(Map<String, dynamic> json) {
-  final direct = _pick(json, const ['region_display', 'region_label', 'regionLabel']);
+  final direct = _pick(json, const [
+    'region_display',
+    'region_label',
+    'regionLabel',
+  ]);
+  if (direct != null && direct.trim().isNotEmpty) {
+    return direct.trim();
+  }
   final s = _pick(json, const ['region_sido', 'regionSido'])?.trim() ?? '';
-  final r = _pick(json, const ['region_name', 'region_region', 'regionName', 'regionRegion'])?.trim() ?? '';
-  final m = (_pick(json, const ['assigned_to', 'assignedTo']) ??
-          _pick(json, const ['region_manager', 'regionManager']))
-      ?.trim() ??
+  final r =
+      _pick(json, const [
+        'region_name',
+        'region_region',
+        'regionName',
+        'regionRegion',
+      ])?.trim() ??
       '';
-  final b = _pick(json, const ['region_branch_type', 'regionBranchType'])?.trim() ?? '';
+  final m =
+      (_pick(json, const ['assigned_to', 'assignedTo']) ??
+              _pick(json, const ['region_manager', 'regionManager']))
+          ?.trim() ??
+      '';
+  final b =
+      _pick(json, const ['region_branch_type', 'regionBranchType'])?.trim() ??
+      '';
 
   String label = s.isNotEmpty ? '[$s] ' : '';
   if (r.isNotEmpty && r != s) {
     label += r;
   } else if (r.isEmpty && s.isEmpty) {
-    return null; 
+    return null;
   }
 
   if (m.isNotEmpty || b.isNotEmpty) {

@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -308,8 +310,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               selectedCompanyId: preferredId,
             );
       final preferredCompany = preferredContext.selectedCompany;
-      final preferredUnitMap = preferredCompany == null ||
-              preferredCompany.id == _baseCompanyId
+      final preferredUnitMap =
+          preferredCompany == null || preferredCompany.id == _baseCompanyId
           ? null
           : ShutterCalculator.unitPriceMapFromCompany(
               preferredCompany.toJson(),
@@ -603,8 +605,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       selectedCompanyId: companyId,
     );
     final selectedCompany = companyContext.selectedCompany;
-    final unitMap = selectedCompany == null ||
-            selectedCompany.id == _baseCompanyId
+    final unitMap =
+        selectedCompany == null || selectedCompany.id == _baseCompanyId
         ? null
         : ShutterCalculator.unitPriceMapFromCompany(
             selectedCompany.toJson(),
@@ -904,12 +906,13 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         _currentStep == 1 || _currentStep == 2 || _currentStep == 4;
     final hidePriceBar = denseChrome || keyboardOpen;
     // 종류: 탭하면 바로 규격. 규격/결과: 화면 안 네비만. 비용은 단계 칩(3).
-    final hideWizardActions = _currentStep == 1 ||
+    final hideWizardActions =
+        _currentStep == 1 ||
         _currentStep == 2 ||
         _currentStep == 4 ||
         keyboardOpen;
-    final hideWizardHeader = _currentStep == 4 ||
-        (_currentStep == 2 && keyboardOpen);
+    final hideWizardHeader =
+        _currentStep == 4 || (_currentStep == 2 && keyboardOpen);
     final outerPad = denseChrome
         ? const EdgeInsets.fromLTRB(8, 4, 8, 4)
         : const EdgeInsets.fromLTRB(16, 12, 16, 12);
@@ -956,9 +959,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                           children: [
                             if (!hideWizardHeader) ...[
                               _buildWizardHeader(scheme),
-                              SizedBox(
-                                height: denseChrome ? 4 : 8,
-                              ),
+                              SizedBox(height: denseChrome ? 4 : 8),
                             ],
                             if (!hideWizardActions) ...[
                               _buildWizardActions(scheme),
@@ -1223,9 +1224,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   '규격 입력하러 가기',
                   style: TextStyle(fontWeight: FontWeight.w900),
                 ),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(220, 48),
-                ),
+                style: FilledButton.styleFrom(minimumSize: const Size(220, 48)),
               )
             else
               FilledButton.icon(
@@ -1344,8 +1343,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   ? null
                   : () async {
                       HapticFeedback.mediumImpact();
-                      final nextStep =
-                          _currentStep < 4 ? _currentStep + 1 : null;
+                      final nextStep = _currentStep < 4
+                          ? _currentStep + 1
+                          : null;
                       if (nextStep != null) await _goToStep(nextStep);
                     },
               style: btnStyle.copyWith(
@@ -1429,10 +1429,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   ),
                   child: const Text(
                     '기본값',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
                   ),
                 ),
               ],
@@ -2343,8 +2340,11 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
             children: [
               Row(
                 children: [
-                  Icon(QuoterTypeStyle.icon(_selectedType),
-                      size: 18, color: typeColor),
+                  Icon(
+                    QuoterTypeStyle.icon(_selectedType),
+                    size: 18,
+                    color: typeColor,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -2779,11 +2779,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.memory_rounded,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
+                    Icon(Icons.memory_rounded, size: 18, color: scheme.primary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -2844,11 +2840,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                                 _result!.powerSpec,
                                 scheme,
                               ),
-                              _buildSpecItem(
-                                '셔터박스',
-                                _result!.boxSize,
-                                scheme,
-                              ),
+                              _buildSpecItem('셔터박스', _result!.boxSize, scheme),
                             ],
                           ),
                           const Divider(height: 20),
@@ -3216,10 +3208,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   ),
                   child: const Text(
                     '최저가 적용',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
                   ),
                 ),
               ],
@@ -3262,16 +3251,16 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             border: isSelected
-                ? Border.all(
-                    color: scheme.primary.withValues(alpha: 0.45),
-                  )
+                ? Border.all(color: scheme.primary.withValues(alpha: 0.45))
                 : (!isLast
-                    ? Border(
-                        bottom: BorderSide(
-                          color: scheme.outlineVariant.withValues(alpha: 0.28),
-                        ),
-                      )
-                    : null),
+                      ? Border(
+                          bottom: BorderSide(
+                            color: scheme.outlineVariant.withValues(
+                              alpha: 0.28,
+                            ),
+                          ),
+                        )
+                      : null),
           ),
           child: Row(
             children: [
@@ -3295,8 +3284,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight:
-                              isSelected ? FontWeight.w900 : FontWeight.w700,
+                          fontWeight: isSelected
+                              ? FontWeight.w900
+                              : FontWeight.w700,
                           color: scheme.onSurface,
                         ),
                       ),
@@ -3780,7 +3770,6 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       ),
     );
   }
-
 }
 
 class _QuoterQuickActionItem {
@@ -3845,4 +3834,3 @@ class _ResultQuickAction extends StatelessWidget {
     );
   }
 }
-

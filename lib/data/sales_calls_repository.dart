@@ -82,7 +82,9 @@ class SalesCallsRepository {
         .toList();
   }
 
-  Future<List<TempManagerOverride>> _getOverridesCached({bool force = false}) async {
+  Future<List<TempManagerOverride>> _getOverridesCached({
+    bool force = false,
+  }) async {
     final now = DateTime.now();
     if (!force &&
         _cachedOverrides != null &&
@@ -109,7 +111,9 @@ class SalesCallsRepository {
   }
 
   /// 목록·검색 조회 전 — 만료 원복(스로틀) + 오버라이드 캐시 1회.
-  Future<List<TempManagerOverride>> _prepareListFetchContext({bool force = false}) async {
+  Future<List<TempManagerOverride>> _prepareListFetchContext({
+    bool force = false,
+  }) async {
     await _maybeRevertExpired(force: force);
     return _getOverridesCached(force: force);
   }
@@ -120,15 +124,16 @@ class SalesCallsRepository {
   /// 목록·홈 집계 기본 페이지 크기 — UI 「더 보기」와 동일.
   static const int listPageSize = 50;
 
-  static const String _regionSelect =
-      'id,sido,region,manager,branch_type';
+  static const String _regionSelect = 'id,sido,region,manager,branch_type';
   static const String _callHistorySelect =
       'id,sales_call_id,call_stage,consultation_content,next_scheduled_date,unsuccessful_reason,status,status_id,created_at,created_by';
+
   /// 품질 지표(첫 응답 시간)용 — 전체 상담 이력 대신 `created_at`만 조인.
   static const String _callHistoryQualitySelect = 'created_at';
 
   /// 목록/집계용 — `images` 등 대용량 컬럼 제외, 화면 표시에 필요한 필드만.
-  static const String _listSelect = '''
+  static const String _listSelect =
+      '''
         id, call_date, call_time, customer_name, customer_phone, inquiry_content,
         product_category_id, inquiry_method_id, region_id, status_id, assigned_to,
         created_by, call_stage, next_scheduled_date, region_sido, region_name,
@@ -140,7 +145,8 @@ class SalesCallsRepository {
       ''';
 
   /// 상세 조회용 — 첨부 이미지 포함.
-  static const String _detailSelect = '''
+  static const String _detailSelect =
+      '''
         *,
         product_categories(name),
         inquiry_methods(name),
@@ -194,7 +200,9 @@ class SalesCallsRepository {
         .toList();
   }
 
-  Future<List<TempManagerOverride>> fetchTempOverrides({bool force = false}) async {
+  Future<List<TempManagerOverride>> fetchTempOverrides({
+    bool force = false,
+  }) async {
     await _maybeRevertExpired(force: force);
     return _getOverridesCached(force: force);
   }
@@ -229,10 +237,16 @@ class SalesCallsRepository {
   Future<int> _revertExpiredViaSupabase() async {
     final todayYmd = todayYmdSeoul();
     final overrides = await _fetchTempOverridesRemote();
-    final expired = overrides.where((o) => isTempOverrideExpired(o, todayYmd)).toList();
+    final expired = overrides
+        .where((o) => isTempOverrideExpired(o, todayYmd))
+        .toList();
     if (expired.isEmpty) return 0;
 
-    final regionNames = expired.map((o) => o.regionName.trim()).where((s) => s.isNotEmpty).toSet().toList();
+    final regionNames = expired
+        .map((o) => o.regionName.trim())
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
     if (regionNames.isEmpty) return 0;
 
     final callRes = await _client
@@ -242,7 +256,6 @@ class SalesCallsRepository {
 
     final revertTargets = <String, String>{};
     for (final row in callRes) {
-      if (row is! Map) continue;
       final call = SalesCall.fromJson(Map<String, dynamic>.from(row));
       for (final o in expired) {
         if (shouldRevertCallToOriginal(call, o, todayYmd)) {
@@ -260,10 +273,10 @@ class SalesCallsRepository {
 
     final now = DateTime.now().toUtc().toIso8601String();
     for (final entry in byManager.entries) {
-      await _client.from('sales_calls').update({
-        'assigned_to': entry.key,
-        'updated_at': now,
-      }).inFilter('id', entry.value);
+      await _client
+          .from('sales_calls')
+          .update({'assigned_to': entry.key, 'updated_at': now})
+          .inFilter('id', entry.value);
     }
     return revertTargets.length;
   }
@@ -313,12 +326,11 @@ class SalesCallsRepository {
   /// 로컬 DB에서 캐시된 목록 조회
   /// [incompleteOnly]: 미통화는 `status_id=1`이 아니라 **isMissed**(초기 단계·단순문의 제외)와
   /// `fetchCalls(uncalledOnly: true)`·홈 `fetchTodayStats`와 동일 기준이어야 함.
-  Future<List<SalesCall>> fetchCachedCalls({String? date, bool? incompleteOnly}) async {
-    final res = await _db.getSalesCalls(
-      date: date,
-      statusId: null,
-      limit: 200,
-    );
+  Future<List<SalesCall>> fetchCachedCalls({
+    String? date,
+    bool? incompleteOnly,
+  }) async {
+    final res = await _db.getSalesCalls(date: date, statusId: null, limit: 200);
     var parsed = parseSalesCallList(res);
     if (incompleteOnly == true) {
       parsed = parsed.where((c) => c.isMissed).toList();
@@ -378,7 +390,8 @@ class SalesCallsRepository {
 
   /// 한 페이지 조회 — 목록 화면 초기 로드·「더 보기」용.
   /// [hasMore]는 **서버 raw 행 수** 기준(클라이언트 후처리 전).
-  Future<({List<SalesCall> items, bool hasMore, int rawRowCount})> fetchCallsPage({
+  Future<({List<SalesCall> items, bool hasMore, int rawRowCount})>
+  fetchCallsPage({
     String? date,
     String? followDate,
     String? followRangeStart,
@@ -511,8 +524,7 @@ class SalesCallsRepository {
     List<TempManagerOverride>? overrides,
   }) async {
     try {
-      final resolvedOverrides =
-          overrides ?? await _prepareListFetchContext();
+      final resolvedOverrides = overrides ?? await _prepareListFetchContext();
 
       // 목록·집계는 images 등 대용량 필드 제외. 상세만 fullDetail.
       var selectStr = fullDetail ? _detailSelect : _listSelect;
@@ -524,7 +536,9 @@ class SalesCallsRepository {
         selectStr += ', call_history($historyCols)';
       }
 
-      PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client.from('sales_calls').select(selectStr);
+      PostgrestFilterBuilder<List<Map<String, dynamic>>> queryBuilder = _client
+          .from('sales_calls')
+          .select(selectStr);
 
       final updatedStartYmd = updatedAtRangeStartYmd;
       if (followDate != null) {
@@ -567,9 +581,9 @@ class SalesCallsRepository {
       }
       PostgrestTransformBuilder<List<Map<String, dynamic>>> transformBuilder =
           queryBuilder.order(
-        updatedStartYmd != null ? 'updated_at' : 'created_at',
-        ascending: false,
-      );
+            updatedStartYmd != null ? 'updated_at' : 'created_at',
+            ascending: false,
+          );
 
       if (limit != null) {
         int rTop = (offset ?? 0) + limit - 1;
@@ -578,28 +592,28 @@ class SalesCallsRepository {
 
       final res = await transformBuilder;
       final rawRowCount = res.length;
-      
+
       // 로컬 DB 동기화 (Upsert) — 달력 등 일회성 목록은 생략 가능.
       if (cacheLocally && res.isNotEmpty) {
         await _db.saveSalesCalls(res);
       }
 
       List<SalesCall> parsed = parseSalesCallList(res);
-      
+
       if (uncalledOnly == true) {
         // 미통화: (초기 단계) && (단순문의 아님)
         parsed = parsed.where((c) => c.isMissed).toList();
       }
-      
+
       if (completedOnly == true) {
         // 완료(처리됨): !(미통화) => (단계 진행됨) || (단순문의)
         parsed = parsed.where((c) => !c.isMissed).toList();
       }
-      
+
       if (incompleteOnly == true) {
-        parsed = parsed.where((c) => ![2,3,4].contains(c.statusId)).toList();
+        parsed = parsed.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
       }
-      
+
       if (excludeSimpleInquiries) {
         parsed = parsed.where((c) => c.statusId != 4).toList();
       }
@@ -620,15 +634,19 @@ class SalesCallsRepository {
     try {
       final overrides = await _prepareListFetchContext();
 
-      final res = await _client.from('sales_calls').select('''
+      final res = await _client
+          .from('sales_calls')
+          .select('''
         $_detailSelect,
         call_history($_callHistorySelect)
-      ''').eq('id', id).maybeSingle();
+      ''')
+          .eq('id', id)
+          .maybeSingle();
 
       if (res == null) {
         throw ApiException('통화를 찾을 수 없습니다.', statusCode: 404);
       }
-      
+
       // 개별 상세 조회 시에도 캐시 업데이트
       await _db.saveSalesCalls([res]);
 
@@ -642,10 +660,16 @@ class SalesCallsRepository {
 
   Future<SalesCall> createCall(Map<String, dynamic> body) async {
     try {
-      final res = await _client.from('sales_calls').insert(body).select().single();
+      final res = await _client
+          .from('sales_calls')
+          .insert(body)
+          .select()
+          .single();
       return fetchCallById(res['id']);
     } catch (e) {
-      if (e is SocketException || e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
+      if (e is SocketException ||
+          e.toString().contains('SocketException') ||
+          e.toString().contains('Failed host lookup')) {
         await _db.savePendingCall(body);
         throw OfflineException();
       }
@@ -665,7 +689,7 @@ class SalesCallsRepository {
     for (var item in pendings) {
       final id = item['id'] as int;
       final data = item['data'] as Map<String, dynamic>;
-      
+
       try {
         await _client.from('sales_calls').insert(data);
         await _db.deletePendingCall(id);
@@ -705,7 +729,10 @@ class SalesCallsRepository {
     }
   }
 
-  Future<void> addCallHistory(String callId, Map<String, dynamic> historyData) async {
+  Future<void> addCallHistory(
+    String callId,
+    Map<String, dynamic> historyData,
+  ) async {
     try {
       await _client.from('call_history').insert({
         ...historyData,
@@ -884,10 +911,12 @@ class SalesCallsRepository {
         orParts.add('customer_phone.ilike.%$phonePattern%');
       }
 
-      final res = await _client.from('sales_calls').select(_listSelect)
-      .or(orParts.join(','))
-      .order('created_at', ascending: false)
-      .limit(limit);
+      final res = await _client
+          .from('sales_calls')
+          .select(_listSelect)
+          .or(orParts.join(','))
+          .order('created_at', ascending: false)
+          .limit(limit);
 
       final overrides = await _prepareListFetchContext();
       final parsed = parseSalesCallList(res);
