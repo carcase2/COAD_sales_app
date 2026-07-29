@@ -37,6 +37,17 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   /// 금일 발급완료 아래 부가 목록(부분발급·완료·취소 등) — 기본 접힘.
   bool _moreListsExpanded = false;
 
+  int _countRowsMatching(
+    List<IssuanceRequestRow> rows,
+    bool Function(IssuanceRequestRow row) predicate,
+  ) {
+    var count = 0;
+    for (final row in rows) {
+      if (predicate(row)) count++;
+    }
+    return count;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -226,32 +237,36 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
         const AsyncValue.data([]);
 
     if (_hubDetailReady) {
-      partialAsync = ref.watch(issuancePartialRowsProvider(_domain));
-      fullyCompletedAsync = ref.watch(
-        issuanceFullyCompletedRowsProvider(_domain),
-      );
-      allAsync = ref.watch(issuanceAllTabRowsProvider(_domain));
       completedAsync = ref.watch(issuanceCompletedRowsProvider(_domain));
-      cancelledAsync = ref.watch(issuanceCancelledRowsProvider(_domain));
       taxCompletedAsync = ref.watch(
         issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice),
       );
       bondCompletedAsync = ref.watch(
         issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
       );
+      if (_moreListsExpanded) {
+        partialAsync = ref.watch(issuancePartialRowsProvider(_domain));
+        fullyCompletedAsync = ref.watch(
+          issuanceFullyCompletedRowsProvider(_domain),
+        );
+        allAsync = ref.watch(issuanceAllTabRowsProvider(_domain));
+        cancelledAsync = ref.watch(issuanceCancelledRowsProvider(_domain));
+      }
     }
 
     bool isTodayIssued(IssuanceRequestRow row) => issuanceIsTodayIssuedRow(row);
 
     final todayTaxIssued = _hubDetailReady
-        ? (taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-              .where(isTodayIssued)
-              .length
+        ? _countRowsMatching(
+            taxCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[],
+            isTodayIssued,
+          )
         : null;
     final todayBondIssued = _hubDetailReady
-        ? (bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-              .where(isTodayIssued)
-              .length
+        ? _countRowsMatching(
+            bondCompletedAsync.valueOrNull ?? const <IssuanceRequestRow>[],
+            isTodayIssued,
+          )
         : null;
     final todayIssuedCount = todayTaxIssued == null || todayBondIssued == null
         ? null
@@ -368,8 +383,9 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
-                  minimumSize:
-                      const Size.fromHeight(AppTokens.primaryCtaHeight),
+                  minimumSize: const Size.fromHeight(
+                    AppTokens.primaryCtaHeight,
+                  ),
                 ),
                 icon: const Icon(Icons.add_rounded),
                 label: Text(
@@ -389,7 +405,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   if ((combinedPendingDisplay ?? 0) > 0) ...[
                     UxStatusHeroBanner(
                       icon: Icons.pending_actions_rounded,
-                      title: '발급대기 ${combinedPendingDisplay}건',
+                      title: '발급대기 $combinedPendingDisplay건',
                       subtitle:
                           '세금 ${issuanceCountLabel(taxPendingCount)} · '
                           '이행 ${issuanceCountLabel(bondPendingCount)}',
@@ -841,6 +857,19 @@ class _CombinedIssuancePendingPage extends ConsumerStatefulWidget {
 
 class _CombinedIssuancePendingPageState
     extends ConsumerState<_CombinedIssuancePendingPage> {
+  int _countOwnRows(
+    List<IssuanceRequestRow> rows,
+    ({String name, String id})? user,
+  ) {
+    var count = 0;
+    for (final row in rows) {
+      if (issuanceIsOwnRequest(row, user?.name, userId: user?.id)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   Future<void> _openTaxIssueSheet(IssuanceRequestRow row) async {
     final ok = await showTaxInvoiceIssueSheet(context: context, row: row);
     if (ok == true && mounted) {
@@ -919,12 +948,8 @@ class _CombinedIssuancePendingPageState
 
     final taxRows = taxAsync.valueOrNull ?? const <IssuanceRequestRow>[];
     final bondRows = bondAsync.valueOrNull ?? const <IssuanceRequestRow>[];
-    final taxMine = taxRows
-        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
-        .toList();
-    final bondMine = bondRows
-        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
-        .toList();
+    final taxMineCount = _countOwnRows(taxRows, user);
+    final bondMineCount = _countOwnRows(bondRows, user);
 
     final loading = taxAsync.isLoading || bondAsync.isLoading;
     final hasError = taxAsync.hasError || bondAsync.hasError;
@@ -962,8 +987,8 @@ class _CombinedIssuancePendingPageState
                 user: user,
                 taxRows: taxRows,
                 bondRows: bondRows,
-                taxMineCount: taxMine.length,
-                bondMineCount: bondMine.length,
+                taxMineCount: taxMineCount,
+                bondMineCount: bondMineCount,
               ),
       ),
     );
@@ -1120,6 +1145,19 @@ class _CombinedIssuancePendingPageState
 class _CombinedTodayIssuedPage extends ConsumerWidget {
   const _CombinedTodayIssuedPage();
 
+  int _countOwnRows(
+    List<IssuanceRequestRow> rows,
+    ({String name, String id})? user,
+  ) {
+    var count = 0;
+    for (final row in rows) {
+      if (issuanceIsOwnRequest(row, user?.name, userId: user?.id)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   Future<void> _refresh(WidgetRef ref) async {
     invalidateIssuanceCore(ref);
     await Future.wait([
@@ -1147,21 +1185,15 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
       issuanceCompletedRowsProvider(IssuanceDomain.performanceBond),
     );
 
-    final taxRows = (taxAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-        .where(_isTodayIssued)
-        .toList();
-    final bondRows = (bondAsync.valueOrNull ?? const <IssuanceRequestRow>[])
-        .where(_isTodayIssued)
-        .toList();
+    final allTaxRows = taxAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+    final allBondRows = bondAsync.valueOrNull ?? const <IssuanceRequestRow>[];
+    final taxRows = allTaxRows.where(_isTodayIssued).toList(growable: false);
+    final bondRows = allBondRows.where(_isTodayIssued).toList(growable: false);
     final loading = taxAsync.isLoading || bondAsync.isLoading;
     final hasError = taxAsync.hasError || bondAsync.hasError;
 
-    final taxMineCount = taxRows
-        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
-        .length;
-    final bondMineCount = bondRows
-        .where((r) => issuanceIsOwnRequest(r, user?.name, userId: user?.id))
-        .length;
+    final taxMineCount = _countOwnRows(taxRows, user);
+    final bondMineCount = _countOwnRows(bondRows, user);
 
     return Scaffold(
       appBar: AppBar(title: const Text('금일 발급완료')),
