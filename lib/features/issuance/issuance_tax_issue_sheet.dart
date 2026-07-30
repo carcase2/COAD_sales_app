@@ -80,8 +80,6 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
 
     setState(() => _saving = true);
     try {
-      final customer = (widget.row.master['customer_name'] ?? widget.row.title)
-          .toString();
       final issueId = await TaxInvoiceIssueService().insertPartialRequestIssue(
         invoiceId: invoiceId,
         issuePercentage: pct,
@@ -151,9 +149,11 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _itemType,
-            items: const ['선급금', '중도금', '잔금']
-                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                .toList(),
+            items: const [
+              '선급금',
+              '중도금',
+              '잔금',
+            ].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
             onChanged: (v) {
               if (v == null) return;
               setState(() => _itemType = v);
@@ -168,9 +168,7 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
           const SizedBox(height: 10),
           TextField(
             controller: _pct,
-            decoration: const InputDecoration(
-              labelText: '발급 요청 비율(%) *',
-            ),
+            decoration: const InputDecoration(labelText: '발급 요청 비율(%) *'),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),

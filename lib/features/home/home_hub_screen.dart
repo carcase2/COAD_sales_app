@@ -1114,9 +1114,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('업데이트 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
-        ),
+        const SnackBar(content: Text('업데이트 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')),
       );
       return;
     }
@@ -2065,8 +2063,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         actionLabel: '지금 확인',
         tone: UxStatusHeroTone.info,
         onTap: () => _openPreviousDayIncompletePicker(),
-        onLongPress: () =>
-            _openPreviousDayIncompletePicker(forcePicker: true),
+        onLongPress: () => _openPreviousDayIncompletePicker(forcePicker: true),
       ),
     );
   }
@@ -2075,7 +2072,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final summaryAsync = ref.watch(hubPendingUncalledSummaryProvider);
     return summaryAsync.when(
       data: (summary) {
-        final loginName = ref.watch(authControllerProvider)?.name?.trim();
+        final loginName = ref.watch(authControllerProvider)?.name.trim();
         final count = loginName != null && loginName.isNotEmpty
             ? summary.userCount
             : summary.total;
@@ -2229,7 +2226,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           loading: () => followSnapshotAsync.valueOrNull,
           error: (_, _) => followSnapshotAsync.valueOrNull,
         );
-        final int followCount = followSnapshot?.remaining ??
+        final int followCount =
+            followSnapshot?.remaining ??
             followOverviewAsync.valueOrNull?.total ??
             0;
         final followProgressHint = followSnapshot == null

@@ -4,7 +4,6 @@ import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
-import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
@@ -575,22 +574,6 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return DateTime(y, m, d);
   }
 
-  DateTime _historySortKey(Map<String, dynamic> h) {
-    final dateRaw = (h['call_date'] ?? '').toString().trim();
-    final timeRaw = (h['call_time'] ?? '').toString().trim();
-    if (dateRaw.isNotEmpty) {
-      final combined = timeRaw.isNotEmpty ? '$dateRaw $timeRaw' : dateRaw;
-      final parsed = DateTime.tryParse(combined.replaceFirst(' ', 'T'));
-      if (parsed != null) return parsed;
-    }
-    final created = (h['created_at'] ?? '').toString().trim();
-    if (created.isNotEmpty) {
-      final parsed = DateTime.tryParse(created);
-      if (parsed != null) return parsed;
-    }
-    return DateTime.fromMillisecondsSinceEpoch(0);
-  }
-
   String _getNextStage(String? current) {
     if (current == null || current.isEmpty || current == '접수' || current == '0')
       return '2차';
@@ -610,9 +593,6 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       createdAt: call.createdAt,
     );
   }
-
-  String _getStatusNameById(MasterDataBundle master, int? id) =>
-      callStatusNameFromId(id);
 
   String _displayStatusLabel(SalesCall? call) {
     if (call == null) return '미확인';
@@ -880,42 +860,39 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 orElse: () => null,
               )
             : (_model != null && !_loading)
-                ? UxActionDock(
-                    // 상담 라벨이 길어 더 넓은 비율 부여
-                    flexes: _canEnterFurtherConsultation
-                        ? const [2, 2, 3]
-                        : const [1, 1],
-                    children: [
-                      UxDockButton(
-                        icon: Icons.call_rounded,
-                        label: '전화',
-                        emphasized: true,
-                        color: AppTokens.success(
-                          Theme.of(context).colorScheme,
-                        ),
-                        onPressed: () => LauncherUtils.makePhoneCall(
-                          _model?.customerPhone ?? '',
-                        ),
+            ? UxActionDock(
+                // 상담 라벨이 길어 더 넓은 비율 부여
+                flexes: _canEnterFurtherConsultation
+                    ? const [2, 2, 3]
+                    : const [1, 1],
+                children: [
+                  UxDockButton(
+                    icon: Icons.call_rounded,
+                    label: '전화',
+                    emphasized: true,
+                    color: AppTokens.success(Theme.of(context).colorScheme),
+                    onPressed: () => LauncherUtils.makePhoneCall(
+                      _model?.customerPhone ?? '',
+                    ),
+                  ),
+                  UxDockButton(
+                    icon: Icons.message_rounded,
+                    label: '문자',
+                    onPressed: () =>
+                        LauncherUtils.sendSMS(_model?.customerPhone ?? ''),
+                  ),
+                  if (_canEnterFurtherConsultation)
+                    UxDockButton(
+                      icon: Icons.add_comment_rounded,
+                      label: '${_inputStageLabel(_model)} 상담내용',
+                      emphasized: true,
+                      onPressed: () => masterAsync.whenData(
+                        (m) => _showConsultationDialog(m),
                       ),
-                      UxDockButton(
-                        icon: Icons.message_rounded,
-                        label: '문자',
-                        onPressed: () => LauncherUtils.sendSMS(
-                          _model?.customerPhone ?? '',
-                        ),
-                      ),
-                      if (_canEnterFurtherConsultation)
-                        UxDockButton(
-                          icon: Icons.add_comment_rounded,
-                          label: '${_inputStageLabel(_model)} 상담내용',
-                          emphasized: true,
-                          onPressed: () => masterAsync.whenData(
-                            (m) => _showConsultationDialog(m),
-                          ),
-                        ),
-                    ],
-                  )
-                : null,
+                    ),
+                ],
+              )
+            : null,
         body: masterAsync.when(
           data: (master) => _buildScrollable(master),
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -1152,9 +1129,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
 
           // 하단 액션 독(전화·문자·상담 / 저장)에 콘텐츠가 가리지 않도록
-          SizedBox(
-            height: (_isEditMode || m != null) ? 100 + bottomInset : 24,
-          ),
+          SizedBox(height: (_isEditMode || m != null) ? 100 + bottomInset : 24),
         ],
       ),
     );
@@ -1774,7 +1749,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                       if (showDiffLine) ...[
                         const SizedBox(height: 2),
                         Text(
-                          '${stageNum}차 예정일 대비 ${diffDays! >= 0 ? '+' : ''}$diffDays일',
+                          '$stageNum차 예정일 대비 ${diffDays >= 0 ? '+' : ''}$diffDays일',
                           textAlign: TextAlign.right,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

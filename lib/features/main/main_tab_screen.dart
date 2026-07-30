@@ -628,7 +628,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                   icon: const Icon(Icons.add_ic_call_rounded),
                   label: const Text('새 접수 등록'),
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(AppTokens.primaryCtaHeight),
+                    minimumSize: const Size.fromHeight(
+                      AppTokens.primaryCtaHeight,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -695,7 +697,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   Future<void> _openPendingUncalledList() async {
     final today = todayYmdSeoul();
-    final loginName = ref.read(authControllerProvider)?.name?.trim();
+    final loginName = ref.read(authControllerProvider)?.name.trim();
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SalesCallListScreen(
@@ -846,7 +848,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           },
         ),
         // 일정·견적은 자체 AppBar를 쓰므로 메인 AppBar를 숨긴다.
-        appBar: (_currentIndex == _generalScheduleTabIndex ||
+        appBar:
+            (_currentIndex == _generalScheduleTabIndex ||
                 _currentIndex == _daeguScheduleTabIndex ||
                 _currentIndex == _quoterTabIndex)
             ? null
@@ -1057,15 +1060,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           subtitle: 'COAD_home과 동일 계산 · 견적서 작성',
           quickAccess: true,
           quickLabel: '견적',
-          keywords: const [
-            '견적',
-            '셔터',
-            '견적기',
-            'estimator',
-            '단가',
-            '모터',
-            '슬라트',
-          ],
+          keywords: const ['견적', '셔터', '견적기', 'estimator', '단가', '모터', '슬라트'],
           onTap: () => closeDrawerThen(_selectQuoterTab),
         ),
         AppMenuEntry(

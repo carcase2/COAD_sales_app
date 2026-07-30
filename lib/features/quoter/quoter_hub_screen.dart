@@ -1,6 +1,5 @@
 import 'package:coad_customer_calls/features/quoter/estimate_writer_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
-import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -41,10 +40,7 @@ class QuoterHubScreen extends StatelessWidget {
                 fontSize: 13,
               ),
               tabs: [
-                const Tab(
-                  height: 40,
-                  text: '셔터 견적기',
-                ),
+                const Tab(height: 40, text: '셔터 견적기'),
                 Tab(
                   height: 40,
                   child: Text.rich(

@@ -13,9 +13,7 @@ import 'package:path_provider/path_provider.dart';
 
 /// **B2 직접 업로드 기법** — 인트라넷 서버를 거치지 않고 S3 호환 API로 직접 전송.
 class B2UploadRepository {
-  B2UploadRepository(this._deps);
-
-  final AppDependencies _deps;
+  B2UploadRepository(AppDependencies _deps);
 
   Minio? _minioCache;
 
@@ -84,7 +82,7 @@ class B2UploadRepository {
     }
 
     final minio = _getMinio();
-    
+
     // 이미지 압축 시도
     final fileToUpload = await _compressIfNeeded(filePath);
     final isCompressed = fileToUpload.path != filePath;
@@ -97,25 +95,30 @@ class B2UploadRepository {
     final dateStr = DateFormat('yyyyMMdd').format(now);
     final fileName = p.basename(filePath);
     final timestamp = now.millisecondsSinceEpoch;
-    
+
     // 고객 연락처에서 숫자만 추출하여 폴더명으로 사용 (없으면 'unknown')
-    final phoneFolder = customerPhone?.replaceAll(RegExp(r'[^0-9]'), '') ?? 'unknown';
+    final phoneFolder =
+        customerPhone?.replaceAll(RegExp(r'[^0-9]'), '') ?? 'unknown';
     final safePhone = phoneFolder.isEmpty ? 'unknown' : phoneFolder;
 
     // 경로 규칙: sales_calls/연락처/날짜_타임스탬프_파일명
-    final objectPath = 'sales_calls/$safePhone/${dateStr}_${timestamp}_$fileName';
+    final objectPath =
+        'sales_calls/$safePhone/${dateStr}_${timestamp}_$fileName';
 
     try {
-      final contentType = lookupMimeType(filePath) ?? 'application/octet-stream';
-      
+      final contentType =
+          lookupMimeType(filePath) ?? 'application/octet-stream';
+
       // 스트림 방식으로 업로드
-      await minio.putObject(
-        bucket,
-        objectPath,
-        fileToUpload.openRead().map((chunk) => Uint8List.fromList(chunk)),
-        size: await fileToUpload.length(),
-        metadata: {'Content-Type': contentType},
-      ).timeout(const Duration(minutes: 5));
+      await minio
+          .putObject(
+            bucket,
+            objectPath,
+            fileToUpload.openRead().map((chunk) => Uint8List.fromList(chunk)),
+            size: await fileToUpload.length(),
+            metadata: {'Content-Type': contentType},
+          )
+          .timeout(const Duration(minutes: 5));
 
       // B2 S3 버킷 공개 주소 생성
       return 'https://$bucket.$endpoint/$objectPath';

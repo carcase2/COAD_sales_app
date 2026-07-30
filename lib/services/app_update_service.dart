@@ -33,7 +33,8 @@ class AppUpdateService {
       if (policy != null) {
         latestVersion = policy.latestVersion;
         if (policy.storeUrl.isNotEmpty) storeUrl = policy.storeUrl;
-        shouldForce = policy.forceUpdate ||
+        shouldForce =
+            policy.forceUpdate ||
             _compareVersion(kAppVersion, policy.minVersion) < 0;
         final policyNewer =
             _compareVersion(kAppVersion, policy.latestVersion) < 0;
@@ -46,9 +47,7 @@ class AppUpdateService {
       if (!shouldForce && !shouldRecommend && playAvailable) {
         shouldRecommend = true;
         latestVersion ??= policy?.latestVersion;
-        if (storeUrl == null &&
-            policy != null &&
-            policy.storeUrl.isNotEmpty) {
+        if (storeUrl == null && policy != null && policy.storeUrl.isNotEmpty) {
           storeUrl = policy.storeUrl;
         }
       }
@@ -83,7 +82,8 @@ class AppUpdateService {
       final policy = await _fetchUpdatePolicy();
       if (policy == null || !context.mounted) return;
 
-      final shouldForce = policy.forceUpdate ||
+      final shouldForce =
+          policy.forceUpdate ||
           _compareVersion(kAppVersion, policy.minVersion) < 0;
       final shouldRecommend =
           _compareVersion(kAppVersion, policy.latestVersion) < 0;
@@ -98,7 +98,8 @@ class AppUpdateService {
       if (!await _isPlayUpdateAvailable()) return;
 
       final now = DateTime.now();
-      final cooldownOk = _lastInUsePromptAt == null ||
+      final cooldownOk =
+          _lastInUsePromptAt == null ||
           now.difference(_lastInUsePromptAt!) >= _inUsePromptCooldown;
       if (!cooldownOk) return;
 
@@ -132,10 +133,12 @@ class AppUpdateService {
 
     try {
       final policy = await _fetchUpdatePolicy();
-      final shouldForce = policy != null &&
-          (policy.forceUpdate ||
+      final shouldForce =
+          policy?.forceUpdate == true ||
+          (policy != null &&
               _compareVersion(kAppVersion, policy.minVersion) < 0);
-      final shouldRecommend = policy != null &&
+      final shouldRecommend =
+          policy != null &&
           _compareVersion(kAppVersion, policy.latestVersion) < 0;
 
       if (context.mounted && shouldForce) {
@@ -180,9 +183,7 @@ class AppUpdateService {
       debugPrint('앱 업데이트 체크 실패: $e');
       if (showUpToDateMessage && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('업데이트 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
-          ),
+          const SnackBar(content: Text('업데이트 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.')),
         );
       }
     }
@@ -246,9 +247,7 @@ class AppUpdateService {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          'Play 스토어에서 [업데이트]로 설치해 주세요. (현재 v$kAppVersion)',
-        ),
+        content: Text('Play 스토어에서 [업데이트]로 설치해 주세요. (현재 v$kAppVersion)'),
         duration: const Duration(seconds: 5),
       ),
     );
@@ -346,15 +345,14 @@ class AppUpdateService {
       final parsed = <UpdateHistoryEntry>[];
       for (final raw in rows) {
         final map = Map<String, dynamic>.from(raw);
-        final version = (map['version'] ?? '')
-            .toString()
-            .trim();
+        final version = (map['version'] ?? '').toString().trim();
         if (version.isEmpty) continue;
 
         final dateLabel = _dateOnlyLabel(map['created_at']);
         final proposer = _firstNonEmptyString([map['proposer']]);
-        final fallbackProposer =
-            proposer.isEmpty ? kDefaultUpdateProposer : proposer;
+        final fallbackProposer = proposer.isEmpty
+            ? kDefaultUpdateProposer
+            : proposer;
         final changes = _normalizeReleaseNotes(
           map['release_notes'],
           fallbackProposer: fallbackProposer,
@@ -424,10 +422,7 @@ class AppUpdateService {
           ]);
           if (text.isEmpty) continue;
           items.add(
-            UpdateHistoryChangeItem(
-              text: text,
-              proposer: resolveProposer(map),
-            ),
+            UpdateHistoryChangeItem(text: text, proposer: resolveProposer(map)),
           );
           continue;
         }
@@ -461,10 +456,8 @@ class AppUpdateService {
         .map((line) => line.replaceFirst(RegExp(r'^\s*[-•]\s*'), '').trim())
         .where((line) => line.isNotEmpty)
         .map(
-          (line) => UpdateHistoryChangeItem(
-            text: line,
-            proposer: fallbackProposer,
-          ),
+          (line) =>
+              UpdateHistoryChangeItem(text: line, proposer: fallbackProposer),
         )
         .toList();
   }
@@ -664,10 +657,7 @@ class AppUpdateStatus {
 }
 
 class UpdateHistoryChangeItem {
-  const UpdateHistoryChangeItem({
-    required this.text,
-    required this.proposer,
-  });
+  const UpdateHistoryChangeItem({required this.text, required this.proposer});
 
   final String text;
   final String proposer;
