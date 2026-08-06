@@ -26,8 +26,8 @@ type PushUser = {
   id: string
   name: string
   role: string
-  fcm_token: string
   groups?: { name?: string | null } | null
+  fcm_token?: string | null
 }
 
 /**
@@ -70,6 +70,36 @@ async function resolvePushRecipients(
     if (u?.id) byId.set(u.id, u)
   }
   return Array.from(byId.values())
+}
+
+async function resolvePushTokens(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  users: PushUser[],
+): Promise<string[]> {
+  const userIds = Array.from(new Set(users.map((u) => (u.id ?? '').toString()).filter((id) => id.length > 0)))
+  if (userIds.length === 0) return []
+
+  const { data: tokenRows, error: tokenError } = await supabaseAdmin
+    .from('user_push_tokens')
+    .select('fcm_token')
+    .in('user_id', userIds)
+    .eq('is_active', true)
+    .not('fcm_token', 'is', null)
+
+  if (tokenError) {
+    console.error('Error loading user_push_tokens:', tokenError)
+  }
+
+  const tableTokens = (tokenRows ?? [])
+    .map((r) => (r?.fcm_token ?? '').toString().trim())
+    .filter((t) => t.length > 5)
+
+  // 레거시 users.fcm_token fallback (마이그레이션 과도기)
+  const legacyTokens = users
+    .map((u) => (u.fcm_token ?? '').toString().trim())
+    .filter((t) => t.length > 5)
+
+  return Array.from(new Set([...tableTokens, ...legacyTokens]))
 }
 
 /**
@@ -154,13 +184,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
-    const tokens = Array.from(
-      new Set(
-        users
-          .map((u) => (u.fcm_token ?? '').trim())
-          .filter((t) => t.length > 5),
-      ),
-    )
+    const tokens = await resolvePushTokens(supabaseAdmin, users)
     console.log(`Found ${tokens.length} unique valid tokens from ${users.length} users.`)
     console.log(`Target users:`, users.map((u) => `${u.name}(Token OK)`).join(', '))
 
@@ -244,6 +268,18 @@ serve(async (req) => {
                 },
                 android: {
                   priority: 'high',
+                },
+                apns: {
+                  headers: {
+                    'apns-push-type': 'background',
+                    'apns-priority': '5',
+                  },
+                  payload: {
+                    aps: {
+                      'content-available': 1,
+                      sound: 'default',
+                    },
+                  },
                 },
               },
             }),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/services/app_update_service.dart';
@@ -225,12 +226,30 @@ class NotificationService {
           .catchError((Object e) => _log('FCM permission request failed: $e')),
     );
 
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      await FirebaseMessaging.instance
+          .setForegroundNotificationPresentationOptions(
+            alert: true,
+            badge: true,
+            sound: true,
+          );
+    }
+
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/launcher_icon');
+    const DarwinInitializationSettings initializationSettingsDarwin =
+        DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
     const InitializationSettings initializationSettings =
-        InitializationSettings(android: initializationSettingsAndroid);
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
+    );
 
     await _localNotifications.initialize(
       settings: initializationSettings,
@@ -492,8 +511,16 @@ class NotificationService {
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/launcher_icon',
       );
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
       await plugin.initialize(
-        settings: const InitializationSettings(android: androidSettings),
+        settings: const InitializationSettings(
+          android: androidSettings,
+          iOS: iosSettings,
+        ),
         onDidReceiveBackgroundNotificationResponse:
             _onBackgroundLocalNotificationTap,
       );
@@ -547,6 +574,11 @@ class NotificationService {
           tag: tag,
           autoCancel: true,
           category: AndroidNotificationCategory.message,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
         ),
       ),
     );
@@ -1222,6 +1254,7 @@ class NotificationService {
 
   /// 에뮬레이터·GMS 미설치 등으로 FCM 토큰을 받을 수 없을 때 true.
   static bool _fcmUnavailable = false;
+  static const String _pushDeviceKeyPref = 'push_device_key_v1';
 
   static bool get _firebaseReady => Firebase.apps.isNotEmpty;
   static Future<void>? _tokenSyncInFlight;
@@ -1289,6 +1322,18 @@ class NotificationService {
         continue;
       }
       try {
+        final deviceKey = await _getOrCreateDeviceKey();
+        final platform = _currentPlatformLabel();
+        await Supabase.instance.client.from('user_push_tokens').upsert({
+          'user_id': userId,
+          'device_key': deviceKey,
+          'platform': platform,
+          'fcm_token': token,
+          'is_active': true,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }, onConflict: 'user_id,device_key');
+
+        // 레거시 단일 토큰 컬럼도 유지(점진 마이그레이션용)
         await Supabase.instance.client
             .from('users')
             .update({'fcm_token': token})
@@ -1310,6 +1355,17 @@ class NotificationService {
           print("[NotificationService] FCM Token refreshed: $token");
         }
         try {
+          final deviceKey = await _getOrCreateDeviceKey();
+          final platform = _currentPlatformLabel();
+          await Supabase.instance.client.from('user_push_tokens').upsert({
+            'user_id': userId,
+            'device_key': deviceKey,
+            'platform': platform,
+            'fcm_token': token,
+            'is_active': true,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          }, onConflict: 'user_id,device_key');
+
           await Supabase.instance.client
               .from('users')
               .update({'fcm_token': token})
@@ -1330,6 +1386,36 @@ class NotificationService {
       if (kDebugMode) {
         print('[NotificationService] skip token refresh listener: $e');
       }
+    }
+  }
+
+  static Future<String> _getOrCreateDeviceKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_pushDeviceKeyPref);
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final seed = DateTime.now().microsecondsSinceEpoch;
+    final rand = Random().nextInt(1 << 32);
+    final generated = 'dev_$seed$rand';
+    await prefs.setString(_pushDeviceKeyPref, generated);
+    return generated;
+  }
+
+  static String _currentPlatformLabel() {
+    if (kIsWeb) return 'web';
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        return 'ios';
+      case TargetPlatform.android:
+        return 'android';
+      case TargetPlatform.macOS:
+        return 'macos';
+      case TargetPlatform.windows:
+        return 'windows';
+      case TargetPlatform.linux:
+        return 'linux';
+      case TargetPlatform.fuchsia:
+        return 'fuchsia';
     }
   }
 

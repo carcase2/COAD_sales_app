@@ -813,9 +813,6 @@ final hubSegmentCalendarBadgeProvider = Provider<AsyncValue<int>>((ref) {
   );
 });
 
-/// 메인 화면의 Scaffold를 제어하기 위한 Key (드로어 열기 등)
-final mainScaffoldKeyProvider = Provider((ref) => GlobalKey<ScaffoldState>());
-
 /// 오프라인 미전송(접수·상담) 대기 건수 — 홈·메인 배너 공유.
 final pendingSyncCountProvider = StateProvider<int>((ref) => 0);
 

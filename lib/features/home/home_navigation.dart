@@ -1,5 +1,4 @@
 import 'package:coad_customer_calls/features/home/home_providers.dart';
-import 'package:coad_customer_calls/features/main/main_tab_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
@@ -47,10 +46,8 @@ void navigateToHomeAndRefresh(
       );
   invalidateHomeSalesCaches(ref.invalidate);
   ref.read(homeHubFlowResetTickProvider.notifier).state++;
-  Navigator.of(context).pushAndRemoveUntil(
-    MaterialPageRoute<void>(builder: (_) => const MainTabScreen()),
-    (route) => false,
-  );
+  // AuthGate의 MainTabScreen을 유지하고 스택만 비움 (중복 MainTabScreen·GlobalKey 충돌 방지).
+  Navigator.of(context).popUntil((route) => route.isFirst);
   if (message == null) return;
   WidgetsBinding.instance.addPostFrameCallback((_) {
     final ctx = NotificationService.navigatorKey.currentContext;

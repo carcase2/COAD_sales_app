@@ -67,6 +67,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   RealtimeChannel? _issuanceCompletionWatchChannel;
   Timer? _issuanceCompletionDebounce;
@@ -494,7 +495,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final user = ref.read(authControllerProvider);
     _trackTab(user, 'menu');
     setState(() => _navSelectedIndex = _navMenuIndexFor(user));
-    ref.read(mainScaffoldKeyProvider).currentState?.openDrawer();
+    _scaffoldKey.currentState?.openDrawer();
   }
 
   void _selectGeneralScheduleTab() {
@@ -779,7 +780,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       Colors.black,
       scheme.brightness == Brightness.dark ? 0.28 : 0.12,
     )!;
-    final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
+    final scaffoldKey = _scaffoldKey;
     final showGeneralSchedule = ref.watch(
       authControllerProvider.select(
         (u) => u != null && canAccessGeneralSchedule(u),
