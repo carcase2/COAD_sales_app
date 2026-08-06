@@ -503,14 +503,18 @@ serve(async (req) => {
                   android: {
                     priority: 'high',
                   },
+                  // iOS: alert 푸시여야 백그라운드/종료 상태에서도 배너가 표시됨.
                   apns: {
                     headers: {
-                      'apns-push-type': 'background',
-                      'apns-priority': '5',
+                      'apns-push-type': 'alert',
+                      'apns-priority': '10',
                     },
                     payload: {
                       aps: {
-                        'content-available': 1,
+                        alert: {
+                          title: notify.title,
+                          body: dataBody,
+                        },
                         sound: 'default',
                       },
                     },

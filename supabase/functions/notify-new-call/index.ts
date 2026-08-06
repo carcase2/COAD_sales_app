@@ -269,14 +269,19 @@ serve(async (req) => {
                 android: {
                   priority: 'high',
                 },
+                // iOS: alert 푸시여야 백그라운드/종료 상태에서도 배너가 표시됨.
+                // (background + content-available 만으로는 앱이 깨지 않으면 알림이 안 뜸)
                 apns: {
                   headers: {
-                    'apns-push-type': 'background',
-                    'apns-priority': '5',
+                    'apns-push-type': 'alert',
+                    'apns-priority': '10',
                   },
                   payload: {
                     aps: {
-                      'content-available': 1,
+                      alert: {
+                        title,
+                        body: dataBody,
+                      },
                       sound: 'default',
                     },
                   },

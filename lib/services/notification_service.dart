@@ -307,6 +307,13 @@ class NotificationService {
       _log(
         'onMessage id=${message.messageId} dataKeys=${message.data.keys.toList()}',
       );
+      // iOS: APNs alert는 setForegroundNotificationPresentationOptions로 이미 표시됨.
+      // 로컬 알림을 또 띄우면 포그라운드에서 배너가 중복된다.
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.iOS &&
+          message.notification != null) {
+        return;
+      }
       // Android 포그라운드: 알림만 표시하고, 상세 이동은 사용자 탭 시에만 처리합니다.
       // (수신 즉시 자동 이동하면 탭 이벤트·pending 재시도와 겹쳐 다른 접수로 가거나 이동이 무시됨)
       unawaited(
