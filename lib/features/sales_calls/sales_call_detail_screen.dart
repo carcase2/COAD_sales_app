@@ -1950,13 +1950,19 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           final scheme = Theme.of(context).colorScheme;
           final viewInsets = MediaQuery.viewInsetsOf(context);
           final screenH = MediaQuery.sizeOf(context).height;
+          final keyboardOpen = viewInsets.bottom > 80;
+          // 키보드 위 남는 높이를 시트가 채움 — ListView 스크롤로 윗줄이 가려지지 않게 함.
           final sheetHeight = (screenH * 0.92 - viewInsets.bottom).clamp(
-            320.0,
+            280.0,
             screenH * 0.92,
           );
-          final fieldScrollPadding = EdgeInsets.only(
-            bottom: viewInsets.bottom + 160,
+          final contentRequired = consultationContentRequiredForStatus(
+            _statusId ?? CallStatusIds.undecided,
           );
+          final needsDate = statusRequiresNextScheduledDate(
+            _statusId ?? CallStatusIds.undecided,
+          );
+          final isLost = _statusId == CallStatusIds.lost;
 
           // 선택된 상태에 따른 배경색 정의 (투명해지지 않도록 불투명한 연한 색상 적용)
           Color bgColor = Colors.white;
@@ -1979,6 +1985,38 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             bgColor = const Color(0xFFECEFF1);
           }
 
+          InputDecoration multiLineDecoration(String hint) {
+            return InputDecoration(
+              hintText: hint,
+              filled: true,
+              fillColor: Colors.white,
+              alignLabelWithHint: true,
+              contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            );
+          }
+
+          Future<void> pickNextDate() async {
+            final today = _ymdToCalendarDate(todayYmdSeoul());
+            final picked = _consultationNextDateCtrl.text.trim();
+            final initial =
+                picked.isNotEmpty ? _ymdToCalendarDate(picked) : today;
+            final date = await showDatePicker(
+              context: context,
+              initialDate: initial,
+              firstDate: today,
+              lastDate: today.add(const Duration(days: 365)),
+            );
+            if (date != null) {
+              setModalState(() {
+                _consultationNextDateCtrl.text =
+                    date.toIso8601String().split('T').first;
+              });
+            }
+          }
+
           return Padding(
             padding: EdgeInsets.only(bottom: viewInsets.bottom),
             child: AnimatedContainer(
@@ -1995,7 +2033,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 children: [
                   // Header
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -2032,211 +2070,205 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   ),
                   const Divider(height: 1),
                   Expanded(
-                    child: ListView(
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                      children: [
-                        // Context Box
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 키보드가 열리면 문의 요약은 접어 입력 영역을 확보한다.
+                          if (!keyboardOpen) ...[
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border:
+                                    Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        '모델: ',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          m?.productCategoryName ?? '미지정',
+                                          style: const TextStyle(
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
                                   const Text(
-                                    '모델: ',
+                                    '문의내용:',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Colors.black87,
                                     ),
                                   ),
-                                  Expanded(
-                                    child: Text(
-                                      m?.productCategoryName ?? '미지정',
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    m?.inquiryContent ?? '문의 내용이 없습니다.',
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                      height: 1.4,
+                                      fontSize: 13,
+                                    ),
+                                    maxLines: 4,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (m != null &&
+                                      m.callHistory.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      '이전(${displayStageLabelFromHistoryMap(_orderedCallHistory.first)}) 상담내용:',
                                       style: const TextStyle(
-                                        color: Colors.black54,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Colors.blueAccent,
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      (_orderedCallHistory.first[
+                                                      'consultation_content'] ??
+                                                  _orderedCallHistory
+                                                      .first['content'])
+                                              ?.toString() ??
+                                          '',
+                                      style: const TextStyle(
+                                        color: Colors.black54,
+                                        height: 1.4,
+                                        fontSize: 13,
+                                      ),
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                '문의내용:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          const Text(
+                            '상담 결과 *',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildStatusGrid(
+                            scheme,
+                            setModalState,
+                            keyboardOpen,
+                          ),
+                          if (contentRequired) ...[
+                            const SizedBox(height: 12),
+                            const Text(
+                              '상담내용 *',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                m?.inquiryContent ?? '문의 내용이 없습니다.',
+                            ),
+                            const SizedBox(height: 8),
+                            // 남은 세로 공간을 채움 → 여러 줄 입력 시 윗줄이 스크롤로 사라지지 않음.
+                            Expanded(
+                              child: TextFormField(
+                                controller: _newConsultationCtrl,
+                                expands: true,
+                                maxLines: null,
+                                minLines: null,
+                                textAlignVertical: TextAlignVertical.top,
+                                keyboardType: TextInputType.multiline,
+                                textInputAction: TextInputAction.newline,
                                 style: const TextStyle(
-                                  color: Colors.black54,
-                                  height: 1.4,
-                                  fontSize: 13,
+                                  fontSize: 16,
+                                  height: 1.45,
+                                ),
+                                decoration: multiLineDecoration(
+                                  '고객와의 상담내용을 자세히 입력하세요...',
                                 ),
                               ),
-                              if (m != null && m.callHistory.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                const Divider(height: 1),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '이전(${displayStageLabelFromHistoryMap(_orderedCallHistory.first)}) 상담내용:',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: Colors.blueAccent,
-                                  ),
+                            ),
+                          ] else if (isLost) ...[
+                            const SizedBox(height: 12),
+                            const Text(
+                              '미수주 사유 *',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _unsuccessfulReasonCtrl,
+                                expands: true,
+                                maxLines: null,
+                                minLines: null,
+                                textAlignVertical: TextAlignVertical.top,
+                                keyboardType: TextInputType.multiline,
+                                textInputAction: TextInputAction.newline,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  height: 1.45,
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  (_orderedCallHistory
-                                                  .first['consultation_content'] ??
-                                              _orderedCallHistory
-                                                  .first['content'])
-                                          ?.toString() ??
-                                      '',
-                                  style: const TextStyle(
-                                    color: Colors.black54,
-                                    height: 1.4,
-                                    fontSize: 13,
-                                  ),
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
+                                onChanged: (_) => setModalState(() {}),
+                                decoration:
+                                    multiLineDecoration('미수주 사유를 입력하세요'),
+                              ),
+                            ),
+                          ] else
+                            const Spacer(),
+                          if (needsDate) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              '${_scheduledStageAfterInput(m)} 상담 예정일 *',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _consultationNextDateCtrl,
+                              readOnly: true,
+                              onTap: pickNextDate,
+                              decoration: InputDecoration(
+                                hintText: '날짜를 선택하세요',
+                                filled: true,
+                                fillColor: Colors.white,
+                                suffixIcon: const Icon(
+                                  Icons.calendar_today_outlined,
                                 ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          '상담 결과 *',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildStatusGrid(scheme, setModalState),
-                        if (consultationContentRequiredForStatus(
-                          _statusId ?? CallStatusIds.undecided,
-                        )) ...[
-                          const SizedBox(height: 24),
-                          const Text(
-                            '상담내용 *',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            controller: _newConsultationCtrl,
-                            minLines: 5,
-                            maxLines: 15,
-                            scrollPadding: fieldScrollPadding,
-                            style: const TextStyle(fontSize: 16, height: 1.45),
-                            decoration: InputDecoration(
-                              hintText: '고객와의 상담내용을 자세히 입력하세요...',
-                              filled: true,
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
-                        if (_statusId == CallStatusIds.lost) ...[
-                          const SizedBox(height: 24),
-                          const Text(
-                            '미수주 사유 *',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            controller: _unsuccessfulReasonCtrl,
-                            minLines: 2,
-                            maxLines: 6,
-                            scrollPadding: fieldScrollPadding,
-                            style: const TextStyle(fontSize: 16, height: 1.45),
-                            onChanged: (_) => setModalState(() {}),
-                            decoration: InputDecoration(
-                              hintText: '미수주 사유를 입력하세요',
-                              filled: true,
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ],
-                        if (statusRequiresNextScheduledDate(
-                          _statusId ?? CallStatusIds.undecided,
-                        )) ...[
-                          const SizedBox(height: 24),
-                          Text(
-                            '${_scheduledStageAfterInput(m)} 상담 예정일 *',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            controller: _consultationNextDateCtrl,
-                            readOnly: true,
-                            onTap: () async {
-                              final today = _ymdToCalendarDate(todayYmdSeoul());
-                              final picked = _consultationNextDateCtrl.text
-                                  .trim();
-                              final initial = picked.isNotEmpty
-                                  ? _ymdToCalendarDate(picked)
-                                  : today;
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: initial,
-                                firstDate: today,
-                                lastDate: today.add(const Duration(days: 365)),
-                              );
-                              if (date != null) {
-                                setModalState(() {
-                                  _consultationNextDateCtrl.text = date
-                                      .toIso8601String()
-                                      .split('T')
-                                      .first;
-                                });
-                              }
-                            },
-                            decoration: InputDecoration(
-                              hintText: '날짜를 선택하세요',
-                              suffixIcon: const Icon(
-                                Icons.calendar_today_outlined,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                   const Divider(height: 1),
                   SafeArea(
                     top: false,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       child: FilledButton(
                         onPressed: _saving
                             ? null
@@ -2303,6 +2335,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   Widget _buildStatusGrid(
     ColorScheme scheme, [
     void Function(void Function())? setModalState,
+    bool compact = false, // 키보드 열림 시 버튼 높이 축소
   ]) {
     final statuses = [
       {'id': 1, 'name': '미결정', 'color': const Color(0xFFF2A900)},
@@ -2313,9 +2346,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       {'id': 5, 'name': '설계문의', 'color': const Color(0xFF4527A0)},
     ];
 
+    final gap = compact ? 6.0 : 8.0;
+    final vPad = compact ? 8.0 : 14.0;
+    final fontSize = compact ? 13.0 : 14.0;
+
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: gap,
+      runSpacing: gap,
       children: statuses.map((s) {
         final isSelected = _statusId == s['id'];
         final statusColor = s['color'] as Color;
@@ -2336,7 +2373,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           },
           child: Container(
             width: (MediaQuery.of(context).size.width - 48) / 2,
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            padding: EdgeInsets.symmetric(vertical: vPad),
             decoration: BoxDecoration(
               color: isSelected ? statusColor : Colors.white,
               borderRadius: BorderRadius.circular(8),
@@ -2357,6 +2394,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               child: Text(
                 s['name'] as String,
                 style: TextStyle(
+                  fontSize: fontSize,
                   color: isSelected ? Colors.white : Colors.black87,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),
