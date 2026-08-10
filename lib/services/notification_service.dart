@@ -1274,12 +1274,33 @@ class NotificationService {
         message.contains('AUTHENTICATION_FAILED');
   }
 
+  /// iOS: APNs 토큰이 준비된 뒤에만 FCM 토큰을 받을 수 있음.
+  static Future<void> _ensureApnsTokenReady() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    final messaging = FirebaseMessaging.instance;
+    for (var i = 0; i < 12; i++) {
+      try {
+        final apns = await messaging.getAPNSToken();
+        if (apns != null && apns.isNotEmpty) {
+          _log('APNs token ready (attempt ${i + 1})');
+          return;
+        }
+      } catch (e) {
+        _log('getAPNSToken attempt ${i + 1} failed: $e');
+      }
+      await Future<void>.delayed(Duration(milliseconds: 400 + i * 200));
+    }
+    _log('APNs token not ready after retries; getToken may fail on iOS');
+  }
+
   static Future<String?> getToken() async {
     if (_fcmUnavailable || !_firebaseReady) return null;
     try {
+      await _ensureApnsTokenReady();
       return await FirebaseMessaging.instance.getToken();
     } catch (e) {
-      if (_isFcmUnavailableError(e) || e.toString().contains('core/no-app')) {
+      final msg = e.toString();
+      if (_isFcmUnavailableError(e) || msg.contains('core/no-app')) {
         _fcmUnavailable = true;
         if (kDebugMode) {
           print(
@@ -1288,6 +1309,7 @@ class NotificationService {
         }
         return null;
       }
+      // iOS: apns-token-not-set 등은 일시적 — unavailable로 고정하지 않음
       if (kDebugMode) {
         print('Error getting FCM token: $e');
       }
@@ -1316,12 +1338,33 @@ class NotificationService {
 
   static Future<void> _updateTokenInSupabaseImpl(String userId) async {
     if (_fcmUnavailable) return;
-    const retryDelaysMs = <int>[0, 1200, 3000];
+    // iOS는 APNs 준비 대기 포함해 재시도 폭을 넓힘
+    final retryDelaysMs =
+        (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)
+            ? const <int>[0, 800, 1600, 3000, 5000, 8000]
+            : const <int>[0, 1200, 3000];
     for (var i = 0; i < retryDelaysMs.length; i++) {
       if (_fcmUnavailable) return;
       final delayMs = retryDelaysMs[i];
       if (delayMs > 0) {
         await Future<void>.delayed(Duration(milliseconds: delayMs));
+      }
+      // 권한 미허용이면 토큰이 안 나오므로 한 번 더 요청(이미 허용이면 즉시 반환)
+      try {
+        final settings = await FirebaseMessaging.instance.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        _log(
+          'permission before token sync: ${settings.authorizationStatus}',
+        );
+        if (settings.authorizationStatus == AuthorizationStatus.denied) {
+          _log('notification permission denied; skip token sync');
+          return;
+        }
+      } catch (e) {
+        _log('permission check failed: $e');
       }
       final token = await getToken();
       if (token == null || token.isEmpty) {
@@ -1331,6 +1374,11 @@ class NotificationService {
       try {
         final deviceKey = await _getOrCreateDeviceKey();
         final platform = _currentPlatformLabel();
+        // 동일 FCM 토큰 unique 제약 — 다른 기기/계정 row가 있으면 선삭제 후 upsert
+        await Supabase.instance.client
+            .from('user_push_tokens')
+            .delete()
+            .eq('fcm_token', token);
         await Supabase.instance.client.from('user_push_tokens').upsert({
           'user_id': userId,
           'device_key': deviceKey,
@@ -1345,7 +1393,9 @@ class NotificationService {
             .from('users')
             .update({'fcm_token': token})
             .eq('id', userId);
-        _log('FCM token sync success user=$userId attempt=${i + 1}');
+        _log(
+          'FCM token sync success user=$userId platform=$platform attempt=${i + 1} tokenLen=${token.length}',
+        );
         return;
       } catch (e) {
         _log('FCM token sync failed user=$userId attempt=${i + 1} error=$e');

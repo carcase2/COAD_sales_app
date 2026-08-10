@@ -53,7 +53,10 @@ async function resolveAssigneeName(
   return assigneeFromMasterRow(data as Record<string, unknown> | null)
 }
 
-/** 발급요청·완료 푸시: role admin 또는 관리자·총무부 그룹 + 해당 건 담당자(requester) */
+/**
+ * 발급요청·완료 푸시: role admin 또는 관리자·총무부 그룹 + 해당 건 담당자(requester)
+ * users.fcm_token 유무와 무관 (기기별 토큰은 user_push_tokens에서 조회)
+ */
 async function resolveIssuancePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
   assigneeName: string | null,
@@ -61,7 +64,6 @@ async function resolveIssuancePushRecipients(
   const { data: users, error: adminError } = await supabaseAdmin
     .from('users')
     .select('id, name, role, fcm_token, groups(name)')
-    .not('fcm_token', 'is', null)
 
   if (adminError) throw adminError
 
@@ -78,7 +80,6 @@ async function resolveIssuancePushRecipients(
       .from('users')
       .select('id, name, role, fcm_token, groups(name)')
       .eq('name', trimmed)
-      .not('fcm_token', 'is', null)
 
     if (assigneeError) throw assigneeError
     assigneeUsers = data ?? []
@@ -91,6 +92,7 @@ async function resolveIssuancePushRecipients(
   return Array.from(byId.values())
 }
 
+/** 유저별 활성 기기 토큰 전부 + 레거시 users.fcm_token (중복 제거) */
 async function resolvePushTokens(
   supabaseAdmin: ReturnType<typeof createClient>,
   users: PushUser[],
@@ -123,6 +125,24 @@ async function resolvePushTokens(
     .filter((t) => t.length > 5)
 
   return Array.from(new Set([...tableTokens, ...legacyTokens]))
+}
+
+async function deactivateInvalidToken(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  token: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from('user_push_tokens')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('fcm_token', token)
+    await supabaseAdmin
+      .from('users')
+      .update({ fcm_token: null })
+      .eq('fcm_token', token)
+  } catch (e) {
+    console.error('Failed to deactivate invalid token:', e)
+  }
 }
 
 function hasText(value: unknown): boolean {
@@ -525,6 +545,9 @@ serve(async (req) => {
           )
           const resText = await res.text()
           console.log(`FCM Response (Status: ${res.status}):`, resText)
+          if (res.status === 404 && resText.includes('UNREGISTERED')) {
+            await deactivateInvalidToken(supabaseAdmin, token)
+          }
           return { status: res.status, body: resText }
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e)

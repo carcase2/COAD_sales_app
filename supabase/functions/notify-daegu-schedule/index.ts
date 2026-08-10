@@ -5,7 +5,12 @@ import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
 /** 앱 권한과 동일: 대구지사장·관리자 그룹 (+ role=admin) */
 const ALLOWED_GROUP_NAMES = ['대구지사장', '관리자']
 
-type PushUser = { id: string; name: string; role: string; fcm_token: string }
+type PushUser = {
+  id: string
+  name: string
+  role: string
+  fcm_token?: string | null
+}
 
 type SchedulePayload = {
   action?: string
@@ -55,6 +60,10 @@ function buildDataBody(body: string): string {
   return body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
 }
 
+/**
+ * 대구지사 FCM — 대구지사장·관리자 그룹 + role=admin
+ * users.fcm_token 유무와 무관 (기기별 토큰은 user_push_tokens에서 조회)
+ */
 async function resolveDaeguSchedulePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
 ): Promise<PushUser[]> {
@@ -62,7 +71,6 @@ async function resolveDaeguSchedulePushRecipients(
     .from('users')
     .select('id, name, role, fcm_token, is_active, groups(name)')
     .eq('is_active', true)
-    .not('fcm_token', 'is', null)
 
   if (error) throw error
 
@@ -77,17 +85,66 @@ async function resolveDaeguSchedulePushRecipients(
     if (!allowed) continue
 
     const id = (row.id ?? '').toString()
-    const token = (row.fcm_token ?? '').toString().trim()
-    if (!id || !token) continue
+    if (!id) continue
 
     byId.set(id, {
       id,
       name: (row.name ?? '').toString(),
       role,
-      fcm_token: token,
+      fcm_token: (row.fcm_token ?? null) as string | null,
     })
   }
   return Array.from(byId.values())
+}
+
+/** 유저별 활성 기기 토큰 전부 + 레거시 users.fcm_token (중복 제거) */
+async function resolvePushTokens(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  users: PushUser[],
+): Promise<string[]> {
+  const userIds = Array.from(
+    new Set(users.map((u) => (u.id ?? '').toString()).filter((id) => id.length > 0)),
+  )
+  if (userIds.length === 0) return []
+
+  const { data: tokenRows, error: tokenError } = await supabaseAdmin
+    .from('user_push_tokens')
+    .select('fcm_token')
+    .in('user_id', userIds)
+    .eq('is_active', true)
+    .not('fcm_token', 'is', null)
+
+  if (tokenError) {
+    console.error('Error loading user_push_tokens:', tokenError)
+  }
+
+  const tableTokens = (tokenRows ?? [])
+    .map((r) => (r?.fcm_token ?? '').toString().trim())
+    .filter((t) => t.length > 5)
+
+  const legacyTokens = users
+    .map((u) => (u.fcm_token ?? '').toString().trim())
+    .filter((t) => t.length > 5)
+
+  return Array.from(new Set([...tableTokens, ...legacyTokens]))
+}
+
+async function deactivateInvalidToken(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  token: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from('user_push_tokens')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('fcm_token', token)
+    await supabaseAdmin
+      .from('users')
+      .update({ fcm_token: null })
+      .eq('fcm_token', token)
+  } catch (e) {
+    console.error('Failed to deactivate invalid token:', e)
+  }
 }
 
 serve(async (req) => {
@@ -102,13 +159,7 @@ serve(async (req) => {
     )
 
     const users = await resolveDaeguSchedulePushRecipients(supabaseAdmin)
-    const tokens = Array.from(
-      new Set(
-        users
-          .map((u) => (u.fcm_token ?? '').trim())
-          .filter((t) => t.length > 5),
-      ),
-    )
+    const tokens = await resolvePushTokens(supabaseAdmin, users)
 
     if (tokens.length === 0) {
       console.log('No daegu schedule FCM recipients in 대구지사장/관리자')
@@ -117,14 +168,15 @@ serve(async (req) => {
           success: true,
           recipientCount: 0,
           message: 'No FCM recipients in 대구지사장/관리자',
+          recipientUsers: users.map((u) => u.name),
         }),
         { headers: { 'Content-Type': 'application/json' }, status: 200 },
       )
     }
 
     console.log(
-      `Routing daegu schedule ${action} push to ${tokens.length} token(s):`,
-      users.map((u) => `${u.name}(Token OK)`).join(', '),
+      `Routing daegu schedule ${action} push to ${tokens.length} token(s) for ${users.length} user(s):`,
+      users.map((u) => u.name).join(', '),
     )
 
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
@@ -173,6 +225,21 @@ serve(async (req) => {
                     click_action: 'FLUTTER_NOTIFICATION_CLICK',
                   },
                   android: { priority: 'high' },
+                  apns: {
+                    headers: {
+                      'apns-push-type': 'alert',
+                      'apns-priority': '10',
+                    },
+                    payload: {
+                      aps: {
+                        alert: {
+                          title,
+                          body: dataBody,
+                        },
+                        sound: 'default',
+                      },
+                    },
+                  },
                 },
               }),
             },
@@ -180,10 +247,7 @@ serve(async (req) => {
           const resText = await res.text()
           console.log(`FCM Response (Status: ${res.status}):`, resText)
           if (res.status === 404 && resText.includes('UNREGISTERED')) {
-            await supabaseAdmin
-              .from('users')
-              .update({ fcm_token: null })
-              .eq('fcm_token', token)
+            await deactivateInvalidToken(supabaseAdmin, token)
           }
           return { status: res.status, body: resText }
         } catch (e: unknown) {

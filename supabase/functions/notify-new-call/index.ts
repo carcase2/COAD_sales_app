@@ -34,6 +34,7 @@ type PushUser = {
  * 접수 푸시 수신 대상.
  * - 관리자(role=admin 또는 관리자·총무부 그룹) + 담당자(이름 일치)
  * - 담당자 미지정: 관리자·총무부 그룹만 수신
+ * - users.fcm_token 유무와 무관 (기기별 토큰은 user_push_tokens에서 조회)
  */
 async function resolvePushRecipients(
   supabaseAdmin: ReturnType<typeof createClient>,
@@ -42,7 +43,6 @@ async function resolvePushRecipients(
   const { data: users, error: adminError } = await supabaseAdmin
     .from('users')
     .select('id, name, role, fcm_token, groups(name)')
-    .not('fcm_token', 'is', null)
 
   if (adminError) throw adminError
 
@@ -61,7 +61,6 @@ async function resolvePushRecipients(
     .from('users')
     .select('id, name, role, fcm_token, groups(name)')
     .eq('name', trimmed)
-    .not('fcm_token', 'is', null)
 
   if (assigneeError) throw assigneeError
 
@@ -72,6 +71,7 @@ async function resolvePushRecipients(
   return Array.from(byId.values())
 }
 
+/** 유저별 활성 기기 토큰 전부 + 레거시 users.fcm_token (중복 제거) */
 async function resolvePushTokens(
   supabaseAdmin: ReturnType<typeof createClient>,
   users: PushUser[],
@@ -100,6 +100,25 @@ async function resolvePushTokens(
     .filter((t) => t.length > 5)
 
   return Array.from(new Set([...tableTokens, ...legacyTokens]))
+}
+
+/** 만료·해지된 FCM 토큰 정리 (다중 기기 테이블 + 레거시 컬럼) */
+async function deactivateInvalidToken(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  token: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from('user_push_tokens')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('fcm_token', token)
+    await supabaseAdmin
+      .from('users')
+      .update({ fcm_token: null })
+      .eq('fcm_token', token)
+  } catch (e) {
+    console.error('Failed to deactivate invalid token:', e)
+  }
 }
 
 /**
@@ -180,13 +199,23 @@ serve(async (req) => {
     const users = await resolvePushRecipients(supabaseAdmin, effectiveAssignee)
 
     if (users.length === 0) {
-      console.log('No admin/assignee users with FCM tokens found')
+      console.log('No admin/assignee users found for push routing')
       return new Response(JSON.stringify({ message: 'No target users found' }), { status: 200 })
     }
 
     const tokens = await resolvePushTokens(supabaseAdmin, users)
+    if (tokens.length === 0) {
+      console.log(
+        `No FCM tokens for ${users.length} recipient user(s):`,
+        users.map((u) => u.name).join(', '),
+      )
+      return new Response(
+        JSON.stringify({ message: 'No FCM tokens for target users', recipientUsers: users.map((u) => u.name) }),
+        { status: 200 },
+      )
+    }
     console.log(`Found ${tokens.length} unique valid tokens from ${users.length} users.`)
-    console.log(`Target users:`, users.map((u) => `${u.name}(Token OK)`).join(', '))
+    console.log(`Target users:`, users.map((u) => u.name).join(', '))
 
     const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
     const FIREBASE_SERVICE_ACCOUNT = JSON.parse(Deno.env.get('FIREBASE_SERVICE_ACCOUNT') || '{}')
@@ -292,6 +321,21 @@ serve(async (req) => {
         )
         const resText = await res.text()
         console.log(`FCM Response (Status: ${res.status}):`, resText)
+        if (res.status === 404 && resText.includes('UNREGISTERED')) {
+          await deactivateInvalidToken(supabaseAdmin, token)
+        }
+        // iOS APNs 환경 키 불일치 등 — 운영에서 바로 보이도록 강조 로그
+        if (
+          resText.includes('BadEnvironmentKeyInToken') ||
+          resText.includes('THIRD_PARTY_AUTH_ERROR') ||
+          resText.includes('ApnsError')
+        ) {
+          console.error(
+            'APNs/FCM auth error for token (check Firebase Console → Cloud Messaging → Apple APNs key/environment):',
+            token.slice(0, 16) + '...',
+            resText,
+          )
+        }
         return { status: res.status, body: resText }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e)
