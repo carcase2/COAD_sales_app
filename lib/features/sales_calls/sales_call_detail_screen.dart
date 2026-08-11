@@ -1948,14 +1948,12 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         builder: (context, setModalState) {
           final m = _model;
           final scheme = Theme.of(context).colorScheme;
-          final viewInsets = MediaQuery.viewInsetsOf(context);
-          final screenH = MediaQuery.sizeOf(context).height;
-          final keyboardOpen = viewInsets.bottom > 80;
-          // 키보드 위 남는 높이를 시트가 채움 — ListView 스크롤로 윗줄이 가려지지 않게 함.
-          final sheetHeight = (screenH * 0.92 - viewInsets.bottom).clamp(
-            280.0,
-            screenH * 0.92,
-          );
+          final media = MediaQuery.of(context);
+          final keyboardH = media.viewInsets.bottom;
+          final keyboardOpen = keyboardH > 80;
+          // padding(bottom: keyboard)로 키보드 위를 확보하고, 시트 높이는 그 안에서의 비율만 사용.
+          final availableH = (media.size.height - keyboardH).clamp(360.0, media.size.height);
+          final sheetHeight = (availableH * 0.96).clamp(360.0, availableH);
           final contentRequired = consultationContentRequiredForStatus(
             _statusId ?? CallStatusIds.undecided,
           );
@@ -2017,313 +2015,307 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             }
           }
 
-          return Padding(
-            padding: EdgeInsets.only(bottom: viewInsets.bottom),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-              height: sheetHeight,
+          Widget multiLineField({
+            required TextEditingController controller,
+            required String hint,
+            ValueChanged<String>? onChanged,
+          }) {
+            // expands 대신 고정 minLines — 높이가 0으로 접히지 않음.
+            // 필드 내부 스크롤로 여러 줄 입력·윗줄 확인 가능.
+            return TextFormField(
+              controller: controller,
+              minLines: keyboardOpen ? 4 : 6,
+              maxLines: 12,
+              textAlignVertical: TextAlignVertical.top,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: const TextStyle(fontSize: 16, height: 1.45),
+              onChanged: onChanged,
+              decoration: multiLineDecoration(hint),
+            );
+          }
+
+          Widget contextBox() {
+            return Container(
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: bgColor,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
-                ),
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            switch (_statusId) {
-                              CallStatusIds.lost =>
-                                '${_inputStageLabel(m)} 미수주 등록',
-                              CallStatusIds.won =>
-                                '${_inputStageLabel(m)} 수주 등록',
-                              _ => '${_inputStageLabel(m)} 상담내용 입력',
-                            },
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                  Row(
+                    children: [
+                      const Text(
+                        '모델: ',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: _saving
-                              ? null
-                              : () async {
-                                  if (await _confirmDiscardConsultation(
-                                        sheetContext,
-                                      ) &&
-                                      sheetContext.mounted) {
-                                    Navigator.pop(sheetContext);
-                                  }
-                                },
+                      ),
+                      Expanded(
+                        child: Text(
+                          m?.productCategoryName ?? '미지정',
+                          style: const TextStyle(color: Colors.black54),
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '문의내용:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
                     ),
                   ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                  const SizedBox(height: 4),
+                  Text(
+                    m?.inquiryContent ?? '문의 내용이 없습니다.',
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      height: 1.4,
+                      fontSize: 13,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (m != null && m.callHistory.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    Text(
+                      '이전(${displayStageLabelFromHistoryMap(_orderedCallHistory.first)}) 상담내용:',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      (_orderedCallHistory.first['consultation_content'] ??
+                                  _orderedCallHistory.first['content'])
+                              ?.toString() ??
+                          '',
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        height: 1.4,
+                        fontSize: 13,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          Widget dateField() {
+            return TextFormField(
+              controller: _consultationNextDateCtrl,
+              readOnly: true,
+              onTap: pickNextDate,
+              decoration: InputDecoration(
+                hintText: '날짜를 선택하세요',
+                filled: true,
+                fillColor: Colors.white,
+                suffixIcon: const Icon(Icons.calendar_today_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            );
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: keyboardH),
+            child: Material(
+              color: bgColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                height: sheetHeight,
+                child: Column(
+                  children: [
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      child: Row(
                         children: [
-                          // 키보드가 열리면 문의 요약은 접어 입력 영역을 확보한다.
-                          if (!keyboardOpen) ...[
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade50,
-                                borderRadius: BorderRadius.circular(12),
-                                border:
-                                    Border.all(color: Colors.grey.shade200),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Text(
-                                        '모델: ',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          m?.productCategoryName ?? '미지정',
-                                          style: const TextStyle(
-                                            color: Colors.black54,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  const Text(
-                                    '문의내용:',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    m?.inquiryContent ?? '문의 내용이 없습니다.',
-                                    style: const TextStyle(
-                                      color: Colors.black54,
-                                      height: 1.4,
-                                      fontSize: 13,
-                                    ),
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (m != null &&
-                                      m.callHistory.isNotEmpty) ...[
-                                    const SizedBox(height: 10),
-                                    const Divider(height: 1),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      '이전(${displayStageLabelFromHistoryMap(_orderedCallHistory.first)}) 상담내용:',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: Colors.blueAccent,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      (_orderedCallHistory.first[
-                                                      'consultation_content'] ??
-                                                  _orderedCallHistory
-                                                      .first['content'])
-                                              ?.toString() ??
-                                          '',
-                                      style: const TextStyle(
-                                        color: Colors.black54,
-                                        height: 1.4,
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          const Text(
-                            '상담 결과 *',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          _buildStatusGrid(
-                            scheme,
-                            setModalState,
-                            keyboardOpen,
-                          ),
-                          if (contentRequired) ...[
-                            const SizedBox(height: 12),
-                            const Text(
-                              '상담내용 *',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // 남은 세로 공간을 채움 → 여러 줄 입력 시 윗줄이 스크롤로 사라지지 않음.
-                            Expanded(
-                              child: TextFormField(
-                                controller: _newConsultationCtrl,
-                                expands: true,
-                                maxLines: null,
-                                minLines: null,
-                                textAlignVertical: TextAlignVertical.top,
-                                keyboardType: TextInputType.multiline,
-                                textInputAction: TextInputAction.newline,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  height: 1.45,
-                                ),
-                                decoration: multiLineDecoration(
-                                  '고객와의 상담내용을 자세히 입력하세요...',
-                                ),
-                              ),
-                            ),
-                          ] else if (isLost) ...[
-                            const SizedBox(height: 12),
-                            const Text(
-                              '미수주 사유 *',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: TextFormField(
-                                controller: _unsuccessfulReasonCtrl,
-                                expands: true,
-                                maxLines: null,
-                                minLines: null,
-                                textAlignVertical: TextAlignVertical.top,
-                                keyboardType: TextInputType.multiline,
-                                textInputAction: TextInputAction.newline,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  height: 1.45,
-                                ),
-                                onChanged: (_) => setModalState(() {}),
-                                decoration:
-                                    multiLineDecoration('미수주 사유를 입력하세요'),
-                              ),
-                            ),
-                          ] else
-                            const Spacer(),
-                          if (needsDate) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              '${_scheduledStageAfterInput(m)} 상담 예정일 *',
+                          Expanded(
+                            child: Text(
+                              switch (_statusId) {
+                                CallStatusIds.lost =>
+                                  '${_inputStageLabel(m)} 미수주 등록',
+                                CallStatusIds.won =>
+                                  '${_inputStageLabel(m)} 수주 등록',
+                                _ => '${_inputStageLabel(m)} 상담내용 입력',
+                              },
                               style: const TextStyle(
+                                fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 14,
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _consultationNextDateCtrl,
-                              readOnly: true,
-                              onTap: pickNextDate,
-                              decoration: InputDecoration(
-                                hintText: '날짜를 선택하세요',
-                                filled: true,
-                                fillColor: Colors.white,
-                                suffixIcon: const Icon(
-                                  Icons.calendar_today_outlined,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: _saving
+                                ? null
+                                : () async {
+                                    if (await _confirmDiscardConsultation(
+                                          sheetContext,
+                                        ) &&
+                                        sheetContext.mounted) {
+                                      Navigator.pop(sheetContext);
+                                    }
+                                  },
+                          ),
                         ],
                       ),
                     ),
-                  ),
-                  const Divider(height: 1),
-                  SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                      child: FilledButton(
-                        onPressed: _saving
-                            ? null
-                            : () async {
-                                FocusManager.instance.primaryFocus?.unfocus();
-                                _showConsultationSavingDialog(sheetContext);
-                                final ok = await _save(master);
-                                if (sheetContext.mounted) {
-                                  _hideConsultationSavingDialog(sheetContext);
-                                }
-                                if (ok && sheetContext.mounted) {
-                                  Navigator.pop(sheetContext);
-                                }
-                                if (ok && context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        _lastSaveQueuedOffline
-                                            ? '오프라인 — 상담 내용이 기기에 저장되었습니다. 연결되면 자동 전송됩니다.'
-                                            : '상담내용 및 이력이 저장되었습니다.',
-                                      ),
-                                      duration: _lastSaveQueuedOffline
-                                          ? const Duration(seconds: 5)
-                                          : const Duration(seconds: 4),
-                                    ),
-                                  );
-                                  // 상세 화면은 유지 — 연속 상담·확인 작업 편의.
-                                } else if (!ok) {
-                                  setModalState(() {});
-                                }
-                              },
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(56),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 키보드가 열리면 문의 요약은 접어 입력 영역을 확보한다.
+                            if (!keyboardOpen) ...[
+                              contextBox(),
+                              const SizedBox(height: 12),
+                            ],
+                            const Text(
+                              '상담 결과 *',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildStatusGrid(
+                              scheme,
+                              setModalState,
+                              true, // 시트 안에서는 항상 컴팩트 — 입력란 공간 확보
+                            ),
+                            if (contentRequired) ...[
+                              const SizedBox(height: 16),
+                              const Text(
+                                '상담내용 *',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              multiLineField(
+                                controller: _newConsultationCtrl,
+                                hint: '고객와의 상담내용을 자세히 입력하세요...',
+                              ),
+                            ],
+                            if (isLost) ...[
+                              const SizedBox(height: 16),
+                              const Text(
+                                '미수주 사유 *',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              multiLineField(
+                                controller: _unsuccessfulReasonCtrl,
+                                hint: '미수주 사유를 입력하세요',
+                                onChanged: (_) => setModalState(() {}),
+                              ),
+                            ],
+                            if (needsDate) ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                '${_scheduledStageAfterInput(m)} 상담 예정일 *',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              dateField(),
+                            ],
+                          ],
                         ),
-                        child: Text(
-                          _saving
-                              ? '저장 중...'
-                              : switch (_statusId) {
-                                  CallStatusIds.lost => '미수주 저장',
-                                  CallStatusIds.won => '수주 저장',
-                                  _ => '상담내용 저장',
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        child: FilledButton(
+                          onPressed: _saving
+                              ? null
+                              : () async {
+                                  FocusManager.instance.primaryFocus
+                                      ?.unfocus();
+                                  _showConsultationSavingDialog(sheetContext);
+                                  final ok = await _save(master);
+                                  if (sheetContext.mounted) {
+                                    _hideConsultationSavingDialog(
+                                      sheetContext,
+                                    );
+                                  }
+                                  if (ok && sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                  }
+                                  if (ok && context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          _lastSaveQueuedOffline
+                                              ? '오프라인 — 상담 내용이 기기에 저장되었습니다. 연결되면 자동 전송됩니다.'
+                                              : '상담내용 및 이력이 저장되었습니다.',
+                                        ),
+                                        duration: _lastSaveQueuedOffline
+                                            ? const Duration(seconds: 5)
+                                            : const Duration(seconds: 4),
+                                      ),
+                                    );
+                                  } else if (!ok) {
+                                    setModalState(() {});
+                                  }
                                 },
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(56),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            _saving
+                                ? '저장 중...'
+                                : switch (_statusId) {
+                                    CallStatusIds.lost => '미수주 저장',
+                                    CallStatusIds.won => '수주 저장',
+                                    _ => '상담내용 저장',
+                                  },
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
