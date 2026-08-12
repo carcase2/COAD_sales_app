@@ -20,6 +20,23 @@ class UsageService {
   }) =>
       _record(userId: userId, userName: userName, kind: tabKey);
 
+  /// 체크시트: open | search | view | download
+  static Future<void> recordChecksheet({
+    required String userId,
+    required String userName,
+    required String action,
+  }) {
+    final a = action.trim().toLowerCase();
+    final kind = switch (a) {
+      'open' || 'checksheet' => 'checksheet',
+      'search' || 'checksheet_search' => 'checksheet_search',
+      'view' || 'checksheet_view' => 'checksheet_view',
+      'download' || 'checksheet_download' => 'checksheet_download',
+      _ => a.startsWith('checksheet') ? a : 'checksheet_$a',
+    };
+    return _record(userId: userId, userName: userName, kind: kind);
+  }
+
   static Future<void> _record({
     required String userId,
     required String userName,

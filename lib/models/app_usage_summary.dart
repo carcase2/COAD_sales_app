@@ -145,6 +145,18 @@ const List<String> appUsageKnownTabKeys = [
   'daegu_schedule',
   'menu',
   'settings',
+  'checksheet',
+  'checksheet_search',
+  'checksheet_view',
+  'checksheet_download',
+];
+
+/// 체크시트 기능 사용 집계 키 (메뉴 진입 제외·포함 모두).
+const List<String> checksheetUsageKeys = [
+  'checksheet',
+  'checksheet_search',
+  'checksheet_view',
+  'checksheet_download',
 ];
 
 String appUsageTabLabel(String key) {
@@ -167,6 +179,14 @@ String appUsageTabLabel(String key) {
       return '메뉴';
     case 'settings':
       return '설정';
+    case 'checksheet':
+      return '체크시트 열기';
+    case 'checksheet_search':
+      return '체크시트 검색';
+    case 'checksheet_view':
+      return '체크시트 열람';
+    case 'checksheet_download':
+      return '체크시트 저장';
     default:
       return key.isEmpty ? '—' : key;
   }

@@ -17,6 +17,8 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_screen.da
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
+import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
+import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
@@ -1064,6 +1066,51 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           keywords: const ['견적', '셔터', '견적기', 'estimator', '단가', '모터', '슬라트'],
           onTap: () => closeDrawerThen(_selectQuoterTab),
         ),
+        AppMenuEntry(
+          id: 'checksheet_search',
+          sectionId: 'tools',
+          icon: Icons.fact_check_outlined,
+          title: '체크시트 검색',
+          subtitle: 'MES 아카이브 체크시트(TP1) 조회',
+          quickAccess: true,
+          quickLabel: '체크시트',
+          keywords: const [
+            '체크시트',
+            '체크',
+            'TP1',
+            '아카이브',
+            '현장',
+            '사진',
+            'MES',
+          ],
+          onTap: () => closeDrawerThen(() {
+            _trackTab(user, 'checksheet');
+            Navigator.of(hostContext).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ChecksheetSearchScreen(),
+              ),
+            );
+          }),
+        ),
+        if (isAppAdmin(user))
+          AppMenuEntry(
+            id: 'checksheet_usage',
+            sectionId: 'tools',
+            icon: Icons.bar_chart_rounded,
+            title: '체크시트 사용 내역',
+            subtitle: '누가 많이·잘 쓰는지 확인',
+            quickAccess: true,
+            quickLabel: '시트사용',
+            keywords: const ['체크시트', '사용량', '통계', '이력', '관리'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'checksheet');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ChecksheetUsageScreen(),
+                ),
+              );
+            }),
+          ),
         AppMenuEntry(
           id: 'home_pending_uncalled',
           sectionId: 'shortcuts',

@@ -1,5 +1,7 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
+import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
+import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
@@ -183,6 +185,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 20),
           ],
+          Text(
+            '자료',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.fact_check_outlined, color: scheme.primary),
+            title: const Text('체크시트 검색'),
+            subtitle: const Text('MES 아카이브 · 체크시트(TP1)만'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ChecksheetSearchScreen(),
+                ),
+              );
+            },
+          ),
+          if (isAppAdmin(user))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.bar_chart_rounded, color: scheme.primary),
+              title: const Text('체크시트 사용 내역'),
+              subtitle: const Text('사용자별 검색·열람·저장 순위'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ChecksheetUsageScreen(),
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: 20),
           Text(
             '앱',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(

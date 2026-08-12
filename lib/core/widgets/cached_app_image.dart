@@ -11,6 +11,7 @@ class CachedAppImage extends StatelessWidget {
     this.height,
     this.memCacheWidth,
     this.memCacheHeight,
+    this.httpHeaders,
     this.placeholder,
     this.errorWidget,
   });
@@ -21,6 +22,8 @@ class CachedAppImage extends StatelessWidget {
   final double? height;
   final int? memCacheWidth;
   final int? memCacheHeight;
+  /// Edge Function 등 인증이 필요한 미디어용 (apikey / Authorization).
+  final Map<String, String>? httpHeaders;
   final Widget? placeholder;
   final Widget? errorWidget;
 
@@ -33,6 +36,7 @@ class CachedAppImage extends StatelessWidget {
       height: height,
       memCacheWidth: memCacheWidth,
       memCacheHeight: memCacheHeight,
+      httpHeaders: httpHeaders,
       placeholder: (_, _) =>
           placeholder ??
           const Center(
