@@ -1,3 +1,5 @@
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+
 /// 웹 `SalesCallsTab` · COAD_home `docs/flutter-sales-call-status-prompt.md` 와 동일 규칙.
 
 class SalesCallConsultationValidationException implements Exception {
@@ -88,6 +90,21 @@ bool canEnterFurtherConsultation(int? statusId) {
 String? resolveNextScheduledDateForSave(int statusId, String? nextScheduledDateYmd) {
   if (!statusRequiresNextScheduledDate(statusId)) return null;
   return emptyToNull(nextScheduledDateYmd);
+}
+
+/// 상담 예정일 선택 후, 그날 기존 팔로우 건수 안내.
+String consultationFollowDateCountMessage({
+  required String ymd,
+  required int? count,
+}) {
+  final label = formatYmdFlowLabelKo(ymd);
+  if (count == null) {
+    return '$label 예정 건수를 확인하지 못했습니다.';
+  }
+  if (count == 0) {
+    return '$label에는 예정된 상담이 없습니다.';
+  }
+  return '$label에 이미 $count건이 예정되어 있습니다.';
 }
 
 /// 미수주·수주(종료)는 상담내용 선택 — 미수주는 `unsuccessful_reason`만 필수.

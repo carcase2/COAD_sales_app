@@ -90,6 +90,21 @@ void main() {
     );
   });
 
+  test('consultationFollowDateCountMessage — 건수별 안내', () {
+    expect(
+      consultationFollowDateCountMessage(ymd: '2026-08-20', count: 3),
+      '8월 20일 (목)에 이미 3건이 예정되어 있습니다.',
+    );
+    expect(
+      consultationFollowDateCountMessage(ymd: '2026-08-20', count: 0),
+      '8월 20일 (목)에는 예정된 상담이 없습니다.',
+    );
+    expect(
+      consultationFollowDateCountMessage(ymd: '2026-08-20', count: null),
+      '8월 20일 (목) 예정 건수를 확인하지 못했습니다.',
+    );
+  });
+
   test('resolveNextScheduledDateForSave — 미결정만 날짜', () {
     expect(
       resolveNextScheduledDateForSave(CallStatusIds.undecided, '2026-06-01'),

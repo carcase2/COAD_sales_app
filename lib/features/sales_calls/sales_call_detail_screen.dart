@@ -60,6 +60,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
   /// 상담 입력 시트 전용 — DB `next_scheduled_date`와 동기하지 않음
   late TextEditingController _consultationNextDateCtrl;
+  int? _consultationDayFollowCount;
+  bool _consultationDayFollowCountLoading = false;
+  String? _consultationDayFollowCountYmd;
 
   String? _productId;
   String? _regionId;
@@ -572,6 +575,97 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     final d = int.tryParse(parts[2]);
     if (y == null || m == null || d == null) return DateTime.now();
     return DateTime(y, m, d);
+  }
+
+  String _calendarDateToYmd(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  void _resetConsultationFollowDateCount() {
+    _consultationDayFollowCount = null;
+    _consultationDayFollowCountLoading = false;
+    _consultationDayFollowCountYmd = null;
+  }
+
+  Future<bool> _confirmConsultationFollowDate({
+    required BuildContext sheetContext,
+    required String ymd,
+    required int? count,
+  }) async {
+    final keep = await showDialog<bool>(
+      context: sheetContext,
+      builder: (ctx) => AlertDialog(
+        title: const Text('예정일 확인'),
+        content: Text(
+          consultationFollowDateCountMessage(ymd: ymd, count: count),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('다른 날 선택'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('이 날짜로'),
+          ),
+        ],
+      ),
+    );
+    return keep != false;
+  }
+
+  Future<void> _pickConsultationNextDate({
+    required BuildContext sheetContext,
+    required void Function(void Function()) setModalState,
+  }) async {
+    final today = _ymdToCalendarDate(todayYmdSeoul());
+    while (true) {
+      if (!sheetContext.mounted) return;
+      final picked = _consultationNextDateCtrl.text.trim();
+      final initial = picked.isNotEmpty ? _ymdToCalendarDate(picked) : today;
+      final safeInitial = initial.isBefore(today) ? today : initial;
+      final date = await showDatePicker(
+        context: sheetContext,
+        initialDate: safeInitial,
+        firstDate: today,
+        lastDate: today.add(const Duration(days: 365)),
+        locale: const Locale('ko', 'KR'),
+        helpText: '다음 상담 예정일',
+        cancelText: '취소',
+        confirmText: '선택',
+      );
+      if (!sheetContext.mounted || date == null) return;
+
+      final ymd = _calendarDateToYmd(date);
+      setModalState(() {
+        _consultationNextDateCtrl.text = ymd;
+        _consultationDayFollowCountLoading = true;
+        _consultationDayFollowCount = null;
+        _consultationDayFollowCountYmd = ymd;
+      });
+
+      int? count;
+      try {
+        count = await ref
+            .read(salesCallsRepositoryProvider)
+            .countFollowUpsOnDate(ymd: ymd, excludeId: widget.id);
+      } catch (_) {
+        count = null;
+      }
+      if (!sheetContext.mounted) return;
+      setModalState(() {
+        if (_consultationDayFollowCountYmd == ymd) {
+          _consultationDayFollowCountLoading = false;
+          _consultationDayFollowCount = count;
+        }
+      });
+
+      final keepDate = await _confirmConsultationFollowDate(
+        sheetContext: sheetContext,
+        ymd: ymd,
+        count: count,
+      );
+      if (keepDate) return;
+    }
   }
 
   String _getNextStage(String? current) {
@@ -1935,6 +2029,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   void _showConsultationDialog(MasterDataBundle master) {
     _consultationNextDateCtrl.clear();
     _unsuccessfulReasonCtrl.clear();
+    _resetConsultationFollowDateCount();
     _statusId = CallStatusIds.undecided;
     showModalBottomSheet(
       context: context,
@@ -1996,24 +2091,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             );
           }
 
-          Future<void> pickNextDate() async {
-            final today = _ymdToCalendarDate(todayYmdSeoul());
-            final picked = _consultationNextDateCtrl.text.trim();
-            final initial =
-                picked.isNotEmpty ? _ymdToCalendarDate(picked) : today;
-            final date = await showDatePicker(
-              context: context,
-              initialDate: initial,
-              firstDate: today,
-              lastDate: today.add(const Duration(days: 365)),
-            );
-            if (date != null) {
-              setModalState(() {
-                _consultationNextDateCtrl.text =
-                    date.toIso8601String().split('T').first;
-              });
-            }
-          }
+          Future<void> pickNextDate() => _pickConsultationNextDate(
+            sheetContext: sheetContext,
+            setModalState: setModalState,
+          );
 
           Widget multiLineField({
             required TextEditingController controller,
@@ -2115,19 +2196,79 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           }
 
           Widget dateField() {
-            return TextFormField(
-              controller: _consultationNextDateCtrl,
-              readOnly: true,
-              onTap: pickNextDate,
-              decoration: InputDecoration(
-                hintText: '날짜를 선택하세요',
-                filled: true,
-                fillColor: Colors.white,
-                suffixIcon: const Icon(Icons.calendar_today_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+            final ymd = _consultationNextDateCtrl.text.trim();
+            final countForThisDate =
+                ymd.isNotEmpty && _consultationDayFollowCountYmd == ymd;
+            final loading = countForThisDate && _consultationDayFollowCountLoading;
+            final showCount = countForThisDate && !loading;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  controller: _consultationNextDateCtrl,
+                  readOnly: true,
+                  onTap: pickNextDate,
+                  decoration: InputDecoration(
+                    hintText: '날짜를 선택하세요',
+                    filled: true,
+                    fillColor: Colors.white,
+                    suffixIcon: const Icon(Icons.calendar_today_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
-              ),
+                if (loading) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '이 날짜의 예정 건수를 확인하는 중...',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else if (showCount) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    consultationFollowDateCountMessage(
+                      ymd: ymd,
+                      count: _consultationDayFollowCount,
+                    ),
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      color: (_consultationDayFollowCount ?? 0) > 0
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: pickNextDate,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('다른 날짜 선택'),
+                    ),
+                  ),
+                ],
+              ],
             );
           }
 

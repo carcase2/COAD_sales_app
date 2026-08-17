@@ -836,6 +836,34 @@ class SalesCallsRepository {
     });
   }
 
+  /// 해당 일자(`next_scheduled_date`)에 이미 잡혀 있는 미종료 팔로우 건수.
+  /// 홈 달력·날짜 팔로우와 동일하게 수주·미수주·단순문의는 제외한다.
+  Future<int> countFollowUpsOnDate({
+    required String ymd,
+    String? excludeId,
+  }) async {
+    final endExclusive = _ymdPlusOneDay(ymd);
+    try {
+      var query = _client
+          .from('sales_calls')
+          .select('id')
+          .gte('next_scheduled_date', ymd)
+          .lt('next_scheduled_date', endExclusive)
+          .not('status_id', 'in', '(2,3,4)');
+      final trimmedExclude = excludeId?.trim() ?? '';
+      if (trimmedExclude.isNotEmpty) {
+        query = query.neq('id', trimmedExclude);
+      }
+      final res = await query;
+      return res.length;
+    } catch (e) {
+      if (isNetworkConnectivityError(e)) {
+        throw ApiException('예정 건수를 확인하지 못했습니다. 네트워크 연결을 확인해 주세요.');
+      }
+      throw ApiException('예정 건수를 확인하지 못했습니다: $e');
+    }
+  }
+
   Future<TodayStats> fetchTodayStats() => fetchStatsForDate(todayYmdSeoul());
 
   Future<TodayStats> fetchStatsForDate(String ymdSeoul) async {
