@@ -1,3 +1,7 @@
+/// 검색창에 번호를 넣은 것으로 보고 서버 검색을 바로 열지 여부.
+bool looksLikePhoneQuery(String input) =>
+    normalizePhoneDigits(input).length >= 8;
+
 bool isValidKoreanPhone(String input) {
   final digits = input.replaceAll(RegExp(r'\D'), '');
   return digits.length >= 9 && digits.length <= 12;

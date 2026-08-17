@@ -90,6 +90,48 @@ void main() {
     );
   });
 
+  test('lastConsultationSnippet — 최신 이력 한 줄', () {
+    expect(lastConsultationSnippet(const []), isNull);
+    expect(
+      lastConsultationSnippet([
+        {
+          'call_stage': 1,
+          'call_date': '2026-08-01',
+          'consultation_content': '견적 요청',
+        },
+        {
+          'call_stage': 2,
+          'call_date': '2026-08-10',
+          'consultation_content': '재연락 예정',
+        },
+      ]),
+      '재연락 예정',
+    );
+  });
+
+  test('isFollowOverdue / followOverdueDays', () {
+    expect(isFollowOverdue('2026-08-16', '2026-08-17'), isTrue);
+    expect(isFollowOverdue('2026-08-17', '2026-08-17'), isFalse);
+    expect(followOverdueDays('2026-08-15', '2026-08-17'), 2);
+    expect(followOverdueDays('2026-08-17', '2026-08-17'), isNull);
+  });
+
+  test('consultationQuickDateChips — 오늘·내일·모레·다음 주 월', () {
+    final chips = consultationQuickDateChips('2026-08-17');
+    expect(chips.map((c) => c.label).toList(), [
+      '오늘',
+      '내일',
+      '모레',
+      '다음 주 월',
+    ]);
+    expect(chips.map((c) => c.ymd).toList(), [
+      '2026-08-17',
+      '2026-08-18',
+      '2026-08-19',
+      '2026-08-24',
+    ]);
+  });
+
   test('consultationFollowDateCountMessage — 건수별 안내', () {
     expect(
       consultationFollowDateCountMessage(ymd: '2026-08-20', count: 3),

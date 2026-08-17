@@ -51,6 +51,9 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
 
   @override
   Widget buildSuggestions(BuildContext context) {
+    if (looksLikePhoneQuery(query)) {
+      return _buildServerSearchResults(context);
+    }
     if (query.isEmpty) {
       return _buildEmptyState(
         context,
@@ -164,6 +167,8 @@ class SalesCallSearchDelegate extends SearchDelegate<void> {
             ),
           );
         },
+        onLongPress: () =>
+            LauncherUtils.copyPhone(context, c.customerPhone ?? ''),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

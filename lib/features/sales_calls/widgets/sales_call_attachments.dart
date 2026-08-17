@@ -16,6 +16,7 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
     this.editable = false,
     this.onRemoveAt,
     this.onAdd,
+    this.onAddCamera,
     this.uploadBusy = false,
     this.progressLabel,
   });
@@ -25,6 +26,7 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
   final bool editable;
   final void Function(int index)? onRemoveAt;
   final VoidCallback? onAdd;
+  final VoidCallback? onAddCamera;
   final bool uploadBusy;
   final String? progressLabel;
 
@@ -252,8 +254,17 @@ class SalesCallAttachmentsStrip extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
+            if (onAddCamera != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: '카메라',
+                visualDensity: VisualDensity.compact,
+                onPressed: uploadBusy ? null : onAddCamera,
+                icon: const Icon(Icons.photo_camera_outlined, size: 20),
+              ),
+            ],
             if (onAdd != null) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               TextButton.icon(
                 onPressed: uploadBusy ? null : onAdd,
                 icon: uploadBusy

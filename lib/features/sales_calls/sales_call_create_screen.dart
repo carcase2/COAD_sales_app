@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
@@ -9,10 +10,17 @@ import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/core/utils/phone_validation.dart';
+import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call_draft.dart';
@@ -64,6 +72,61 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         selection: TextSelection.collapsed(offset: formatted.length),
       );
     }
+    _schedulePhoneLookup(formatted);
+  }
+
+  void _schedulePhoneLookup(String value) {
+    _phoneLookupDebounce?.cancel();
+    final digits = normalizePhoneDigits(value);
+    if (digits.length < 8) {
+      if (_existingByPhone.isNotEmpty || _phoneLookupBusy) {
+        setState(() {
+          _existingByPhone = [];
+          _phoneLookupBusy = false;
+          _lookedUpDigits = null;
+        });
+      }
+      return;
+    }
+    _phoneLookupDebounce = Timer(const Duration(milliseconds: 450), () {
+      unawaited(_lookupExistingByPhone(digits));
+    });
+  }
+
+  Future<void> _lookupExistingByPhone(String digits) async {
+    if (!mounted) return;
+    setState(() {
+      _phoneLookupBusy = true;
+      _lookedUpDigits = digits;
+    });
+    try {
+      final found = await ref
+          .read(salesCallsRepositoryProvider)
+          .findCallsByPhone(digits, limit: 5);
+      if (!mounted || _lookedUpDigits != digits) return;
+      setState(() {
+        _existingByPhone = found;
+        _phoneLookupBusy = false;
+      });
+    } catch (_) {
+      if (!mounted || _lookedUpDigits != digits) return;
+      setState(() {
+        _existingByPhone = [];
+        _phoneLookupBusy = false;
+      });
+    }
+  }
+
+  Future<void> _pastePhoneFromClipboard() async {
+    final digits = await LauncherUtils.clipboardPhoneDigits();
+    if (!mounted) return;
+    if (digits == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('클립보드에서 전화번호를 찾지 못했습니다.')),
+      );
+      return;
+    }
+    _onPhoneChanged(formatKoreanPhoneHyphenated(digits));
   }
 
   String? _productId;
@@ -77,6 +140,10 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   int _uploadCurrent = 0;
 
   bool _aiBusy = false;
+  Timer? _phoneLookupDebounce;
+  List<SalesCall> _existingByPhone = [];
+  bool _phoneLookupBusy = false;
+  String? _lookedUpDigits;
 
   void _ensureDefaultClassification(MasterDataBundle master) {
     if (_productId == null && master.productCategories.isNotEmpty) {
@@ -99,6 +166,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
 
   @override
   void dispose() {
+    _phoneLookupDebounce?.cancel();
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _inquiryCtrl.dispose();
@@ -231,7 +299,25 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       }
 
       if (!mounted) return;
-      navigateToHomeAndRefresh(context, ref, message: '접수가 완료되었습니다.');
+      ref.read(salesCallsRepositoryProvider).invalidateTempManagerCache(
+            forceRevertOnNextFetch: true,
+          );
+      invalidateHomeSalesCaches(ref.invalidate);
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => SalesCallDetailScreen(
+            id: created.id,
+            initial: created,
+          ),
+        ),
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = NotificationService.navigatorKey.currentContext;
+        if (ctx == null) return;
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          const SnackBar(content: Text('접수가 완료되었습니다.')),
+        );
+      });
     } on OfflineException catch (e) {
       if (!mounted) return;
       await refreshPendingSyncCount(ref);
@@ -264,6 +350,17 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Future<void> _pickAndUpload(MasterDataBundle master) async {
+    final source = await showSalesCallImageSourceSheet(context);
+    if (source == null) return;
+    if (source == SalesCallImageSource.camera) {
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (shot == null) return;
+      await _uploadCreatePaths(master, [shot.path]);
+      return;
+    }
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const [
@@ -291,7 +388,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
         .toList();
 
     if (paths.isEmpty) return;
+    await _uploadCreatePaths(master, paths);
+  }
 
+  Future<void> _uploadCreatePaths(
+    MasterDataBundle master,
+    List<String> paths,
+  ) async {
     // 이미지만 골라내서 편집 기회 제공 (1건일 때만 우선 자동 제안)
     List<String> finalPaths = [];
     if (paths.length == 1 && isImageFile(paths.first)) {
@@ -356,13 +459,25 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Future<void> _scanBusinessCard(MasterDataBundle master) async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.image,
-      allowMultiple: false,
+    final source = await showSalesCallImageSourceSheet(
+      context,
+      title: '명함 인식',
     );
-    if (result == null || result.files.isEmpty) return;
-
-    final path = result.files.first.path;
+    if (source == null) return;
+    String? path;
+    if (source == SalesCallImageSource.camera) {
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      path = shot?.path;
+    } else {
+      final result = await FilePicker.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      path = result?.files.first.path;
+    }
     if (path == null) return;
 
     setState(() => _aiBusy = true);
@@ -626,6 +741,79 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? '번호를 입력해주세요' : null,
                 ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _pastePhoneFromClipboard,
+                    icon: const Icon(Icons.content_paste_rounded, size: 16),
+                    label: const Text('번호 붙여넣기'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
+                if (_phoneLookupBusy)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                if (_existingByPhone.isNotEmpty) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                    decoration: BoxDecoration(
+                      color: scheme.secondaryContainer.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '같은 번호 기존 접수 ${_existingByPhone.length}건',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ..._existingByPhone.map((c) {
+                          final last = lastConsultationSnippet(c.callHistory);
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              c.customerName ?? '(이름 없음)',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              [
+                                formatYmdFlowLabelKo(
+                                  salesCallReceptionYmd(c),
+                                ),
+                                c.regionName,
+                                if (last != null) last,
+                              ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => SalesCallDetailScreen(
+                                    id: c.id,
+                                    initial: c,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _buildTextField(
                   label: '고객명/상호명',

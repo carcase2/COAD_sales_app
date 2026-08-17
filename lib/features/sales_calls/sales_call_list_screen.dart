@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
@@ -41,6 +42,9 @@ enum ListQueryMode {
 
   /// `updated_at` 서울 일자 구간. [date] 필수, [dateEndInclusive] 없으면 당일만.
   updatedRange,
+
+  /// 예정일이 오늘보다 과거인 미종료 팔로우.
+  overdueFollow,
 }
 
 class SalesCallListScreen extends ConsumerStatefulWidget {
@@ -359,6 +363,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         final key = c.followCalendarDateKey;
         if (key == null) return false;
         return key.compareTo(start) >= 0 && key.compareTo(end) <= 0;
+      case ListQueryMode.overdueFollow:
+        if ([2, 3, 4].contains(c.statusId)) return false;
+        return isFollowOverdue(c.followCalendarDateKey, todayYmdSeoul());
       default:
         return true;
     }
@@ -393,7 +400,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         widget.mode != ListQueryMode.dateRange &&
         widget.mode != ListQueryMode.followRange &&
         widget.mode != ListQueryMode.pendingUncalled &&
-        widget.mode != ListQueryMode.updatedRange) {
+        widget.mode != ListQueryMode.updatedRange &&
+        widget.mode != ListQueryMode.overdueFollow) {
       try {
         final cacheDate = switch (widget.mode) {
           ListQueryMode.today => widget.date ?? todayYmdSeoul(),
@@ -405,6 +413,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           ListQueryMode.dateRange => null,
           ListQueryMode.followRange => null,
           ListQueryMode.updatedRange => null,
+          ListQueryMode.overdueFollow => null,
         };
         final cacheIncompleteOnly =
             widget.mode == ListQueryMode.incomplete ||
@@ -440,7 +449,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           _markSharedAssigneeScrollPending();
         }
         setState(() {
-          _items = page.items;
+          _items = _sortedItems(page.items);
           _nextOffset = page.rawRowCount;
           _hasMore = page.hasMore;
           _isLoadingMore = false;
@@ -482,7 +491,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         // id 기준 중복 제거 후 이어붙이기
         final seen = _items.map((e) => e.id).toSet();
         final appended = page.items.where((c) => !seen.contains(c.id)).toList();
-        _items = [..._items, ...appended];
+        _items = _sortedItems([..._items, ...appended]);
         _nextOffset += page.rawRowCount;
         _hasMore = page.hasMore;
         _isLoadingMore = false;
@@ -495,6 +504,19 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
         SnackBar(content: Text('추가 목록을 불러오지 못했습니다: ${koreanErrorMessage(e)}')),
       );
     }
+  }
+
+  List<SalesCall> _sortedItems(List<SalesCall> items) {
+    if (widget.mode != ListQueryMode.overdueFollow) return items;
+    final next = List<SalesCall>.from(items);
+    next.sort((a, b) {
+      final ak = a.followCalendarDateKey ?? '';
+      final bk = b.followCalendarDateKey ?? '';
+      final byDate = ak.compareTo(bk);
+      if (byDate != 0) return byDate;
+      return (a.customerName ?? '').compareTo(b.customerName ?? '');
+    });
+    return next;
   }
 
   Future<({List<SalesCall> items, bool hasMore, int rawRowCount})>
@@ -552,7 +574,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           followDate: widget.date ?? todayYmdSeoul(),
           incompleteOnly: true,
           excludeSimpleInquiries: true,
-          includeCallHistory: false,
+          includeCallHistory: true,
           limit: _pageSize,
           offset: offset,
         );
@@ -570,7 +592,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           followRangeEndInclusive: widget.dateEndInclusive!,
           incompleteOnly: true,
           excludeSimpleInquiries: true,
-          includeCallHistory: false,
+          includeCallHistory: true,
           limit: _pageSize,
           offset: offset,
         );
@@ -580,6 +602,19 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           updatedAtRangeEndInclusiveYmd:
               widget.dateEndInclusive ?? widget.date ?? todayYmdSeoul(),
           includeCallHistory: false,
+          limit: _pageSize,
+          offset: offset,
+        );
+      case ListQueryMode.overdueFollow:
+        return repo.fetchCallsPage(
+          followRangeStart: addDaysToYmd(
+            todayYmdSeoul(),
+            -overdueFollowLookbackDays,
+          ),
+          followRangeEndInclusive: addDaysToYmd(todayYmdSeoul(), -1),
+          incompleteOnly: true,
+          excludeSimpleInquiries: true,
+          includeCallHistory: true,
           limit: _pageSize,
           offset: offset,
         );
@@ -630,6 +665,8 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
           return '${formatYmdFlowLabelKo(start)} 업데이트';
         }
         return '업데이트 ${formatYmdFlowLabelKo(start)} ~ ${formatYmdFlowLabelKo(end)}';
+      case ListQueryMode.overdueFollow:
+        return '지연 팔로우';
     }
   }
 
@@ -834,6 +871,7 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
       final emptyMessage = switch (widget.mode) {
         ListQueryMode.incomplete ||
         ListQueryMode.pendingUncalled => '처리할 미통화가 없습니다.',
+        ListQueryMode.overdueFollow => '지연된 팔로우가 없습니다.',
         ListQueryMode.today => '오늘 접수가 아직 없습니다.',
         ListQueryMode.completedToday => '오늘 완료된 건이 없습니다.',
         _ => '목록이 비어 있습니다.',
@@ -1337,18 +1375,66 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: SearchHighlightText(
-                                        text: c.customerPhone ?? '번호 없음',
-                                        query: _searchQuery,
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700,
-                                          color: scheme.primary,
-                                          letterSpacing: -0.2,
+                                      child: GestureDetector(
+                                        onTap: () => LauncherUtils.makePhoneCall(
+                                          c.customerPhone ?? '',
+                                        ),
+                                        onLongPress: () => LauncherUtils.copyPhone(
+                                          context,
+                                          c.customerPhone ?? '',
+                                        ),
+                                        child: SearchHighlightText(
+                                          text: c.customerPhone ?? '번호 없음',
+                                          query: _searchQuery,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700,
+                                            color: scheme.primary,
+                                            letterSpacing: -0.2,
+                                          ),
                                         ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
+                                    if (c.canEnterFurtherConsultationRound())
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: UxQuickRoundAction(
+                                          icon: Icons.add_comment_rounded,
+                                          color: scheme.tertiary,
+                                          tooltip: '상담 입력',
+                                          size: 44,
+                                          onTap: () async {
+                                            final result = await Navigator.of(
+                                              context,
+                                            ).push<Object?>(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    SalesCallDetailScreen(
+                                                      id: c.id,
+                                                      initial: c,
+                                                      openConsultation: true,
+                                                    ),
+                                              ),
+                                            );
+                                            if (!mounted) return;
+                                            if (identical(
+                                              result,
+                                              SalesCallDetailScreen.deleted,
+                                            )) {
+                                              setState(() {
+                                                _items = _items
+                                                    .where((item) => item.id != c.id)
+                                                    .toList();
+                                                _clearListMemo();
+                                              });
+                                            } else if (result is SalesCall) {
+                                              _applyDetailReturn(result);
+                                            }
+                                            await _loadWithCache();
+                                          },
+                                        ),
+                                      ),
                                     UxQuickRoundAction(
                                       icon: Icons.call_rounded,
                                       color: AppTokens.success(scheme),
@@ -1357,7 +1443,9 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                           widget.mode ==
                                               ListQueryMode.incomplete ||
                                           widget.mode ==
-                                              ListQueryMode.pendingUncalled,
+                                              ListQueryMode.pendingUncalled ||
+                                          widget.mode ==
+                                              ListQueryMode.overdueFollow,
                                       tooltip: '전화 걸기',
                                       onTap: () => LauncherUtils.makePhoneCall(
                                         c.customerPhone ?? '',
@@ -1376,6 +1464,34 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 10),
+
+                                if (c.followCalendarDateKey != null) ...[
+                                  Builder(
+                                    builder: (_) {
+                                      final followYmd = c.followCalendarDateKey!;
+                                      final overdueDays = followOverdueDays(
+                                        followYmd,
+                                        todayYmd,
+                                      );
+                                      final label = overdueDays == null
+                                          ? '팔로우 ${formatYmdFlowLabelKo(followYmd)}'
+                                          : '지연 ${formatYmdFlowLabelKo(followYmd)} · $overdueDays일 지남';
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 8),
+                                        child: Text(
+                                          label,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: overdueDays == null
+                                                ? scheme.primary
+                                                : scheme.error,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
 
                                 if (c.inquiryContent != null &&
                                     c.inquiryContent!.isNotEmpty)
@@ -1409,6 +1525,23 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+
+                                if (lastConsultationSnippet(c.callHistory) !=
+                                    null) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '직전 상담: ${lastConsultationSnippet(c.callHistory)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.35,
+                                      color: scheme.onSurface.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                    ),
+                                  ),
+                                ],
 
                                 const SizedBox(height: 12),
 

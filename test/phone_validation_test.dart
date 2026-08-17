@@ -2,6 +2,14 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('looksLikePhoneQuery', () {
+    test('8자리 이상 숫자면 번호 검색', () {
+      expect(looksLikePhoneQuery('010-5660-6'), isTrue);
+      expect(looksLikePhoneQuery('코아드'), isFalse);
+      expect(looksLikePhoneQuery('010'), isFalse);
+    });
+  });
+
   group('isValidKoreanPhone', () {
     test('자릿수 범위', () {
       expect(isValidKoreanPhone('0101234567'), isTrue); // 10

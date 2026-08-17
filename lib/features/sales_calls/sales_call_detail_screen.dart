@@ -9,7 +9,9 @@ import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
+import 'package:coad_customer_calls/data/consultation_draft_store.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
+import 'package:coad_customer_calls/features/sales_calls/sales_call_day_follow_pager_screen.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -17,6 +19,7 @@ import 'package:coad_customer_calls/features/sales_calls/sales_call_display.dart
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
@@ -27,10 +30,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class SalesCallDetailScreen extends ConsumerStatefulWidget {
-  const SalesCallDetailScreen({super.key, required this.id, this.initial});
+  const SalesCallDetailScreen({
+    super.key,
+    required this.id,
+    this.initial,
+    this.openConsultation = false,
+  });
 
   final String id;
   final SalesCall? initial;
+
+  /// 목록에서 상담 아이콘으로 들어올 때 시트를 바로 연다.
+  final bool openConsultation;
 
   /// [Navigator.pop] 결과 — 접수 삭제 완료. 목록에서 해당 행을 제거한다.
   static const Object deleted = Object();
@@ -79,6 +90,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   bool _uploadBusy = false;
   int _uploadTotal = 0;
   int _uploadCurrent = 0;
+  bool _openedConsultationFromFlag = false;
+  Timer? _consultationDraftDebounce;
 
   // 상담 이력 스와이프 관련 상태
   late PageController _historyPageController;
@@ -185,6 +198,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     _stageCtrl.dispose();
     _nextDateCtrl.dispose();
     _consultationNextDateCtrl.dispose();
+    _consultationDraftDebounce?.cancel();
     _newConsultationCtrl.dispose();
     _unsuccessfulReasonCtrl.dispose();
     _historyPageController.dispose();
@@ -271,7 +285,22 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         .whereType<String>()
         .where((p) => isAllowedPickerPath(p))
         .toList();
+    await _uploadLocalPaths(master, paths);
+  }
 
+  Future<void> _captureAndUpload(MasterDataBundle master) async {
+    final shot = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
+    if (shot == null) return;
+    await _uploadLocalPaths(master, [shot.path]);
+  }
+
+  Future<void> _uploadLocalPaths(
+    MasterDataBundle master,
+    List<String> paths,
+  ) async {
     if (paths.isEmpty) return;
 
     setState(() {
@@ -282,9 +311,9 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
 
     final site = _siteNameForUpload(master);
     final uploader = ref.read(b2UploadRepositoryProvider);
+    var added = false;
 
     try {
-      // 병렬 업로드 수행
       await Future.wait(
         paths.map((path) async {
           try {
@@ -298,6 +327,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 _imageUrls = [..._imageUrls, url];
                 _uploadCurrent++;
               });
+              added = true;
             }
           } catch (e) {
             if (mounted) {
@@ -321,6 +351,67 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         });
       }
     }
+    if (added) await _persistImages();
+  }
+
+  Future<void> _removeImageAt(int index) async {
+    if (index < 0 || index >= _imageUrls.length) return;
+    setState(() {
+      _imageUrls = List<String>.from(_imageUrls)..removeAt(index);
+    });
+    await _persistImages();
+  }
+
+  Future<void> _persistImages() async {
+    try {
+      final updated = await ref.read(salesCallsRepositoryProvider).updateCall(
+        widget.id,
+        {
+          'images': List<String>.from(_imageUrls),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
+      );
+      if (!mounted) return;
+      _applyModel(updated);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('첨부 저장 실패: ${koreanErrorMessage(e)}')),
+      );
+    }
+  }
+
+  ConsultationDraftStore get _draftStore =>
+      ConsultationDraftStore(ref.read(appDependenciesProvider).prefs);
+
+  void _scheduleConsultationDraftSave() {
+    _consultationDraftDebounce?.cancel();
+    _consultationDraftDebounce = Timer(const Duration(milliseconds: 400), () {
+      unawaited(_persistConsultationDraft());
+    });
+  }
+
+  Future<void> _persistConsultationDraft() {
+    return _draftStore.save(
+      widget.id,
+      ConsultationDraft(
+        content: _newConsultationCtrl.text,
+        statusId: _statusId,
+        nextDateYmd: _consultationNextDateCtrl.text.trim(),
+        unsuccessfulReason: _unsuccessfulReasonCtrl.text,
+      ),
+    );
+  }
+
+  Future<void> _clearConsultationDraft() => _draftStore.clear(widget.id);
+
+  void _maybeOpenConsultation(MasterDataBundle master) {
+    if (_openedConsultationFromFlag || !widget.openConsultation) return;
+    if (!_canEnterFurtherConsultation || _loading) return;
+    _openedConsultationFromFlag = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showConsultationDialog(master);
+    });
   }
 
   Future<void> _confirmDelete() async {
@@ -424,6 +515,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         );
         _applyModel(updated);
         _consultationSavedSinceOpen = true;
+        unawaited(_clearConsultationDraft());
         invalidateHomeSalesCaches(ref.invalidate);
       }
 
@@ -448,6 +540,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       // 상담 내용은 로컬 큐에 저장됨 — 입력을 비우고 성공 흐름으로 종료.
       if (!_isEditMode) {
         _consultationSavedSinceOpen = true;
+        unawaited(_clearConsultationDraft());
         invalidateHomeSalesCaches(ref.invalidate);
       }
       if (mounted) {
@@ -636,36 +729,49 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       if (!sheetContext.mounted || date == null) return;
 
       final ymd = _calendarDateToYmd(date);
-      setModalState(() {
-        _consultationNextDateCtrl.text = ymd;
-        _consultationDayFollowCountLoading = true;
-        _consultationDayFollowCount = null;
-        _consultationDayFollowCountYmd = ymd;
-      });
-
-      int? count;
-      try {
-        count = await ref
-            .read(salesCallsRepositoryProvider)
-            .countFollowUpsOnDate(ymd: ymd, excludeId: widget.id);
-      } catch (_) {
-        count = null;
-      }
-      if (!sheetContext.mounted) return;
-      setModalState(() {
-        if (_consultationDayFollowCountYmd == ymd) {
-          _consultationDayFollowCountLoading = false;
-          _consultationDayFollowCount = count;
-        }
-      });
-
-      final keepDate = await _confirmConsultationFollowDate(
+      final keepDate = await _applyConsultationFollowDate(
         sheetContext: sheetContext,
+        setModalState: setModalState,
         ymd: ymd,
-        count: count,
       );
       if (keepDate) return;
     }
+  }
+
+  Future<bool> _applyConsultationFollowDate({
+    required BuildContext sheetContext,
+    required void Function(void Function()) setModalState,
+    required String ymd,
+  }) async {
+    setModalState(() {
+      _consultationNextDateCtrl.text = ymd;
+      _consultationDayFollowCountLoading = true;
+      _consultationDayFollowCount = null;
+      _consultationDayFollowCountYmd = ymd;
+    });
+    _scheduleConsultationDraftSave();
+
+    int? count;
+    try {
+      count = await ref
+          .read(salesCallsRepositoryProvider)
+          .countFollowUpsOnDate(ymd: ymd, excludeId: widget.id);
+    } catch (_) {
+      count = null;
+    }
+    if (!sheetContext.mounted) return true;
+    setModalState(() {
+      if (_consultationDayFollowCountYmd == ymd) {
+        _consultationDayFollowCountLoading = false;
+        _consultationDayFollowCount = count;
+      }
+    });
+    if ((count ?? 0) <= 0) return true;
+    return _confirmConsultationFollowDate(
+      sheetContext: sheetContext,
+      ymd: ymd,
+      count: count,
+    );
   }
 
   String _getNextStage(String? current) {
@@ -790,11 +896,44 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
+  bool get _editDirty {
+    final m = _model;
+    if (!_isEditMode || m == null) return false;
+    return _nameCtrl.text.trim() != (m.customerName ?? '').trim() ||
+        _phoneCtrl.text.trim() != (m.customerPhone ?? '').trim() ||
+        _inquiryCtrl.text.trim() != (m.inquiryContent ?? '').trim() ||
+        _nextDateCtrl.text.trim() != (m.nextScheduledDate ?? '').trim() ||
+        _productId != m.productCategoryId ||
+        _regionId != m.regionId ||
+        _methodId != m.inquiryMethodId ||
+        _assignedCtrl.text.trim() != (m.assignedTo ?? '').trim();
+  }
+
   Widget _withPopResult(Widget child) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop || _isPoppingDetail) return;
+        if (_editDirty) {
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('수정 취소'),
+              content: const Text('수정 중인 내용이 있습니다.\n저장하지 않고 닫으시겠습니까?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('계속 수정'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('닫기'),
+                ),
+              ],
+            ),
+          );
+          if (ok != true || !mounted) return;
+        }
         _popDetail();
       },
       child: child,
@@ -1013,6 +1152,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
   }
 
   Widget _buildScrollable(MasterDataBundle master) {
+    _maybeOpenConsultation(master);
     final m = _model;
     final scheme = Theme.of(context).colorScheme;
     final assigneeLabel =
@@ -1155,13 +1295,41 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
             ),
           ],
           const SizedBox(height: 12),
-          _buildInfoTile(
-            '${_getNextStage(m?.callStage)} 예정일',
-            m?.nextScheduledDate ?? '예정 없음',
-            Icons.event_available_rounded,
-            scheme,
-            labelColor: assigneeColor,
-            bgColor: assigneeColor.withOpacity(0.08),
+          Builder(
+            builder: (_) {
+              final followYmd = m?.followCalendarDateKey;
+              final overdueDays = followOverdueDays(
+                followYmd,
+                todayYmdSeoul(),
+              );
+              final value = followYmd == null
+                  ? '예정 없음'
+                  : overdueDays == null
+                  ? formatYmdFlowLabelKo(followYmd)
+                  : '${formatYmdFlowLabelKo(followYmd)} · $overdueDays일 지남';
+              return _buildInfoTile(
+                '${_getNextStage(m?.callStage)} 예정일',
+                value,
+                Icons.event_available_rounded,
+                scheme,
+                labelColor: overdueDays == null ? assigneeColor : scheme.error,
+                bgColor: overdueDays == null
+                    ? assigneeColor.withOpacity(0.08)
+                    : scheme.errorContainer.withValues(alpha: 0.4),
+                onTap: followYmd == null
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SalesCallDayFollowPagerScreen(
+                              initialDateYmd: followYmd,
+                              initialAssignee: m?.assignedTo,
+                            ),
+                          ),
+                        );
+                      },
+              );
+            },
           ),
 
           sectionTitle('상담 이력 (단계별)', Icons.history_rounded),
@@ -1214,11 +1382,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                   ? '전송 중 ($_uploadCurrent/$_uploadTotal)'
                   : null,
               onAdd: () => _pickAndUpload(master),
-              onRemoveAt: (i) {
-                setState(() {
-                  _imageUrls = List<String>.from(_imageUrls)..removeAt(i);
-                });
-              },
+              onAddCamera: () => _captureAndUpload(master),
+              onRemoveAt: (i) => unawaited(_removeImageAt(i)),
             ),
           ),
 
@@ -1356,6 +1521,33 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 decoration: _editInputDecoration('고객 요청·문의 내용', scheme),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? '문의내용을 입력해주세요' : null,
+              ),
+              const SizedBox(height: 16),
+              _buildEditFieldLabel('다음 상담 예정일', scheme),
+              TextFormField(
+                controller: _nextDateCtrl,
+                readOnly: true,
+                onTap: () async {
+                  final today = _ymdToCalendarDate(todayYmdSeoul());
+                  final current = _nextDateCtrl.text.trim();
+                  final initial = current.isNotEmpty
+                      ? _ymdToCalendarDate(current)
+                      : today;
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: initial.isBefore(today) ? today : initial,
+                    firstDate: DateTime(2020),
+                    lastDate: today.add(const Duration(days: 365)),
+                    locale: const Locale('ko', 'KR'),
+                  );
+                  if (picked == null) return;
+                  setState(() {
+                    _nextDateCtrl.text = _calendarDateToYmd(picked);
+                  });
+                },
+                decoration: _editInputDecoration('날짜를 선택하세요', scheme).copyWith(
+                  suffixIcon: const Icon(Icons.calendar_today_outlined),
+                ),
               ),
             ],
           ),
@@ -1578,13 +1770,22 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
           ),
           const SizedBox(height: 6),
           // 전화번호
-          Text(
-            m.customerPhone ?? '연락처 없음',
-            style: TextStyle(
-              fontSize: 15,
-              color: Colors.white.withOpacity(0.9),
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
+          GestureDetector(
+            onTap: () => LauncherUtils.makePhoneCall(m.customerPhone ?? ''),
+            onLongPress: () =>
+                LauncherUtils.copyPhone(context, m.customerPhone ?? ''),
+            child: Text(
+              m.customerPhone ?? '연락처 없음',
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.white.withOpacity(0.9),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+                decoration: (m.customerPhone ?? '').trim().isEmpty
+                    ? TextDecoration.none
+                    : TextDecoration.underline,
+                decorationColor: Colors.white70,
+              ),
             ),
           ),
           if ((m.inquiryContent ?? '').trim().isNotEmpty) ...[
@@ -1616,15 +1817,17 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     bool multiLine = false,
     Color? bgColor,
     Color? labelColor,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: bgColor ?? scheme.surfaceContainerLowest,
+    return Material(
+      color: bgColor ?? scheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
         borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1671,6 +1874,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               ),
             ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -2026,11 +2231,34 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     return ok == true;
   }
 
-  void _showConsultationDialog(MasterDataBundle master) {
-    _consultationNextDateCtrl.clear();
-    _unsuccessfulReasonCtrl.clear();
-    _resetConsultationFollowDateCount();
-    _statusId = CallStatusIds.undecided;
+  Future<void> _showConsultationDialog(MasterDataBundle master) async {
+    final draft = _draftStore.load(widget.id);
+    if (draft != null) {
+      _newConsultationCtrl.text = draft.content;
+      _unsuccessfulReasonCtrl.text = draft.unsuccessfulReason ?? '';
+      _consultationNextDateCtrl.text = draft.nextDateYmd ?? '';
+      _statusId = draft.statusId ?? CallStatusIds.undecided;
+      final ymd = _consultationNextDateCtrl.text.trim();
+      if (ymd.isNotEmpty) {
+        _consultationDayFollowCountYmd = ymd;
+        _consultationDayFollowCountLoading = false;
+        try {
+          _consultationDayFollowCount = await ref
+              .read(salesCallsRepositoryProvider)
+              .countFollowUpsOnDate(ymd: ymd, excludeId: widget.id);
+        } catch (_) {
+          _consultationDayFollowCount = null;
+        }
+      } else {
+        _resetConsultationFollowDateCount();
+      }
+    } else {
+      _newConsultationCtrl.clear();
+      _consultationNextDateCtrl.clear();
+      _unsuccessfulReasonCtrl.clear();
+      _resetConsultationFollowDateCount();
+      _statusId = CallStatusIds.undecided;
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2201,9 +2429,29 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                 ymd.isNotEmpty && _consultationDayFollowCountYmd == ymd;
             final loading = countForThisDate && _consultationDayFollowCountLoading;
             final showCount = countForThisDate && !loading;
+            final chips = consultationQuickDateChips(todayYmdSeoul());
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: chips.map((chip) {
+                    final selected = ymd == chip.ymd;
+                    return ChoiceChip(
+                      label: Text(chip.label),
+                      selected: selected,
+                      onSelected: (_) => unawaited(
+                        _applyConsultationFollowDate(
+                          sheetContext: sheetContext,
+                          setModalState: setModalState,
+                          ymd: chip.ymd,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: _consultationNextDateCtrl,
                   readOnly: true,
@@ -2360,6 +2608,8 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                               multiLineField(
                                 controller: _newConsultationCtrl,
                                 hint: '고객와의 상담내용을 자세히 입력하세요...',
+                                onChanged: (_) =>
+                                    _scheduleConsultationDraftSave(),
                               ),
                             ],
                             if (isLost) ...[
@@ -2375,7 +2625,10 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
                               multiLineField(
                                 controller: _unsuccessfulReasonCtrl,
                                 hint: '미수주 사유를 입력하세요',
-                                onChanged: (_) => setModalState(() {}),
+                                onChanged: (_) {
+                                  _scheduleConsultationDraftSave();
+                                  setModalState(() {});
+                                },
                               ),
                             ],
                             if (needsDate) ...[
@@ -2496,6 +2749,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
               if (!statusRequiresNextScheduledDate(_statusId!)) {
                 _consultationNextDateCtrl.clear();
               }
+              _scheduleConsultationDraftSave();
             }
 
             if (setModalState != null) {

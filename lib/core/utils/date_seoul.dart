@@ -298,6 +298,14 @@ String formatSeoulDate(String? ymd) {
   }
 }
 
+/// [todayYmd] 다음 월요일. 오늘이 월요일이면 다음 주 월요일.
+String nextMondayYmd(String todayYmd) {
+  final day = _parseYmdLocal(todayYmd);
+  if (day == null) return todayYmd;
+  final untilMonday = (DateTime.monday - day.weekday + 7) % 7;
+  return addDaysToYmd(todayYmd, untilMonday == 0 ? 7 : untilMonday);
+}
+
 /// `yyyy-MM-dd`에 [deltaDays]일을 더한 날짜(달력 기준, 로컬).
 String addDaysToYmd(String ymd, int deltaDays) {
   final parts = ymd.split('-');

@@ -944,6 +944,51 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
+  Future<void> _openOverdueFollowPicker({bool forcePicker = false}) async {
+    List<SalesCall> rows;
+    try {
+      rows =
+          await _withFreshDataLoading(() async {
+            ref.invalidate(hubOverdueFollowCallsProvider);
+            return ref.read(hubOverdueFollowCallsProvider.future);
+          }) ??
+          const [];
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('지연 팔로우 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final overrides = await ref.read(tempManagerOverridesProvider.future);
+    final counts = _countsFromRows(
+      rows,
+      (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
+    );
+    if (!forcePicker && rows.isEmpty) {
+      await _showAutoCloseInfoDialog('지연된 팔로우가 없습니다.');
+      return;
+    }
+    final selected = await _pickHubAssignee(
+      title: '지연 팔로우',
+      subtitle: '예정일이 지난 미종료 상담',
+      counts: counts,
+      forcePicker: forcePicker,
+    );
+    if (!mounted || selected == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SalesCallListScreen(
+          mode: ListQueryMode.overdueFollow,
+          initialAssignee: selected,
+        ),
+      ),
+    );
+  }
+
   Future<void> _pushIncompleteListForDate(
     String anchorYmd,
     String assignee,
@@ -2068,6 +2113,41 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
+  Widget _buildOverdueFollowBanner(ColorScheme scheme) {
+    final callsAsync = ref.watch(hubOverdueFollowCallsProvider);
+    return callsAsync.when(
+      data: (calls) {
+        final loginName = ref.watch(authControllerProvider)?.name.trim();
+        final overrides =
+            ref.watch(tempManagerOverridesProvider).valueOrNull ??
+            const [];
+        var count = calls.length;
+        if (loginName != null && loginName.isNotEmpty) {
+          count = calls.where((c) {
+            return displayAssigneeForCall(c, overrides, DateTime.now()) ==
+                loginName;
+          }).length;
+          if (count == 0) count = calls.length;
+        }
+        if (count == 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: UxStatusHeroBanner(
+            icon: Icons.event_busy_rounded,
+            title: '지연 팔로우 $count건',
+            subtitle: '예정일이 지난 미종료 상담 · 탭하면 바로 목록',
+            actionLabel: '지금 확인',
+            tone: UxStatusHeroTone.attention,
+            onTap: () => _openOverdueFollowPicker(),
+            onLongPress: () => _openOverdueFollowPicker(forcePicker: true),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+
   Widget _buildPendingUncalledBanner(ColorScheme scheme) {
     final summaryAsync = ref.watch(hubPendingUncalledSummaryProvider);
     return summaryAsync.when(
@@ -2280,6 +2360,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           anchorYmd: previousDayYmd,
                         ),
                       _buildPendingUncalledBanner(scheme),
+                      _buildOverdueFollowBanner(scheme),
                       HomeMiniStatsWidget(
                         compact: true,
                         receptionLabel: receptionLabel,

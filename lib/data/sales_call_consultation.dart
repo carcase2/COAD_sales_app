@@ -92,6 +92,53 @@ String? resolveNextScheduledDateForSave(int statusId, String? nextScheduledDateY
   return emptyToNull(nextScheduledDateYmd);
 }
 
+/// 상담 이력에서 가장 최근 상담 한 줄.
+String? lastConsultationSnippet(List<Map<String, dynamic>> history) {
+  if (history.isEmpty) return null;
+  final ordered = history.first.containsKey('_display_stage')
+      ? history
+      : orderCallHistoryForDisplay(history);
+  final raw =
+      ordered.first['consultation_content'] ?? ordered.first['content'];
+  final text = (raw ?? '').toString().trim();
+  return text.isEmpty ? null : text;
+}
+
+/// 팔로우 예정일이 오늘보다 과거인지.
+bool isFollowOverdue(String? followYmd, String todayYmd) {
+  final ymd = (followYmd ?? '').trim();
+  if (ymd.length < 10) return false;
+  return ymd.substring(0, 10).compareTo(todayYmd) < 0;
+}
+
+/// 예정일 기준 지연 일수. 당일·미래·없음은 null.
+int? followOverdueDays(String? followYmd, String todayYmd) {
+  if (!isFollowOverdue(followYmd, todayYmd)) return null;
+  final follow = DateTime.tryParse(followYmd!.substring(0, 10));
+  final today = DateTime.tryParse(todayYmd);
+  if (follow == null || today == null) return null;
+  return today.difference(follow).inDays;
+}
+
+class ConsultationQuickDateChip {
+  const ConsultationQuickDateChip({required this.label, required this.ymd});
+  final String label;
+  final String ymd;
+}
+
+/// 상담 예정일 빠른 선택 — 오늘·내일·모레·다음 주 월요일.
+List<ConsultationQuickDateChip> consultationQuickDateChips(String todayYmd) {
+  return [
+    ConsultationQuickDateChip(label: '오늘', ymd: todayYmd),
+    ConsultationQuickDateChip(label: '내일', ymd: addDaysToYmd(todayYmd, 1)),
+    ConsultationQuickDateChip(label: '모레', ymd: addDaysToYmd(todayYmd, 2)),
+    ConsultationQuickDateChip(
+      label: '다음 주 월',
+      ymd: nextMondayYmd(todayYmd),
+    ),
+  ];
+}
+
 /// 상담 예정일 선택 후, 그날 기존 팔로우 건수 안내.
 String consultationFollowDateCountMessage({
   required String ymd,

@@ -923,6 +923,16 @@ class SalesCallsRepository {
     }
   }
 
+  /// 같은 번호로 이미 접수된 최근 건.
+  Future<List<SalesCall>> findCallsByPhone(
+    String phone, {
+    int limit = 5,
+  }) async {
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 8) return const [];
+    return searchCalls(digits, limit: limit);
+  }
+
   Future<List<SalesCall>> searchCalls(String query, {int limit = 50}) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];

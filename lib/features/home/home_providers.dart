@@ -24,6 +24,9 @@ const int pendingUncalledLookbackDays = 60;
 String pendingUncalledFromYmd(String anchorYmd) =>
     addDaysToYmd(anchorYmd, -pendingUncalledLookbackDays);
 
+/// 지연 팔로우 조회 하한 — 너무 오래된 건은 제외.
+const int overdueFollowLookbackDays = 180;
+
 /// 접수일 — `call_date`/`call_time`·`created_at`을 서울 기준으로 정규화.
 String salesCallReceptionYmd(SalesCall call) {
   return salesCallReceptionYmdForCall(
@@ -688,6 +691,31 @@ final hubPendingUncalledSummaryProvider =
       authControllerProvider.select((u) => u?.name),
     ),
   );
+});
+
+/// 예정일이 오늘보다 과거인 미종료 팔로우.
+final hubOverdueFollowCallsProvider =
+    FutureProvider.autoDispose<List<SalesCall>>((ref) async {
+  final today = todayYmdSeoul();
+  final repo = ref.watch(salesCallsRepositoryProvider);
+  final calls = await repo.fetchCallsAllPages(
+    followRangeStart: addDaysToYmd(today, -overdueFollowLookbackDays),
+    followRangeEndInclusive: addDaysToYmd(today, -1),
+    incompleteOnly: true,
+    excludeSimpleInquiries: true,
+    includeCallHistory: false,
+    cacheLocally: false,
+  );
+  final overrides = await _pendingUncalledOverrides(ref);
+  final applied = applyCallDisplayOverrides(calls, overrides, DateTime.now());
+  applied.sort((a, b) {
+    final ak = a.followCalendarDateKey ?? '';
+    final bk = b.followCalendarDateKey ?? '';
+    final byDate = ak.compareTo(bk);
+    if (byDate != 0) return byDate;
+    return (a.customerName ?? '').compareTo(b.customerName ?? '');
+  });
+  return applied;
 });
 
 /// 달력에 표시 중인 주·월 구간 (`next_scheduled_date` 기준, 목록 `followDate`/`followRange`와 동일).
