@@ -483,26 +483,43 @@ class IssuanceRowActions extends StatelessWidget {
           ),
         );
       }
+      final leftover = row.leftoverRequestPct;
       return Padding(
         padding: const EdgeInsets.only(top: 6),
-        child: OutlinedButton(
-          onPressed: () => onCancel(row),
-          child: const Text('취소'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (leftover > 0) ...[
+              FilledButton(
+                onPressed: () => onIssue(row),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.orange.shade800,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                child: Text('잔여 $leftover% 요청'),
+              ),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton(
+              onPressed: () => onCancel(row),
+              child: const Text('취소'),
+            ),
+          ],
         ),
       );
     }
     if (row.kind == IssuanceRowKind.partial &&
         row.domain == IssuanceDomain.taxInvoice) {
-      final remaining = row.remainingPct.round();
+      final leftover = row.leftoverRequestPct;
       return Padding(
         padding: const EdgeInsets.only(top: 6),
         child: FilledButton(
-          onPressed: remaining <= 0 ? null : () => onIssue(row),
+          onPressed: leftover <= 0 ? null : () => onIssue(row),
           style: FilledButton.styleFrom(
             backgroundColor: Colors.orange.shade800,
             padding: const EdgeInsets.symmetric(vertical: 10),
           ),
-          child: Text('발급요청 ($remaining%)'),
+          child: Text('잔여 $leftover% 요청'),
         ),
       );
     }

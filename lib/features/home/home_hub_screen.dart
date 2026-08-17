@@ -2135,8 +2135,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           child: UxStatusHeroBanner(
             icon: Icons.event_busy_rounded,
             title: '지연 팔로우 $count건',
-            subtitle: '예정일이 지난 미종료 상담 · 탭하면 바로 목록',
-            actionLabel: '지금 확인',
+            subtitle: '예정일 지남',
+            actionLabel: '확인',
             tone: UxStatusHeroTone.attention,
             onTap: () => _openOverdueFollowPicker(),
             onLongPress: () => _openOverdueFollowPicker(forcePicker: true),

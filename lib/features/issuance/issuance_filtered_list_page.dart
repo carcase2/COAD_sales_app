@@ -39,6 +39,8 @@ class _IssuanceFilteredListPageState
   bool _openedPendingDetail = false;
   bool _refreshing = false;
   int _visibleCount = _pageSize;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
   /// 부분발급 담당자 필터 — null이면 전체.
   String? _assigneeFilter;
@@ -48,6 +50,12 @@ class _IssuanceFilteredListPageState
   void initState() {
     super.initState();
     _domain = widget.domain;
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   void _maybeOpenPendingDetail(List<IssuanceRequestRow> rows) {
@@ -505,10 +513,27 @@ class _IssuanceFilteredListPageState
 
   Widget _buildListBody(List<IssuanceRequestRow> rows, ColorScheme scheme) {
     final user = ref.watch(authControllerProvider);
+    final searched = _query.trim().isEmpty
+        ? rows
+        : rows.where((r) => issuanceRowMatchesQuery(r, _query)).toList();
     final displayRows = widget.kind == IssuanceListKind.request ||
             widget.kind == IssuanceListKind.partial
-        ? sortIssuanceRowsOwnFirst(rows, user?.name)
-        : rows;
+        ? sortIssuanceRowsOwnFirst(searched, user?.name)
+        : searched;
+    if (displayRows.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 80),
+          AppEmpty(
+            message: _query.trim().isEmpty
+                ? _emptyMessage()
+                : '"$_query"에 해당하는 건이 없습니다.',
+            icon: Icons.search_off_rounded,
+          ),
+        ],
+      );
+    }
     final visibleRows = displayRows.take(_visibleCount).toList();
     final hasMore = displayRows.length > visibleRows.length;
 
@@ -685,6 +710,13 @@ class _IssuanceFilteredListPageState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildDomainSwitcher(scheme),
+          IssuanceSearchField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() {
+              _query = v;
+              _visibleCount = _pageSize;
+            }),
+          ),
           if (widget.kind != IssuanceListKind.request)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),

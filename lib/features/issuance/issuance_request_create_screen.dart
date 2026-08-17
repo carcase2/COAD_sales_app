@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -9,7 +10,9 @@ import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -55,6 +58,11 @@ class _IssuanceRequestCreateScreenState
   String? _taxBranch;
   List<PlatformFile> _taxBizFiles = [];
   List<String> _branchOptions = [];
+  String? _taxReusedBizUrl;
+  Timer? _siteLookupDebounce;
+  List<IssuanceRequestRow> _recentSites = [];
+  bool _recentSitesLoading = false;
+  String _recentSiteQuery = '';
 
   // Performance bond
   String _bondType = '계약이행';
@@ -68,6 +76,7 @@ class _IssuanceRequestCreateScreenState
   final _bondRequestDeadline = TextEditingController();
   List<PlatformFile> _bondBizFiles = [];
   List<PlatformFile> _bondContractFiles = [];
+  List<String> _bondReusedBizUrls = [];
   final _formScrollController = ScrollController();
 
   @override
@@ -79,17 +88,166 @@ class _IssuanceRequestCreateScreenState
     _bondConstructionEndDate.text = _todayYmd();
     _taxTotalAmount.addListener(_onMoneyFieldChanged);
     _bondContractAmount.addListener(_onMoneyFieldChanged);
+    _taxCustomerName.addListener(_onSiteNameChanged);
+    _bondCompanyName.addListener(_onSiteNameChanged);
     _loadBranches();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_loadRecentSites(''));
+    });
   }
 
   void _onMoneyFieldChanged() {
     if (mounted) setState(() {});
   }
 
+  void _onSiteNameChanged() {
+    _siteLookupDebounce?.cancel();
+    _siteLookupDebounce = Timer(const Duration(milliseconds: 350), () {
+      final q = _domain == IssuanceDomain.taxInvoice
+          ? _taxCustomerName.text
+          : _bondCompanyName.text;
+      unawaited(_loadRecentSites(q));
+    });
+  }
+
+  Future<void> _loadRecentSites(String query) async {
+    final user = ref.read(authControllerProvider);
+    if (user == null) return;
+    final q = query.trim();
+    setState(() {
+      _recentSitesLoading = true;
+      _recentSiteQuery = q;
+    });
+    try {
+      final found = await ref
+          .read(issuanceRequestServiceProvider)
+          .searchOwnRecentMasters(
+            domain: _domain,
+            userName: user.name,
+            userId: user.id,
+            query: q,
+            limit: 6,
+          );
+      if (!mounted || _recentSiteQuery != q) return;
+      setState(() {
+        _recentSites = found;
+        _recentSitesLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || _recentSiteQuery != q) return;
+      setState(() => _recentSitesLoading = false);
+    }
+  }
+
+  void _applyRecentSite(IssuanceRequestRow row) {
+    HapticFeedback.selectionClick();
+    if (row.domain == IssuanceDomain.taxInvoice) {
+      final name = (row.master['customer_name'] ?? '').toString();
+      final reg = (row.master['customer_registration_number'] ?? '').toString();
+      final email = (row.master['email'] ?? '').toString();
+      final branch = (row.master['branch'] ?? '').toString().trim();
+      final item = (row.master['item_name'] ?? '').toString().trim();
+      _taxCustomerName.text = name;
+      _taxRegistrationNumber.text = reg;
+      _taxEmail.text = email;
+      if (branch.isNotEmpty) _taxBranch = branch;
+      if (item.isNotEmpty) {
+        _taxItemName.text = item;
+        _taxItemNameChoice = _taxItemNameOptions.contains(item) ? item : '기타';
+      }
+      _taxMesRegistered = row.master['mes_registered'] == true;
+      final biz = (row.master['business_registration_image_url'] ?? '')
+          .toString()
+          .trim();
+      _taxReusedBizUrl = biz.isEmpty ? null : biz;
+      _taxBizFiles = [];
+    } else {
+      final name = (row.master['company_name'] ?? '').toString();
+      final email = (row.master['email'] ?? '').toString();
+      _bondCompanyName.text = name;
+      _bondEmail.text = email;
+      final type = (row.master['bond_type'] ?? '').toString().trim();
+      if (type.isNotEmpty) {
+        _bondType = type;
+        _applyBondDefaultsByType(type);
+      }
+      _bondReusedBizUrls = _bondBusinessUrlsFromRow(row);
+      _bondBizFiles = [];
+    }
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${row.title} 정보를 불러왔습니다.')),
+    );
+  }
+
+  List<String> _bondBusinessUrlsFromRow(IssuanceRequestRow row) {
+    final raw = row.issue?['request_image_url'];
+    if (raw == null) return const [];
+    try {
+      if (raw is Map) {
+        final business = raw['business'];
+        if (business is List) {
+          return business.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+        }
+      }
+      final decoded = jsonDecode(raw.toString());
+      if (decoded is Map && decoded['business'] is List) {
+        return (decoded['business'] as List)
+            .map((e) => e.toString())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {}
+    return const [];
+  }
+
+  Widget _buildRecentSitePicker() {
+    if (_recentSites.isEmpty && !_recentSitesLoading) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _recentSiteQuery.isEmpty ? '최근 내 요청' : '같은 현장 불러오기',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+          ),
+          if (_recentSitesLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+          ..._recentSites.map((row) {
+            return ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                row.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                row.createdAtText,
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: const Icon(Icons.input_rounded, size: 18),
+              onTap: () => _applyRecentSite(row),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _taxTotalAmount.removeListener(_onMoneyFieldChanged);
     _bondContractAmount.removeListener(_onMoneyFieldChanged);
+    _taxCustomerName.removeListener(_onSiteNameChanged);
+    _bondCompanyName.removeListener(_onSiteNameChanged);
+    _siteLookupDebounce?.cancel();
     _taxCustomerName.dispose();
     _taxRegistrationNumber.dispose();
     _taxIssueDate.dispose();
@@ -240,6 +398,31 @@ class _IssuanceRequestCreateScreenState
   }
 
   Future<List<PlatformFile>> _pickFiles({required bool imageOnly}) async {
+    final source = await showSalesCallImageSourceSheet(
+      context,
+      title: imageOnly ? '사진 추가' : '파일 추가',
+    );
+    if (source == null) return [];
+    if (source == SalesCallImageSource.camera) {
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (shot == null) return [];
+      final file = File(shot.path);
+      final size = await file.length();
+      if (size > 10 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('10MB를 넘는 파일은 첨부할 수 없습니다.')),
+          );
+        }
+        return [];
+      }
+      return [
+        PlatformFile(name: shot.name, path: shot.path, size: size),
+      ];
+    }
     final result = await FilePicker.pickFiles(
       allowMultiple: true,
       type: FileType.custom,
@@ -258,16 +441,27 @@ class _IssuanceRequestCreateScreenState
             ],
     );
     if (result == null) return [];
-    return result.files.where((f) {
-      if (f.path == null) return false;
-      final sizeOk = f.size <= 10 * 1024 * 1024;
-      if (!sizeOk) return false;
+    final accepted = <PlatformFile>[];
+    var rejected = false;
+    for (final f in result.files) {
+      if (f.path == null) continue;
+      if (f.size > 10 * 1024 * 1024) {
+        rejected = true;
+        continue;
+      }
       final mime = lookupMimeType(f.path!);
-      if (mime == null) return false;
-      return imageOnly
+      if (mime == null) continue;
+      final ok = imageOnly
           ? mime.startsWith('image/')
           : (mime.startsWith('image/') || mime == 'application/pdf');
-    }).toList();
+      if (ok) accepted.add(f);
+    }
+    if (rejected && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('10MB를 넘는 파일은 제외했습니다.')),
+      );
+    }
+    return accepted;
   }
 
   /// 이미지는 압축 후 업로드 (상담 첨부 B2 업로드와 동일 정책 — quality 80, 1920×1080).
@@ -420,7 +614,8 @@ class _IssuanceRequestCreateScreenState
       if (!_taxFormKey.currentState!.validate()) {
         return '필수 입력값을 확인해주세요.';
       }
-      if (_taxBizFiles.isEmpty) {
+      if (_taxBizFiles.isEmpty &&
+          (_taxReusedBizUrl == null || _taxReusedBizUrl!.isEmpty)) {
         return '사업자등록증 이미지를 1개 이상 첨부해주세요.';
       }
       if (_taxBranch == null || _taxBranch!.trim().isEmpty) {
@@ -438,7 +633,7 @@ class _IssuanceRequestCreateScreenState
       await _scrollFormToTop();
       return '필수 입력값을 확인해 주세요.';
     }
-    if (_bondBizFiles.isEmpty) {
+    if (_bondBizFiles.isEmpty && _bondReusedBizUrls.isEmpty) {
       return '사업자등록증 파일을 1개 이상 첨부해주세요.';
     }
     if (_bondContractFiles.isEmpty) {
@@ -615,7 +810,7 @@ class _IssuanceRequestCreateScreenState
   Future<void> _performSubmit(String userName) async {
     setState(() => _saving = true);
     try {
-      final _IssuanceSubmitResult result;
+      final IssuanceCreateResult result;
       if (_domain == IssuanceDomain.taxInvoice) {
         result = await _submitTax(userName);
       } else {
@@ -636,10 +831,14 @@ class _IssuanceRequestCreateScreenState
         ),
       ]);
       if (!mounted) return;
-      Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('발급요청이 등록되었습니다.')));
+      Navigator.of(context).pop(result);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = NotificationService.navigatorKey.currentContext;
+        if (ctx == null) return;
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('${result.displayName} 발급요청이 등록되었습니다.')),
+        );
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -650,11 +849,14 @@ class _IssuanceRequestCreateScreenState
     }
   }
 
-  Future<_IssuanceSubmitResult> _submitTax(String userName) async {
+  Future<IssuanceCreateResult> _submitTax(String userName) async {
     if (!_taxFormKey.currentState!.validate()) {
       throw Exception('필수 입력값을 확인해주세요.');
     }
-    if (_taxBizFiles.isEmpty) throw Exception('사업자등록증 이미지를 1개 이상 첨부해주세요.');
+    if (_taxBizFiles.isEmpty &&
+        (_taxReusedBizUrl == null || _taxReusedBizUrl!.isEmpty)) {
+      throw Exception('사업자등록증 이미지를 1개 이상 첨부해주세요.');
+    }
     if (_taxBranch == null || _taxBranch!.trim().isEmpty) {
       throw Exception('지사를 선택해주세요.');
     }
@@ -664,12 +866,17 @@ class _IssuanceRequestCreateScreenState
     final taxAmount = totalAmount ~/ 11;
     final supplyAmount = totalAmount - taxAmount;
     final invoiceNumber = _generateTaxInvoiceNumber();
-    final urls = await _uploadFiles(
-      files: _taxBizFiles,
-      rootPath: 'business_registration',
-      ownerName: _taxCustomerName.text.trim(),
-    );
-    final imageValue = urls.length == 1 ? urls.first : jsonEncode(urls);
+    final String imageValue;
+    if (_taxBizFiles.isNotEmpty) {
+      final urls = await _uploadFiles(
+        files: _taxBizFiles,
+        rootPath: 'business_registration',
+        ownerName: _taxCustomerName.text.trim(),
+      );
+      imageValue = urls.length == 1 ? urls.first : jsonEncode(urls);
+    } else {
+      imageValue = _taxReusedBizUrl!.trim();
+    }
 
     final inserted = await _client
         .from('tax_invoices')
@@ -730,7 +937,7 @@ class _IssuanceRequestCreateScreenState
       issueId = issueInserted['id']?.toString();
     }
 
-    return _IssuanceSubmitResult(
+    return IssuanceCreateResult(
       domain: IssuanceDomain.taxInvoice,
       masterId: inserted['id'].toString(),
       issueId: issueId,
@@ -738,7 +945,7 @@ class _IssuanceRequestCreateScreenState
     );
   }
 
-  Future<_IssuanceSubmitResult> _submitBond(String userName) async {
+  Future<IssuanceCreateResult> _submitBond(String userName) async {
     FocusManager.instance.primaryFocus?.unfocus();
     final precheck = _firstBondValidationMessage();
     if (precheck != null) {
@@ -749,7 +956,7 @@ class _IssuanceRequestCreateScreenState
       await _scrollFormToTop();
       throw Exception('필수 입력값을 확인해 주세요.');
     }
-    if (_bondBizFiles.isEmpty) {
+    if (_bondBizFiles.isEmpty && _bondReusedBizUrls.isEmpty) {
       throw Exception('사업자등록증 파일을 1개 이상 첨부해주세요.');
     }
     if (_bondContractFiles.isEmpty) throw Exception('계약서 파일을 1개 이상 첨부해주세요.');
@@ -781,11 +988,13 @@ class _IssuanceRequestCreateScreenState
     }
 
     final bondNumber = await _generateBondNumber();
-    final businessUrls = await _uploadFiles(
-      files: _bondBizFiles,
-      rootPath: 'bond',
-      ownerName: _bondCompanyName.text.trim(),
-    );
+    final businessUrls = _bondBizFiles.isNotEmpty
+        ? await _uploadFiles(
+            files: _bondBizFiles,
+            rootPath: 'bond',
+            ownerName: _bondCompanyName.text.trim(),
+          )
+        : List<String>.from(_bondReusedBizUrls);
     final contractUrls = await _uploadFiles(
       files: _bondContractFiles,
       rootPath: 'bond',
@@ -833,7 +1042,7 @@ class _IssuanceRequestCreateScreenState
         .select('id')
         .single();
 
-    return _IssuanceSubmitResult(
+    return IssuanceCreateResult(
       domain: IssuanceDomain.performanceBond,
       masterId: inserted['id'].toString(),
       issueId: issueInserted['id']?.toString(),
@@ -991,8 +1200,10 @@ class _IssuanceRequestCreateScreenState
                         ),
                       ],
                       selected: {_domain},
-                      onSelectionChanged: (v) =>
-                          setState(() => _domain = v.first),
+                      onSelectionChanged: (v) {
+                        setState(() => _domain = v.first);
+                        unawaited(_loadRecentSites(''));
+                      },
                     ),
                     const SizedBox(height: 10),
                     if (isTax) _buildTaxItemTypeSelector(accent),
@@ -1160,6 +1371,7 @@ class _IssuanceRequestCreateScreenState
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? '고객명을 입력하세요.' : null,
                 ),
+                _buildRecentSitePicker(),
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _taxRegistrationNumber,
@@ -1388,29 +1600,47 @@ class _IssuanceRequestCreateScreenState
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: _taxBizFiles
-                      .map(
-                        (f) => Chip(
-                          backgroundColor: Colors.indigo.withValues(
-                            alpha: 0.08,
-                          ),
-                          side: BorderSide(
-                            color: Colors.indigo.withValues(alpha: 0.25),
-                          ),
-                          label: Text(f.name, overflow: TextOverflow.ellipsis),
+                  children: [
+                    if (_taxReusedBizUrl != null && _taxReusedBizUrl!.isNotEmpty)
+                      Chip(
+                        backgroundColor: Colors.teal.withValues(alpha: 0.12),
+                        label: const Text('이전 사업자등록증 재사용'),
+                        onDeleted: () => setState(() => _taxReusedBizUrl = null),
+                      ),
+                    ..._taxBizFiles.map(
+                      (f) => Chip(
+                        backgroundColor: Colors.indigo.withValues(
+                          alpha: 0.08,
                         ),
-                      )
-                      .toList(),
+                        side: BorderSide(
+                          color: Colors.indigo.withValues(alpha: 0.25),
+                        ),
+                        label: Text(f.name, overflow: TextOverflow.ellipsis),
+                        onDeleted: () => setState(() {
+                          _taxBizFiles = _taxBizFiles
+                              .where((x) => x.path != f.path)
+                              .toList();
+                        }),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
                     final files = await _pickFiles(imageOnly: true);
                     if (files.isEmpty) return;
-                    setState(() => _taxBizFiles = files);
+                    setState(() {
+                      _taxBizFiles = [..._taxBizFiles, ...files];
+                      _taxReusedBizUrl = null;
+                    });
                   },
                   icon: const Icon(Icons.image_outlined),
-                  label: Text('사업자등록증 첨부 (${_taxBizFiles.length}) *'),
+                  label: Text(
+                    _taxBizFiles.isEmpty && _taxReusedBizUrl != null
+                        ? '다른 사업자등록증 첨부'
+                        : '사업자등록증 첨부 (${_taxBizFiles.length}) *',
+                  ),
                 ),
               ],
             ),
@@ -1561,6 +1791,7 @@ class _IssuanceRequestCreateScreenState
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? '업체명을 입력하세요.' : null,
                 ),
+                _buildRecentSitePicker(),
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _bondEmail,
@@ -1659,28 +1890,47 @@ class _IssuanceRequestCreateScreenState
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: _bondBizFiles
-                      .map(
-                        (f) => Chip(
-                          backgroundColor: Colors.deepOrange.withValues(
-                            alpha: 0.08,
-                          ),
-                          side: BorderSide(
-                            color: Colors.deepOrange.withValues(alpha: 0.25),
-                          ),
-                          label: Text(f.name, overflow: TextOverflow.ellipsis),
+                  children: [
+                    if (_bondReusedBizUrls.isNotEmpty)
+                      Chip(
+                        backgroundColor: Colors.teal.withValues(alpha: 0.12),
+                        label: const Text('이전 사업자등록증 재사용'),
+                        onDeleted: () =>
+                            setState(() => _bondReusedBizUrls = []),
+                      ),
+                    ..._bondBizFiles.map(
+                      (f) => Chip(
+                        backgroundColor: Colors.deepOrange.withValues(
+                          alpha: 0.08,
                         ),
-                      )
-                      .toList(),
+                        side: BorderSide(
+                          color: Colors.deepOrange.withValues(alpha: 0.25),
+                        ),
+                        label: Text(f.name, overflow: TextOverflow.ellipsis),
+                        onDeleted: () => setState(() {
+                          _bondBizFiles = _bondBizFiles
+                              .where((x) => x.path != f.path)
+                              .toList();
+                        }),
+                      ),
+                    ),
+                  ],
                 ),
                 OutlinedButton.icon(
                   onPressed: () async {
                     final files = await _pickFiles(imageOnly: false);
                     if (files.isEmpty) return;
-                    setState(() => _bondBizFiles = files);
+                    setState(() {
+                      _bondBizFiles = [..._bondBizFiles, ...files];
+                      _bondReusedBizUrls = [];
+                    });
                   },
                   icon: const Icon(Icons.badge_outlined),
-                  label: Text('사업자등록증 첨부 (${_bondBizFiles.length}) *'),
+                  label: Text(
+                    _bondBizFiles.isEmpty && _bondReusedBizUrls.isNotEmpty
+                        ? '다른 사업자등록증 첨부'
+                        : '사업자등록증 첨부 (${_bondBizFiles.length}) *',
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -1696,6 +1946,11 @@ class _IssuanceRequestCreateScreenState
                             color: Colors.deepOrange.withValues(alpha: 0.25),
                           ),
                           label: Text(f.name, overflow: TextOverflow.ellipsis),
+                          onDeleted: () => setState(() {
+                            _bondContractFiles = _bondContractFiles
+                                .where((x) => x.path != f.path)
+                                .toList();
+                          }),
                         ),
                       )
                       .toList(),
@@ -1704,7 +1959,9 @@ class _IssuanceRequestCreateScreenState
                   onPressed: () async {
                     final files = await _pickFiles(imageOnly: false);
                     if (files.isEmpty) return;
-                    setState(() => _bondContractFiles = files);
+                    setState(() {
+                      _bondContractFiles = [..._bondContractFiles, ...files];
+                    });
                   },
                   icon: const Icon(Icons.description_outlined),
                   label: Text('계약서 첨부 (${_bondContractFiles.length}) *'),
@@ -2208,8 +2465,8 @@ class _LocalImagePreviewScreenState extends State<_LocalImagePreviewScreen> {
   }
 }
 
-class _IssuanceSubmitResult {
-  const _IssuanceSubmitResult({
+class IssuanceCreateResult {
+  const IssuanceCreateResult({
     required this.domain,
     required this.masterId,
     this.issueId,

@@ -49,6 +49,13 @@ class IssuanceRequestRow {
 
   bool get isPartial => kind == IssuanceRowKind.partial;
 
+  /// 아직 요청하지 않은 잔여 %. 첫 요청이 30%면 70.
+  int get leftoverRequestPct {
+    if (issuedPct > 0) return remainingPct.round().clamp(0, 100);
+    final first = num.tryParse('${master['percentage']}')?.toDouble() ?? 100;
+    return (100 - first).round().clamp(0, 100);
+  }
+
   DateTime get createdAt {
     final raw = issue?['created_at'] ?? master['created_at'];
     return DateTime.tryParse((raw ?? '').toString()) ??
@@ -193,6 +200,45 @@ class IssuanceRequestService {
       default:
         return normalized == '취소';
     }
+  }
+
+  Future<IssuanceRequestRow?> fetchRowByMasterId({
+    required IssuanceDomain domain,
+    required String masterId,
+    String? issueId,
+  }) async {
+    final rows = await fetchRows(domain);
+    final mid = masterId.trim();
+    if (mid.isEmpty) return null;
+    final iid = issueId?.trim() ?? '';
+    IssuanceRequestRow? fallback;
+    for (final row in rows) {
+      if (row.master['id']?.toString() != mid) continue;
+      fallback ??= row;
+      if (iid.isEmpty || row.issue?['id']?.toString() == iid) return row;
+    }
+    return fallback;
+  }
+
+  Future<List<IssuanceRequestRow>> searchOwnRecentMasters({
+    required IssuanceDomain domain,
+    required String userName,
+    String? userId,
+    String query = '',
+    int limit = 8,
+  }) async {
+    final q = query.trim();
+    final rows = await fetchRows(domain);
+    final mine = rows.where((row) {
+      return issuanceIsOwnRequest(row, userName, userId: userId);
+    }).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final deduped = _dedupeIssuanceRowsByMaster(mine);
+    final filtered = q.isEmpty
+        ? deduped
+        : deduped.where((row) => issuanceRowMatchesQuery(row, q)).toList();
+    if (filtered.length <= limit) return filtered;
+    return filtered.take(limit).toList();
   }
 
   Future<List<IssuanceRequestRow>> fetchRows(IssuanceDomain domain) async {
@@ -622,6 +668,8 @@ class IssuanceRequestService {
                 issue: issue,
                 domain: IssuanceDomain.taxInvoice,
                 kind: IssuanceRowKind.request,
+                issuedPct: issuedPct,
+                remainingPct: remainingPct,
               ),
             );
           }
@@ -632,6 +680,8 @@ class IssuanceRequestService {
               issue: null,
               domain: IssuanceDomain.taxInvoice,
               kind: IssuanceRowKind.request,
+              issuedPct: issuedPct,
+              remainingPct: remainingPct,
             ),
           );
         }
@@ -962,6 +1012,50 @@ final issuanceMyRequestRowsProvider =
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     });
+
+List<IssuanceRequestRow> _dedupeIssuanceRowsByMaster(
+  List<IssuanceRequestRow> rows,
+) {
+  final seen = <String>{};
+  final out = <IssuanceRequestRow>[];
+  for (final row in rows) {
+    final id = row.master['id']?.toString() ?? '';
+    if (id.isEmpty || !seen.add(id)) continue;
+    out.add(row);
+  }
+  return out;
+}
+
+/// 내 요청 중 발급된 건 (부분·완료 포함, 마스터 1행).
+final issuanceMyIssuedRowsProvider =
+    FutureProvider.family<List<IssuanceRequestRow>, IssuanceDomain>((
+      ref,
+      domain,
+    ) async {
+      final user = ref.watch(authControllerProvider);
+      final rows = await ref.watch(issuanceAllRowsProvider(domain).future);
+      final mine = rows.where((row) {
+        if (!row.isCompleted) return false;
+        return issuanceIsOwnRequest(row, user?.name, userId: user?.id);
+      }).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return _dedupeIssuanceRowsByMaster(mine);
+    });
+
+bool issuanceRowMatchesQuery(IssuanceRequestRow row, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  final blob = [
+    row.title,
+    row.master['customer_name'],
+    row.master['company_name'],
+    row.master['invoice_number'],
+    row.master['bond_number'],
+    row.master['item_name'],
+    row.master['requester'],
+  ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
+  return blob.contains(q);
+}
 
 /// 부분발급 탭 (웹 `partial`) — 추후 UI 확장용.
 final issuancePartialRowsProvider =

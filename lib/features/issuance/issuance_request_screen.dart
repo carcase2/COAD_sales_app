@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_completed_list_pa
 import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_list_kind.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_my_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_card.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_detail.dart';
@@ -161,6 +162,26 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     await _refreshIssuanceData();
   }
 
+  Future<void> _openMyListPage(
+    IssuanceMyListKind kind, {
+    String? openMasterId,
+    String? openIssueId,
+    IssuanceDomain? openDomain,
+  }) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => IssuanceMyListPage(
+          initialKind: kind,
+          openMasterId: openMasterId,
+          openIssueId: openIssueId,
+          openDomain: openDomain,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _refreshIssuanceData();
+  }
+
   Future<void> _openCombinedTodayIssuedPage() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => const _CombinedTodayIssuedPage()),
@@ -171,15 +192,21 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
   Future<void> _openCreateForCurrentDomain() async {
     final selected = _domain;
-    final created = await Navigator.of(context).push<bool>(
+    final created = await Navigator.of(context).push<IssuanceCreateResult?>(
       MaterialPageRoute(
         builder: (_) => IssuanceRequestCreateScreen(initialDomain: selected),
       ),
     );
-    if (created == true && mounted) {
-      setState(() => _domain = selected);
-      await _refreshIssuanceData();
-    }
+    if (!mounted || created == null) return;
+    setState(() => _domain = created.domain);
+    await _refreshIssuanceData();
+    if (!mounted) return;
+    await _openMyListPage(
+      IssuanceMyListKind.pending,
+      openMasterId: created.masterId,
+      openIssueId: created.issueId,
+      openDomain: created.domain,
+    );
   }
 
   @override
@@ -218,6 +245,31 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             bondPendingCount == null
         ? null
         : combinedPendingCount;
+
+    final myPendingTaxAsync = _hubDetailReady
+        ? ref.watch(issuanceMyRequestRowsProvider(IssuanceDomain.taxInvoice))
+        : const AsyncValue<List<IssuanceRequestRow>>.loading();
+    final myPendingBondAsync = _hubDetailReady
+        ? ref.watch(
+            issuanceMyRequestRowsProvider(IssuanceDomain.performanceBond),
+          )
+        : const AsyncValue<List<IssuanceRequestRow>>.loading();
+    final myIssuedTaxAsync = _hubDetailReady
+        ? ref.watch(issuanceMyIssuedRowsProvider(IssuanceDomain.taxInvoice))
+        : const AsyncValue<List<IssuanceRequestRow>>.loading();
+    final myIssuedBondAsync = _hubDetailReady
+        ? ref.watch(
+            issuanceMyIssuedRowsProvider(IssuanceDomain.performanceBond),
+          )
+        : const AsyncValue<List<IssuanceRequestRow>>.loading();
+    final myPendingCount = !_hubDetailReady
+        ? null
+        : (myPendingTaxAsync.valueOrNull?.length ?? 0) +
+              (myPendingBondAsync.valueOrNull?.length ?? 0);
+    final myIssuedCount = !_hubDetailReady
+        ? null
+        : (myIssuedTaxAsync.valueOrNull?.length ?? 0) +
+              (myIssuedBondAsync.valueOrNull?.length ?? 0);
 
     AsyncValue<List<IssuanceRequestRow>> partialAsync = const AsyncValue.data(
       [],
@@ -402,24 +454,24 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
-                  if ((combinedPendingDisplay ?? 0) > 0) ...[
+                  if ((myPendingCount ?? 0) > 0) ...[
                     UxStatusHeroBanner(
-                      icon: Icons.pending_actions_rounded,
-                      title: '발급대기 $combinedPendingDisplay건',
-                      subtitle:
-                          '세금 ${issuanceCountLabel(taxPendingCount)} · '
-                          '이행 ${issuanceCountLabel(bondPendingCount)}',
-                      actionLabel: '지금 처리',
+                      icon: Icons.hourglass_top_rounded,
+                      title: '내 대기 $myPendingCount건',
+                      subtitle: '아직 발급 전',
+                      actionLabel: '확인',
                       tone: UxStatusHeroTone.attention,
                       onTap: () {
                         HapticFeedback.mediumImpact();
-                        unawaited(_openCombinedPendingPage());
+                        unawaited(
+                          _openMyListPage(IssuanceMyListKind.pending),
+                        );
                       },
                     ),
                     const SizedBox(height: 12),
                   ],
                   Text(
-                    '목록 보기',
+                    '내 요청',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
@@ -428,33 +480,28 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                   ),
                   const SizedBox(height: 8),
                   _HubMenuTile(
-                    icon: IssuanceListKind.request.icon,
-                    title: '발급대기',
-                    count: combinedPendingDisplay,
-                    subtitle:
-                        '전체 ${issuanceCountLabel(combinedPendingDisplay)}건 · '
-                        '세금 ${issuanceCountLabel(taxPendingCount)} · '
-                        '이행 ${issuanceCountLabel(bondPendingCount)}',
+                    icon: Icons.hourglass_top_rounded,
+                    title: '내 대기',
+                    count: myPendingCount,
+                    subtitle: '내가 요청했고 아직 발급 전',
                     accent: IssuanceVisual.pendingTileAccent(scheme),
                     large: true,
                     onTap: () {
                       HapticFeedback.selectionClick();
-                      unawaited(_openCombinedPendingPage());
+                      unawaited(_openMyListPage(IssuanceMyListKind.pending));
                     },
                   ),
                   const SizedBox(height: 8),
                   _HubMenuTile(
                     icon: Icons.task_alt_rounded,
-                    title: '금일 발급완료',
-                    count: todayIssuedCount,
-                    subtitle:
-                        '발급일 기준 · 세금 ${issuanceCountLabel(todayTaxIssued)} · '
-                        '이행 ${issuanceCountLabel(todayBondIssued)}',
+                    title: '내 발급됨',
+                    count: myIssuedCount,
+                    subtitle: '내가 요청했고 발급된 건',
                     accent: IssuanceVisual.todayTileAccent(scheme),
                     large: true,
                     onTap: () {
                       HapticFeedback.selectionClick();
-                      unawaited(_openCombinedTodayIssuedPage());
+                      unawaited(_openMyListPage(IssuanceMyListKind.issued));
                     },
                   ),
                   const SizedBox(height: 8),
@@ -532,6 +579,26 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                                   mainAxisExtent: tileExtent,
                                 ),
                             children: [
+                              _HubMenuTile(
+                                icon: IssuanceListKind.request.icon,
+                                title: '전체 대기',
+                                count: combinedPendingDisplay,
+                                accent: IssuanceVisual.pendingTileAccent(
+                                  scheme,
+                                ),
+                                onTap: () => unawaited(
+                                  _openCombinedPendingPage(),
+                                ),
+                              ),
+                              _HubMenuTile(
+                                icon: Icons.today_rounded,
+                                title: '금일 완료',
+                                count: todayIssuedCount,
+                                accent: IssuanceVisual.todayTileAccent(scheme),
+                                onTap: () => unawaited(
+                                  _openCombinedTodayIssuedPage(),
+                                ),
+                              ),
                               if (isTax)
                                 _HubMenuTile(
                                   icon: IssuanceListKind.partial.icon,
@@ -857,6 +924,15 @@ class _CombinedIssuancePendingPage extends ConsumerStatefulWidget {
 
 class _CombinedIssuancePendingPageState
     extends ConsumerState<_CombinedIssuancePendingPage> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   int _countOwnRows(
     List<IssuanceRequestRow> rows,
     ({String name, String id})? user,
@@ -972,24 +1048,38 @@ class _CombinedIssuancePendingPageState
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: loading
-            ? const Center(child: CircularProgressIndicator())
-            : hasError
-            ? issuanceListErrorScrollable(
-                message: '발급대기 목록을 불러오지 못했습니다.',
-                onRetry: _refresh,
-              )
-            : _buildPendingQueueList(
-                context,
-                scheme: scheme,
-                user: user,
-                taxRows: taxRows,
-                bondRows: bondRows,
-                taxMineCount: taxMineCount,
-                bondMineCount: bondMineCount,
-              ),
+      body: Column(
+        children: [
+          IssuanceSearchField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : hasError
+                  ? issuanceListErrorScrollable(
+                      message: '발급대기 목록을 불러오지 못했습니다.',
+                      onRetry: _refresh,
+                    )
+                  : _buildPendingQueueList(
+                      context,
+                      scheme: scheme,
+                      user: user,
+                      taxRows: taxRows
+                          .where((r) => issuanceRowMatchesQuery(r, _query))
+                          .toList(),
+                      bondRows: bondRows
+                          .where((r) => issuanceRowMatchesQuery(r, _query))
+                          .toList(),
+                      taxMineCount: taxMineCount,
+                      bondMineCount: bondMineCount,
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1142,8 +1232,24 @@ class _CombinedIssuancePendingPageState
   }
 }
 
-class _CombinedTodayIssuedPage extends ConsumerWidget {
+class _CombinedTodayIssuedPage extends ConsumerStatefulWidget {
   const _CombinedTodayIssuedPage();
+
+  @override
+  ConsumerState<_CombinedTodayIssuedPage> createState() =>
+      _CombinedTodayIssuedPageState();
+}
+
+class _CombinedTodayIssuedPageState
+    extends ConsumerState<_CombinedTodayIssuedPage> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   int _countOwnRows(
     List<IssuanceRequestRow> rows,
@@ -1158,7 +1264,7 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
     return count;
   }
 
-  Future<void> _refresh(WidgetRef ref) async {
+  Future<void> _refresh() async {
     invalidateIssuanceCore(ref);
     await Future.wait([
       ref.read(issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice).future),
@@ -1171,7 +1277,7 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
   bool _isTodayIssued(IssuanceRequestRow row) => issuanceIsTodayIssuedRow(row);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final user = ref.watch(
       authControllerProvider.select(
@@ -1187,8 +1293,14 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
 
     final allTaxRows = taxAsync.valueOrNull ?? const <IssuanceRequestRow>[];
     final allBondRows = bondAsync.valueOrNull ?? const <IssuanceRequestRow>[];
-    final taxRows = allTaxRows.where(_isTodayIssued).toList(growable: false);
-    final bondRows = allBondRows.where(_isTodayIssued).toList(growable: false);
+    final taxRows = allTaxRows
+        .where(_isTodayIssued)
+        .where((r) => issuanceRowMatchesQuery(r, _query))
+        .toList(growable: false);
+    final bondRows = allBondRows
+        .where(_isTodayIssued)
+        .where((r) => issuanceRowMatchesQuery(r, _query))
+        .toList(growable: false);
     final loading = taxAsync.isLoading || bondAsync.isLoading;
     final hasError = taxAsync.hasError || bondAsync.hasError;
 
@@ -1197,24 +1309,34 @@ class _CombinedTodayIssuedPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('금일 발급완료')),
-      body: RefreshIndicator(
-        onRefresh: () => _refresh(ref),
-        child: loading
-            ? const Center(child: CircularProgressIndicator())
-            : hasError
-            ? issuanceListErrorScrollable(
-                message: '금일 발급완료 목록을 불러오지 못했습니다.',
-                onRetry: () => _refresh(ref),
-              )
-            : _buildIssuedQueueList(
-                context,
-                scheme: scheme,
-                user: user,
-                taxRows: taxRows,
-                bondRows: bondRows,
-                taxMineCount: taxMineCount,
-                bondMineCount: bondMineCount,
-              ),
+      body: Column(
+        children: [
+          IssuanceSearchField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : hasError
+                  ? issuanceListErrorScrollable(
+                      message: '금일 발급완료 목록을 불러오지 못했습니다.',
+                      onRetry: _refresh,
+                    )
+                  : _buildIssuedQueueList(
+                      context,
+                      scheme: scheme,
+                      user: user,
+                      taxRows: taxRows,
+                      bondRows: bondRows,
+                      taxMineCount: taxMineCount,
+                      bondMineCount: bondMineCount,
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

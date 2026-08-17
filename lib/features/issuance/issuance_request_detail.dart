@@ -4,7 +4,9 @@ import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_tax_issue_sheet.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -63,7 +65,8 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
     return '${chars.join()}원';
   }
 
-  Widget kv(String label, String value) {
+  Widget kv(String label, String value, {bool copyable = false}) {
+    final canCopy = copyable && value.trim().isNotEmpty && value.trim() != '-';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -81,12 +84,24 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
+            child: GestureDetector(
+              onTap: canCopy
+                  ? () async {
+                      await Clipboard.setData(ClipboardData(text: value));
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('$label 복사했습니다.')),
+                      );
+                    }
+                  : null,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: canCopy ? scheme.primary : scheme.onSurface,
+                  decoration: canCopy ? TextDecoration.underline : null,
+                ),
               ),
             ),
           ),
@@ -307,22 +322,22 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
       kv('발행일', issueYmd),
     kv('요청자', textOf('requester')),
     if (isTax) ...[
-      kv('계산서번호', textOf('invoice_number')),
-      kv('고객명', textOf('customer_name')),
-      kv('종사업자번호', textOf('customer_registration_number')),
+      kv('계산서번호', textOf('invoice_number'), copyable: true),
+      kv('고객명', textOf('customer_name'), copyable: true),
+      kv('종사업자번호', textOf('customer_registration_number'), copyable: true),
       kv('항목 구분', textOf('item_type')),
       kv('품목명', textOf('item_name')),
-      kv('총액', formatWon(textOf('total_amount'))),
+      kv('총액', formatWon(textOf('total_amount')), copyable: true),
       kv('발행 퍼센트', '${textOf('percentage')}%'),
       if (row.isPartial) kv('남은 발급', '${row.remainingPct.round()}%'),
       kv('지사', textOf('branch')),
-      kv('이메일', textOf('email')),
+      kv('이메일', textOf('email'), copyable: true),
       kv('MES 등록', master['mes_registered'] == true ? '예' : '아니오'),
     ] else ...[
-      kv('증권번호', textOf('bond_number')),
-      kv('업체명', textOf('company_name')),
+      kv('증권번호', textOf('bond_number'), copyable: true),
+      kv('업체명', textOf('company_name'), copyable: true),
       kv('증권 종류', textOf('bond_type')),
-      kv('계약금액', formatWon(textOf('contract_amount'))),
+      kv('계약금액', formatWon(textOf('contract_amount')), copyable: true),
       kv('보증금율', '${textOf('guarantee_rate')}%'),
       kv('보증기간', formatBondPeriod(textOf('guarantee_period'), textOf('bond_type'))),
       kv(
@@ -333,7 +348,7 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
       ),
       kv('시공 종료일', textOf('construction_end_date', from: issue)),
       kv('요청기한', textOf('request_deadline')),
-      kv('이메일', textOf('email')),
+      kv('이메일', textOf('email'), copyable: true),
     ],
     if (row.kind == IssuanceRowKind.cancelled) ...[
       kv('취소 일시', formatDateTime(textOf('cancelled_at'))),
@@ -414,6 +429,22 @@ void showIssuanceRequestDetail(BuildContext context, IssuanceRequestRow row) {
                     issuedGroups,
                     galleryTitle: isTax ? '발급 계산서' : '발급 증권',
                     buttonPrefix: isTax ? '발급 계산서' : '발급 증권',
+                  ),
+                ],
+                if (isTax && row.leftoverRequestPct > 0) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () async {
+                        Navigator.of(ctx).pop();
+                        await showTaxInvoiceIssueSheet(
+                          context: context,
+                          row: row,
+                        );
+                      },
+                      child: Text('잔여 ${row.leftoverRequestPct}% 요청'),
+                    ),
                   ),
                 ],
                 if (!isTax && primaryGroups.isEmpty) ...[

@@ -38,6 +38,8 @@ class _IssuanceCompletedListPageState
   bool _refreshing = false;
   _CompletedDateFilter _dateFilter = _CompletedDateFilter.all;
   _MesFilter _mesFilter = _MesFilter.all;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
   void _syncOlderExpanded({
     required bool todayEmpty,
@@ -55,6 +57,12 @@ class _IssuanceCompletedListPageState
   void initState() {
     super.initState();
     _domain = widget.domain;
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   void _maybeOpenPendingDetail(List<IssuanceRequestRow> rows) {
@@ -131,7 +139,11 @@ class _IssuanceCompletedListPageState
   }
 
   List<IssuanceRequestRow> _applyListFilters(List<IssuanceRequestRow> rows) {
-    return rows.where(_matchesDateFilter).where(_matchesMesFilter).toList();
+    return rows
+        .where(_matchesDateFilter)
+        .where(_matchesMesFilter)
+        .where((r) => issuanceRowMatchesQuery(r, _query))
+        .toList();
   }
 
   void _switchDomain(IssuanceDomain domain) {
@@ -151,6 +163,10 @@ class _IssuanceCompletedListPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          IssuanceSearchField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+          ),
           Text(
             '발행일',
             style: TextStyle(

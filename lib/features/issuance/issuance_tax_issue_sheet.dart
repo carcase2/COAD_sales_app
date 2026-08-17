@@ -41,7 +41,9 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
     final m = widget.row.master;
     _itemName.text = (m['item_name'] ?? '셔터').toString();
     _itemType = (m['item_type'] ?? '선급금').toString();
-    _pct.text = widget.row.remainingPct.round().toString();
+    final leftover = widget.row.leftoverRequestPct;
+    _pct.text = (leftover > 0 ? leftover : widget.row.remainingPct.round())
+        .toString();
   }
 
   @override
@@ -171,6 +173,24 @@ class _TaxInvoiceIssueSheetState extends ConsumerState<_TaxInvoiceIssueSheet> {
             decoration: const InputDecoration(labelText: '발급 요청 비율(%) *'),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final n in {
+                if (widget.row.leftoverRequestPct > 0)
+                  widget.row.leftoverRequestPct,
+                50,
+                30,
+              })
+                ActionChip(
+                  label: Text(n == widget.row.leftoverRequestPct
+                      ? '남은 전액 $n%'
+                      : '$n%'),
+                  onPressed: () => setState(() => _pct.text = '$n'),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           FilledButton(

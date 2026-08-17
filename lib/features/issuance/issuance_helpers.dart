@@ -70,6 +70,47 @@ String issuanceUserErrorMessage(Object error) {
   return '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 }
 
+class IssuanceSearchField extends StatelessWidget {
+  const IssuanceSearchField({
+    super.key,
+    required this.controller,
+    required this.onChanged,
+    this.hint = '현장명·업체명·번호 검색',
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: TextField(
+        controller: controller,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: controller.text.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: '지우기',
+                  onPressed: () {
+                    controller.clear();
+                    onChanged('');
+                  },
+                  icon: const Icon(Icons.close_rounded),
+                ),
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
 /// 발급완료·발급일 기준 `yyyy-MM-dd` (없으면 요청일 서울 기준).
 String issuanceIssueYmdForRow(IssuanceRequestRow row) {
   for (final raw in [row.issue?['issue_date'], row.master['issue_date']]) {
