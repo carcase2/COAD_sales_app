@@ -679,66 +679,35 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     _consultationDayFollowCountYmd = null;
   }
 
-  Future<bool> _confirmConsultationFollowDate({
-    required BuildContext sheetContext,
-    required String ymd,
-    required int? count,
-  }) async {
-    final keep = await showDialog<bool>(
-      context: sheetContext,
-      builder: (ctx) => AlertDialog(
-        title: const Text('예정일 확인'),
-        content: Text(
-          consultationFollowDateCountMessage(ymd: ymd, count: count),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('다른 날 선택'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('이 날짜로'),
-          ),
-        ],
-      ),
-    );
-    return keep != false;
-  }
-
   Future<void> _pickConsultationNextDate({
     required BuildContext sheetContext,
     required void Function(void Function()) setModalState,
   }) async {
     final today = _ymdToCalendarDate(todayYmdSeoul());
-    while (true) {
-      if (!sheetContext.mounted) return;
-      final picked = _consultationNextDateCtrl.text.trim();
-      final initial = picked.isNotEmpty ? _ymdToCalendarDate(picked) : today;
-      final safeInitial = initial.isBefore(today) ? today : initial;
-      final date = await showDatePicker(
-        context: sheetContext,
-        initialDate: safeInitial,
-        firstDate: today,
-        lastDate: today.add(const Duration(days: 365)),
-        locale: const Locale('ko', 'KR'),
-        helpText: '다음 상담 예정일',
-        cancelText: '취소',
-        confirmText: '선택',
-      );
-      if (!sheetContext.mounted || date == null) return;
+    if (!sheetContext.mounted) return;
+    final picked = _consultationNextDateCtrl.text.trim();
+    final initial = picked.isNotEmpty ? _ymdToCalendarDate(picked) : today;
+    final safeInitial = initial.isBefore(today) ? today : initial;
+    final date = await showDatePicker(
+      context: sheetContext,
+      initialDate: safeInitial,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365)),
+      locale: const Locale('ko', 'KR'),
+      helpText: '다음 상담 예정일',
+      cancelText: '취소',
+      confirmText: '선택',
+    );
+    if (!sheetContext.mounted || date == null) return;
 
-      final ymd = _calendarDateToYmd(date);
-      final keepDate = await _applyConsultationFollowDate(
-        sheetContext: sheetContext,
-        setModalState: setModalState,
-        ymd: ymd,
-      );
-      if (keepDate) return;
-    }
+    await _applyConsultationFollowDate(
+      sheetContext: sheetContext,
+      setModalState: setModalState,
+      ymd: _calendarDateToYmd(date),
+    );
   }
 
-  Future<bool> _applyConsultationFollowDate({
+  Future<void> _applyConsultationFollowDate({
     required BuildContext sheetContext,
     required void Function(void Function()) setModalState,
     required String ymd,
@@ -759,19 +728,13 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     } catch (_) {
       count = null;
     }
-    if (!sheetContext.mounted) return true;
+    if (!sheetContext.mounted) return;
     setModalState(() {
       if (_consultationDayFollowCountYmd == ymd) {
         _consultationDayFollowCountLoading = false;
         _consultationDayFollowCount = count;
       }
     });
-    if ((count ?? 0) <= 0) return true;
-    return _confirmConsultationFollowDate(
-      sheetContext: sheetContext,
-      ymd: ymd,
-      count: count,
-    );
   }
 
   String _getNextStage(String? current) {
