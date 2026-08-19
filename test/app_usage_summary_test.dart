@@ -14,6 +14,7 @@ void main() {
     expect(appUsageTabLabel('home'), '홈');
     expect(appUsageTabLabel('reception'), '접수');
     expect(appUsageTabLabel('quoter'), '견적');
+    expect(appUsageTabLabel('standard_unit_price'), '표준단가(테스트중)');
     expect(appUsageTabLabel('quoter_log'), '견적 로그');
     expect(appUsageTabLabel('unknown'), 'unknown');
     expect(appUsageTabLabel(''), '—');

@@ -4,7 +4,9 @@ import 'package:intl/intl.dart';
 /// 입력 중 천 단위 콤마를 유지하는 숫자 포매터.
 /// 커서 위치는 콤마를 제외한 자릿수를 기준으로 복원한다.
 class ThousandsFormatter extends TextInputFormatter {
-  const ThousandsFormatter();
+  const ThousandsFormatter({this.signed = false});
+
+  final bool signed;
 
   @override
   TextEditingValue formatEditUpdate(
@@ -12,10 +14,21 @@ class ThousandsFormatter extends TextInputFormatter {
     TextEditingValue newValue,
   ) {
     if (newValue.text.isEmpty) return newValue;
-    final digitsOnly = newValue.text.replaceAll(',', '');
+    if (signed && newValue.text == '-') return newValue;
+    final negative = signed && newValue.text.contains('-');
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digitsOnly.isEmpty) {
+      return negative
+          ? const TextEditingValue(
+              text: '-',
+              selection: TextSelection.collapsed(offset: 1),
+            )
+          : oldValue;
+    }
     final intValue = int.tryParse(digitsOnly);
     if (intValue == null) return oldValue;
-    final formatted = NumberFormat('#,###').format(intValue);
+    final formatted =
+        '${negative ? '-' : ''}${NumberFormat('#,###').format(intValue)}';
 
     final selectionIndex =
         newValue.selection.end.clamp(0, newValue.text.length);
@@ -26,11 +39,12 @@ class ThousandsFormatter extends TextInputFormatter {
 
     var caret = formatted.length;
     if (digitsBeforeCaret == 0) {
-      caret = 0;
+      caret = negative ? 1 : 0;
     } else {
       var digitCount = 0;
       for (var i = 0; i < formatted.length; i++) {
-        if (formatted.codeUnitAt(i) == 0x2C) continue; // ','
+        final code = formatted.codeUnitAt(i);
+        if (code == 0x2C || code == 0x2D) continue;
         digitCount++;
         if (digitCount >= digitsBeforeCaret) {
           caret = i + 1;
@@ -41,7 +55,7 @@ class ThousandsFormatter extends TextInputFormatter {
 
     return TextEditingValue(
       text: formatted,
-      selection: TextSelection.collapsed(offset: caret),
+      selection: TextSelection.collapsed(offset: caret.clamp(0, formatted.length)),
     );
   }
 }

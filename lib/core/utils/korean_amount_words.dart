@@ -1,6 +1,8 @@
 /// 숫자 금액을 한글 표기로 변환 (예: 200000 → 이십만원).
 String koreanWonInWords(int amount) {
-  if (amount <= 0) return '';
+  if (amount == 0) return '';
+  final sign = amount < 0 ? '마이너스 ' : '';
+  amount = amount.abs();
 
   const digits = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
   const smallUnits = ['', '십', '백', '천'];
@@ -43,5 +45,5 @@ String koreanWonInWords(int amount) {
       ..write(bigUnits[i]);
   }
 
-  return '$buffer원';
+  return '$sign$buffer원';
 }

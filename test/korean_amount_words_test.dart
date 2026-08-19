@@ -10,9 +10,9 @@ void main() {
       expect(koreanWonInWords(1234567), '백이십삼만사천오백육십칠원');
     });
 
-    test('0 이하는 빈 문자열', () {
+    test('0은 빈 문자열, 음수는 마이너스', () {
       expect(koreanWonInWords(0), '');
-      expect(koreanWonInWords(-1), '');
+      expect(koreanWonInWords(-30000), '마이너스 삼만원');
     });
   });
 }

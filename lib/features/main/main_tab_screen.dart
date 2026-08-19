@@ -20,6 +20,7 @@ import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
+import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -1066,6 +1067,25 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           keywords: const ['견적', '셔터', '견적기', 'estimator', '단가', '모터', '슬라트'],
           onTap: () => closeDrawerThen(_selectQuoterTab),
         ),
+        if (canViewStandardUnitPrice(user))
+          AppMenuEntry(
+            id: 'standard_unit_price',
+            sectionId: 'tools',
+            icon: Icons.grid_on_rounded,
+            title: '사이즈 표준단가(테스트중)',
+            subtitle: '셔터 단가와 별개 · 폭×높이·모델 표준단가',
+            quickAccess: true,
+            quickLabel: '표준단가(테스트중)',
+            keywords: const ['단가', '표준단가', '사이즈', '폭', '높이', '모델', '인상'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'standard_unit_price');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const StandardUnitPriceScreen(),
+                ),
+              );
+            }),
+          ),
         AppMenuEntry(
           id: 'checksheet_search',
           sectionId: 'tools',

@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
+import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
@@ -192,6 +193,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
           ),
           const SizedBox(height: 8),
+          if (canViewStandardUnitPrice(ref.watch(authControllerProvider)))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.grid_on_rounded, color: scheme.primary),
+              title: const Text('사이즈 표준단가(테스트중)'),
+              subtitle: const Text('폭×높이·모델별 표준단가 조회'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const StandardUnitPriceScreen(),
+                  ),
+                );
+              },
+            ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.fact_check_outlined, color: scheme.primary),
