@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -226,6 +227,106 @@ class SupportExcelButton extends StatelessWidget {
       tooltip: '엑셀 저장 (다음 작업)',
       onPressed: () => showSupportSkeletonSnack(context, '엑셀 다운로드'),
       icon: const Icon(Icons.table_view_outlined),
+    );
+  }
+}
+
+/// 전체 · 본사 · 대구 · 대전 · 전남 · 기타 — 한 줄 가로 스크롤.
+class SupportBranchFilterBar extends StatelessWidget {
+  const SupportBranchFilterBar({
+    super.key,
+    required this.selected,
+    required this.counts,
+    required this.onSelected,
+  });
+
+  final String selected;
+  final Map<String, int> counts;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        itemCount: kSupportBranchTabOrder.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (context, i) {
+          final tab = kSupportBranchTabOrder[i];
+          return _SupportBranchChip(
+            tab: tab,
+            count: counts[tab] ?? 0,
+            selected: selected == tab,
+            onTap: () => onSelected(tab),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SupportBranchChip extends StatelessWidget {
+  const _SupportBranchChip({
+    required this.tab,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String tab;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = AppTokens.supportBranchAccent(tab, scheme);
+    final fg = selected ? Colors.white : accent;
+    return Material(
+      color: selected ? accent : accent.withValues(alpha: 0.14),
+      shape: StadiumBorder(
+        side: BorderSide(color: accent.withValues(alpha: selected ? 0 : 0.45)),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Align(
+            alignment: const Alignment(0, -0.18),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  tab,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    height: 1.0,
+                    leadingDistribution: TextLeadingDistribution.even,
+                    color: fg,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    height: 1.0,
+                    leadingDistribution: TextLeadingDistribution.even,
+                    color: selected ? Colors.white : fg.withValues(alpha: 0.85),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

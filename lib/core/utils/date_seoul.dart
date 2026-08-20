@@ -22,6 +22,41 @@ String formatSeoulDateTime(DateTime? utcOrNull) {
   return DateFormat('yyyy-MM-dd HH:mm', 'ko_KR').format(_utcToSeoul(utcOrNull));
 }
 
+/// `2026.08.20 16:18`
+String formatSeoulDateTimeDots(DateTime? utcOrNull) {
+  if (utcOrNull == null) return '-';
+  return DateFormat('yyyy.MM.dd HH:mm').format(_utcToSeoul(utcOrNull));
+}
+
+/// `8/20 16:18`
+String formatSeoulMonthDayTime(DateTime? utcOrNull) {
+  if (utcOrNull == null) return '';
+  return DateFormat('M/d HH:mm').format(_utcToSeoul(utcOrNull));
+}
+
+/// Support DB 등 타임존 없는 시각은 UTC로 본다.
+DateTime? parseSupabaseTimestampUtc(Object? raw) {
+  if (raw == null) return null;
+  final trimmed = raw.toString().trim();
+  if (trimmed.isEmpty) return null;
+  final normalized = trimmed.replaceFirst(' ', 'T');
+  final dt = DateTime.tryParse(normalized);
+  if (dt == null) return null;
+  if (dt.isUtc || _hasExplicitTimezone(trimmed)) {
+    return dt.isUtc ? dt : dt.toUtc();
+  }
+  return DateTime.utc(
+    dt.year,
+    dt.month,
+    dt.day,
+    dt.hour,
+    dt.minute,
+    dt.second,
+    dt.millisecond,
+    dt.microsecond,
+  );
+}
+
 /// 명함 메모 기록 — `2026.6.20 14:32`
 String formatSeoulMemoStamp(DateTime? utcOrNull) {
   if (utcOrNull == null) return '—';

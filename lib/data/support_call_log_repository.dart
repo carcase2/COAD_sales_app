@@ -16,6 +16,8 @@ class SupportCallLog {
     this.callDate,
     this.firstImageUrls = const [],
     this.secondImageUrls = const [],
+    this.serviceStatusId,
+    this.visitDate,
   });
 
   final String id;
@@ -28,15 +30,31 @@ class SupportCallLog {
   final DateTime? callDate;
   final List<String> firstImageUrls;
   final List<String> secondImageUrls;
+  final int? serviceStatusId;
+  final String? visitDate;
 
   List<String> get attachmentUrls => [...firstImageUrls, ...secondImageUrls];
 
-  factory SupportCallLog.fromJson(Map<String, dynamic> json) {
-    DateTime? parseTime(Object? raw) {
-      if (raw == null) return null;
-      return DateTime.tryParse(raw.toString());
-    }
+  bool get isPending => isSupportServiceStatusPending(serviceStatusId);
 
+  SupportCallLog copyWith({int? serviceStatusId, String? visitDate}) {
+    return SupportCallLog(
+      id: id,
+      customerName: customerName,
+      customerPhone: customerPhone,
+      issue: issue,
+      address: address,
+      createdBy: createdBy,
+      createdAt: createdAt,
+      callDate: callDate,
+      firstImageUrls: firstImageUrls,
+      secondImageUrls: secondImageUrls,
+      serviceStatusId: serviceStatusId ?? this.serviceStatusId,
+      visitDate: visitDate ?? this.visitDate,
+    );
+  }
+
+  factory SupportCallLog.fromJson(Map<String, dynamic> json) {
     return SupportCallLog(
       id: (json['id'] ?? '').toString(),
       customerName: (json['customer_name'] ?? '').toString(),
@@ -44,10 +62,16 @@ class SupportCallLog {
       issue: (json['issue'] ?? '').toString(),
       address: json['address']?.toString(),
       createdBy: json['created_by']?.toString(),
-      createdAt: parseTime(json['created_at']),
-      callDate: parseTime(json['call_date']),
+      createdAt: parseSupabaseTimestampUtc(json['created_at']),
+      callDate: parseSupabaseTimestampUtc(json['call_date']),
       firstImageUrls: parseSupportUrlList(json['first_image_urls']),
       secondImageUrls: parseSupportUrlList(json['second_image_urls']),
+      serviceStatusId: int.tryParse('${json['service_status_id'] ?? ''}'),
+      visitDate: () {
+        final raw = json['visit_date']?.toString().trim() ?? '';
+        if (raw.isEmpty) return null;
+        return raw.length >= 10 ? raw.substring(0, 10) : raw;
+      }(),
     );
   }
 }
@@ -95,8 +119,13 @@ class SupportCallLogDraft {
   final List<String> firstImageUrls;
 }
 
+const kSupportStatusCompleted = 1;
+const kSupportStatusInProgress = 2;
+const kSupportStatusReceived = 4;
+const kSupportStatusVisitScheduled = 5;
+
 const _supportCallLogSelect =
-    'id, customer_name, customer_phone, issue, address, created_by, created_at, call_date, first_image_urls, second_image_urls';
+    'id, customer_name, customer_phone, issue, address, created_by, created_at, call_date, first_image_urls, second_image_urls, service_status_id, visit_date';
 
 class SupportCallLogRepository {
   SupportCallLogRepository();
@@ -273,11 +302,255 @@ class SupportCallLogRepository {
       throw ApiException('A/S 접수 삭제에 실패했습니다. $e');
     }
   }
+
+  Future<List<SupportConsultation>> listConsultations(String callLogId) async {
+    try {
+      final rows = await supportSupabaseClient()
+          .from('service_requests')
+          .select('id, description, created_by, created_at')
+          .eq('call_log_id', callLogId)
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(
+        rows,
+      ).map(SupportConsultation.fromJson).toList();
+    } catch (e) {
+      throw ApiException('상담 내용을 불러오지 못했습니다. $e');
+    }
+  }
+
+  /// 상담 저장. 결과에 따라 완료/진행중/방문예정으로 바꾸고 미처리에서 제외한다.
+  Future<void> addConsultation({
+    required String callLogId,
+    required String description,
+    String? createdBy,
+    int? currentStatusId,
+    SupportConsultOutcome? outcome,
+    String? visitYmd,
+    String? sendYmd,
+  }) async {
+    final text = description.trim();
+    if (text.isEmpty) {
+      throw ApiException('상담 내용을 입력해 주세요.');
+    }
+    if (outcome == SupportConsultOutcome.visit &&
+        (visitYmd == null || visitYmd.trim().isEmpty)) {
+      throw ApiException('방문예정일을 선택해 주세요.');
+    }
+    try {
+      final client = supportSupabaseClient();
+      final body = [
+        if (outcome != null)
+          supportConsultOutcomeLine(
+            outcome,
+            ymd: outcome == SupportConsultOutcome.visit
+                ? visitYmd
+                : outcome == SupportConsultOutcome.quoteSend
+                ? sendYmd
+                : null,
+          ),
+        text,
+      ].join('\n');
+      await client.from('service_requests').insert({
+        'call_log_id': callLogId,
+        'description': body,
+        if (createdBy != null && createdBy.trim().isNotEmpty)
+          'created_by': createdBy.trim(),
+      });
+      final patch = <String, dynamic>{};
+      if (outcome != null) {
+        patch['service_status_id'] = supportConsultOutcomeStatusId(outcome);
+        if (outcome == SupportConsultOutcome.visit) {
+          patch['visit_date'] = visitYmd;
+        }
+      } else if (isSupportServiceStatusPending(currentStatusId)) {
+        patch['service_status_id'] = kSupportStatusInProgress;
+      }
+      if (patch.isNotEmpty) {
+        await client.from('call_logs').update(patch).eq('id', callLogId);
+      }
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('상담 내용 저장에 실패했습니다. $e');
+    }
+  }
+
+  Future<List<SupportScheduleEvent>> listScheduleEvents({
+    required String fromYmd,
+    required String toYmdInclusive,
+  }) async {
+    try {
+      final client = supportSupabaseClient();
+      final events = <SupportScheduleEvent>[];
+      final visitRows = await client
+          .from('call_logs')
+          .select(_supportCallLogSelect)
+          .gte('visit_date', fromYmd)
+          .lte('visit_date', toYmdInclusive)
+          .limit(400);
+      for (final row in List<Map<String, dynamic>>.from(visitRows)) {
+        final log = SupportCallLog.fromJson(row);
+        final ymd = log.visitDate;
+        if (ymd == null || ymd.isEmpty) continue;
+        events.add(
+          SupportScheduleEvent(
+            kind: SupportScheduleKind.visit,
+            ymd: ymd,
+            log: log,
+          ),
+        );
+      }
+
+      try {
+        final reqs = await client
+            .from('service_requests')
+            .select('description, call_log_id')
+            .ilike('description', '%발송예정%')
+            .limit(500);
+        final ymdByLogId = <String, String>{};
+        for (final row in List<Map<String, dynamic>>.from(reqs)) {
+          final parsed = parseSupportConsultation(
+            (row['description'] ?? '').toString(),
+          );
+          final ymd = parsed.ymd;
+          if (parsed.outcome != SupportConsultOutcome.quoteSend ||
+              ymd == null ||
+              ymd.compareTo(fromYmd) < 0 ||
+              ymd.compareTo(toYmdInclusive) > 0) {
+            continue;
+          }
+          final id = (row['call_log_id'] ?? '').toString();
+          if (id.isEmpty) continue;
+          ymdByLogId[id] = ymd;
+        }
+        if (ymdByLogId.isNotEmpty) {
+          final logs = await client
+              .from('call_logs')
+              .select(_supportCallLogSelect)
+              .inFilter('id', ymdByLogId.keys.toList())
+              .limit(400);
+          for (final row in List<Map<String, dynamic>>.from(logs)) {
+            final log = SupportCallLog.fromJson(row);
+            final ymd = ymdByLogId[log.id];
+            if (ymd == null) continue;
+            events.add(
+              SupportScheduleEvent(
+                kind: SupportScheduleKind.quoteSend,
+                ymd: ymd,
+                log: log,
+              ),
+            );
+          }
+        }
+      } catch (_) {}
+      return events;
+    } catch (e) {
+      throw ApiException('일정을 불러오지 못했습니다. $e');
+    }
+  }
+
+  /// 오늘·지난 방문/발송 예정 (완료 제외는 호출 측에서).
+  Future<List<SupportScheduleEvent>> listDueScheduleEvents({
+    required String todayYmd,
+  }) {
+    return listScheduleEvents(fromYmd: '2020-01-01', toYmdInclusive: todayYmd);
+  }
+}
+
+class SupportConsultation {
+  const SupportConsultation({
+    required this.id,
+    required this.description,
+    this.createdBy,
+    this.createdAt,
+  });
+
+  final String id;
+  final String description;
+  final String? createdBy;
+  final DateTime? createdAt;
+
+  factory SupportConsultation.fromJson(Map<String, dynamic> json) {
+    return SupportConsultation(
+      id: (json['id'] ?? '').toString(),
+      description: (json['description'] ?? '').toString(),
+      createdBy: json['created_by']?.toString(),
+      createdAt: parseSupabaseTimestampUtc(json['created_at']),
+    );
+  }
 }
 
 /// 웹과 동일: `service_status_id` 4 = 접수(미처리). 값 없음도 미처리로 본다.
 bool isSupportServiceStatusPending(int? status) =>
     status == null || status == 4;
+
+enum SupportScheduleKind { visit, quoteSend }
+
+class SupportScheduleEvent {
+  const SupportScheduleEvent({
+    required this.kind,
+    required this.ymd,
+    required this.log,
+  });
+
+  final SupportScheduleKind kind;
+  final String ymd;
+  final SupportCallLog log;
+}
+
+enum SupportConsultOutcome { closed, verbalQuote, quoteSend, visit }
+
+String supportConsultOutcomeLabel(SupportConsultOutcome outcome) =>
+    switch (outcome) {
+      SupportConsultOutcome.closed => '마무리',
+      SupportConsultOutcome.verbalQuote => '구두 견적',
+      SupportConsultOutcome.quoteSend => '견적서 발송',
+      SupportConsultOutcome.visit => '방문 요청',
+    };
+
+int supportConsultOutcomeStatusId(SupportConsultOutcome outcome) =>
+    switch (outcome) {
+      SupportConsultOutcome.closed => kSupportStatusCompleted,
+      SupportConsultOutcome.verbalQuote => kSupportStatusInProgress,
+      SupportConsultOutcome.quoteSend => kSupportStatusInProgress,
+      SupportConsultOutcome.visit => kSupportStatusVisitScheduled,
+    };
+
+String supportConsultOutcomeLine(SupportConsultOutcome outcome, {String? ymd}) {
+  final label = supportConsultOutcomeLabel(outcome);
+  final day = (ymd ?? '').trim();
+  if (outcome == SupportConsultOutcome.quoteSend && day.isNotEmpty) {
+    return '[결과: $label · 발송예정 $day]';
+  }
+  if (outcome == SupportConsultOutcome.visit && day.isNotEmpty) {
+    return '[결과: $label · 방문예정 $day]';
+  }
+  return '[결과: $label]';
+}
+
+({SupportConsultOutcome? outcome, String? ymd, String body})
+parseSupportConsultation(String raw) {
+  SupportConsultOutcome? outcome;
+  String? ymd;
+  final rest = <String>[];
+  for (final line in raw.split('\n')) {
+    final m = RegExp(
+      r'^\[결과:\s*(마무리|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?\]$',
+    ).firstMatch(line.trim());
+    if (m != null && outcome == null) {
+      outcome = switch (m.group(1)) {
+        '마무리' => SupportConsultOutcome.closed,
+        '구두 견적' => SupportConsultOutcome.verbalQuote,
+        '견적서 발송' => SupportConsultOutcome.quoteSend,
+        '방문 요청' => SupportConsultOutcome.visit,
+        _ => null,
+      };
+      ymd = m.group(2);
+      continue;
+    }
+    rest.add(line);
+  }
+  return (outcome: outcome, ymd: ymd, body: rest.join('\n').trim());
+}
 
 List<String> parseSupportUrlList(Object? raw) {
   if (raw == null) return const [];

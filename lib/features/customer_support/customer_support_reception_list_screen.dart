@@ -1,19 +1,25 @@
 import 'dart:async';
 
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_first_consultation_sheet.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/models/region.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 class CustomerSupportReceptionListScreen extends ConsumerStatefulWidget {
   const CustomerSupportReceptionListScreen({
@@ -43,6 +49,7 @@ class _CustomerSupportReceptionListScreenState
   bool _loading = true;
   Object? _error;
   String _query = '';
+  String _branchTab = '전체';
 
   @override
   void initState() {
@@ -60,8 +67,13 @@ class _CustomerSupportReceptionListScreenState
 
   List<SupportCallLog> get _filtered {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return _items;
-    return _items
+    final source = _branchTab == '전체'
+        ? _items
+        : _items
+              .where((e) => _branchOf(e) == _branchTab)
+              .toList(growable: false);
+    if (q.isEmpty) return source;
+    return source
         .where((e) {
           final blob = [
             e.customerName,
@@ -113,21 +125,54 @@ class _CustomerSupportReceptionListScreenState
   }
 
   String _when(SupportCallLog log) {
-    final t = log.createdAt ?? log.callDate;
-    if (t == null) return '';
-    final local = t.toLocal();
-    return DateFormat('M/d HH:mm').format(local);
+    return formatSeoulMonthDayTime(log.createdAt ?? log.callDate);
+  }
+
+  List<SupportCallLog> get _displayRows {
+    final rows = _filtered;
+    if (widget.fromYmd != null) {
+      return rows.reversed.toList(growable: false);
+    }
+    return rows;
+  }
+
+  List<Region> get _regions =>
+      ref.watch(regionsRawProvider).valueOrNull ?? const [];
+
+  String _branchOf(SupportCallLog log) =>
+      matchSupportBranchType(log.address ?? '', _regions);
+
+  Map<String, int> _branchCounts() {
+    final counts = <String, int>{'전체': _items.length};
+    for (final log in _items) {
+      final b = _branchOf(log);
+      counts[b] = (counts[b] ?? 0) + 1;
+    }
+    return counts;
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final accent = AppTokens.customerSupportAccent(scheme);
-    final rows = _filtered;
+    final rows = _displayRows;
+    final counts = _branchCounts();
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          IconButton(
+            tooltip: '방문·발송 달력',
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const CustomerSupportScheduleCalendarScreen(),
+                ),
+              );
+              if (mounted) unawaited(_reload());
+            },
+            icon: const Icon(Icons.calendar_month_rounded),
+          ),
           IconButton(
             tooltip: '새로고침',
             onPressed: _loading ? null : () => unawaited(_reload()),
@@ -142,6 +187,11 @@ class _CustomerSupportReceptionListScreenState
       ),
       body: Column(
         children: [
+          SupportBranchFilterBar(
+            selected: _branchTab,
+            counts: counts,
+            onSelected: (tab) => setState(() => _branchTab = tab),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: SearchBar(
@@ -188,13 +238,21 @@ class _CustomerSupportReceptionListScreenState
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, i) {
                         final log = rows[i];
+                        final parsed = parseSupportIssueBody(log.issue);
+                        final urgency = supportUrgencyColor(
+                          scheme,
+                          parsed.urgency,
+                        );
                         return Material(
-                          color: scheme.surfaceContainerHighest.withValues(
-                            alpha: 0.42,
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                          child: InkWell(
+                          color: Color.lerp(scheme.surface, urgency, 0.12),
+                          shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
+                            side: BorderSide(
+                              color: urgency.withValues(alpha: 0.45),
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
                             onTap: () async {
                               final changed = await Navigator.of(context)
                                   .push<bool>(
@@ -209,98 +267,194 @@ class _CustomerSupportReceptionListScreenState
                                 unawaited(_reload());
                               }
                             },
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                14,
-                                12,
-                                12,
-                                12,
-                              ),
+                            child: IntrinsicHeight(
                               child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Icon(
-                                    Icons.handyman_outlined,
-                                    color: accent,
-                                    size: 22,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
+                                  Container(width: 6, color: urgency),
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      10,
+                                      10,
+                                      12,
+                                      10,
+                                    ),
                                     child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
                                       children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                log.customerName.isEmpty
-                                                    ? '(이름 없음)'
-                                                    : log.customerName,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
+                                        Container(
+                                          width: 28,
+                                          height: 28,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: urgency,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
                                             ),
-                                            Text(
-                                              _when(log),
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: scheme.onSurfaceVariant,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          [
-                                            log.customerPhone,
-                                            if ((log.address ?? '')
-                                                .trim()
-                                                .isNotEmpty)
-                                              log.address!.trim(),
-                                          ].join(' · '),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: scheme.onSurfaceVariant,
                                           ),
-                                        ),
-                                        if (log.issue.trim().isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            log.issue.trim(),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                          child: Text(
+                                            '${i + 1}',
                                             style: const TextStyle(
+                                              color: Colors.white,
                                               fontSize: 13,
-                                              height: 1.3,
+                                              fontWeight: FontWeight.w900,
                                             ),
                                           ),
-                                        ],
-                                        if (log.attachmentUrls.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            '첨부 ${log.attachmentUrls.length}개',
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              fontWeight: FontWeight.w700,
-                                              color: accent,
-                                            ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          supportUrgencyLabel(parsed.urgency),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w900,
+                                            color: urgency,
                                           ),
-                                        ],
+                                        ),
                                       ],
                                     ),
                                   ),
-                                  Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: scheme.onSurfaceVariant.withValues(
-                                      alpha: 0.55,
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        0,
+                                        10,
+                                        8,
+                                        10,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  log.customerName.isEmpty
+                                                      ? '(이름 없음)'
+                                                      : log.customerName,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 15.5,
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ),
+                                              Text(
+                                                _when(log),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                  color:
+                                                      scheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (parsed.siteName.isNotEmpty ||
+                                              parsed.productName.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 2,
+                                              ),
+                                              child: Text(
+                                                [
+                                                  if (parsed
+                                                      .productName
+                                                      .isNotEmpty)
+                                                    parsed.productName,
+                                                  if (parsed
+                                                      .siteName
+                                                      .isNotEmpty)
+                                                    parsed.siteName,
+                                                ].join(' · '),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: urgency,
+                                                ),
+                                              ),
+                                            ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            [
+                                              if (log.customerPhone
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                formatKoreanPhoneHyphenated(
+                                                  log.customerPhone,
+                                                ),
+                                              if ((log.address ?? '')
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                log.address!.trim(),
+                                            ].join(' · '),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                          if (parsed.body.trim().isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 4,
+                                              ),
+                                              child: Text(
+                                                parsed.body.trim(),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  height: 1.3,
+                                                ),
+                                              ),
+                                            ),
+                                          const SizedBox(height: 6),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            children: [
+                                              if (log.isPending)
+                                                _ListChip(
+                                                  label: '미처리',
+                                                  color: scheme.error,
+                                                ),
+                                              if ((log.visitDate ?? '')
+                                                  .isNotEmpty)
+                                                _ListChip(
+                                                  label: '방문 ${log.visitDate}',
+                                                  color: scheme.tertiary,
+                                                ),
+                                              if ((log.createdBy ?? '')
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                _ListChip(
+                                                  label: log.createdBy!.trim(),
+                                                  color: scheme.primary,
+                                                ),
+                                              if (log.attachmentUrls.isNotEmpty)
+                                                _ListChip(
+                                                  label:
+                                                      '첨부 ${log.attachmentUrls.length}',
+                                                  color: accent,
+                                                ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: scheme.onSurfaceVariant.withValues(
+                                        alpha: 0.55,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -333,6 +487,7 @@ class CustomerSupportReceptionDetailScreen extends ConsumerStatefulWidget {
 class _CustomerSupportReceptionDetailScreenState
     extends ConsumerState<CustomerSupportReceptionDetailScreen> {
   SupportCallLog? _log;
+  List<SupportConsultation> _consults = const [];
   Object? _loadError;
   bool _loading = false;
   bool _changed = false;
@@ -342,12 +497,9 @@ class _CustomerSupportReceptionDetailScreenState
   void initState() {
     super.initState();
     _log = widget.log;
-    if (_log == null) {
-      _loading = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_load());
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_load());
+    });
   }
 
   Future<void> _load() async {
@@ -359,15 +511,29 @@ class _CustomerSupportReceptionDetailScreenState
       });
       return;
     }
-    setState(() {
-      _loading = true;
-      _loadError = null;
-    });
+    if (_log == null) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
     try {
-      final log = await ref.read(supportCallLogRepositoryProvider).getById(id);
+      final repo = ref.read(supportCallLogRepositoryProvider);
+      SupportCallLog log;
+      try {
+        log = await repo.getById(id);
+      } catch (e) {
+        if (_log == null) rethrow;
+        log = _log!;
+      }
+      List<SupportConsultation> consults = const [];
+      try {
+        consults = await repo.listConsultations(id);
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _log = log;
+        _consults = consults;
         _loading = false;
       });
     } catch (e) {
@@ -380,9 +546,7 @@ class _CustomerSupportReceptionDetailScreenState
   }
 
   String _when() {
-    final t = _log?.createdAt ?? _log?.callDate;
-    if (t == null) return '-';
-    return DateFormat('yyyy.MM.dd HH:mm').format(t.toLocal());
+    return formatSeoulDateTimeDots(_log?.createdAt ?? _log?.callDate);
   }
 
   void _pop() {
@@ -402,6 +566,20 @@ class _CustomerSupportReceptionDetailScreenState
       _log = updated;
       _changed = true;
     });
+    unawaited(_load());
+  }
+
+  Future<void> _addConsultation() async {
+    final current = _log;
+    if (current == null || _busy) return;
+    final saved = await showSupportFirstConsultationSheet(
+      context,
+      log: current,
+      stage: _consults.length + 1,
+    );
+    if (!mounted || !saved) return;
+    setState(() => _changed = true);
+    unawaited(_load());
   }
 
   Future<void> _delete() async {
@@ -517,6 +695,7 @@ class _CustomerSupportReceptionDetailScreenState
         bottomNavigationBar: _log == null
             ? null
             : UxActionDock(
+                flexes: const [2, 2, 3],
                 children: [
                   UxDockButton(
                     icon: Icons.call_rounded,
@@ -535,6 +714,12 @@ class _CustomerSupportReceptionDetailScreenState
                     onPressed: hasPhone
                         ? () => LauncherUtils.sendSMS(phone)
                         : null,
+                  ),
+                  UxDockButton(
+                    icon: Icons.add_comment_rounded,
+                    label: '${_consults.length + 1}차 상담내용',
+                    emphasized: true,
+                    onPressed: _addConsultation,
                   ),
                 ],
               ),
@@ -707,6 +892,90 @@ class _CustomerSupportReceptionDetailScreenState
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  _DetailCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _label(scheme, '상담내용'),
+                        if (_consults.isEmpty)
+                          Text(
+                            '아직 상담 내용이 없습니다. 입력하면 미처리에서 빠집니다.',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          )
+                        else
+                          for (var i = 0; i < _consults.length; i++) ...[
+                            if (i > 0) const SizedBox(height: 10),
+                            Builder(
+                              builder: (context) {
+                                final parsed = parseSupportConsultation(
+                                  _consults[i].description,
+                                );
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${i + 1}차',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    if (parsed.outcome != null) ...[
+                                      const SizedBox(height: 4),
+                                      Wrap(
+                                        spacing: 6,
+                                        children: [
+                                          _ListChip(
+                                            label: supportConsultOutcomeLabel(
+                                              parsed.outcome!,
+                                            ),
+                                            color: scheme.primary,
+                                          ),
+                                          if ((parsed.ymd ?? '').isNotEmpty)
+                                            _ListChip(
+                                              label: parsed.ymd!,
+                                              color: scheme.tertiary,
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      parsed.body.isEmpty
+                                          ? _consults[i].description
+                                          : parsed.body,
+                                      style: const TextStyle(
+                                        fontSize: 15.5,
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                    if ((_consults[i].createdBy ?? '')
+                                        .trim()
+                                        .isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          _consults[i].createdBy!.trim(),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                      ],
+                    ),
+                  ),
                   if ((_log?.attachmentUrls ?? const []).isNotEmpty) ...[
                     const SizedBox(height: 10),
                     _DetailCard(
@@ -731,6 +1000,32 @@ class _CustomerSupportReceptionDetailScreenState
           fontSize: 12,
           fontWeight: FontWeight.w700,
           color: scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+class _ListChip extends StatelessWidget {
+  const _ListChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: color,
         ),
       ),
     );

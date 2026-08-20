@@ -70,6 +70,19 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
       decoration: HomeHubVisual.elevatedCard(scheme),
       child: Column(
         children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '영업부',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: scheme.primary,
+                height: 1.1,
+              ),
+            ),
+          ),
+          SizedBox(height: gap),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,

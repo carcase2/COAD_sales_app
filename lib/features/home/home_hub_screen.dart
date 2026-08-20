@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -2273,6 +2274,18 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       ref.invalidate(supportHomeStatsProvider);
     }
 
+    Future<void> openVisitCalendar() async {
+      HapticFeedback.selectionClick();
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const CustomerSupportScheduleCalendarScreen(
+            initialKind: SupportScheduleKind.visit,
+          ),
+        ),
+      );
+      ref.invalidate(supportHomeStatsProvider);
+    }
+
     final receptionLabel = switch (_hubNavStep) {
       HubNavStep.day => '금일 A/S',
       HubNavStep.week => '금주 A/S',
@@ -2306,7 +2319,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       onTapReception: () => unawaited(openList(title: receptionLabel)),
       onTapPending: () =>
           unawaited(openList(title: pendingLabel, pendingOnly: true)),
-      onTapVisit: () => unawaited(openList(title: visitLabel, visitOnly: true)),
+      onTapVisit: () => unawaited(openVisitCalendar()),
       onTapUpdated: () => unawaited(openList(title: updatedLabel)),
     );
   }

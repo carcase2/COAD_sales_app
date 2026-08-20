@@ -11,6 +11,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_provider.
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -22,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 /// Background isolate용 (메인 isolate의 [_localNotifications]와 별도).
 @pragma('vm:entry-point')
@@ -63,17 +65,32 @@ class NotificationService {
   static const String _androidChannelCallId = 'call_notifications';
   static const String _androidChannelIssuanceId = 'issuance_notifications';
   static const String _androidChannelScheduleId = 'schedule_notifications';
+  static const String _androidChannelAsDueId = 'as_due_notifications';
   static const String _androidChannelGeneralId = 'general_notifications';
 
   static const String _androidChannelCallName = '새 접수 알림';
   static const String _androidChannelIssuanceName = '발급요청 알림';
   static const String _androidChannelScheduleName = '일정 알림';
+  static const String _androidChannelAsDueName = 'A/S 방문·발송 예정';
   static const String _androidChannelGeneralName = '일반 알림';
 
   static const String _androidChannelCallDesc = '새 통화 접수 알림';
   static const String _androidChannelIssuanceDesc = '세금계산서/이행증권 발급 알림';
   static const String _androidChannelScheduleDesc = '본사일반·대구지사 일정 변경 알림';
+  static const String _androidChannelAsDueDesc =
+      '매일 오전 9시·오후 1시·오후 6시 오늘·지난 방문/발송 예정';
   static const String _androidChannelGeneralDesc = '앱 업데이트 등 일반 알림';
+
+  static const int _asDueNotifIdMorning = 91009;
+  static const int _asDueNotifIdAfternoon = 91013;
+  static const int _asDueNotifIdEvening = 91018;
+  static const List<int> _asDueHours = [9, 13, 18];
+  static const List<int> _asDueNotifIds = [
+    _asDueNotifIdMorning,
+    _asDueNotifIdAfternoon,
+    _asDueNotifIdEvening,
+  ];
+  static const String _asDueCalendarRouteName = 'AsDueCalendar';
 
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -109,6 +126,7 @@ class NotificationService {
       'notify_enabled_general_schedule_v1';
   static const String prefKeyNotifyDaeguSchedule =
       'notify_enabled_daegu_schedule_v1';
+  static const String prefKeyNotifyAsDue = 'notify_enabled_as_due_v1';
 
   /// 사용자가 해당 카테고리 알림을 꺼두었으면 false.
   /// 앱 업데이트 등 분류 불가 알림은 항상 표시.
@@ -121,6 +139,8 @@ class NotificationService {
       key = prefKeyNotifyDaeguSchedule;
     } else if (_isGeneralScheduleNotification(data)) {
       key = prefKeyNotifyGeneralSchedule;
+    } else if (_isAsDueScheduleNotification(data)) {
+      key = prefKeyNotifyAsDue;
     } else if (_extractCallIdFromData(data) != null) {
       key = prefKeyNotifyNewCall;
     }
@@ -136,6 +156,9 @@ class NotificationService {
   static String _androidChannelIdForData(Map<String, dynamic> data) {
     if (_isAsReceptionNotification(data)) {
       return _androidChannelCallId;
+    }
+    if (_isAsDueScheduleNotification(data)) {
+      return _androidChannelAsDueId;
     }
     if (_isIssuanceCompletedNotification(data) ||
         _isIssuanceRequestNotification(data)) {
@@ -159,6 +182,8 @@ class NotificationService {
         return _androidChannelIssuanceName;
       case _androidChannelScheduleId:
         return _androidChannelScheduleName;
+      case _androidChannelAsDueId:
+        return _androidChannelAsDueName;
       default:
         return _androidChannelGeneralName;
     }
@@ -172,6 +197,8 @@ class NotificationService {
         return _androidChannelIssuanceDesc;
       case _androidChannelScheduleId:
         return _androidChannelScheduleDesc;
+      case _androidChannelAsDueId:
+        return _androidChannelAsDueDesc;
       default:
         return _androidChannelGeneralDesc;
     }
@@ -284,6 +311,7 @@ class NotificationService {
         _androidChannelCallId,
         _androidChannelIssuanceId,
         _androidChannelScheduleId,
+        _androidChannelAsDueId,
         _androidChannelGeneralId,
       ];
       for (final id in ids) {
@@ -302,6 +330,12 @@ class NotificationService {
       unawaited(
         androidPlugin.requestNotificationsPermission().catchError((Object e) {
           _log('Android notifications permission request failed: $e');
+          return null;
+        }),
+      );
+      unawaited(
+        androidPlugin.requestExactAlarmsPermission().catchError((Object e) {
+          _log('Android exact alarm permission request failed: $e');
           return null;
         }),
       );
@@ -508,6 +542,9 @@ class NotificationService {
       } else if (_isAsReceptionNotification(data)) {
         title = '새 A/S 접수';
         body = '알림을 탭하면 접수 상세로 이동합니다.';
+      } else if (_isAsDueScheduleNotification(data)) {
+        title = '[A/S] 방문·발송 예정';
+        body = '오늘·지난 방문/발송 일정을 확인하세요.';
       } else {
         final callId = _extractCallIdFromData(data);
         if (callId != null) {
@@ -555,14 +592,18 @@ class NotificationService {
 
     final callId = _extractCallIdFromData(data);
     final asId = _extractAsReceptionId(data);
-    final notificationId = _isDaeguScheduleNotification(data)
+    final notificationId = _isAsDueScheduleNotification(data)
+        ? _asDueNotificationIdFromData(data)
+        : _isDaeguScheduleNotification(data)
         ? ('daegu_schedule:${data['action'] ?? 'open'}').hashCode & 0x7fffffff
         : _isGeneralScheduleNotification(data)
         ? ('general_schedule:${data['action'] ?? 'open'}').hashCode & 0x7fffffff
         : asId != null
         ? asId.hashCode & 0x7fffffff
         : _notificationIdFor(callId, message);
-    final tag = _isDaeguScheduleNotification(data)
+    final tag = _isAsDueScheduleNotification(data)
+        ? 'as_due_schedule'
+        : _isDaeguScheduleNotification(data)
         ? 'daegu_schedule'
         : _isGeneralScheduleNotification(data)
         ? 'general_schedule'
@@ -616,6 +657,12 @@ class NotificationService {
       final asId = _extractAsReceptionId(data);
       if (asId == null) return null;
       return jsonEncode({'type': 'as_reception', 'as_id': asId});
+    }
+    if (_isAsDueScheduleNotification(data)) {
+      return jsonEncode({
+        'type': 'as_due_schedule',
+        'action': 'open_as_calendar',
+      });
     }
     if (_isIssuanceCompletedNotification(data)) {
       return jsonEncode(_issuancePayloadFromData(data, completed: true));
@@ -750,6 +797,10 @@ class NotificationService {
       _navigateToAsReceptionDetail(asId);
       return;
     }
+    if (_isAsDueScheduleNotification(data)) {
+      _navigateToAsDueCalendar();
+      return;
+    }
     if (_isIssuanceCompletedNotification(data)) {
       _openIssuanceCompleted(data);
       return;
@@ -772,6 +823,25 @@ class NotificationService {
       return;
     }
     _log('tap ignored: no call_id in data=$data');
+  }
+
+  static bool _isAsDueScheduleNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'as_due_schedule' ||
+        type == 'as-due-schedule' ||
+        action == 'open_as_calendar';
+  }
+
+  static int _asDueNotificationIdFromData(Map<String, dynamic> data) {
+    final raw = int.tryParse(
+      (data['notification_id'] ?? data['notificationId'] ?? '').toString(),
+    );
+    if (raw != null && _asDueNotifIds.contains(raw)) return raw;
+    return _asDueNotifIdMorning;
   }
 
   static bool _isAsReceptionNotification(Map<String, dynamic> data) {
@@ -1240,6 +1310,133 @@ class NotificationService {
         ),
       );
     }
+  }
+
+  static void _navigateToAsDueCalendar({int attempt = 0}) {
+    _queuePendingData({
+      'type': 'as_due_schedule',
+      'action': 'open_as_calendar',
+    });
+    final nav = navigatorKey.currentState;
+    if (nav != null) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx != null) {
+        try {
+          final user = ProviderScope.containerOf(
+            ctx,
+          ).read(authControllerProvider);
+          if (user == null) {
+            if (attempt < 20) {
+              Future<void>.delayed(
+                Duration(milliseconds: 200 + attempt * 100),
+                () => _navigateToAsDueCalendar(attempt: attempt + 1),
+              );
+            }
+            return;
+          }
+        } catch (_) {}
+      }
+      _pendingMessageData = null;
+      if (_topRouteName(nav) == _asDueCalendarRouteName) return;
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const CustomerSupportScheduleCalendarScreen(),
+          settings: const RouteSettings(name: _asDueCalendarRouteName),
+        ),
+      );
+      return;
+    }
+    if (attempt < 60) {
+      Future<void>.delayed(
+        Duration(milliseconds: 50 + attempt * 40),
+        () => _navigateToAsDueCalendar(attempt: attempt + 1),
+      );
+    }
+  }
+
+  /// 오늘·지난 건이 있으면 매일 9/13/18(서울) 로컬 알림을 맞춘다. 없으면 취소.
+  static Future<void> syncAsDueReminders({
+    required bool hasAny,
+    required String title,
+    required String body,
+  }) async {
+    if (!hasAny || body.trim().isEmpty) {
+      await cancelAsDueReminders();
+      return;
+    }
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _androidChannelAsDueId,
+        _androidChannelAsDueName,
+        channelDescription: _androidChannelAsDueDesc,
+        importance: Importance.max,
+        priority: Priority.high,
+        styleInformation: BigTextStyleInformation(body),
+        category: AndroidNotificationCategory.reminder,
+        tag: 'as_due_schedule',
+        autoCancel: true,
+      ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
+    );
+    const payload = '{"type":"as_due_schedule","action":"open_as_calendar"}';
+    for (var i = 0; i < _asDueHours.length; i++) {
+      final id = _asDueNotifIds[i];
+      final when = _nextAsDueInstance(_asDueHours[i]);
+      try {
+        await _localNotifications.zonedSchedule(
+          id: id,
+          title: title,
+          body: body,
+          scheduledDate: when,
+          notificationDetails: details,
+          payload: payload,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.time,
+        );
+      } catch (e) {
+        _log('exact as-due schedule failed id=$id: $e');
+        try {
+          await _localNotifications.zonedSchedule(
+            id: id,
+            title: title,
+            body: body,
+            scheduledDate: when,
+            notificationDetails: details,
+            payload: payload,
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            matchDateTimeComponents: DateTimeComponents.time,
+          );
+        } catch (e2) {
+          _log('inexact as-due schedule failed id=$id: $e2');
+        }
+      }
+    }
+    _log('synced as-due reminders body="$body"');
+  }
+
+  static Future<void> cancelAsDueReminders() async {
+    for (final id in _asDueNotifIds) {
+      try {
+        await _localNotifications.cancel(id: id, tag: 'as_due_schedule');
+      } catch (_) {
+        try {
+          await _localNotifications.cancel(id: id);
+        } catch (_) {}
+      }
+    }
+  }
+
+  static tz.TZDateTime _nextAsDueInstance(int hour) {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour);
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    return scheduled;
   }
 
   static void _navigateToCallDetail(String id) {

@@ -3,6 +3,7 @@ enum SupportFlowStep {
   siteSearch,
   intake,
   receptionList,
+  scheduleCalendar,
   quote,
   completion,
   collection,

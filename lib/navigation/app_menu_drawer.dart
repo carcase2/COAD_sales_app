@@ -2,7 +2,7 @@ import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
 import 'package:flutter/material.dart';
 
-/// 햄버거 드로어 — 상단 3열 그리드 바로가기 + 하단 계정 메뉴(중복 최소화).
+/// 햄버거 드로어 — 상단은 자주 쓰는 바로가기 타일, 아래는 그룹 목록(중복 없음).
 class AppMenuDrawer extends StatefulWidget {
   const AppMenuDrawer({
     super.key,
@@ -45,9 +45,7 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return _listEntries;
     return _enabledEntries
-        .where(
-          (e) => e.searchTokens.any((t) => t.toLowerCase().contains(q)),
-        )
+        .where((e) => e.searchTokens.any((t) => t.toLowerCase().contains(q)))
         .toList();
   }
 
@@ -156,17 +154,15 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
                   SliverList(
                     delegate: SliverChildListDelegate([
                       for (final section in widget.catalog.sections)
-                        if (visibleList.any((e) => e.sectionId == section.id))
-                          ...[
-                            _SectionTitle(
-                              title: section.title,
-                              scheme: scheme,
-                            ),
-                            for (final entry in visibleList.where(
-                              (e) => e.sectionId == section.id,
-                            ))
-                              _MenuListTile(entry: entry, scheme: scheme),
-                          ],
+                        if (visibleList.any(
+                          (e) => e.sectionId == section.id,
+                        )) ...[
+                          _SectionTitle(title: section.title, scheme: scheme),
+                          for (final entry in visibleList.where(
+                            (e) => e.sectionId == section.id,
+                          ))
+                            _MenuListTile(entry: entry, scheme: scheme),
+                        ],
                       const SizedBox(height: 8),
                     ]),
                   )
@@ -242,10 +238,7 @@ class _AppMenuDrawerState extends State<AppMenuDrawer> {
 
 /// 바로가기 3열 그리드 (슬라버) — 행 수에 맞게 높이 계산.
 class _QuickGridSliver extends StatelessWidget {
-  const _QuickGridSliver({
-    required this.entries,
-    required this.scheme,
-  });
+  const _QuickGridSliver({required this.entries, required this.scheme});
 
   final List<AppMenuEntry> entries;
   final ColorScheme scheme;
@@ -264,8 +257,7 @@ class _QuickGridSliver extends StatelessWidget {
         // 약간 납작하게 — 세로 overflow 여유
         final cellH = (cellW / 1.08).clamp(_minCellH, 96.0);
         final rows = (entries.length / _cols).ceil();
-        final totalH =
-            rows * cellH + (rows > 0 ? (rows - 1) * _gap : 0);
+        final totalH = rows * cellH + (rows > 0 ? (rows - 1) * _gap : 0);
 
         return SliverToBoxAdapter(
           child: SizedBox(

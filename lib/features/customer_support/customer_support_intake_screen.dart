@@ -12,6 +12,7 @@ import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_detail_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/kakao_address_field.dart';
+import 'package:coad_customer_calls/features/customer_support/support_first_consultation_sheet.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
@@ -30,6 +31,19 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 enum SupportUrgency { high, mid, low }
+
+Color supportUrgencyColor(ColorScheme scheme, SupportUrgency urgency) =>
+    switch (urgency) {
+      SupportUrgency.high => scheme.error,
+      SupportUrgency.mid => const Color(0xFFD97706),
+      SupportUrgency.low => AppTokens.success(scheme),
+    };
+
+String supportUrgencyLabel(SupportUrgency urgency) => switch (urgency) {
+  SupportUrgency.high => '상',
+  SupportUrgency.mid => '중',
+  SupportUrgency.low => '하',
+};
 
 class SupportIssueFields {
   const SupportIssueFields({
@@ -393,6 +407,8 @@ class _CustomerSupportIntakeScreenState
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('A/S 접수가 저장되었습니다.')));
+      await showSupportFirstConsultationSheet(context, log: created);
+      if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;

@@ -50,6 +50,25 @@ class AppTokens {
   static Color customerSupportAccent(ColorScheme scheme) =>
       Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.18)!;
 
+  /// A/S 지사 필터 — 전체/본사/대구/대전/전남/기타.
+  static Color supportBranchAccent(String branch, ColorScheme scheme) {
+    switch (branch) {
+      case '본사':
+        return Color.lerp(const Color(0xFF2563EB), scheme.primary, 0.2)!;
+      case '대구':
+        return daeguScheduleAccent(scheme);
+      case '대전':
+        return const Color(0xFFD97706);
+      case '전남':
+        return const Color(0xFF16A34A);
+      case '기타':
+        return Color.lerp(scheme.outline, scheme.onSurface, 0.35)!;
+      case '전체':
+      default:
+        return customerSupportAccent(scheme);
+    }
+  }
+
   /// 접수 네비.
   static Color receptionAccent(ColorScheme scheme) => scheme.tertiary;
 

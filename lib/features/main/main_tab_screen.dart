@@ -23,6 +23,7 @@ import 'package:coad_customer_calls/features/business_cards/business_card_list_s
 import 'package:coad_customer_calls/features/customer_support/customer_support_hub_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
+import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
@@ -122,6 +123,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future<void>.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
+        unawaited(refreshSupportDueReminders(ref));
+      });
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
         ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
       });
     });
@@ -166,6 +174,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(NotificationService.onAppResumed());
+      unawaited(refreshSupportDueReminders(ref));
       final user = ref.read(authControllerProvider);
       if (user != null) {
         unawaited(NotificationService.updateTokenInSupabase(user.id));
@@ -1088,7 +1097,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     return AppMenuCatalog(
       sections: const [
         AppMenuSection(id: 'tools', title: '업무 도구'),
-        AppMenuSection(id: 'shortcuts', title: '바로가기'),
+        AppMenuSection(id: 'shortcuts', title: '오늘'),
         AppMenuSection(id: 'account', title: '계정'),
       ],
       entries: [
@@ -1129,8 +1138,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             icon: Icons.grid_on_rounded,
             title: '사이즈 표준단가(테스트중)',
             subtitle: '셔터 단가와 별개 · 폭×높이·모델 표준단가',
-            quickAccess: true,
-            quickLabel: '표준단가(테스트중)',
             keywords: const ['단가', '표준단가', '사이즈', '폭', '높이', '모델', '인상'],
             onTap: () => closeDrawerThen(() {
               _trackTab(user, 'standard_unit_price');
@@ -1185,8 +1192,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             icon: Icons.bar_chart_rounded,
             title: '체크시트 사용 내역',
             subtitle: '누가 많이·잘 쓰는지 확인',
-            quickAccess: true,
-            quickLabel: '시트사용',
             keywords: const ['체크시트', '사용량', '통계', '이력', '관리'],
             onTap: () => closeDrawerThen(() {
               _trackTab(user, 'checksheet');
@@ -1202,8 +1207,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'shortcuts',
           icon: Icons.phone_missed_rounded,
           title: '처리할 미통화',
-          quickAccess: true,
-          quickLabel: '미통화',
           keywords: const ['미통화', '미결', '콜', '홈', '처리'],
           onTap: () => closeDrawerThen(() {
             _selectHomeTab();
@@ -1232,8 +1235,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'shortcuts',
           icon: Icons.list_alt_rounded,
           title: '오늘 접수 목록',
-          quickAccess: true,
-          quickLabel: '오늘 접수',
           keywords: const ['목록', '오늘', '접수', '금일'],
           onTap: () =>
               closeDrawerThen(() => unawaited(_openTodayReceptionList())),
@@ -1243,8 +1244,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'shortcuts',
           icon: Icons.phone_callback_rounded,
           title: '오늘 미통화 목록',
-          quickAccess: true,
-          quickLabel: '오늘 미통화',
           keywords: const ['미통화', '목록', '금일'],
           onTap: () =>
               closeDrawerThen(() => unawaited(_openTodayIncompleteList())),
@@ -1276,8 +1275,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             icon: Icons.bar_chart_rounded,
             title: '앱 사용량',
             subtitle: '앱 사용 기록이 있는 직원 통계',
-            quickAccess: true,
-            quickLabel: '사용량',
             keywords: const ['사용량', '통계', '관리'],
             onTap: () => closeDrawerThen(() {
               Navigator.of(hostContext).push(
@@ -1292,8 +1289,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             icon: Icons.history_edu_rounded,
             title: '견적기 사용 이력',
             subtitle: '셔터 견적기 사용 통계 (COAD_home 동일)',
-            quickAccess: true,
-            quickLabel: '견적이력',
             keywords: const ['견적', '이력', '통계', '관리', '셔터'],
             onTap: () => closeDrawerThen(() {
               _trackTab(user, 'quoter_log');
@@ -1309,8 +1304,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'account',
           icon: Icons.settings_outlined,
           title: '설정',
-          quickAccess: true,
-          quickLabel: '설정',
           badge: updateStatus?.hasUpdate == true ? '업데이트' : null,
           keywords: const ['환경', '업데이트', '미통화 안내'],
           onTap: () => closeDrawerThen(() {
@@ -1325,8 +1318,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'account',
           icon: Icons.logout,
           title: '로그아웃',
-          quickAccess: true,
-          quickLabel: '로그아웃',
           keywords: const ['로그아웃', '종료'],
           onTap: () {
             Navigator.pop(context);

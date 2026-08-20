@@ -8,6 +8,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_f
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_site_search_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
@@ -108,6 +109,13 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           SupportSectionCard(
+            title: '방문 · 발송 달력',
+            subtitle: '방문예정일 · 견적서 발송예정일',
+            icon: Icons.calendar_month_rounded,
+            onTap: () => _openStep(context, SupportFlowStep.scheduleCalendar),
+          ),
+          const SizedBox(height: 8),
+          SupportSectionCard(
             title: '세금계산서',
             subtitle: '지사별 개별 발행 요청 · 완료 알림',
             icon: Icons.receipt_long_outlined,
@@ -165,6 +173,8 @@ class CustomerSupportHubScreen extends ConsumerWidget {
       SupportFlowStep.intake => const CustomerSupportIntakeScreen(),
       SupportFlowStep.receptionList =>
         const CustomerSupportReceptionListScreen(),
+      SupportFlowStep.scheduleCalendar =>
+        const CustomerSupportScheduleCalendarScreen(),
       SupportFlowStep.quote => const CustomerSupportQuoteScreen(),
       SupportFlowStep.completion => const CustomerSupportCompletionScreen(),
       SupportFlowStep.collection => const CustomerSupportCollectionScreen(),
