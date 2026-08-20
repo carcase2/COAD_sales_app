@@ -1,26 +1,89 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
+import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/data/business_card_repository.dart';
+import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_detail_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/kakao_address_field.dart';
-import 'package:coad_customer_calls/data/kakao_local_client.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
+import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/models/business_card.dart';
+import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 enum SupportUrgency { high, mid, low }
 
+class SupportIssueFields {
+  const SupportIssueFields({
+    this.urgency = SupportUrgency.mid,
+    this.productName = '',
+    this.siteName = '',
+    this.body = '',
+  });
+
+  final SupportUrgency urgency;
+  final String productName;
+  final String siteName;
+  final String body;
+}
+
+SupportIssueFields parseSupportIssueBody(String issue) {
+  var urgency = SupportUrgency.mid;
+  var productName = '';
+  var siteName = '';
+  final rest = <String>[];
+  for (final raw in issue.split('\n')) {
+    final line = raw.trimRight();
+    final urgencyMatch = RegExp(
+      r'^\[긴급도\s*(상|중|하)\]\s*(.*)$',
+    ).firstMatch(line.trim());
+    if (urgencyMatch != null) {
+      urgency = switch (urgencyMatch.group(1)) {
+        '상' => SupportUrgency.high,
+        '하' => SupportUrgency.low,
+        _ => SupportUrgency.mid,
+      };
+      productName = (urgencyMatch.group(2) ?? '').trim();
+      continue;
+    }
+    final siteMatch = RegExp(r'^현장:\s*(.*)$').firstMatch(line.trim());
+    if (siteMatch != null) {
+      siteName = (siteMatch.group(1) ?? '').trim();
+      continue;
+    }
+    rest.add(raw);
+  }
+  return SupportIssueFields(
+    urgency: urgency,
+    productName: productName,
+    siteName: siteName,
+    body: rest.join('\n').trim(),
+  );
+}
+
 class CustomerSupportIntakeScreen extends ConsumerStatefulWidget {
-  const CustomerSupportIntakeScreen({super.key, this.site});
+  const CustomerSupportIntakeScreen({super.key, this.site, this.existing});
 
   final SupportSiteSample? site;
+  final SupportCallLog? existing;
 
   @override
   ConsumerState<CustomerSupportIntakeScreen> createState() =>
@@ -35,8 +98,10 @@ class _CustomerSupportIntakeScreenState
   final _addressCtrl = TextEditingController();
   final _issueCtrl = TextEditingController();
   SupportUrgency _urgency = SupportUrgency.mid;
+  String? _productId;
   double? _addressLat;
   double? _addressLng;
+  bool _submitting = false;
   Timer? _nameLookupDebounce;
   Timer? _phoneLookupDebounce;
   BusinessCard? _matchedByName;
@@ -49,14 +114,31 @@ class _CustomerSupportIntakeScreenState
   bool _phoneLookupBusy = false;
   String? _lookedUpName;
   String? _lookedUpPhoneDigits;
+  String? _pendingProductName;
+  final List<String> _attachmentUrls = [];
+  bool _uploadBusy = false;
+  int _uploadTotal = 0;
+  int _uploadCurrent = 0;
 
   BusinessCard? get _matchedCard => _matchedByPhone ?? _matchedByName;
+  bool get _isEdit => widget.existing != null;
 
   @override
   void initState() {
     super.initState();
+    final existing = widget.existing;
     final site = widget.site;
-    if (site != null) {
+    if (existing != null) {
+      final parsed = parseSupportIssueBody(existing.issue);
+      _nameCtrl.text = existing.customerName;
+      _phoneCtrl.text = formatKoreanPhoneHyphenated(existing.customerPhone);
+      _siteCtrl.text = parsed.siteName;
+      _addressCtrl.text = existing.address ?? '';
+      _issueCtrl.text = parsed.body;
+      _urgency = parsed.urgency;
+      _pendingProductName = parsed.productName;
+      _attachmentUrls.addAll(existing.firstImageUrls);
+    } else if (site != null) {
       _nameCtrl.text = site.name;
       _phoneCtrl.text = formatKoreanPhoneHyphenated(site.phone);
       _siteCtrl.text = site.name;
@@ -218,22 +300,275 @@ class _CustomerSupportIntakeScreenState
     if (!_applyingPhone) _schedulePhoneLookup(formatted);
   }
 
+  void _ensureDefaultProduct(MasterDataBundle master) {
+    if (_productId != null || master.productCategories.isEmpty) return;
+    final pending = (_pendingProductName ?? '').trim();
+    if (pending.isNotEmpty) {
+      for (final item in master.productCategories) {
+        if (item.name == pending) {
+          _productId = item.id;
+          return;
+        }
+      }
+    }
+    _productId = master.productCategories
+        .firstWhere(
+          (e) => e.name.contains('스피드도어'),
+          orElse: () => master.productCategories.first,
+        )
+        .id;
+  }
+
+  Future<void> _submit() async {
+    final master = ref.read(masterDataProvider).valueOrNull;
+    if (master != null) _ensureDefaultProduct(master);
+    final site = _siteCtrl.text.trim();
+    final name = _nameCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+    final issue = _issueCtrl.text.trim();
+    final address = _addressCtrl.text.trim();
+    if (_productId == null) {
+      _toast('제품군을 선택해 주세요.');
+      return;
+    }
+    if (site.isEmpty && name.isEmpty) {
+      _toast('현장명 또는 이름을 입력해 주세요.');
+      return;
+    }
+    if (phone.isEmpty) {
+      _toast('전화번호를 입력해 주세요.');
+      return;
+    }
+    if (_uploadBusy) {
+      _toast('파일 업로드가 끝날 때까지 기다려 주세요.');
+      return;
+    }
+    var productName = '';
+    if (master != null) {
+      for (final p in master.productCategories) {
+        if (p.id == _productId) {
+          productName = p.name;
+          break;
+        }
+      }
+    }
+    final urgencyLabel = switch (_urgency) {
+      SupportUrgency.high => '상',
+      SupportUrgency.mid => '중',
+      SupportUrgency.low => '하',
+    };
+    final issueBody = [
+      '[긴급도 $urgencyLabel] $productName',
+      if (site.isNotEmpty) '현장: $site',
+      if (issue.isNotEmpty) issue,
+    ].join('\n');
+    final user = ref.read(authControllerProvider);
+    final draft = SupportCallLogDraft(
+      customerName: name.isEmpty ? site : name,
+      customerPhone: phone,
+      issue: issueBody,
+      address: address.isEmpty ? null : address,
+      latitude: _addressLat,
+      longitude: _addressLng,
+      createdBy: user?.name ?? user?.id,
+      firstImageUrls: List<String>.from(_attachmentUrls),
+    );
+    setState(() => _submitting = true);
+    try {
+      final repo = ref.read(supportCallLogRepositoryProvider);
+      if (_isEdit) {
+        final updated = await repo.update(widget.existing!.id, draft);
+        ref.invalidate(supportHomeStatsProvider);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('A/S 접수가 수정되었습니다.')));
+        Navigator.of(context).pop(updated);
+        return;
+      }
+      final created = await repo.create(draft);
+      ref.invalidate(supportHomeStatsProvider);
+      unawaited(_notifyAdmins(created));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('A/S 접수가 저장되었습니다.')));
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      _toast(koreanErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _notifyAdmins(SupportCallLog created) async {
+    try {
+      final res = await Supabase.instance.client.functions.invoke(
+        'notify-as-reception',
+        body: {
+          'record': {
+            'id': created.id,
+            'customer_name': created.customerName,
+            'customer_phone': created.customerPhone,
+            if (created.issue.trim().isNotEmpty) 'issue': created.issue.trim(),
+            if ((created.createdBy ?? '').trim().isNotEmpty)
+              'created_by': created.createdBy!.trim(),
+          },
+        },
+      );
+      debugPrint('[notify-as-reception] status=${res.status} data=${res.data}');
+    } catch (e, st) {
+      debugPrint('[notify-as-reception] invoke failed: $e');
+      debugPrint('$st');
+    }
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _pickAndUpload() async {
+    final source = await showSalesCallImageSourceSheet(
+      context,
+      title: '파일 추가',
+      includeFiles: true,
+    );
+    if (source == null) return;
+    if (source == SalesCallImageSource.camera) {
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (shot == null) return;
+      await _uploadPaths([shot.path]);
+      return;
+    }
+    if (source == SalesCallImageSource.gallery) {
+      final shots = await ImagePicker().pickMultiImage(imageQuality: 85);
+      if (shots.isEmpty) return;
+      await _uploadPaths(shots.map((e) => e.path).toList());
+      return;
+    }
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const [
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'bmp',
+        'webp',
+        'svg',
+        'heic',
+        'heif',
+        'tif',
+        'tiff',
+        'pdf',
+      ],
+      allowMultiple: true,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final paths = await _pathsFromPickedFiles(result.files);
+    if (paths.isEmpty) {
+      _toast('이미지 또는 PDF만 첨부할 수 있습니다.');
+      return;
+    }
+    await _uploadPaths(paths);
+  }
+
+  Future<List<String>> _pathsFromPickedFiles(List<PlatformFile> files) async {
+    final temp = await getTemporaryDirectory();
+    final paths = <String>[];
+    for (final file in files) {
+      final existing = file.path;
+      if (existing != null &&
+          existing.isNotEmpty &&
+          isAllowedPickerPath(existing)) {
+        paths.add(existing);
+        continue;
+      }
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) continue;
+      final name = file.name.trim().isEmpty
+          ? 'file_${DateTime.now().millisecondsSinceEpoch}'
+          : file.name.trim();
+      if (!isAllowedPickerPath(name)) continue;
+      final out = File(
+        p.join(temp.path, '${DateTime.now().millisecondsSinceEpoch}_$name'),
+      );
+      await out.writeAsBytes(bytes, flush: true);
+      paths.add(out.path);
+    }
+    return paths;
+  }
+
+  Future<void> _uploadPaths(List<String> paths) async {
+    var finalPaths = paths;
+    if (paths.length == 1 && isImageFile(paths.first)) {
+      final edited = await Navigator.push<File?>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageEditorScreen(initialImage: File(paths.first)),
+        ),
+      );
+      finalPaths = [edited?.path ?? paths.first];
+    }
+    setState(() {
+      _uploadBusy = true;
+      _uploadTotal = finalPaths.length;
+      _uploadCurrent = 0;
+    });
+    final uploader = ref.read(b2UploadRepositoryProvider);
+    try {
+      await Future.wait(
+        finalPaths.map((path) async {
+          try {
+            final url = await uploader.uploadSupportCallFile(
+              filePath: path,
+              customerPhone: _phoneCtrl.text,
+            );
+            if (!mounted) return;
+            setState(() {
+              _attachmentUrls.add(url);
+              _uploadCurrent++;
+            });
+          } catch (e) {
+            if (!mounted) return;
+            _toast('${p.basename(path)} 업로드 실패: ${koreanErrorMessage(e)}');
+          }
+        }),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _uploadBusy = false;
+          _uploadTotal = 0;
+          _uploadCurrent = 0;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
+    final master = ref.watch(masterDataProvider).valueOrNull;
+    if (master != null) {
+      _ensureDefaultProduct(master);
+    }
     return Scaffold(
-      appBar: AppBar(title: const Text('AS 접수')),
+      appBar: AppBar(title: Text(_isEdit ? 'AS 접수 수정' : 'AS 접수 (테스트중)')),
       body: Column(
         children: [
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               children: [
-                const SupportComingSoonBanner(
-                  message: '간단 접수 골격입니다. 저장은 다음 작업에서 붙입니다.',
-                ),
-                const SizedBox(height: 16),
                 const FormSectionHeader(
                   title: '긴급도',
                   icon: Icons.priority_high_rounded,
@@ -246,9 +581,27 @@ class _CustomerSupportIntakeScreenState
                 ),
                 const SizedBox(height: 20),
                 const FormSectionHeader(
+                  title: '제품군',
+                  icon: Icons.dashboard_customize_outlined,
+                  step: 2,
+                ),
+                const SizedBox(height: 8),
+                if (master == null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: LinearProgressIndicator(),
+                  )
+                else
+                  _ProductChipGroup(
+                    items: master.productCategories,
+                    selectedId: _productId,
+                    onSelected: (id) => setState(() => _productId = id),
+                  ),
+                const SizedBox(height: 20),
+                const FormSectionHeader(
                   title: '현장 · 고객',
                   icon: Icons.person_outline_rounded,
-                  step: 2,
+                  step: 3,
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -259,23 +612,11 @@ class _CustomerSupportIntakeScreenState
                 const SizedBox(height: 8),
                 KakaoAddressField(
                   controller: _addressCtrl,
-                  onSelected: (KakaoPlaceHit hit) {
-                    setState(() {
-                      _addressLat = hit.lat;
-                      _addressLng = hit.lng;
-                    });
+                  onSelected: (hit) {
+                    _addressLat = hit.lat;
+                    _addressLng = hit.lng;
                   },
                 ),
-                if (_addressLat != null && _addressLng != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, left: 4),
-                    child: Text(
-                      '위치 ${_addressLat!.toStringAsFixed(5)}, ${_addressLng!.toStringAsFixed(5)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _nameCtrl,
@@ -352,7 +693,7 @@ class _CustomerSupportIntakeScreenState
                 const FormSectionHeader(
                   title: '문의 내용',
                   icon: Icons.notes_rounded,
-                  step: 3,
+                  step: 4,
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -360,6 +701,26 @@ class _CustomerSupportIntakeScreenState
                   minLines: 3,
                   maxLines: 5,
                   decoration: const InputDecoration(hintText: '증상을 짧게 적어 주세요'),
+                ),
+                const SizedBox(height: 12),
+                SalesCallAttachmentsStrip(
+                  urls: _attachmentUrls,
+                  editable: true,
+                  uploadBusy: _uploadBusy,
+                  progressLabel: _uploadTotal > 0
+                      ? '전송 중 ($_uploadCurrent/$_uploadTotal)'
+                      : null,
+                  onAdd: _pickAndUpload,
+                  onAddCamera: () async {
+                    final shot = await ImagePicker().pickImage(
+                      source: ImageSource.camera,
+                      imageQuality: 85,
+                    );
+                    if (shot == null) return;
+                    await _uploadPaths([shot.path]);
+                  },
+                  onRemoveAt: (i) =>
+                      setState(() => _attachmentUrls.removeAt(i)),
                 ),
                 const SizedBox(height: 16),
                 _AuthorBar(name: user?.name),
@@ -380,8 +741,19 @@ class _CustomerSupportIntakeScreenState
                     backgroundColor: _urgencyFill(scheme, _urgency),
                     foregroundColor: _urgencyOnFill(scheme, _urgency),
                   ),
-                  onPressed: () => showSupportSkeletonSnack(context, '접수 저장'),
-                  child: const Text('저장'),
+                  onPressed: _submitting || _uploadBusy
+                      ? null
+                      : () {
+                          HapticFeedback.selectionClick();
+                          unawaited(_submit());
+                        },
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(_isEdit ? '수정 저장' : '저장'),
                 ),
               ),
             ),
@@ -406,6 +778,55 @@ Color _urgencyOnFill(ColorScheme scheme, SupportUrgency urgency) {
     case SupportUrgency.mid:
     case SupportUrgency.low:
       return Colors.white;
+  }
+}
+
+class _ProductChipGroup extends StatelessWidget {
+  const _ProductChipGroup({
+    required this.items,
+    required this.selectedId,
+    required this.onSelected,
+  });
+
+  final List<NamedMasterRow> items;
+  final String? selectedId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final selectedColor = AppTokens.success(scheme);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final item in items)
+          FilterChip(
+            label: Text(
+              item.name,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selectedId == item.id
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+              ),
+            ),
+            selected: selectedId == item.id,
+            showCheckmark: true,
+            checkmarkColor: selectedColor,
+            selectedColor: selectedColor.withValues(alpha: 0.18),
+            side: BorderSide(
+              color: selectedId == item.id
+                  ? selectedColor
+                  : scheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+            onSelected: (_) {
+              HapticFeedback.selectionClick();
+              onSelected(item.id);
+            },
+          ),
+      ],
+    );
   }
 }
 

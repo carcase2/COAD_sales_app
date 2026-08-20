@@ -10,6 +10,8 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_detail.da
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -91,6 +93,7 @@ class NotificationService {
 
   /// 통화 상세 이동 요청의 최신성 보장을 위한 시퀀스.
   static int _callNavigationRequestSeq = 0;
+  static int _asNavigationRequestSeq = 0;
   static int _issuanceNavigationRequestSeq = 0;
   static String? _lastOpenedIssuanceDetailKey;
   static DateTime? _lastOpenedIssuanceDetailAt;
@@ -131,6 +134,9 @@ class NotificationService {
   }
 
   static String _androidChannelIdForData(Map<String, dynamic> data) {
+    if (_isAsReceptionNotification(data)) {
+      return _androidChannelCallId;
+    }
     if (_isIssuanceCompletedNotification(data) ||
         _isIssuanceRequestNotification(data)) {
       return _androidChannelIssuanceId;
@@ -241,15 +247,15 @@ class NotificationService {
         AndroidInitializationSettings('@mipmap/launcher_icon');
     const DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        );
     const InitializationSettings initializationSettings =
         InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsDarwin,
-    );
+          android: initializationSettingsAndroid,
+          iOS: initializationSettingsDarwin,
+        );
 
     await _localNotifications.initialize(
       settings: initializationSettings,
@@ -294,9 +300,7 @@ class NotificationService {
     if (androidPlugin != null) {
       // Android 13+ 권한 다이얼로그도 시작 흐름을 막지 않게 비동기 처리.
       unawaited(
-        androidPlugin
-            .requestNotificationsPermission()
-            .catchError((Object e) {
+        androidPlugin.requestNotificationsPermission().catchError((Object e) {
           _log('Android notifications permission request failed: $e');
           return null;
         }),
@@ -497,12 +501,13 @@ class NotificationService {
     if (title.isEmpty && body.isEmpty) {
       if (_isDaeguScheduleNotification(data)) {
         title = (data['title'] ?? '[대구지사] 일정').toString();
-        body = (data['body'] ?? '알림을 탭하면 대구지사 일정으로 이동합니다.')
-            .toString();
+        body = (data['body'] ?? '알림을 탭하면 대구지사 일정으로 이동합니다.').toString();
       } else if (_isGeneralScheduleNotification(data)) {
         title = (data['title'] ?? '[본사일반] 일정').toString();
-        body = (data['body'] ?? '알림을 탭하면 본사일반 일정으로 이동합니다.')
-            .toString();
+        body = (data['body'] ?? '알림을 탭하면 본사일반 일정으로 이동합니다.').toString();
+      } else if (_isAsReceptionNotification(data)) {
+        title = '새 A/S 접수';
+        body = '알림을 탭하면 접수 상세로 이동합니다.';
       } else {
         final callId = _extractCallIdFromData(data);
         if (callId != null) {
@@ -549,17 +554,19 @@ class NotificationService {
     }
 
     final callId = _extractCallIdFromData(data);
+    final asId = _extractAsReceptionId(data);
     final notificationId = _isDaeguScheduleNotification(data)
         ? ('daegu_schedule:${data['action'] ?? 'open'}').hashCode & 0x7fffffff
         : _isGeneralScheduleNotification(data)
-            ? ('general_schedule:${data['action'] ?? 'open'}').hashCode &
-                0x7fffffff
-            : _notificationIdFor(callId, message);
+        ? ('general_schedule:${data['action'] ?? 'open'}').hashCode & 0x7fffffff
+        : asId != null
+        ? asId.hashCode & 0x7fffffff
+        : _notificationIdFor(callId, message);
     final tag = _isDaeguScheduleNotification(data)
         ? 'daegu_schedule'
         : _isGeneralScheduleNotification(data)
-            ? 'general_schedule'
-            : callId;
+        ? 'general_schedule'
+        : asId ?? callId;
     _log(
       'showRemoteMessageNotification callId=$callId titleLen=${title.length} bodyLen=${body.length}',
     );
@@ -604,6 +611,11 @@ class NotificationService {
     if (_isAppUpdateNotification(data)) {
       final storeUrl = (data['store_url'] ?? '').toString().trim();
       return jsonEncode({'type': 'app_update', 'store_url': storeUrl});
+    }
+    if (_isAsReceptionNotification(data)) {
+      final asId = _extractAsReceptionId(data);
+      if (asId == null) return null;
+      return jsonEncode({'type': 'as_reception', 'as_id': asId});
     }
     if (_isIssuanceCompletedNotification(data)) {
       return jsonEncode(_issuancePayloadFromData(data, completed: true));
@@ -729,6 +741,15 @@ class NotificationService {
       _openUpdateFlow(data);
       return;
     }
+    if (_isAsReceptionNotification(data)) {
+      final asId = _extractAsReceptionId(data);
+      if (asId == null) {
+        _log('tap ignored: as_reception without as_id data=$data');
+        return;
+      }
+      _navigateToAsReceptionDetail(asId);
+      return;
+    }
     if (_isIssuanceCompletedNotification(data)) {
       _openIssuanceCompleted(data);
       return;
@@ -751,6 +772,27 @@ class NotificationService {
       return;
     }
     _log('tap ignored: no call_id in data=$data');
+  }
+
+  static bool _isAsReceptionNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'as_reception' ||
+        type == 'as-reception' ||
+        action == 'open_as_reception';
+  }
+
+  static String? _extractAsReceptionId(Map<String, dynamic> data) {
+    const keys = ['as_id', 'asId', 'call_log_id', 'callLogId'];
+    for (final k in keys) {
+      if (!data.containsKey(k)) continue;
+      final n = _normalizeCallId(data[k]);
+      if (n != null) return n;
+    }
+    return null;
   }
 
   static bool _isIssuanceCompletedNotification(Map<String, dynamic> data) {
@@ -837,10 +879,7 @@ class NotificationService {
   }
 
   static void _openDaeguScheduleHub(Map<String, dynamic> data) {
-    const payload = {
-      'type': 'daegu_schedule',
-      'action': 'open_daegu_schedule',
-    };
+    const payload = {'type': 'daegu_schedule', 'action': 'open_daegu_schedule'};
     final ctx = navigatorKey.currentContext;
     if (ctx == null) {
       _queuePendingData(payload);
@@ -1050,9 +1089,7 @@ class NotificationService {
       if (dataAttempt == 0) {
         container.invalidate(issuanceAllRowsProvider(domain));
       }
-      final rows = await container.read(
-        issuanceAllRowsProvider(domain).future,
-      );
+      final rows = await container.read(issuanceAllRowsProvider(domain).future);
       final target = findIssuanceRowByIds(
         rows,
         masterId: masterId,
@@ -1132,6 +1169,77 @@ class NotificationService {
       showUpToDateMessage: true,
       preferredStoreUrl: storeUrl.isEmpty ? null : storeUrl,
     );
+  }
+
+  static void _navigateToAsReceptionDetail(String id) {
+    _asNavigationRequestSeq += 1;
+    final requestSeq = _asNavigationRequestSeq;
+    _queuePendingData({'type': 'as_reception', 'as_id': id});
+    _pushAsReceptionDetailRoute(id, requestSeq: requestSeq);
+  }
+
+  static void _pushAsReceptionDetailRoute(
+    String id, {
+    int attempt = 0,
+    required int requestSeq,
+  }) {
+    if (requestSeq != _asNavigationRequestSeq) return;
+    final nav = navigatorKey.currentState;
+    if (nav != null) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx != null) {
+        try {
+          final user = ProviderScope.containerOf(
+            ctx,
+          ).read(authControllerProvider);
+          if (user == null) {
+            if (attempt < 20) {
+              Future<void>.delayed(
+                Duration(milliseconds: 200 + attempt * 100),
+                () {
+                  _pushAsReceptionDetailRoute(
+                    id,
+                    attempt: attempt + 1,
+                    requestSeq: requestSeq,
+                  );
+                },
+              );
+            }
+            return;
+          }
+        } catch (_) {}
+      }
+      _pendingMessageData = null;
+      final routeName = 'AsReceptionDetail/$id';
+      final detailRoute = MaterialPageRoute<void>(
+        builder: (_) => CustomerSupportReceptionDetailScreen(logId: id),
+        settings: RouteSettings(name: routeName),
+      );
+      final topName = _topRouteName(nav);
+      if (topName == routeName) return;
+      if (topName != null && topName.startsWith('AsReceptionDetail/')) {
+        nav.pushReplacement(detailRoute);
+      } else {
+        nav.push(detailRoute);
+      }
+      try {
+        final ctx2 = navigatorKey.currentContext;
+        if (ctx2 != null) {
+          ProviderScope.containerOf(ctx2).invalidate(supportHomeStatsProvider);
+        }
+      } catch (_) {}
+      return;
+    }
+    if (attempt < 60) {
+      Future<void>.delayed(
+        Duration(milliseconds: 50 + attempt * 40),
+        () => _pushAsReceptionDetailRoute(
+          id,
+          attempt: attempt + 1,
+          requestSeq: requestSeq,
+        ),
+      );
+    }
   }
 
   static void _navigateToCallDetail(String id) {
@@ -1341,8 +1449,8 @@ class NotificationService {
     // iOS는 APNs 준비 대기 포함해 재시도 폭을 넓힘
     final retryDelaysMs =
         (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)
-            ? const <int>[0, 800, 1600, 3000, 5000, 8000]
-            : const <int>[0, 1200, 3000];
+        ? const <int>[0, 800, 1600, 3000, 5000, 8000]
+        : const <int>[0, 1200, 3000];
     for (var i = 0; i < retryDelaysMs.length; i++) {
       if (_fcmUnavailable) return;
       final delayMs = retryDelaysMs[i];
@@ -1356,9 +1464,7 @@ class NotificationService {
           badge: true,
           sound: true,
         );
-        _log(
-          'permission before token sync: ${settings.authorizationStatus}',
-        );
+        _log('permission before token sync: ${settings.authorizationStatus}');
         if (settings.authorizationStatus == AuthorizationStatus.denied) {
           _log('notification permission denied; skip token sync');
           return;
@@ -1540,8 +1646,9 @@ class NotificationService {
     if (!(prefs.getBool(_issuanceRequestWatchInitKey) ?? false)) {
       await prefs.setBool(_issuanceRequestWatchInitKey, true);
     }
-    final seen = (prefs.getStringList(_issuanceRequestSeenKey) ?? const <String>[])
-        .toSet();
+    final seen =
+        (prefs.getStringList(_issuanceRequestSeenKey) ?? const <String>[])
+            .toSet();
     seen.add(rowKey);
     await prefs.setStringList(_issuanceRequestSeenKey, seen.toList());
   }
@@ -1644,9 +1751,7 @@ class NotificationService {
           },
         },
       );
-      _log(
-        'notify-issuance-request status=${res.status} data=${res.data}',
-      );
+      _log('notify-issuance-request status=${res.status} data=${res.data}');
       if (res.status >= 400) {
         _log('notify-issuance-request push invoke returned error status');
       }
@@ -1693,6 +1798,40 @@ class NotificationService {
         ),
       ),
     );
+  }
+
+  /// A/S 접수 후 관리자만 FCM. 탭하면 접수 상세.
+  static Future<void> invokeAsReceptionPush({
+    required String asId,
+    required String customerName,
+    required String phone,
+    String? issue,
+    String? createdBy,
+  }) async {
+    try {
+      final res = await Supabase.instance.client.functions.invoke(
+        'notify-as-reception',
+        body: {
+          'record': {
+            'id': asId,
+            'customer_name': customerName,
+            'customer_phone': phone,
+            if ((issue ?? '').trim().isNotEmpty) 'issue': issue!.trim(),
+            if ((createdBy ?? '').trim().isNotEmpty)
+              'created_by': createdBy!.trim(),
+          },
+        },
+      );
+      _log('notify-as-reception status=${res.status} data=${res.data}');
+      if (res.status >= 400) {
+        _log('notify-as-reception push invoke returned error status');
+      }
+    } catch (e, st) {
+      _log('notify-as-reception invoke failed: $e');
+      if (kDebugMode) {
+        print(st);
+      }
+    }
   }
 
   static Future<void> showSalesCallRegisteredAlert({

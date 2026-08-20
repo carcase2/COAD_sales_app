@@ -35,7 +35,7 @@ Future<ReceptionKind?> showReceptionKindSheet(BuildContext context) {
             ),
             const SizedBox(height: 12),
             _ReceptionKindTile(
-              title: 'A/S',
+              title: 'A/S (테스트중)',
               subtitle: '고객지원 · 현장 수리',
               icon: Icons.handyman_outlined,
               accent: AppTokens.customerSupportAccent(scheme),

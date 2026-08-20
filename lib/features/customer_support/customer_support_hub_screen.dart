@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_f
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_site_search_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
@@ -100,6 +101,13 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
           SupportSectionCard(
+            title: 'A/S 접수내역',
+            subtitle: '저장한 접수 확인 · 검색',
+            icon: Icons.list_alt_rounded,
+            onTap: () => _openStep(context, SupportFlowStep.receptionList),
+          ),
+          const SizedBox(height: 8),
+          SupportSectionCard(
             title: '세금계산서',
             subtitle: '지사별 개별 발행 요청 · 완료 알림',
             icon: Icons.receipt_long_outlined,
@@ -155,6 +163,8 @@ class CustomerSupportHubScreen extends ConsumerWidget {
     final screen = switch (step) {
       SupportFlowStep.siteSearch => const CustomerSupportSiteSearchScreen(),
       SupportFlowStep.intake => const CustomerSupportIntakeScreen(),
+      SupportFlowStep.receptionList =>
+        const CustomerSupportReceptionListScreen(),
       SupportFlowStep.quote => const CustomerSupportQuoteScreen(),
       SupportFlowStep.completion => const CustomerSupportCompletionScreen(),
       SupportFlowStep.collection => const CustomerSupportCollectionScreen(),

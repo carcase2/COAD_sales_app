@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
@@ -15,6 +18,7 @@ import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -208,7 +212,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final compact = _section != HomeHubSection.flow;
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(12, compact ? 6 : 8, 12, compact ? 8 : 10),
+      padding: EdgeInsets.fromLTRB(12, 6, 12, compact ? 8 : 6),
       decoration: HomeHubVisual.header(scheme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -226,7 +230,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ),
           ),
           if (_section == HomeHubSection.flow) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _buildCompactFlowControls(scheme),
           ],
         ],
@@ -234,93 +238,74 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
-  /// 금일/금주/금월 · 기간 이동 · 오늘로 를 한 블록에 배치.
+  /// 금일/금주/금월 · 기간 이동 · 오늘로 를 한 줄에 배치.
   Widget _buildCompactFlowControls(ColorScheme scheme) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       decoration: BoxDecoration(
         color: scheme.onPrimary.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.onPrimary.withValues(alpha: 0.2)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _buildMiniPeriodChip(
-                  scheme: scheme,
-                  step: HubNavStep.day,
-                  label: '일',
-                ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: _buildMiniPeriodChip(
-                  scheme: scheme,
-                  step: HubNavStep.week,
-                  label: '주',
-                ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: _buildMiniPeriodChip(
-                  scheme: scheme,
-                  step: HubNavStep.month,
-                  label: '월',
-                ),
-              ),
-            ],
+          _buildMiniPeriodChip(
+            scheme: scheme,
+            step: HubNavStep.day,
+            label: '일',
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              IconButton(
-                onPressed: () => _shiftHubNav(-1),
-                tooltip: '이전 기간',
-                icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                style: IconButton.styleFrom(
-                  foregroundColor: scheme.onPrimary,
-                  minimumSize: const Size(32, 30),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  _hubFlowNavigatedPeriodLabel(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                    color: scheme.onPrimary,
-                    height: 1.1,
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: _canShiftHubNavNewer()
-                    ? () => _shiftHubNav(1)
-                    : null,
-                tooltip: '다음 기간',
-                icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                style: IconButton.styleFrom(
-                  foregroundColor: scheme.onPrimary,
-                  disabledForegroundColor: scheme.onPrimary.withValues(
-                    alpha: 0.35,
-                  ),
-                  minimumSize: const Size(32, 30),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              const SizedBox(width: 3),
-              _buildTodayJumpButton(scheme),
-            ],
+          const SizedBox(width: 3),
+          _buildMiniPeriodChip(
+            scheme: scheme,
+            step: HubNavStep.week,
+            label: '주',
           ),
+          const SizedBox(width: 3),
+          _buildMiniPeriodChip(
+            scheme: scheme,
+            step: HubNavStep.month,
+            label: '월',
+          ),
+          IconButton(
+            onPressed: () => _shiftHubNav(-1),
+            tooltip: '이전 기간',
+            icon: const Icon(Icons.chevron_left_rounded, size: 20),
+            style: IconButton.styleFrom(
+              foregroundColor: scheme.onPrimary,
+              minimumSize: const Size(28, 28),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              _hubFlowNavigatedPeriodLabel(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: scheme.onPrimary,
+                height: 1.1,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: _canShiftHubNavNewer() ? () => _shiftHubNav(1) : null,
+            tooltip: '다음 기간',
+            icon: const Icon(Icons.chevron_right_rounded, size: 20),
+            style: IconButton.styleFrom(
+              foregroundColor: scheme.onPrimary,
+              disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.35),
+              minimumSize: const Size(28, 28),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          _buildTodayJumpButton(scheme),
         ],
       ),
     );
@@ -340,9 +325,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => _selectHubNavStep(step),
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Text(
             label,
             style: TextStyle(
@@ -1319,13 +1303,36 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final periodKey = _previousPeriodKey;
     if (periodKey.period != HubPeriod.day) return;
 
-    List<SalesCall> rows;
+    final includeSupport = canAccessCustomerSupport(
+      ref.read(authControllerProvider),
+    );
+    List<SalesCall> rows = const [];
+    var salesFailed = false;
+    List<SupportCallLog> supportRows = const [];
     try {
-      final bundle = await _withFreshDataLoading(
-        () => refreshHubPeriodUncalledBundle(ref, periodKey),
-      );
-      if (bundle == null || !mounted) return;
-      rows = bundle.uncalledCalls;
+      final loaded = await _withFreshDataLoading(() async {
+        final supportFuture = includeSupport
+            ? ref
+                  .read(supportCallLogRepositoryProvider)
+                  .list(
+                    fromYmd: periodKey.anchorYmd,
+                    toYmdInclusive: periodKey.anchorYmd,
+                    pendingOnly: true,
+                  )
+            : Future<List<SupportCallLog>>.value(const []);
+        HubPeriodReceptionBundle? bundle;
+        try {
+          bundle = await refreshHubPeriodUncalledBundle(ref, periodKey);
+        } catch (_) {
+          bundle = null;
+        }
+        final support = await supportFuture;
+        return (bundle, support);
+      });
+      if (loaded == null || !mounted) return;
+      salesFailed = loaded.$1 == null;
+      rows = loaded.$1?.uncalledCalls ?? const [];
+      supportRows = loaded.$2;
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1337,16 +1344,41 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     }
 
     if (!mounted) return;
+    if (rows.isEmpty && supportRows.isEmpty) {
+      if (salesFailed && includeSupport == false) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('전일 미통화 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+          ),
+        );
+        return;
+      }
+      if (!forcePicker) {
+        await _showAutoCloseInfoDialog('전일 미통화가 없습니다.');
+      }
+      return;
+    }
+
+    var openSupport = supportRows.isNotEmpty && rows.isEmpty;
+    if (supportRows.isNotEmpty && rows.isNotEmpty) {
+      final kind = await _pickPrevUncalledKind(
+        salesCount: rows.length,
+        supportCount: supportRows.length,
+        subtitle: '${formatYmdFlowLabelKo(periodKey.anchorYmd)} 접수',
+      );
+      if (!mounted || kind == null) return;
+      openSupport = kind == _PrevUncalledKind.support;
+    }
+    if (openSupport) {
+      await _openPrevDaySupportPending(periodKey.anchorYmd);
+      return;
+    }
 
     final overrides = await ref.read(tempManagerOverridesProvider.future);
     final counts = _countsFromRows(
       rows,
       (row) => displayAssigneeForCall(row, overrides, DateTime.now()),
     );
-    if (!forcePicker && rows.isEmpty) {
-      await _showAutoCloseInfoDialog('전일 미통화가 없습니다.');
-      return;
-    }
     final selected = await _pickHubAssignee(
       title: '전일 미통화',
       subtitle: '${formatYmdFlowLabelKo(periodKey.anchorYmd)} 접수',
@@ -1355,6 +1387,73 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
     if (!mounted || selected == null) return;
     await _pushIncompleteListForDate(periodKey.anchorYmd, selected);
+  }
+
+  Future<void> _openPrevDaySupportPending(String ymd) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CustomerSupportReceptionListScreen(
+          title: '전일 A/S 미처리',
+          fromYmd: ymd,
+          toYmdInclusive: ymd,
+          pendingOnly: true,
+        ),
+      ),
+    );
+    ref.invalidate(supportHomeStatsProvider);
+  }
+
+  Future<_PrevUncalledKind?> _pickPrevUncalledKind({
+    required int salesCount,
+    required int supportCount,
+    required String subtitle,
+  }) {
+    return showModalBottomSheet<_PrevUncalledKind>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        final supportAccent = AppTokens.customerSupportAccent(scheme);
+        final bottom = MediaQuery.paddingOf(context).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '전일 미통화',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              if (salesCount > 0)
+                _PrevUncalledKindTile(
+                  title: '영업 미통화',
+                  count: salesCount,
+                  icon: Icons.phone_missed_rounded,
+                  accent: scheme.tertiary,
+                  onTap: () => Navigator.pop(context, _PrevUncalledKind.sales),
+                ),
+              if (salesCount > 0 && supportCount > 0) const SizedBox(height: 8),
+              if (supportCount > 0)
+                _PrevUncalledKindTile(
+                  title: '고객지원팀 A/S',
+                  count: supportCount,
+                  icon: Icons.handyman_outlined,
+                  accent: supportAccent,
+                  onTap: () =>
+                      Navigator.pop(context, _PrevUncalledKind.support),
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showAutoCloseInfoDialog(
@@ -1837,6 +1936,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     ref.invalidate(hubPendingUncalledCallsProvider);
     ref.invalidate(tempManagerOverridesProvider);
     ref.invalidate(hubPendingUncalledSummaryProvider);
+    ref.invalidate(supportHomeStatsProvider);
   }
 
   Future<void> _onRefresh() async {
@@ -1908,7 +2008,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOutCubic,
-                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      padding: const EdgeInsets.symmetric(vertical: 6),
                       // 섹션별 고유 톤으로 선택 상태를 분리해 시인성을 높인다.
                       decoration: BoxDecoration(
                         color: _section == section
@@ -2037,11 +2137,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
-  double _homeBottomInset(BuildContext context) => 12;
+  double _homeBottomInset(BuildContext context) => 4;
 
   Widget _buildFlowBody(ColorScheme scheme, AppUser? user) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, 2, 12, 6 + _homeBottomInset(context)),
+      padding: EdgeInsets.fromLTRB(12, 0, 12, 4 + _homeBottomInset(context)),
       child: _buildPeriodFlowBlock(
         user: user,
         scheme: scheme,
@@ -2061,9 +2161,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           HubNavStep.month => '금월 미통화',
         },
         followLabel: switch (_hubNavStep) {
-          HubNavStep.day => '오늘 팔로우',
-          HubNavStep.week => '이번 주 팔로우',
-          HubNavStep.month => '이번 달 팔로우',
+          HubNavStep.day => '금일 팔로우',
+          HubNavStep.week => '금주 팔로우',
+          HubNavStep.month => '금월 팔로우',
         },
         updatedLabel: switch (_hubNavStep) {
           HubNavStep.day => '금일 업데이트',
@@ -2092,59 +2192,122 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     return d > 0 ? '+$d' : '$d';
   }
 
-  Widget _buildPreviousDayUncalledBanner({
+  int _overdueFollowCount() {
+    final calls = ref.watch(hubOverdueFollowCallsProvider).valueOrNull;
+    if (calls == null || calls.isEmpty) return 0;
+    final loginName = ref.watch(authControllerProvider)?.name.trim();
+    final overrides =
+        ref.watch(tempManagerOverridesProvider).valueOrNull ?? const [];
+    if (loginName == null || loginName.isEmpty) return calls.length;
+    final mine = calls.where((c) {
+      return displayAssigneeForCall(c, overrides, DateTime.now()) == loginName;
+    }).length;
+    return mine == 0 ? calls.length : mine;
+  }
+
+  Widget _buildPrevUncalledAndOverdueRow({
     required ColorScheme scheme,
-    required int count,
-    required String anchorYmd,
+    required int prevUncalled,
   }) {
-    // 0건이면 숨김 — 상태 우선 UI는 할 일만 노출
-    if (count <= 0) return const SizedBox.shrink();
+    final overdue = _overdueFollowCount();
+    if (prevUncalled <= 0 && overdue <= 0) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: UxStatusHeroBanner(
-        icon: Icons.history_rounded,
-        title: '전일 미통화 $count건',
-        subtitle: '${formatYmdFlowLabelKo(anchorYmd)} 접수 · 늦은 문의 확인',
-        actionLabel: '지금 확인',
-        tone: UxStatusHeroTone.info,
-        onTap: () => _openPreviousDayIncompletePicker(),
-        onLongPress: () => _openPreviousDayIncompletePicker(forcePicker: true),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          if (prevUncalled > 0)
+            Expanded(
+              child: _HomeOneLineAlert(
+                icon: Icons.history_rounded,
+                label: '전일 미통화',
+                count: prevUncalled,
+                color: scheme.tertiary,
+                onTap: () => _openPreviousDayIncompletePicker(),
+                onLongPress: () =>
+                    _openPreviousDayIncompletePicker(forcePicker: true),
+              ),
+            ),
+          if (prevUncalled > 0 && overdue > 0) const SizedBox(width: 6),
+          if (overdue > 0)
+            Expanded(
+              child: _HomeOneLineAlert(
+                icon: Icons.event_busy_rounded,
+                label: '지연 팔로우',
+                count: overdue,
+                color: scheme.error,
+                onTap: () => _openOverdueFollowPicker(),
+                onLongPress: () => _openOverdueFollowPicker(forcePicker: true),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildOverdueFollowBanner(ColorScheme scheme) {
-    final callsAsync = ref.watch(hubOverdueFollowCallsProvider);
-    return callsAsync.when(
-      data: (calls) {
-        final loginName = ref.watch(authControllerProvider)?.name.trim();
-        final overrides =
-            ref.watch(tempManagerOverridesProvider).valueOrNull ??
-            const [];
-        var count = calls.length;
-        if (loginName != null && loginName.isNotEmpty) {
-          count = calls.where((c) {
-            return displayAssigneeForCall(c, overrides, DateTime.now()) ==
-                loginName;
-          }).length;
-          if (count == 0) count = calls.length;
-        }
-        if (count == 0) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: UxStatusHeroBanner(
-            icon: Icons.event_busy_rounded,
-            title: '지연 팔로우 $count건',
-            subtitle: '예정일 지남',
-            actionLabel: '확인',
-            tone: UxStatusHeroTone.attention,
-            onTap: () => _openOverdueFollowPicker(),
-            onLongPress: () => _openOverdueFollowPicker(forcePicker: true),
+  Widget _buildSupportPeriodStats({required HubPeriodKey periodKey}) {
+    final stats =
+        ref.watch(supportHomeStatsProvider(periodKey)).valueOrNull ??
+        SupportHomePeriodStats.empty;
+    final range = switch (periodKey.period) {
+      HubPeriod.day => (periodKey.anchorYmd, periodKey.anchorYmd),
+      HubPeriod.week => seoulWeekRangeContaining(periodKey.anchorYmd),
+      HubPeriod.month => seoulMonthRangeContaining(periodKey.anchorYmd),
+    };
+    Future<void> openList({
+      required String title,
+      bool pendingOnly = false,
+      bool visitOnly = false,
+    }) async {
+      HapticFeedback.selectionClick();
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportReceptionListScreen(
+            title: title,
+            fromYmd: range.$1,
+            toYmdInclusive: range.$2,
+            pendingOnly: pendingOnly,
+            visitOnly: visitOnly,
           ),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
+        ),
+      );
+      ref.invalidate(supportHomeStatsProvider);
+    }
+
+    final receptionLabel = switch (_hubNavStep) {
+      HubNavStep.day => '금일 A/S',
+      HubNavStep.week => '금주 A/S',
+      HubNavStep.month => '금월 A/S',
+    };
+    final pendingLabel = switch (_hubNavStep) {
+      HubNavStep.day => '금일 미처리',
+      HubNavStep.week => '금주 미처리',
+      HubNavStep.month => '금월 미처리',
+    };
+    final visitLabel = switch (_hubNavStep) {
+      HubNavStep.day => '금일 방문',
+      HubNavStep.week => '금주 방문',
+      HubNavStep.month => '금월 방문',
+    };
+    final updatedLabel = switch (_hubNavStep) {
+      HubNavStep.day => '금일 업데이트',
+      HubNavStep.week => '금주 업데이트',
+      HubNavStep.month => '금월 업데이트',
+    };
+
+    return HomeSupportMiniStatsWidget(
+      receptionLabel: receptionLabel,
+      pendingLabel: pendingLabel,
+      visitLabel: visitLabel,
+      updatedLabel: updatedLabel,
+      reception: stats.reception,
+      pending: stats.pending,
+      visits: stats.visits,
+      updated: stats.updated,
+      onTapReception: () => unawaited(openList(title: receptionLabel)),
+      onTapPending: () =>
+          unawaited(openList(title: pendingLabel, pendingOnly: true)),
+      onTapVisit: () => unawaited(openList(title: visitLabel, visitOnly: true)),
+      onTapUpdated: () => unawaited(openList(title: updatedLabel)),
     );
   }
 
@@ -2158,7 +2321,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             : summary.total;
         if (count == 0) return const SizedBox.shrink();
         return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 6),
           child: UxStatusHeroBanner(
             icon: Icons.phone_missed_rounded,
             title: '처리할 미통화 $count건',
@@ -2166,6 +2329,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount} · 탭하면 바로 목록',
             actionLabel: '지금 처리',
             tone: UxStatusHeroTone.attention,
+            compact: true,
             onTap: () => _openPendingUncalledPicker(),
             onLongPress: () => _openPendingUncalledPicker(forcePicker: true),
           ),
@@ -2229,7 +2393,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(10),
@@ -2332,6 +2496,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         final previousDayYmd = scope == HubPeriod.day
             ? _previousPeriodKey.anchorYmd
             : null;
+        final prevSupportPending =
+            previousDayYmd != null && canAccessCustomerSupport(user)
+            ? (ref
+                      .watch(supportHomeStatsProvider(_previousPeriodKey))
+                      .valueOrNull
+                      ?.pending ??
+                  0)
+            : 0;
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -2351,16 +2523,15 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           reception: reception,
                           prevReception: prevReception,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                       ],
-                      if (previousDayYmd != null)
-                        _buildPreviousDayUncalledBanner(
-                          scheme: scheme,
-                          count: prevIncomplete,
-                          anchorYmd: previousDayYmd,
-                        ),
                       _buildPendingUncalledBanner(scheme),
-                      _buildOverdueFollowBanner(scheme),
+                      _buildPrevUncalledAndOverdueRow(
+                        scheme: scheme,
+                        prevUncalled: previousDayYmd == null
+                            ? 0
+                            : prevIncomplete + prevSupportPending,
+                      ),
                       HomeMiniStatsWidget(
                         compact: true,
                         receptionLabel: receptionLabel,
@@ -2399,7 +2570,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           scope: scope,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      if (canAccessCustomerSupport(user)) ...[
+                        const SizedBox(height: 6),
+                        _buildSupportPeriodStats(periodKey: periodKey),
+                      ],
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
@@ -2413,7 +2587,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           },
                           icon: Icon(
                             Icons.tune_rounded,
-                            size: 15,
+                            size: 14,
                             color: scheme.primary,
                           ),
                           label: Text(
@@ -2427,29 +2601,32 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           style: TextButton.styleFrom(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 4),
+                            minimumSize: const Size(0, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                         ),
                       ),
-                      if (_showLongPressHint) ...[
-                        const SizedBox(height: 6),
+                      if (_showLongPressHint)
                         Material(
                           color: scheme.secondaryContainer.withValues(
                             alpha: 0.45,
                           ),
                           borderRadius: BorderRadius.circular(10),
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                            padding: const EdgeInsets.fromLTRB(10, 4, 2, 4),
                             child: Row(
                               children: [
                                 Icon(
                                   Icons.touch_app_rounded,
-                                  size: 16,
+                                  size: 14,
                                   color: scheme.onSecondaryContainer,
                                 ),
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    '카드 오른쪽 ⋮ 또는 길게 누르면 담당자를 고를 수 있습니다.',
+                                    '길게 누르면 담당자를 고를 수 있습니다.',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
@@ -2460,6 +2637,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                                 IconButton(
                                   tooltip: '힌트 닫기',
                                   visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 28,
+                                    minHeight: 28,
+                                  ),
                                   onPressed: _dismissLongPressHint,
                                   icon: Icon(
                                     Icons.close_rounded,
@@ -2472,7 +2654,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             ),
                           ),
                         ),
-                      ],
                     ],
                   ),
                 ),
@@ -2552,6 +2733,153 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HomeOneLineAlert extends StatelessWidget {
+  const _HomeOneLineAlert({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.onTap,
+    this.onLongPress,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color color;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: '$label $count건',
+      child: Material(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          onLongPress: onLongPress == null
+              ? null
+              : () {
+                  HapticFeedback.mediumImpact();
+                  onLongPress!();
+                },
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.1,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurfaceVariant.withValues(
+                            alpha: 0.92,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$count',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
+                    letterSpacing: -0.3,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _PrevUncalledKind { sales, support }
+
+class _PrevUncalledKindTile extends StatelessWidget {
+  const _PrevUncalledKindTile({
+    required this.title,
+    required this.count,
+    required this.icon,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final String title;
+  final int count;
+  final IconData icon;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: accent.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, color: accent, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                '$count건',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -653,7 +653,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 FilledButton.icon(
                   onPressed: () => Navigator.of(context).pop('as'),
                   icon: const Icon(Icons.handyman_outlined),
-                  label: const Text('A/S 접수'),
+                  label: const Text('A/S 접수 (테스트중)'),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(
                       AppTokens.primaryCtaHeight,

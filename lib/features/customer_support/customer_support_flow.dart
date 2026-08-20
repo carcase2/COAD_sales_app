@@ -2,6 +2,7 @@
 enum SupportFlowStep {
   siteSearch,
   intake,
+  receptionList,
   quote,
   completion,
   collection,

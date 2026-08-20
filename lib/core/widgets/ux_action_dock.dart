@@ -148,6 +148,7 @@ class UxStatusHeroBanner extends StatelessWidget {
     this.actionLabel = '지금 처리',
     this.tone = UxStatusHeroTone.attention,
     this.onLongPress,
+    this.compact = false,
   });
 
   final String title;
@@ -157,6 +158,7 @@ class UxStatusHeroBanner extends StatelessWidget {
   final String actionLabel;
   final UxStatusHeroTone tone;
   final VoidCallback? onLongPress;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -201,70 +203,86 @@ class UxStatusHeroBanner extends StatelessWidget {
               },
         borderRadius: BorderRadius.circular(AppTokens.radiusLg),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          padding: compact
+              ? const EdgeInsets.fromLTRB(10, 8, 8, 8)
+              : const EdgeInsets.fromLTRB(14, 12, 12, 12),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: compact ? 28 : 42,
+                height: compact ? 28 : 42,
                 decoration: BoxDecoration(
                   color: iconColor.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(compact ? 8 : 12),
                 ),
-                child: Icon(icon, color: iconColor, size: 22),
+                child: Icon(icon, color: iconColor, size: compact ? 16 : 22),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: compact ? 8 : 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: compact ? 13 : 15,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.3,
                         color: fg,
                         height: 1.15,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color: fg.withValues(alpha: 0.82),
+                    if (!compact) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          height: 1.3,
+                          color: fg.withValues(alpha: 0.82),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              FilledButton(
-                onPressed: () {
-                  HapticFeedback.mediumImpact();
-                  onTap();
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: btnBg,
-                  foregroundColor: btnFg,
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  minimumSize: const Size(0, 40),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+              const SizedBox(width: 8),
+              if (compact)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: fg.withValues(alpha: 0.7),
+                )
+              else
+                FilledButton(
+                  onPressed: () {
+                    HapticFeedback.mediumImpact();
+                    onTap();
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: btnBg,
+                    foregroundColor: btnFg,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    minimumSize: const Size(0, 40),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                  textStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  child: Text(actionLabel),
                 ),
-                child: Text(actionLabel),
-              ),
             ],
           ),
         ),
