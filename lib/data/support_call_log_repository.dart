@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/data/support_supabase.dart';
+import 'package:coad_customer_calls/data/support_visit_report.dart';
 
 class SupportCallLog {
   const SupportCallLog({
@@ -310,11 +311,73 @@ class SupportCallLogRepository {
           .select('id, description, created_by, created_at')
           .eq('call_log_id', callLogId)
           .order('created_at', ascending: true);
-      return List<Map<String, dynamic>>.from(
-        rows,
-      ).map(SupportConsultation.fromJson).toList();
+      return List<Map<String, dynamic>>.from(rows)
+          .map(SupportConsultation.fromJson)
+          .where((c) => !isSupportVisitReportText(c.description))
+          .toList();
     } catch (e) {
       throw ApiException('상담 내용을 불러오지 못했습니다. $e');
+    }
+  }
+
+  Future<List<SupportVisitReport>> listVisitReports(String callLogId) async {
+    try {
+      final rows = await supportSupabaseClient()
+          .from('service_requests')
+          .select('id, description, created_by, created_at')
+          .eq('call_log_id', callLogId)
+          .order('created_at', ascending: true);
+      final out = <SupportVisitReport>[];
+      for (final row in List<Map<String, dynamic>>.from(rows)) {
+        final parsed = parseSupportVisitReport(
+          (row['description'] ?? '').toString(),
+          id: (row['id'] ?? '').toString(),
+          createdBy: row['created_by']?.toString(),
+          createdAt: parseSupabaseTimestampUtc(row['created_at']),
+        );
+        if (parsed != null) out.add(parsed);
+      }
+      return out;
+    } catch (e) {
+      throw ApiException('방문 기록을 불러오지 못했습니다. $e');
+    }
+  }
+
+  /// 현장 방문 기록. 완료면 접수를 완료로, 미완료면 다음 방문일로 일정을 옮긴다.
+  Future<void> addVisitReport({
+    required String callLogId,
+    required SupportVisitReport report,
+  }) async {
+    if (report.visitYmd.trim().isEmpty) {
+      throw ApiException('방문일을 선택해 주세요.');
+    }
+    if (report.notes.trim().isEmpty) {
+      throw ApiException('방문 내용을 입력해 주세요.');
+    }
+    if (report.isPaid && (report.amount ?? 0) <= 0) {
+      throw ApiException('유상이면 금액을 입력해 주세요.');
+    }
+    if (!report.completed && (report.nextVisitYmd ?? '').trim().isEmpty) {
+      throw ApiException('미완료이면 다음 방문일을 선택해 주세요.');
+    }
+    try {
+      final client = supportSupabaseClient();
+      final createdBy = (report.createdBy ?? '').trim();
+      await client.from('service_requests').insert({
+        'call_log_id': callLogId,
+        'description': serializeSupportVisitReport(report),
+        if (createdBy.isNotEmpty) 'created_by': createdBy,
+      });
+      final patch = <String, dynamic>{
+        'service_status_id': report.completed
+            ? kSupportStatusCompleted
+            : kSupportStatusVisitScheduled,
+        'visit_date': report.completed ? report.visitYmd : report.nextVisitYmd,
+      };
+      await client.from('call_logs').update(patch).eq('id', callLogId);
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('방문 기록 저장에 실패했습니다. $e');
     }
   }
 
@@ -381,6 +444,13 @@ class SupportCallLogRepository {
     try {
       final client = supportSupabaseClient();
       final events = <SupportScheduleEvent>[];
+      final seen = <String>{};
+      void addEvent(SupportScheduleEvent event) {
+        final key = '${event.kind.name}|${event.log.id}|${event.ymd}';
+        if (!seen.add(key)) return;
+        events.add(event);
+      }
+
       final visitRows = await client
           .from('call_logs')
           .select(_supportCallLogSelect)
@@ -391,14 +461,73 @@ class SupportCallLogRepository {
         final log = SupportCallLog.fromJson(row);
         final ymd = log.visitDate;
         if (ymd == null || ymd.isEmpty) continue;
-        events.add(
+        addEvent(
           SupportScheduleEvent(
             kind: SupportScheduleKind.visit,
             ymd: ymd,
             log: log,
+            caption: log.serviceStatusId == kSupportStatusCompleted
+                ? '방문완료'
+                : '방문예정',
           ),
         );
       }
+
+      try {
+        final reports = await client
+            .from('service_requests')
+            .select('description, call_log_id')
+            .ilike('description', '$kSupportVisitReportMarker%')
+            .limit(800);
+        final byLog = <String, List<SupportVisitReport>>{};
+        for (final row in List<Map<String, dynamic>>.from(reports)) {
+          final parsed = parseSupportVisitReport(
+            (row['description'] ?? '').toString(),
+          );
+          final id = (row['call_log_id'] ?? '').toString();
+          if (parsed == null || id.isEmpty) continue;
+          byLog.putIfAbsent(id, () => []).add(parsed);
+        }
+        if (byLog.isNotEmpty) {
+          final logs = await client
+              .from('call_logs')
+              .select(_supportCallLogSelect)
+              .inFilter('id', byLog.keys.toList())
+              .limit(400);
+          for (final row in List<Map<String, dynamic>>.from(logs)) {
+            final log = SupportCallLog.fromJson(row);
+            for (final report
+                in byLog[log.id] ?? const <SupportVisitReport>[]) {
+              final visitYmd = report.visitYmd;
+              if (visitYmd.compareTo(fromYmd) >= 0 &&
+                  visitYmd.compareTo(toYmdInclusive) <= 0) {
+                addEvent(
+                  SupportScheduleEvent(
+                    kind: SupportScheduleKind.visit,
+                    ymd: visitYmd,
+                    log: log,
+                    caption: report.completed ? '방문완료' : '방문',
+                  ),
+                );
+              }
+              final next = report.nextVisitYmd ?? '';
+              if (!report.completed &&
+                  next.isNotEmpty &&
+                  next.compareTo(fromYmd) >= 0 &&
+                  next.compareTo(toYmdInclusive) <= 0) {
+                addEvent(
+                  SupportScheduleEvent(
+                    kind: SupportScheduleKind.visit,
+                    ymd: next,
+                    log: log,
+                    caption: '재방문예정',
+                  ),
+                );
+              }
+            }
+          }
+        }
+      } catch (_) {}
 
       try {
         final reqs = await client
@@ -490,11 +619,16 @@ class SupportScheduleEvent {
     required this.kind,
     required this.ymd,
     required this.log,
+    this.caption,
   });
 
   final SupportScheduleKind kind;
   final String ymd;
   final SupportCallLog log;
+  final String? caption;
+
+  String get label =>
+      caption ?? (kind == SupportScheduleKind.visit ? '방문예정' : '견적서 발송예정');
 }
 
 enum SupportConsultOutcome { closed, verbalQuote, quoteSend, visit }

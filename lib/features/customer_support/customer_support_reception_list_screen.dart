@@ -11,7 +11,9 @@ import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
+import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/customer_support/support_first_consultation_sheet.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/models/region.dart';
@@ -488,6 +490,7 @@ class _CustomerSupportReceptionDetailScreenState
     extends ConsumerState<CustomerSupportReceptionDetailScreen> {
   SupportCallLog? _log;
   List<SupportConsultation> _consults = const [];
+  List<SupportVisitReport> _visits = const [];
   Object? _loadError;
   bool _loading = false;
   bool _changed = false;
@@ -527,13 +530,18 @@ class _CustomerSupportReceptionDetailScreenState
         log = _log!;
       }
       List<SupportConsultation> consults = const [];
+      List<SupportVisitReport> visits = const [];
       try {
         consults = await repo.listConsultations(id);
+      } catch (_) {}
+      try {
+        visits = await repo.listVisitReports(id);
       } catch (_) {}
       if (!mounted) return;
       setState(() {
         _log = log;
         _consults = consults;
+        _visits = visits;
         _loading = false;
       });
     } catch (e) {
@@ -577,6 +585,15 @@ class _CustomerSupportReceptionDetailScreenState
       log: current,
       stage: _consults.length + 1,
     );
+    if (!mounted || !saved) return;
+    setState(() => _changed = true);
+    unawaited(_load());
+  }
+
+  Future<void> _addVisitReport() async {
+    final current = _log;
+    if (current == null || _busy) return;
+    final saved = await showSupportVisitReportSheet(context, log: current);
     if (!mounted || !saved) return;
     setState(() => _changed = true);
     unawaited(_load());
@@ -695,7 +712,7 @@ class _CustomerSupportReceptionDetailScreenState
         bottomNavigationBar: _log == null
             ? null
             : UxActionDock(
-                flexes: const [2, 2, 3],
+                flexes: const [2, 2, 3, 3],
                 children: [
                   UxDockButton(
                     icon: Icons.call_rounded,
@@ -717,9 +734,14 @@ class _CustomerSupportReceptionDetailScreenState
                   ),
                   UxDockButton(
                     icon: Icons.add_comment_rounded,
-                    label: '${_consults.length + 1}차 상담내용',
-                    emphasized: true,
+                    label: '${_consults.length + 1}차 상담',
                     onPressed: _addConsultation,
+                  ),
+                  UxDockButton(
+                    icon: Icons.home_repair_service_outlined,
+                    label: '방문 기록',
+                    emphasized: true,
+                    onPressed: _addVisitReport,
                   ),
                 ],
               ),
@@ -961,7 +983,7 @@ class _CustomerSupportReceptionDetailScreenState
                                       Padding(
                                         padding: const EdgeInsets.only(top: 4),
                                         child: Text(
-                                          _consults[i].createdBy!.trim(),
+                                          '상담 ${_consults[i].createdBy!.trim()}',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: scheme.onSurfaceVariant,
@@ -972,6 +994,28 @@ class _CustomerSupportReceptionDetailScreenState
                                 );
                               },
                             ),
+                          ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _DetailCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _label(scheme, '방문 기록'),
+                        if (_visits.isEmpty)
+                          Text(
+                            '방문 후 유무상·부품·완료 여부를 남기면 현장 이력이 됩니다.',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          )
+                        else
+                          for (var i = 0; i < _visits.length; i++) ...[
+                            if (i > 0) const SizedBox(height: 12),
+                            _VisitReportTile(report: _visits[i], index: i + 1),
                           ],
                       ],
                     ),
@@ -1002,6 +1046,81 @@ class _CustomerSupportReceptionDetailScreenState
           color: scheme.onSurfaceVariant,
         ),
       ),
+    );
+  }
+}
+
+class _VisitReportTile extends StatelessWidget {
+  const _VisitReportTile({required this.report, required this.index});
+
+  final SupportVisitReport report;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final doneColor = report.completed
+        ? AppTokens.success(scheme)
+        : scheme.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$index회 · ${report.visitYmd}',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            _ListChip(label: report.completed ? '완료' : '미완료', color: doneColor),
+            _ListChip(
+              label: report.isPaid ? '유상 ${report.amount}원' : '무상',
+              color: report.isPaid ? const Color(0xFFD97706) : scheme.primary,
+            ),
+            if ((report.depositYmd ?? '').isNotEmpty)
+              _ListChip(
+                label: '입금 ${report.depositYmd}',
+                color: scheme.tertiary,
+              ),
+            if ((report.nextVisitYmd ?? '').isNotEmpty)
+              _ListChip(
+                label: '다음방문 ${report.nextVisitYmd}',
+                color: scheme.error,
+              ),
+            for (final part in report.parts)
+              _ListChip(label: part, color: scheme.secondary),
+          ],
+        ),
+        if (report.notes.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            report.notes,
+            style: const TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+        ],
+        if ((report.createdBy ?? '').trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '방문 ${report.createdBy!.trim()}',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        if (report.photoUrls.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SalesCallAttachmentsStrip(urls: report.photoUrls),
+        ],
+      ],
     );
   }
 }

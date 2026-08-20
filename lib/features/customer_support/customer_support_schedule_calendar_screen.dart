@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -412,12 +413,30 @@ class _CustomerSupportScheduleCalendarScreenState
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           subtitle: Text(
-                            visit ? '방문예정' : '견적서 발송예정',
+                            e.label,
                             style: TextStyle(
                               color: color,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                          trailing: visit
+                              ? IconButton(
+                                  tooltip: '방문 기록',
+                                  icon: const Icon(
+                                    Icons.home_repair_service_outlined,
+                                  ),
+                                  onPressed: () async {
+                                    final saved =
+                                        await showSupportVisitReportSheet(
+                                          context,
+                                          log: e.log,
+                                        );
+                                    if (saved && mounted) {
+                                      unawaited(_loadMonth());
+                                    }
+                                  },
+                                )
+                              : null,
                           onTap: () => unawaited(_open(e.log)),
                         ),
                       );
