@@ -74,23 +74,6 @@ class B2UploadRepository {
     required String siteName,
     String? customerPhone,
   }) async {
-    final bucket = dotenv.env['B2_BUCKET']?.trim() ?? 'coadsales2';
-    final endpoint = dotenv.env['B2_S3_ENDPOINT']?.trim() ?? '';
-
-    if (!isAllowedPickerPath(filePath, mimeType: lookupMimeType(filePath))) {
-      throw ApiException('지원하지 않는 형식입니다. 이미지 또는 PDF만 업로드할 수 있습니다.');
-    }
-
-    final minio = _getMinio();
-
-    // 이미지 압축 시도
-    final fileToUpload = await _compressIfNeeded(filePath);
-    final isCompressed = fileToUpload.path != filePath;
-
-    if (!await fileToUpload.exists()) {
-      throw ApiException('업로드할 파일을 찾을 수 없습니다.');
-    }
-
     final now = DateTime.now();
     final dateStr = DateFormat('yyyyMMdd').format(now);
     final fileName = p.basename(filePath);
@@ -104,12 +87,47 @@ class B2UploadRepository {
     // 경로 규칙: sales_calls/연락처/날짜_타임스탬프_파일명
     final objectPath =
         'sales_calls/$safePhone/${dateStr}_${timestamp}_$fileName';
+    return _putPublicObject(filePath: filePath, objectPath: objectPath);
+  }
+
+  /// 명함 이미지 업로드. 경로: business_cards/작성자/날짜_타임스탬프_파일명
+  Future<String> uploadBusinessCardFile({
+    required String filePath,
+    required String userId,
+  }) async {
+    final now = DateTime.now();
+    final dateStr = DateFormat('yyyyMMdd').format(now);
+    final fileName = p.basename(filePath);
+    final timestamp = now.millisecondsSinceEpoch;
+    final safeUser = userId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
+    final folder = safeUser.isEmpty ? 'unknown' : safeUser;
+    final objectPath =
+        'business_cards/$folder/${dateStr}_${timestamp}_$fileName';
+    return _putPublicObject(filePath: filePath, objectPath: objectPath);
+  }
+
+  Future<String> _putPublicObject({
+    required String filePath,
+    required String objectPath,
+  }) async {
+    final bucket = dotenv.env['B2_BUCKET']?.trim() ?? 'coadsales2';
+    final endpoint = dotenv.env['B2_S3_ENDPOINT']?.trim() ?? '';
+
+    if (!isAllowedPickerPath(filePath, mimeType: lookupMimeType(filePath))) {
+      throw ApiException('지원하지 않는 형식입니다. 이미지 또는 PDF만 업로드할 수 있습니다.');
+    }
+
+    final minio = _getMinio();
+    final fileToUpload = await _compressIfNeeded(filePath);
+    final isCompressed = fileToUpload.path != filePath;
+
+    if (!await fileToUpload.exists()) {
+      throw ApiException('업로드할 파일을 찾을 수 없습니다.');
+    }
 
     try {
       final contentType =
           lookupMimeType(filePath) ?? 'application/octet-stream';
-
-      // 스트림 방식으로 업로드
       await minio
           .putObject(
             bucket,
@@ -119,13 +137,10 @@ class B2UploadRepository {
             metadata: {'Content-Type': contentType},
           )
           .timeout(const Duration(minutes: 5));
-
-      // B2 S3 버킷 공개 주소 생성
       return 'https://$bucket.$endpoint/$objectPath';
     } catch (e) {
       throw ApiException('B2 직접 업로드 실패: $e');
     } finally {
-      // 압축된 임시 파일인 경우 삭제
       if (isCompressed && await fileToUpload.exists()) {
         await fileToUpload.delete();
       }

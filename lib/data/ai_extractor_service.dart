@@ -1,6 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
+import 'package:coad_customer_calls/core/network/api_exception.dart';
+import 'package:coad_customer_calls/data/business_card_ocr.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+
+export 'business_card_ocr.dart' show BusinessCardResult, parseBusinessCardText;
 
 class AiExtractResult {
   final int statusId;
@@ -18,26 +24,6 @@ class AiExtractResult {
       statusId: (json['status_id'] as num?)?.toInt() ?? 1,
       callStage: json['call_stage']?.toString() ?? '1차',
       inquiryContent: json['inquiry_content']?.toString() ?? '',
-    );
-  }
-}
-
-class BusinessCardResult {
-  final String name;
-  final String company;
-  final String phone;
-
-  BusinessCardResult({
-    required this.name,
-    required this.company,
-    required this.phone,
-  });
-
-  factory BusinessCardResult.fromJson(Map<String, dynamic> json) {
-    return BusinessCardResult(
-      name: json['name']?.toString() ?? '',
-      company: json['company']?.toString() ?? '',
-      phone: json['phone']?.toString() ?? '',
     );
   }
 }
@@ -75,26 +61,37 @@ class AiExtractorService {
 ''';
 
   static const _businessCardPrompt = '''
-당신은 비즈니스 전문가입니다. 제공된 사진(명함)에서 고객의 정보를 추출하여 JSON으로 반환하세요.
+당신은 한국 명함 OCR 전문가입니다. 사진에서 보이는 글자만 읽고 JSON으로 반환하세요. 추측하지 마세요.
 
 # 추출 항목
-1. name: 사람의 이름. (못 찾으면 빈 문자열)
-2. company: 회사명 또는 상호명. (못 찾으면 빈 문자열)
-3. phone: 휴대폰 번호 또는 일반 전화번호. 숫자와 하이픈(-)만 포함된 1개만 반환하세요. (못 찾으면 빈 문자열)
+- name: 사람 이름만. 직함(대표, 이사, 팀장 등)은 넣지 마세요.
+- company: 회사명/상호. 로고만 있고 글자가 없으면 빈 문자열.
+- title: 직함/부서. 예: "대표이사", "영업팀장".
+- phone: 휴대폰 번호 1개. 010/011/016/017/018/019를 최우선. 하이픈 포함(010-1234-5678). 없으면 빈 문자열.
+- office_phone: 사무실/대표 전화. FAX가 아닌 번호만. 없으면 빈 문자열.
+- fax: 팩스 번호. 명함에 FAX/팩스로 적힌 번호만. 하이픈 포함. 없으면 빈 문자열.
+- email: 이메일. 없으면 빈 문자열.
+- address: 주소. 없으면 빈 문자열.
 
 # 규칙
-- 결과를 오직 JSON으로만 반환하세요.
-- 마크다운 블록(```json)을 사용하지 마세요.
+- 팩스는 office_phone에 넣지 말고 fax에만 넣으세요.
+- 글자가 흐리면 빈 문자열.
+- 오직 JSON만 반환. 마크다운 금지.
 {
-  "name": "성함",
-  "company": "회사/상호",
-  "phone": "010-0000-0000"
+  "name": "",
+  "company": "",
+  "title": "",
+  "phone": "",
+  "office_phone": "",
+  "fax": "",
+  "email": "",
+  "address": ""
 }
 ''';
 
   Future<AiExtractResult> extract(String memo) async {
     final model = GenerativeModel(
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.6-flash',
       apiKey: apiKey,
       systemInstruction: Content.system(_systemPrompt),
       generationConfig: GenerationConfig(
@@ -113,27 +110,97 @@ class AiExtractorService {
     return AiExtractResult.fromJson(json);
   }
 
-  Future<BusinessCardResult> extractBusinessCard(Uint8List imageBytes) async {
-    final model = GenerativeModel(
-      model: 'gemini-1.5-flash',
-      apiKey: apiKey,
-      generationConfig: GenerationConfig(
-        responseMimeType: 'application/json',
-        temperature: 0.1,
-      ),
-    );
+  static const _businessCardModels = [
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+  ];
 
-    final response = await model.generateContent([
-      Content.multi([
-        TextPart(_businessCardPrompt),
-        DataPart('image/jpeg', imageBytes),
-      ]),
-    ]);
+  Future<BusinessCardResult> extractBusinessCard(
+    Uint8List imageBytes, {
+    String? filePath,
+  }) async {
+    if (apiKey.trim().isEmpty) {
+      throw ApiException('명함 인식 API 키가 없습니다. 앱을 다시 설치한 뒤 시도해 주세요.');
+    }
+    debugPrint('명함 인식: Gemini (${imageBytes.length} bytes)');
+    try {
+      final result = await _extractWithGemini(imageBytes);
+      if (result.hasAnyField) return result;
+      throw ApiException('명함에서 글자를 읽지 못했습니다. 밝은 곳에서 정면으로 다시 촬영해 주세요.');
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException(_humanizeOcrError(e));
+    }
+  }
 
-    final text = response.text?.trim() ?? '';
-    final cleaned = _cleanJson(text);
-    final json = jsonDecode(cleaned) as Map<String, dynamic>;
-    return BusinessCardResult.fromJson(json);
+  Future<BusinessCardResult> _extractWithGemini(Uint8List imageBytes) async {
+    final mime = _imageMime(imageBytes);
+    Object? lastError;
+    for (final modelName in _businessCardModels) {
+      try {
+        final model = GenerativeModel(
+          model: modelName,
+          apiKey: apiKey,
+          generationConfig: GenerationConfig(
+            responseMimeType: 'application/json',
+            temperature: 0.0,
+          ),
+        );
+        final response = await model.generateContent([
+          Content.multi([
+            TextPart(_businessCardPrompt),
+            DataPart(mime, imageBytes),
+          ]),
+        ]);
+        final text = response.text?.trim() ?? '';
+        if (text.isEmpty) {
+          lastError = ApiException('인식 결과가 비어 있습니다.');
+          continue;
+        }
+        final json = jsonDecode(_cleanJson(text)) as Map<String, dynamic>;
+        return BusinessCardResult.fromJson(json);
+      } catch (e) {
+        debugPrint('명함 인식 모델 실패 $modelName: $e');
+        lastError = e;
+      }
+    }
+    throw lastError ?? ApiException('명함 인식에 실패했습니다.');
+  }
+
+  static String _humanizeOcrError(Object error) {
+    final t = error.toString().toLowerCase();
+    if (t.contains('api key') || t.contains('api_key') || t.contains('unauthorized') || t.contains('403')) {
+      return '명함 인식 API 키가 올바르지 않습니다.';
+    }
+    if (t.contains('404') || t.contains('not found') || t.contains('no longer available')) {
+      return '명함 인식 모델을 찾을 수 없습니다. 앱을 다시 설치해 주세요.';
+    }
+    if (t.contains('429') || t.contains('quota') || t.contains('resource exhausted')) {
+      return '명함 인식 사용량이 초과되었습니다. 잠시 후 다시 시도해 주세요.';
+    }
+    if (t.contains('socket') || t.contains('network') || t.contains('failed host')) {
+      return '네트워크 연결을 확인한 뒤 다시 시도해 주세요.';
+    }
+    return '명함 인식에 실패했습니다. 다시 촬영해 주세요.';
+  }
+
+  static String _imageMime(Uint8List bytes) {
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return 'image/png';
+    }
+    if (bytes.length >= 12 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return 'image/webp';
+    }
+    return 'image/jpeg';
   }
 
   static const _summaryPrompt = '''
@@ -152,7 +219,7 @@ class AiExtractorService {
     if (callTexts.isEmpty) return '오늘 등록된 문의내역이 없습니다.';
 
     final model = GenerativeModel(
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.6-flash',
       apiKey: apiKey,
       generationConfig: GenerationConfig(
         temperature: 0.3,

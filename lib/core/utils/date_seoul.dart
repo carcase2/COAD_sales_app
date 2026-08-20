@@ -22,6 +22,12 @@ String formatSeoulDateTime(DateTime? utcOrNull) {
   return DateFormat('yyyy-MM-dd HH:mm', 'ko_KR').format(_utcToSeoul(utcOrNull));
 }
 
+/// 명함 메모 기록 — `2026.6.20 14:32`
+String formatSeoulMemoStamp(DateTime? utcOrNull) {
+  if (utcOrNull == null) return '—';
+  return DateFormat('yyyy.M.d HH:mm').format(_utcToSeoul(utcOrNull));
+}
+
 /// Supabase 등 DB 원문 시각 문자열 → 서울 `DateTime`.
 DateTime parseSupabaseTimestampAsSeoul(String raw) {
   final trimmed = raw.trim();

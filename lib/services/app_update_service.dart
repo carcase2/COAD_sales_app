@@ -17,6 +17,32 @@ class AppUpdateService {
   static DateTime? _lastInUsePromptAt;
   static const Duration _inUsePromptCooldown = Duration(hours: 24);
 
+  /// USB/디버그 설치는 Play가 "소유하지 않은 앱"으로 보아 Error(-10)이 난다.
+  static bool _skipPlayInAppUpdate = kDebugMode;
+
+  static bool _isPlayAppNotOwned(Object error) {
+    final t = error.toString();
+    return t.contains('ERROR_APP_NOT_OWNED') ||
+        t.contains('Error(-10)') ||
+        t.contains('APP_NOT_OWNED') ||
+        t.contains('not owned');
+  }
+
+  static Future<AppUpdateInfo?> _checkPlayUpdate() async {
+    if (_skipPlayInAppUpdate) return null;
+    try {
+      return await InAppUpdate.checkForUpdate();
+    } catch (e) {
+      if (_isPlayAppNotOwned(e)) {
+        _skipPlayInAppUpdate = true;
+        debugPrint('Play 인앱 업데이트 생략: 스토어에서 설치한 앱이 아님');
+      } else {
+        debugPrint('Play 업데이트 가능 여부 조회 실패: $e');
+      }
+      return null;
+    }
+  }
+
   /// Supabase `app_update_policy` + Play 인앱 업데이트로 필요 여부 조회 (홈·설정 배지용).
   static Future<AppUpdateStatus> fetchUpdateStatus() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
@@ -65,13 +91,8 @@ class AppUpdateService {
   }
 
   static Future<bool> _isPlayUpdateAvailable() async {
-    try {
-      final info = await InAppUpdate.checkForUpdate();
-      return info.updateAvailability == UpdateAvailability.updateAvailable;
-    } catch (e) {
-      debugPrint('Play 업데이트 가능 여부 조회 실패: $e');
-      return false;
-    }
+    final info = await _checkPlayUpdate();
+    return info?.updateAvailability == UpdateAvailability.updateAvailable;
   }
 
   /// 앱 사용 중(다시 foreground 등) 주기적으로 정책을 확인하고 안내합니다.
@@ -582,7 +603,8 @@ class AppUpdateService {
   /// 백그라운드 다운로드만 끝난 상태면 false를 반환하고 스토어 설치로 넘깁니다.
   static Future<bool> _tryImmediateInAppUpdate() async {
     try {
-      final info = await InAppUpdate.checkForUpdate();
+      final info = await _checkPlayUpdate();
+      if (info == null) return false;
       debugPrint(
         'InAppUpdate: availability=${info.updateAvailability}, '
         'status=${info.installStatus}, immediate=${info.immediateUpdateAllowed}, '

@@ -26,6 +26,16 @@ void main() {
       expect(formatKoreanPhoneHyphenated('010'), '010');
       expect(formatKoreanPhoneHyphenated('0105'), '010-5');
     });
+
+    test('전국대표번호 8자리는 4-4', () {
+      expect(formatKoreanPhoneHyphenated('18997081'), '1899-7081');
+      expect(formatKoreanPhoneHyphenated('1899-7081'), '1899-7081');
+      expect(formatKoreanPhoneHyphenated('15881234'), '1588-1234');
+    });
+
+    test('휴대폰 8자리 입력 중은 3-4-1 유지', () {
+      expect(formatKoreanPhoneHyphenated('01056606'), '010-5660-6');
+    });
   });
 
   group('matchesPhoneSearch', () {
