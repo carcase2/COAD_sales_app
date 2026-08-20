@@ -127,27 +127,37 @@ class _BusinessCardImageViewer extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
         ),
       ),
-      body: InteractiveViewer(
-        minScale: 0.7,
-        maxScale: 6,
-        child: Center(
-          child: CachedAppImage(
-            url: url,
-            fit: BoxFit.contain,
-            placeholder: const Padding(
-              padding: EdgeInsets.all(48),
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-            errorWidget: const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                '이미지를 불러올 수 없습니다.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return InteractiveViewer(
+            constrained: false,
+            boundaryMargin: const EdgeInsets.all(48),
+            minScale: 0.5,
+            maxScale: 6,
+            child: SizedBox(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
+              child: Center(
+                child: CachedAppImage(
+                  url: url,
+                  fit: BoxFit.contain,
+                  placeholder: const Padding(
+                    padding: EdgeInsets.all(48),
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      '이미지를 불러올 수 없습니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
