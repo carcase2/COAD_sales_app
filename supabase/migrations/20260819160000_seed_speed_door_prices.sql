@@ -6,12 +6,24 @@ COMMENT ON COLUMN public.standard_unit_prices.available IS 'false면 해당 폭�
 UPDATE public.standard_unit_price_models m
 SET name = 'VE STANDARD(S)', updated_at = now()
 FROM public.standard_unit_price_categories c
-WHERE m.category_id = c.id AND c.name = '스피드도어' AND m.name = 'VE STANDARD';
+WHERE m.category_id = c.id AND c.name = '스피드도어' AND m.name = 'VE STANDARD'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.standard_unit_price_models existing
+    WHERE existing.category_id = m.category_id
+      AND existing.name = 'VE STANDARD(S)'
+  );
 
 UPDATE public.standard_unit_price_models m
 SET name = 'DELUXE', updated_at = now()
 FROM public.standard_unit_price_categories c
-WHERE m.category_id = c.id AND c.name = '스피드도어' AND m.name IN ('DELUEX', 'DELUXE');
+WHERE m.category_id = c.id AND c.name = '스피드도어' AND m.name = 'DELUEX'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.standard_unit_price_models existing
+    WHERE existing.category_id = m.category_id
+      AND existing.name = 'DELUXE'
+  );
 
 UPDATE public.standard_unit_prices p
 SET available = false, price = 0, updated_at = now()
