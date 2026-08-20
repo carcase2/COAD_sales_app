@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_date_picker.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -52,6 +53,7 @@ class _SupportVisitReportSheetState
   bool _paid = false;
   late String _visitYmd;
   String? _depositYmd;
+  bool _depositPaid = false;
   String? _nextVisitYmd;
   final List<String> _parts = [];
   final List<String> _photos = [];
@@ -179,6 +181,7 @@ class _SupportVisitReportSheetState
               paid: paid,
               amount: paid ? _amount : null,
               depositYmd: paid ? _depositYmd : null,
+              depositPaid: paid && _depositPaid,
               parts: List.of(_parts),
               photoUrls: _completed ? List.of(_photos) : const [],
               nextVisitYmd: _completed ? null : _nextVisitYmd,
@@ -348,6 +351,15 @@ class _SupportVisitReportSheetState
                         if (ymd != null) setState(() => _depositYmd = ymd);
                       },
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _depositPaid,
+                onChanged: _saving
+                    ? null
+                    : (v) => setState(() => _depositPaid = v ?? false),
+                title: const Text('입금완료'),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
             ],
             const SizedBox(height: 8),
             Text(
@@ -437,8 +449,10 @@ class _SupportVisitReportSheetState
                 onTap: _saving
                     ? null
                     : () async {
-                        final ymd = await _pickYmd(
-                          _nextVisitYmd ?? todayYmdSeoul(),
+                        final ymd = await showSupportVisitDatePicker(
+                          context,
+                          log: widget.log,
+                          selectedYmd: _nextVisitYmd,
                         );
                         if (ymd != null) setState(() => _nextVisitYmd = ymd);
                       },

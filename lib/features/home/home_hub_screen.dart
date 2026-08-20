@@ -2406,7 +2406,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: Theme.of(context).platform == TargetPlatform.iOS ? 8 : 5,
+      ),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(10),
@@ -2790,10 +2793,23 @@ class _HomeOneLineAlert extends StatelessWidget {
                 },
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: EdgeInsets.symmetric(
+              horizontal: Theme.of(context).platform == TargetPlatform.iOS
+                  ? 10
+                  : 8,
+              vertical: Theme.of(context).platform == TargetPlatform.iOS
+                  ? 10
+                  : 6,
+            ),
             child: Row(
               children: [
-                Icon(icon, size: 14, color: color),
+                Icon(
+                  icon,
+                  size: Theme.of(context).platform == TargetPlatform.iOS
+                      ? 16
+                      : 14,
+                  color: color,
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Align(
@@ -2822,7 +2838,9 @@ class _HomeOneLineAlert extends StatelessWidget {
                   '$count',
                   maxLines: 1,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: Theme.of(context).platform == TargetPlatform.iOS
+                        ? 17
+                        : 15,
                     fontWeight: FontWeight.w800,
                     color: scheme.onSurface,
                     letterSpacing: -0.3,

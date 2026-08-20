@@ -11,6 +11,7 @@ class SupportVisitReport {
     required this.paid,
     this.amount,
     this.depositYmd,
+    this.depositPaid = false,
     this.parts = const [],
     this.photoUrls = const [],
     this.nextVisitYmd,
@@ -25,6 +26,7 @@ class SupportVisitReport {
   final bool paid;
   final int? amount;
   final String? depositYmd;
+  final bool depositPaid;
   final List<String> parts;
   final List<String> photoUrls;
   final String? nextVisitYmd;
@@ -33,6 +35,24 @@ class SupportVisitReport {
   final DateTime? createdAt;
 
   bool get isPaid => paid && (amount ?? 0) > 0;
+
+  SupportVisitReport copyWith({bool? depositPaid}) {
+    return SupportVisitReport(
+      id: id,
+      visitYmd: visitYmd,
+      completed: completed,
+      paid: paid,
+      amount: amount,
+      depositYmd: depositYmd,
+      depositPaid: depositPaid ?? this.depositPaid,
+      parts: parts,
+      photoUrls: photoUrls,
+      nextVisitYmd: nextVisitYmd,
+      notes: notes,
+      createdBy: createdBy,
+      createdAt: createdAt,
+    );
+  }
 }
 
 String serializeSupportVisitReport(SupportVisitReport report) {
@@ -45,6 +65,7 @@ String serializeSupportVisitReport(SupportVisitReport report) {
     if (paid && report.amount != null) '금액: ${report.amount}',
     if (paid && (report.depositYmd ?? '').trim().isNotEmpty)
       '입금예정: ${report.depositYmd!.trim()}',
+    if (paid) '입금완료: ${report.depositPaid ? '완료' : '미입금'}',
     if (report.parts.isNotEmpty) '부품: ${report.parts.join(', ')}',
     if (report.photoUrls.isNotEmpty) '사진: ${report.photoUrls.join(' | ')}',
     if (!report.completed && (report.nextVisitYmd ?? '').trim().isNotEmpty)
@@ -108,6 +129,7 @@ SupportVisitReport? parseSupportVisitReport(
     paid: paid,
     amount: paid ? amount : null,
     depositYmd: paid ? _ymdOrNull(fields['입금예정']) : null,
+    depositPaid: paid && (fields['입금완료'] ?? '') == '완료',
     parts: parts,
     photoUrls: photos,
     nextVisitYmd: _ymdOrNull(fields['다음방문']),

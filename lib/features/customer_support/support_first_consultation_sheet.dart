@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_date_picker.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -72,9 +73,17 @@ class _SupportFirstConsultationSheetState
   }
 
   Future<void> _pickDate({required bool visit}) async {
-    final initial =
-        DateTime.tryParse(visit ? (_visitYmd ?? _sendYmd) : _sendYmd) ??
-        DateTime.now();
+    if (visit) {
+      final ymd = await showSupportVisitDatePicker(
+        context,
+        log: widget.log,
+        selectedYmd: _visitYmd,
+      );
+      if (ymd == null || !mounted) return;
+      setState(() => _visitYmd = ymd);
+      return;
+    }
+    final initial = DateTime.tryParse(_sendYmd) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -84,13 +93,7 @@ class _SupportFirstConsultationSheetState
     if (picked == null) return;
     final ymd =
         '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-    setState(() {
-      if (visit) {
-        _visitYmd = ymd;
-      } else {
-        _sendYmd = ymd;
-      }
-    });
+    setState(() => _sendYmd = ymd);
   }
 
   Future<void> _save() async {
@@ -220,7 +223,9 @@ class _SupportFirstConsultationSheetState
                 leading: const Icon(Icons.event_available_rounded),
                 title: const Text('방문예정일'),
                 subtitle: Text(
-                  _visitYmd == null ? '날짜를 선택해 주세요' : _ymdLabel(_visitYmd!),
+                  _visitYmd == null
+                      ? '팀 자리가 있는 날을 고르거나 가장 빠른 날짜'
+                      : _ymdLabel(_visitYmd!),
                 ),
                 trailing: const Icon(Icons.event_rounded),
                 onTap: _saving ? null : () => _pickDate(visit: true),
@@ -306,7 +311,7 @@ class _QuotePriceCheckTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '단가표·견적기를 열어 확인하고 상담에 반영합니다',
+                      'A/S 견적단가표를 검색·확인하고 상담에 반영합니다',
                       style: TextStyle(
                         fontSize: 12,
                         color: scheme.onSurfaceVariant,

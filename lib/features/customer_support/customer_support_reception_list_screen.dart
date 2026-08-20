@@ -1085,8 +1085,12 @@ class _VisitReportTile extends StatelessWidget {
             ),
             if ((report.depositYmd ?? '').isNotEmpty)
               _ListChip(
-                label: '입금 ${report.depositYmd}',
-                color: scheme.tertiary,
+                label: report.depositPaid
+                    ? '입금완료 ${report.depositYmd}'
+                    : '입금예정 ${report.depositYmd}',
+                color: report.depositPaid
+                    ? AppTokens.success(scheme)
+                    : const Color(0xFF059669),
               ),
             if ((report.nextVisitYmd ?? '').isNotEmpty)
               _ListChip(

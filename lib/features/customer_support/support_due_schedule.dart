@@ -13,12 +13,16 @@ class SupportDueScheduleSummary {
     required this.overdueVisit,
     required this.todaySend,
     required this.overdueSend,
+    this.todayDeposit = 0,
+    this.overdueDeposit = 0,
   });
 
   final int todayVisit;
   final int overdueVisit;
   final int todaySend;
   final int overdueSend;
+  final int todayDeposit;
+  final int overdueDeposit;
 
   static const empty = SupportDueScheduleSummary(
     todayVisit: 0,
@@ -28,7 +32,12 @@ class SupportDueScheduleSummary {
   );
 
   bool get hasAny =>
-      todayVisit > 0 || overdueVisit > 0 || todaySend > 0 || overdueSend > 0;
+      todayVisit > 0 ||
+      overdueVisit > 0 ||
+      todaySend > 0 ||
+      overdueSend > 0 ||
+      todayDeposit > 0 ||
+      overdueDeposit > 0;
 
   String get title => '[A/S] 방문·발송 예정';
 
@@ -36,8 +45,10 @@ class SupportDueScheduleSummary {
     final parts = <String>[];
     if (todayVisit > 0) parts.add('오늘 방문 $todayVisit건');
     if (todaySend > 0) parts.add('오늘 발송 $todaySend건');
+    if (todayDeposit > 0) parts.add('오늘 입금 $todayDeposit건');
     if (overdueVisit > 0) parts.add('지난 방문 $overdueVisit건');
     if (overdueSend > 0) parts.add('지난 발송 $overdueSend건');
+    if (overdueDeposit > 0) parts.add('지난 입금 $overdueDeposit건');
     return parts.join(' · ');
   }
 
@@ -49,20 +60,31 @@ class SupportDueScheduleSummary {
     var overdueVisit = 0;
     var todaySend = 0;
     var overdueSend = 0;
+    var todayDeposit = 0;
+    var overdueDeposit = 0;
     for (final e in events) {
-      if (e.log.serviceStatusId == kSupportStatusCompleted) continue;
       final ymd = e.ymd;
       if (ymd.isEmpty) continue;
       final overdue = ymd.compareTo(todayYmd) < 0;
       final today = ymd == todayYmd;
       if (!overdue && !today) continue;
+      if (e.kind == SupportScheduleKind.deposit) {
+        if (e.depositPaid == true) continue;
+        if (today) {
+          todayDeposit += 1;
+        } else {
+          overdueDeposit += 1;
+        }
+        continue;
+      }
+      if (e.log.serviceStatusId == kSupportStatusCompleted) continue;
       if (e.kind == SupportScheduleKind.visit) {
         if (today) {
           todayVisit += 1;
         } else {
           overdueVisit += 1;
         }
-      } else {
+      } else if (e.kind == SupportScheduleKind.quoteSend) {
         if (today) {
           todaySend += 1;
         } else {
@@ -75,6 +97,8 @@ class SupportDueScheduleSummary {
       overdueVisit: overdueVisit,
       todaySend: todaySend,
       overdueSend: overdueSend,
+      todayDeposit: todayDeposit,
+      overdueDeposit: overdueDeposit,
     );
   }
 }

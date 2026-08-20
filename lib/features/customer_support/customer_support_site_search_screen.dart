@@ -6,7 +6,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_f
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -272,7 +272,7 @@ class CustomerSupportSiteDetailScreen extends StatelessWidget {
             badge: site.quotes.isEmpty ? null : '${site.quotes.length}',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => const QuoterHubScreen(initialTabIndex: 1),
+                builder: (_) => SupportQuoteWriterScreen(site: site),
               ),
             ),
           ),

@@ -57,6 +57,9 @@ class HomeMiniStatsWidget extends StatefulWidget {
   State<HomeMiniStatsWidget> createState() => _HomeMiniStatsWidgetState();
 }
 
+bool _iosHomeCards(BuildContext context) =>
+    Theme.of(context).platform == TargetPlatform.iOS;
+
 class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
   bool _qualityExpanded = false;
 
@@ -64,9 +67,10 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final compact = widget.compact;
-    final gap = compact ? 4.0 : 8.0;
+    final roomy = compact && _iosHomeCards(context);
+    final gap = compact ? (roomy ? 7.0 : 4.0) : 8.0;
     return Container(
-      padding: EdgeInsets.all(compact ? 8 : 12),
+      padding: EdgeInsets.all(compact ? (roomy ? 11 : 8) : 12),
       decoration: HomeHubVisual.elevatedCard(scheme),
       child: Column(
         children: [
@@ -75,7 +79,7 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
             child: Text(
               '영업부',
               style: TextStyle(
-                fontSize: 11,
+                fontSize: roomy ? 13 : 11,
                 fontWeight: FontWeight.w800,
                 color: scheme.primary,
                 height: 1.1,
@@ -153,7 +157,7 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
             ),
           ),
           if (_qualityExpanded) ...[
-            SizedBox(height: compact ? 8 : 10),
+            SizedBox(height: compact ? (roomy ? 10 : 8) : 10),
             if (widget.followProgressHint != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -289,9 +293,10 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final accent = Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.18)!;
-    final gap = compact ? 4.0 : 8.0;
+    final roomy = compact && _iosHomeCards(context);
+    final gap = compact ? (roomy ? 7.0 : 4.0) : 8.0;
     return Container(
-      padding: EdgeInsets.all(compact ? 8 : 12),
+      padding: EdgeInsets.all(compact ? (roomy ? 11 : 8) : 12),
       decoration: HomeHubVisual.elevatedCard(scheme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -299,7 +304,7 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
           Text(
             '고객지원팀',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: roomy ? 13 : 11,
               fontWeight: FontWeight.w800,
               color: accent,
               height: 1.1,
@@ -393,6 +398,7 @@ class _FlowStatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final roomy = compact && _iosHomeCards(context);
     return Semantics(
       button: true,
       label: semanticsLabel ?? '$label $value',
@@ -421,17 +427,23 @@ class _FlowStatTile extends StatelessWidget {
             children: [
               Padding(
                 padding: EdgeInsets.fromLTRB(
-                  compact ? 7 : 10,
-                  compact ? 6 : 10,
-                  compact ? 6 : 10,
-                  compact ? 6 : 10,
+                  compact ? (roomy ? 10 : 7) : 10,
+                  compact ? (roomy ? 12 : 6) : 10,
+                  compact ? (roomy ? 10 : 6) : 10,
+                  compact ? (roomy ? 12 : 6) : 10,
                 ),
-                child: _StatItem(
-                  icon: icon,
-                  label: label,
-                  value: value,
-                  color: color,
-                  compact: compact,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: compact && roomy ? 28 : 0,
+                  ),
+                  child: _StatItem(
+                    icon: icon,
+                    label: label,
+                    value: value,
+                    color: color,
+                    compact: compact,
+                    roomy: roomy,
+                  ),
                 ),
               ),
               if (onLongPress != null && !compact)
@@ -499,7 +511,7 @@ class _InsightItem extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.symmetric(
               horizontal: 8,
-              vertical: compact ? 10 : 12,
+              vertical: compact ? (_iosHomeCards(context) ? 14 : 10) : 12,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -547,6 +559,7 @@ class _StatItem extends StatelessWidget {
     required this.value,
     required this.color,
     this.compact = false,
+    this.roomy = false,
   });
 
   final IconData icon;
@@ -554,6 +567,7 @@ class _StatItem extends StatelessWidget {
   final String value;
   final Color color;
   final bool compact;
+  final bool roomy;
 
   @override
   Widget build(BuildContext context) {
@@ -562,10 +576,10 @@ class _StatItem extends StatelessWidget {
       children: [
         Icon(
           icon,
-          size: compact ? 13 : 16,
+          size: compact ? (roomy ? 16 : 13) : 16,
           color: color.withValues(alpha: 0.85),
         ),
-        SizedBox(width: compact ? 4 : 6),
+        SizedBox(width: compact ? (roomy ? 6 : 4) : 6),
         Expanded(
           child: Align(
             alignment: Alignment.centerLeft,
@@ -577,7 +591,7 @@ class _StatItem extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 style: TextStyle(
-                  fontSize: compact ? 12 : 12.5,
+                  fontSize: compact ? (roomy ? 13.5 : 12) : 12.5,
                   height: 1.1,
                   fontWeight: FontWeight.w700,
                   color: scheme.onSurfaceVariant.withValues(alpha: 0.92),
@@ -591,7 +605,7 @@ class _StatItem extends StatelessWidget {
           value,
           maxLines: 1,
           style: TextStyle(
-            fontSize: compact ? 15 : 17,
+            fontSize: compact ? (roomy ? 18 : 15) : 17,
             fontWeight: FontWeight.w800,
             color: scheme.onSurface,
             letterSpacing: -0.3,

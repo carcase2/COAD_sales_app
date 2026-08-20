@@ -76,7 +76,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               ),
               SupportHubTile(
                 title: '견적서',
-                subtitle: '단가표 · PDF · 저장',
+                subtitle: 'A/S 단가표 · 검색 · 견적',
                 icon: Icons.request_quote_outlined,
                 onTap: () => _openStep(context, SupportFlowStep.quote),
               ),

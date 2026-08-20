@@ -1,8 +1,9 @@
 import 'package:coad_customer_calls/features/customer_support/customer_support_collection_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
-import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:flutter/material.dart';
 
@@ -22,7 +23,7 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               children: [
                 const SupportComingSoonBanner(
-                  message: '기존 견적기·단가표로 연결합니다. 메일·이미지 저장은 다음 작업입니다.',
+                  message: 'A/S 단가표는 직접 입력·검색합니다. 메일·이미지 저장은 다음 작업입니다.',
                 ),
                 if (site != null) ...[
                   const SizedBox(height: 8),
@@ -34,11 +35,11 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 SupportSectionCard(
                   title: 'A. 단가표',
-                  subtitle: '기존 사용 단가표 적용 · 검색',
+                  subtitle: 'A/S 견적단가 입력 · 검색 (표준단가 아님)',
                   icon: Icons.grid_on_rounded,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => const StandardUnitPriceScreen(),
+                      builder: (_) => const SupportUnitPriceScreen(),
                     ),
                   ),
                 ),
@@ -56,11 +57,11 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 SupportSectionCard(
                   title: '견적서 작성',
-                  subtitle: '기존 견적서 작성 화면',
+                  subtitle: '고객지원팀 전용 양식 · 검색 (영업 견적서 아님)',
                   icon: Icons.edit_document,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => const QuoterHubScreen(initialTabIndex: 1),
+                      builder: (_) => SupportQuoteWriterScreen(site: site),
                     ),
                   ),
                 ),

@@ -33,7 +33,8 @@ class UxActionDock extends StatelessWidget {
             ),
           ),
         ),
-        padding: padding ??
+        padding:
+            padding ??
             EdgeInsets.fromLTRB(
               AppTokens.spaceMd,
               AppTokens.spaceSm + 2,
@@ -165,28 +166,30 @@ class UxStatusHeroBanner extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, iconColor, btnBg, btnFg) = switch (tone) {
       UxStatusHeroTone.attention => (
-          scheme.errorContainer.withValues(alpha: 0.5),
-          scheme.onErrorContainer,
-          scheme.error,
-          scheme.error,
-          scheme.onError,
-        ),
+        scheme.errorContainer.withValues(alpha: 0.5),
+        scheme.onErrorContainer,
+        scheme.error,
+        scheme.error,
+        scheme.onError,
+      ),
       UxStatusHeroTone.info => (
-          scheme.tertiaryContainer.withValues(alpha: 0.45),
-          scheme.onTertiaryContainer,
-          scheme.tertiary,
-          scheme.tertiary,
-          scheme.onTertiary,
-        ),
+        scheme.tertiaryContainer.withValues(alpha: 0.45),
+        scheme.onTertiaryContainer,
+        scheme.tertiary,
+        scheme.tertiary,
+        scheme.onTertiary,
+      ),
       UxStatusHeroTone.neutral => (
-          scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-          scheme.onSurface,
-          scheme.primary,
-          scheme.primary,
-          scheme.onPrimary,
-        ),
+        scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        scheme.onSurface,
+        scheme.primary,
+        scheme.primary,
+        scheme.onPrimary,
+      ),
     };
 
+    final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    final compactPad = compact && ios;
     return Material(
       color: bg,
       borderRadius: BorderRadius.circular(AppTokens.radiusLg),
@@ -204,18 +207,27 @@ class UxStatusHeroBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTokens.radiusLg),
         child: Padding(
           padding: compact
-              ? const EdgeInsets.fromLTRB(10, 8, 8, 8)
+              ? EdgeInsets.fromLTRB(
+                  10,
+                  compactPad ? 12 : 8,
+                  8,
+                  compactPad ? 12 : 8,
+                )
               : const EdgeInsets.fromLTRB(14, 12, 12, 12),
           child: Row(
             children: [
               Container(
-                width: compact ? 28 : 42,
-                height: compact ? 28 : 42,
+                width: compact ? (compactPad ? 34 : 28) : 42,
+                height: compact ? (compactPad ? 34 : 28) : 42,
                 decoration: BoxDecoration(
                   color: iconColor.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(compact ? 8 : 12),
                 ),
-                child: Icon(icon, color: iconColor, size: compact ? 16 : 22),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: compact ? (compactPad ? 18 : 16) : 22,
+                ),
               ),
               SizedBox(width: compact ? 8 : 12),
               Expanded(

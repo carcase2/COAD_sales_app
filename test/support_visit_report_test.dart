@@ -23,6 +23,7 @@ void main() {
     expect(parsed.isPaid, isTrue);
     expect(parsed.amount, 85000);
     expect(parsed.depositYmd, '2026-08-27');
+    expect(parsed.depositPaid, isFalse);
     expect(parsed.parts, ['리모컨', '모터']);
     expect(parsed.photoUrls, ['https://example.com/a.jpg']);
     expect(parsed.notes, '모터 교체 완료');
@@ -56,6 +57,21 @@ void main() {
     final parsed = parseSupportVisitReport(serializeSupportVisitReport(report));
     expect(parsed!.completed, isFalse);
     expect(parsed.nextVisitYmd, '2026-08-25');
+  });
+
+  test('입금완료 여부를 저장한다', () {
+    const report = SupportVisitReport(
+      visitYmd: '2026-08-20',
+      completed: true,
+      paid: true,
+      amount: 50000,
+      depositYmd: '2026-08-27',
+      depositPaid: true,
+      notes: '입금 확인',
+    );
+    final parsed = parseSupportVisitReport(serializeSupportVisitReport(report));
+    expect(parsed!.depositPaid, isTrue);
+    expect(parsed.copyWith(depositPaid: false).depositPaid, isFalse);
   });
 
   test('상담 텍스트는 방문 기록이 아니다', () {

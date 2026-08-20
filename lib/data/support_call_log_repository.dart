@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/data/support_supabase.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
+import 'package:coad_customer_calls/models/region.dart';
 
 class SupportCallLog {
   const SupportCallLog({
@@ -381,6 +383,21 @@ class SupportCallLogRepository {
     }
   }
 
+  Future<void> updateVisitReport(SupportVisitReport report) async {
+    final id = (report.id ?? '').trim();
+    if (id.isEmpty) {
+      throw ApiException('방문 기록 id가 없습니다.');
+    }
+    try {
+      await supportSupabaseClient()
+          .from('service_requests')
+          .update({'description': serializeSupportVisitReport(report)})
+          .eq('id', id);
+    } catch (e) {
+      throw ApiException('입금 상태를 저장하지 못했습니다. $e');
+    }
+  }
+
   /// 상담 저장. 결과에 따라 완료/진행중/방문예정으로 바꾸고 미처리에서 제외한다.
   Future<void> addConsultation({
     required String callLogId,
@@ -476,13 +493,16 @@ class SupportCallLogRepository {
       try {
         final reports = await client
             .from('service_requests')
-            .select('description, call_log_id')
+            .select('id, description, call_log_id, created_by, created_at')
             .ilike('description', '$kSupportVisitReportMarker%')
             .limit(800);
         final byLog = <String, List<SupportVisitReport>>{};
         for (final row in List<Map<String, dynamic>>.from(reports)) {
           final parsed = parseSupportVisitReport(
             (row['description'] ?? '').toString(),
+            id: (row['id'] ?? '').toString(),
+            createdBy: row['created_by']?.toString(),
+            createdAt: parseSupabaseTimestampUtc(row['created_at']),
           );
           final id = (row['call_log_id'] ?? '').toString();
           if (parsed == null || id.isEmpty) continue;
@@ -521,6 +541,23 @@ class SupportCallLogRepository {
                     ymd: next,
                     log: log,
                     caption: '재방문예정',
+                  ),
+                );
+              }
+              final depositYmd = report.depositYmd ?? '';
+              if (report.isPaid &&
+                  depositYmd.isNotEmpty &&
+                  depositYmd.compareTo(fromYmd) >= 0 &&
+                  depositYmd.compareTo(toYmdInclusive) <= 0) {
+                addEvent(
+                  SupportScheduleEvent(
+                    kind: SupportScheduleKind.deposit,
+                    ymd: depositYmd,
+                    log: log,
+                    caption: report.depositPaid ? '입금완료' : '입금예정',
+                    amount: report.amount,
+                    depositPaid: report.depositPaid,
+                    visitReport: report,
                   ),
                 );
               }
@@ -583,6 +620,43 @@ class SupportCallLogRepository {
   }) {
     return listScheduleEvents(fromYmd: '2020-01-01', toYmdInclusive: todayYmd);
   }
+
+  /// 완료되지 않은 방문예정만 날짜별 건수. 같은 지점만.
+  Future<Map<String, int>> countScheduledVisitsByYmd({
+    required String fromYmd,
+    required String toYmdInclusive,
+    required String branch,
+    required List<Region> regions,
+    String? excludeLogId,
+  }) async {
+    try {
+      final rows = await supportSupabaseClient()
+          .from('call_logs')
+          .select('id, address, visit_date, service_status_id')
+          .gte('visit_date', fromYmd)
+          .lte('visit_date', toYmdInclusive)
+          .limit(800);
+      final counts = <String, int>{};
+      final skip = (excludeLogId ?? '').trim();
+      for (final row in List<Map<String, dynamic>>.from(rows)) {
+        final id = (row['id'] ?? '').toString();
+        if (skip.isNotEmpty && id == skip) continue;
+        final status = int.tryParse('${row['service_status_id'] ?? ''}');
+        if (status == kSupportStatusCompleted) continue;
+        final ymd = _rowYmd(row['visit_date']);
+        if (ymd == null || ymd.isEmpty) continue;
+        final matched = matchSupportBranchType(
+          (row['address'] ?? '').toString(),
+          regions,
+        );
+        if (matched != branch) continue;
+        counts[ymd] = (counts[ymd] ?? 0) + 1;
+      }
+      return counts;
+    } catch (e) {
+      throw ApiException('방문 가능일을 확인하지 못했습니다. $e');
+    }
+  }
 }
 
 class SupportConsultation {
@@ -612,7 +686,7 @@ class SupportConsultation {
 bool isSupportServiceStatusPending(int? status) =>
     status == null || status == 4;
 
-enum SupportScheduleKind { visit, quoteSend }
+enum SupportScheduleKind { visit, quoteSend, deposit }
 
 class SupportScheduleEvent {
   const SupportScheduleEvent({
@@ -620,15 +694,27 @@ class SupportScheduleEvent {
     required this.ymd,
     required this.log,
     this.caption,
+    this.amount,
+    this.depositPaid,
+    this.visitReport,
   });
 
   final SupportScheduleKind kind;
   final String ymd;
   final SupportCallLog log;
   final String? caption;
+  final int? amount;
+  final bool? depositPaid;
+  final SupportVisitReport? visitReport;
 
-  String get label =>
-      caption ?? (kind == SupportScheduleKind.visit ? '방문예정' : '견적서 발송예정');
+  String get label {
+    if (caption != null) return caption!;
+    return switch (kind) {
+      SupportScheduleKind.visit => '방문예정',
+      SupportScheduleKind.quoteSend => '견적서 발송예정',
+      SupportScheduleKind.deposit => (depositPaid ?? false) ? '입금완료' : '입금예정',
+    };
+  }
 }
 
 enum SupportConsultOutcome { closed, verbalQuote, quoteSend, visit }

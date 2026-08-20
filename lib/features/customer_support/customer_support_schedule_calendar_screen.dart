@@ -13,6 +13,7 @@ import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class CustomerSupportScheduleCalendarScreen extends ConsumerStatefulWidget {
@@ -121,6 +122,24 @@ class _CustomerSupportScheduleCalendarScreenState
     return _visible.where((e) => e.ymd == ymd).toList();
   }
 
+  Future<void> _toggleDepositPaid(SupportScheduleEvent event) async {
+    final report = event.visitReport;
+    if (report == null || (report.id ?? '').isEmpty) return;
+    try {
+      await ref
+          .read(supportCallLogRepositoryProvider)
+          .updateVisitReport(
+            report.copyWith(depositPaid: !(event.depositPaid ?? false)),
+          );
+      if (mounted) unawaited(_loadMonth());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+    }
+  }
+
   Future<void> _open(SupportCallLog log) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
@@ -206,7 +225,9 @@ class _CustomerSupportScheduleCalendarScreenState
     final scheme = Theme.of(context).colorScheme;
     final accent = AppTokens.customerSupportAccent(scheme);
     final sendColor = const Color(0xFFD97706);
+    final depositColor = const Color(0xFF059669);
     final dayEvents = _forDay(_selected);
+    final won = NumberFormat('#,###');
     return Scaffold(
       appBar: AppBar(
         title: const Text('방문 · 발송 달력'),
@@ -227,7 +248,9 @@ class _CustomerSupportScheduleCalendarScreenState
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: Row(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 _FilterChip(
                   label: '일정 전체',
@@ -235,7 +258,6 @@ class _CustomerSupportScheduleCalendarScreenState
                   color: accent,
                   onTap: () => setState(() => _kind = null),
                 ),
-                const SizedBox(width: 6),
                 _FilterChip(
                   label: '방문',
                   selected: _kind == SupportScheduleKind.visit,
@@ -243,13 +265,19 @@ class _CustomerSupportScheduleCalendarScreenState
                   onTap: () =>
                       setState(() => _kind = SupportScheduleKind.visit),
                 ),
-                const SizedBox(width: 6),
                 _FilterChip(
                   label: '발송',
                   selected: _kind == SupportScheduleKind.quoteSend,
                   color: sendColor,
                   onTap: () =>
                       setState(() => _kind = SupportScheduleKind.quoteSend),
+                ),
+                _FilterChip(
+                  label: '입금',
+                  selected: _kind == SupportScheduleKind.deposit,
+                  color: depositColor,
+                  onTap: () =>
+                      setState(() => _kind = SupportScheduleKind.deposit),
                 ),
               ],
             ),
@@ -338,6 +366,9 @@ class _CustomerSupportScheduleCalendarScreenState
                 final hasSend = events.any(
                   (e) => e.kind == SupportScheduleKind.quoteSend,
                 );
+                final hasDeposit = events.any(
+                  (e) => e.kind == SupportScheduleKind.deposit,
+                );
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
@@ -352,13 +383,24 @@ class _CustomerSupportScheduleCalendarScreenState
                             shape: BoxShape.circle,
                           ),
                         ),
-                      if (hasVisit && hasSend) const SizedBox(width: 3),
+                      if (hasVisit && (hasSend || hasDeposit))
+                        const SizedBox(width: 3),
                       if (hasSend)
                         Container(
                           width: 6,
                           height: 6,
                           decoration: BoxDecoration(
                             color: sendColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      if (hasSend && hasDeposit) const SizedBox(width: 3),
+                      if (hasDeposit)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: depositColor,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -383,7 +425,7 @@ class _CustomerSupportScheduleCalendarScreenState
             child: dayEvents.isEmpty
                 ? AppEmpty(
                     icon: Icons.event_available_outlined,
-                    message: '이 날 방문·발송 일정이 없습니다.',
+                    message: '이 날 방문·발송·입금 일정이 없습니다.',
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -392,7 +434,15 @@ class _CustomerSupportScheduleCalendarScreenState
                     itemBuilder: (context, i) {
                       final e = dayEvents[i];
                       final visit = e.kind == SupportScheduleKind.visit;
-                      final color = visit ? scheme.tertiary : sendColor;
+                      final deposit = e.kind == SupportScheduleKind.deposit;
+                      final color = visit
+                          ? scheme.tertiary
+                          : deposit
+                          ? depositColor
+                          : sendColor;
+                      final amountText = e.amount == null
+                          ? ''
+                          : '${won.format(e.amount)}원';
                       return Material(
                         color: color.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(14),
@@ -403,6 +453,8 @@ class _CustomerSupportScheduleCalendarScreenState
                           leading: Icon(
                             visit
                                 ? Icons.event_available_rounded
+                                : deposit
+                                ? Icons.payments_outlined
                                 : Icons.send_outlined,
                             color: color,
                           ),
@@ -413,13 +465,22 @@ class _CustomerSupportScheduleCalendarScreenState
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           subtitle: Text(
-                            e.label,
+                            [
+                              e.label,
+                              if (amountText.isNotEmpty) amountText,
+                            ].join(' · '),
                             style: TextStyle(
                               color: color,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          trailing: visit
+                          trailing: deposit
+                              ? Checkbox(
+                                  value: e.depositPaid ?? false,
+                                  onChanged: (_) =>
+                                      unawaited(_toggleDepositPaid(e)),
+                                )
+                              : visit
                               ? IconButton(
                                   tooltip: '방문 기록',
                                   icon: const Icon(
