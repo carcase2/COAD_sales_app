@@ -10,10 +10,19 @@ type PushUser = {
   fcm_token?: string | null
 }
 
+/** 임시: 고객지원 알림을 받을 추가 계정(아이디 또는 이름). */
+const EXTRA_CS_NOTIFY = new Set(['남현우'])
+
 function isAdminUser(u: PushUser): boolean {
   const role = (u.role ?? '').toString().trim().toLowerCase()
   const groupName = (u.groups?.name ?? '').toString().trim()
   return role === 'admin' || groupName === '관리자'
+}
+
+function isExtraCsNotifyUser(u: PushUser): boolean {
+  const id = (u.id ?? '').toString().trim()
+  const name = (u.name ?? '').toString().trim()
+  return EXTRA_CS_NOTIFY.has(id) || EXTRA_CS_NOTIFY.has(name)
 }
 
 async function resolveAdminUsers(
@@ -24,7 +33,7 @@ async function resolveAdminUsers(
     .select('id, name, role, fcm_token, groups(name)')
 
   if (error) throw error
-  return (users ?? []).filter((u) => u?.id && isAdminUser(u))
+  return (users ?? []).filter((u) => u?.id && (isAdminUser(u) || isExtraCsNotifyUser(u)))
 }
 
 async function resolvePushTokens(

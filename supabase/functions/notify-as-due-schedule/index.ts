@@ -12,6 +12,9 @@ type PushUser = {
 
 const CS_GROUPS = new Set(['고객지원', '고객지원팀', '관리자'])
 
+/** 임시: 고객지원 알림을 받을 추가 계정(아이디 또는 이름). */
+const EXTRA_CS_NOTIFY = new Set(['남현우'])
+
 function todayKstYmd(): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul',
@@ -61,7 +64,14 @@ function isCompleted(status: unknown): boolean {
 function isCsRecipient(u: PushUser): boolean {
   const role = (u.role ?? '').toString().trim().toLowerCase()
   const groupName = (u.groups?.name ?? '').toString().trim()
-  return role === 'admin' || CS_GROUPS.has(groupName)
+  const id = (u.id ?? '').toString().trim()
+  const name = (u.name ?? '').toString().trim()
+  return (
+    role === 'admin' ||
+    CS_GROUPS.has(groupName) ||
+    EXTRA_CS_NOTIFY.has(id) ||
+    EXTRA_CS_NOTIFY.has(name)
+  )
 }
 
 async function resolveCsUsers(
