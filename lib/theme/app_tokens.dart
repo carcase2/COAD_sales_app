@@ -46,6 +46,10 @@ class AppTokens {
   static Color daeguScheduleAccent(ColorScheme scheme) =>
       Color.lerp(const Color(0xFFDB2777), scheme.primary, 0.2)!;
 
+  /// 고객지원팀(AS) — 웹 탭과 같은 틸.
+  static Color customerSupportAccent(ColorScheme scheme) =>
+      Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.18)!;
+
   /// 접수 네비.
   static Color receptionAccent(ColorScheme scheme) => scheme.tertiary;
 

@@ -236,7 +236,7 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
                 Text(
                   _excludeAdmins
                       ? '${period.menuLabel} · 직원 ${insights.activeUserCount}명'
-                          '${adminCount > 0 ? ' (관리자 $adminCount명 제외)' : ''}'
+                            '${adminCount > 0 ? ' (관리자 $adminCount명 제외)' : ''}'
                       : '${period.menuLabel} · 앱 사용자 ${insights.activeUserCount}명',
                   style: TextStyle(
                     fontSize: 13,
@@ -324,9 +324,7 @@ class _FilterBar extends StatelessWidget {
         selectedColor: scheme.secondaryContainer,
         labelStyle: TextStyle(
           fontWeight: FontWeight.w700,
-          color: excludeAdmins
-              ? scheme.onSecondaryContainer
-              : scheme.onSurface,
+          color: excludeAdmins ? scheme.onSecondaryContainer : scheme.onSurface,
         ),
       ),
     );
@@ -519,14 +517,15 @@ class _FeatureUsagePanel extends StatelessWidget {
   final AppUsageInsights insights;
 
   IconData _iconFor(String key) => switch (key) {
-        'home' => Icons.home_rounded,
-        'reception' => Icons.phone_in_talk_rounded,
-        'issuance' => Icons.assignment_turned_in_rounded,
-        'general_schedule' => Icons.event_note_rounded,
-        'menu' => Icons.menu_rounded,
-        'settings' => Icons.settings_rounded,
-        _ => Icons.circle_outlined,
-      };
+    'home' => Icons.home_rounded,
+    'reception' => Icons.phone_in_talk_rounded,
+    'issuance' => Icons.assignment_turned_in_rounded,
+    'general_schedule' => Icons.event_note_rounded,
+    'customer_support' => Icons.support_agent_rounded,
+    'menu' => Icons.menu_rounded,
+    'settings' => Icons.settings_rounded,
+    _ => Icons.circle_outlined,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -682,7 +681,7 @@ class _HighlightRow extends StatelessWidget {
             detail: engagement == null
                 ? '—'
                 : '활용도 ${engagement.engagementScore(period.dayCount)} · '
-                    '${engagement.distinctTabs}개 기능',
+                      '${engagement.distinctTabs}개 기능',
             hint: '꾸준함·기능 활용 1위',
           ),
         ),
@@ -795,9 +794,7 @@ class _UsageRankCard extends StatelessWidget {
         : DateFormat('M/d HH:mm').format(row.lastUsed!);
     final score = row.engagementScore(period.dayCount);
     final bar = maxOpens <= 0 ? 0.0 : row.weekOpens / maxOpens;
-    final tabEntries = row.tabCounts.entries
-        .where((e) => e.value > 0)
-        .toList()
+    final tabEntries = row.tabCounts.entries.where((e) => e.value > 0).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
     return Container(
@@ -932,9 +929,7 @@ class _RankBadge extends StatelessWidget {
       height: 28,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: isTop
-            ? scheme.primary
-            : scheme.surface.withValues(alpha: 0.9),
+        color: isTop ? scheme.primary : scheme.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(8),
         border: isTop
             ? null
@@ -963,8 +958,8 @@ class _ScorePill extends StatelessWidget {
     final tone = score >= 70
         ? scheme.tertiary
         : score >= 40
-            ? scheme.primary
-            : scheme.onSurfaceVariant;
+        ? scheme.primary
+        : scheme.onSurfaceVariant;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1001,7 +996,9 @@ class _MiniTabChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.55)),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.55),
+        ),
       ),
       child: Text(
         '$label $count',

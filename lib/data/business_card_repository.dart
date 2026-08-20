@@ -9,6 +9,23 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 export 'package:coad_customer_calls/models/business_card.dart'
     show BusinessCardListFilter;
 
+/// 이름 입력으로 명함을 고를 때: 완전 일치 → 앞글자 일치 → (3글자 이상) 포함.
+BusinessCard? bestBusinessCardNameMatch(
+  String query,
+  List<BusinessCard> cards,
+) {
+  final q = query.trim().toLowerCase();
+  if (q.length < 2 || cards.isEmpty) return null;
+  for (final card in cards) {
+    if (card.name.trim().toLowerCase() == q) return card;
+  }
+  for (final card in cards) {
+    if (card.name.trim().toLowerCase().startsWith(q)) return card;
+  }
+  if (q.length < 3) return null;
+  return cards.first;
+}
+
 class BusinessCardRepository {
   BusinessCardRepository({SupabaseClient? client})
     : _client = client ?? Supabase.instance.client;
@@ -109,11 +126,32 @@ class BusinessCardRepository {
     return card;
   }
 
+  Future<List<BusinessCard>> findByName({
+    required AppUser user,
+    required String name,
+  }) async {
+    if (!canAccessBusinessCards(user)) return const [];
+    final q = _sanitizeOrValue(name);
+    if (q.length < 2) return const [];
+    final rows = await _client
+        .from('business_cards')
+        .select()
+        .isFilter('deleted_at', null)
+        .ilike('name', '%$q%')
+        .order('updated_at', ascending: false)
+        .limit(12);
+    return List<Map<String, dynamic>>.from(rows)
+        .map(BusinessCard.fromJson)
+        .where((c) => canViewBusinessCard(user, c))
+        .toList();
+  }
+
   Future<List<BusinessCard>> findByPhone({
     required AppUser user,
     required String phone,
     String? excludeId,
   }) async {
+    if (!canAccessBusinessCards(user)) return const [];
     final digits = normalizePhoneDigits(phone);
     if (digits.length < 8) return const [];
     final hyphen = formatKoreanPhoneHyphenated(digits);
@@ -124,15 +162,24 @@ class BusinessCardRepository {
         .or(
           'mobile_phone.eq.$hyphen,mobile_phone.eq.$digits,'
           'office_phone.eq.$hyphen,office_phone.eq.$digits,'
-          'fax_phone.eq.$hyphen,fax_phone.eq.$digits',
+          'fax_phone.eq.$hyphen,fax_phone.eq.$digits,'
+          'mobile_phone.ilike.%$digits%,'
+          'office_phone.ilike.%$digits%,'
+          'fax_phone.ilike.%$digits%',
         );
     if (excludeId != null && excludeId.isNotEmpty) {
       request = request.neq('id', excludeId);
     }
-    final rows = await request.limit(8);
+    final rows = await request.limit(12);
     return List<Map<String, dynamic>>.from(rows)
         .map(BusinessCard.fromJson)
         .where((c) => canViewBusinessCard(user, c))
+        .where(
+          (c) =>
+              normalizePhoneDigits(c.mobilePhone) == digits ||
+              normalizePhoneDigits(c.officePhone) == digits ||
+              normalizePhoneDigits(c.faxPhone) == digits,
+        )
         .toList();
   }
 
@@ -200,9 +247,9 @@ class BusinessCardRepository {
         .eq('card_id', cardId)
         .isFilter('deleted_at', null)
         .order('created_at');
-    return List<Map<String, dynamic>>.from(rows)
-        .map(BusinessCardComment.fromJson)
-        .toList();
+    return List<Map<String, dynamic>>.from(
+      rows,
+    ).map(BusinessCardComment.fromJson).toList();
   }
 
   Future<BusinessCardComment> addComment({

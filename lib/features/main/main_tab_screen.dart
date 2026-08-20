@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
+import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
@@ -19,6 +20,9 @@ import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_list_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_hub_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
@@ -586,12 +590,29 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   Future<void> _openReceptionCreate() async {
-    await Navigator.of(context).push(
-      AppMotion.fadeSlideRoute<void>(
-        settings: const RouteSettings(name: kSalesCallCreateRouteName),
-        builder: (_) => const SalesCallCreateScreen(),
-      ),
-    );
+    final kind = await showReceptionKindSheet(context);
+    if (!mounted || kind == null) return;
+    await _openReceptionForKind(kind);
+  }
+
+  Future<void> _openReceptionForKind(ReceptionKind kind) async {
+    final user = ref.read(authControllerProvider);
+    switch (kind) {
+      case ReceptionKind.afterSales:
+        _trackTab(user, 'customer_support');
+        await Navigator.of(context).push(
+          AppMotion.fadeSlideRoute<void>(
+            builder: (_) => const CustomerSupportIntakeScreen(),
+          ),
+        );
+      case ReceptionKind.sales:
+        await Navigator.of(context).push(
+          AppMotion.fadeSlideRoute<void>(
+            settings: const RouteSettings(name: kSalesCallCreateRouteName),
+            builder: (_) => const SalesCallCreateScreen(),
+          ),
+        );
+    }
   }
 
   /// 접수 롱프레스 — 목록 바로가기(탭은 등록으로 직행).
@@ -621,7 +642,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '탭: 새 접수 · 길게: 이 메뉴',
+                  '탭: A/S·영업 선택 · 길게: 이 메뉴',
                   style: TextStyle(
                     fontSize: 12,
                     color: scheme.onSurfaceVariant,
@@ -630,9 +651,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 ),
                 const SizedBox(height: 10),
                 FilledButton.icon(
-                  onPressed: () => Navigator.of(context).pop('create'),
-                  icon: const Icon(Icons.add_ic_call_rounded),
-                  label: const Text('새 접수 등록'),
+                  onPressed: () => Navigator.of(context).pop('as'),
+                  icon: const Icon(Icons.handyman_outlined),
+                  label: const Text('A/S 접수'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(
+                      AppTokens.primaryCtaHeight,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () => Navigator.of(context).pop('sales'),
+                  icon: const Icon(Icons.phone_in_talk_outlined),
+                  label: const Text('영업 접수'),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(
                       AppTokens.primaryCtaHeight,
@@ -681,8 +713,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     );
     if (!mounted || selected == null) return;
     switch (selected) {
-      case 'create':
-        unawaited(_openReceptionCreate());
+      case 'as':
+        unawaited(_openReceptionForKind(ReceptionKind.afterSales));
+      case 'sales':
+        unawaited(_openReceptionForKind(ReceptionKind.sales));
       case 'today':
         await _openTodayReceptionList();
       case 'incomplete':
@@ -1058,6 +1092,25 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         AppMenuSection(id: 'account', title: '계정'),
       ],
       entries: [
+        if (canAccessCustomerSupport(user))
+          AppMenuEntry(
+            id: 'customer_support',
+            sectionId: 'tools',
+            icon: Icons.support_agent_rounded,
+            title: '고객지원팀',
+            subtitle: 'AS 현장검색 · 접수 · 수금 · 견적',
+            quickAccess: true,
+            quickLabel: '고객지원',
+            keywords: const ['고객지원', '지원팀', 'AS', 'A/S', '현장검색', '수금', 'FAQ'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'customer_support');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const CustomerSupportHubScreen(),
+                ),
+              );
+            }),
+          ),
         AppMenuEntry(
           id: 'shutter_quoter',
           sectionId: 'tools',
@@ -1115,15 +1168,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           subtitle: 'MES 아카이브 체크시트(TP1) 조회',
           quickAccess: true,
           quickLabel: '체크시트',
-          keywords: const [
-            '체크시트',
-            '체크',
-            'TP1',
-            '아카이브',
-            '현장',
-            '사진',
-            'MES',
-          ],
+          keywords: const ['체크시트', '체크', 'TP1', '아카이브', '현장', '사진', 'MES'],
           onTap: () => closeDrawerThen(() {
             _trackTab(user, 'checksheet');
             Navigator.of(hostContext).push(
