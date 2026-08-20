@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/data/general_schedule_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/usage_repository.dart';
 import 'package:coad_customer_calls/data/ai_extractor_service.dart';
+import 'package:coad_customer_calls/data/business_card_repository.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -52,3 +53,7 @@ final estimateDocumentRepositoryProvider = Provider<EstimateDocumentRepository>(
     return EstimateDocumentRepository();
   },
 );
+
+final businessCardRepositoryProvider = Provider<BusinessCardRepository>((ref) {
+  return BusinessCardRepository();
+});

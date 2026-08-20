@@ -13,4 +13,11 @@ void main() {
     expect(msg, '네트워크 연결을 확인한 뒤 다시 시도해 주세요.');
     expect(msg.length, lessThan(80));
   });
+
+  test('koreanErrorMessage — StateError 본문을 보여준다', () {
+    expect(
+      koreanErrorMessage(StateError('명함 인식 API 키가 없습니다.')),
+      '명함 인식 API 키가 없습니다.',
+    );
+  });
 }

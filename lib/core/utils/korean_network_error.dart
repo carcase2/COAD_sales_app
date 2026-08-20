@@ -21,8 +21,12 @@ String koreanErrorMessage(Object error) {
   }
   if (error is ApiException) return error.message;
   if (error is SalesCallConsultationValidationException) return error.message;
-  if (error is Exception) {
-    return error.toString().replaceFirst('Exception: ', '');
-  }
+  final cleaned = error
+      .toString()
+      .replaceFirst(RegExp(r'^Exception: '), '')
+      .replaceFirst(RegExp(r'^Bad state: '), '')
+      .replaceFirst(RegExp(r'^[A-Za-z]+Error: '), '')
+      .trim();
+  if (cleaned.isNotEmpty) return cleaned;
   return '알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 }

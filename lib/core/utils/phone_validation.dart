@@ -10,9 +10,21 @@ bool isValidKoreanPhone(String input) {
 String normalizePhoneDigits(String input) => input.replaceAll(RegExp(r'\D'), '');
 
 /// `010-5660-6005` ↔ `01056606005` 등 표기 차이를 검색에 반영.
+/// 15xx·16xx·18xx 전국대표번호(8자리)는 4-4 (`1899-7081`).
 String formatKoreanPhoneHyphenated(String digitsOnly) {
   final d = normalizePhoneDigits(digitsOnly);
   if (d.length <= 3) return d;
+
+  // 1588-1234, 1899-7081 등. 010… 입력 중(8자리)과 구분.
+  if (d.length == 8 && d.startsWith('1') && !d.startsWith('01')) {
+    return '${d.substring(0, 4)}-${d.substring(4)}';
+  }
+
+  if (d.startsWith('02') && d.length >= 9) {
+    final split = d.length == 9 ? 5 : 6;
+    return '${d.substring(0, 2)}-${d.substring(2, split)}-${d.substring(split)}';
+  }
+
   if (d.length <= 7) {
     return '${d.substring(0, 3)}-${d.substring(3)}';
   }

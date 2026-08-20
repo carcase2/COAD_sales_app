@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
+import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
@@ -17,6 +18,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_screen.da
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
+import 'package:coad_customer_calls/features/business_cards/business_card_list_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
@@ -1066,6 +1068,25 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           keywords: const ['견적', '셔터', '견적기', 'estimator', '단가', '모터', '슬라트'],
           onTap: () => closeDrawerThen(_selectQuoterTab),
         ),
+        if (canAccessBusinessCards(user))
+          AppMenuEntry(
+            id: 'business_cards',
+            sectionId: 'tools',
+            icon: Icons.contact_page_outlined,
+            title: '명함 수첩',
+            subtitle: '촬영 인식 · 검색 · 댓글',
+            quickAccess: true,
+            quickLabel: '명함',
+            keywords: const ['명함', '명함수첩', '연락처', 'OCR', '카드', '고객'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'business_cards');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const BusinessCardListScreen(),
+                ),
+              );
+            }),
+          ),
         AppMenuEntry(
           id: 'checksheet_search',
           sectionId: 'tools',
