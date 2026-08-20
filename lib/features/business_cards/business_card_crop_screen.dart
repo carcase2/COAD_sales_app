@@ -2,8 +2,11 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:coad_customer_calls/data/business_card_detect.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -22,26 +25,30 @@ Future<String?> cropBusinessCardImage(
   );
 }
 
-class BusinessCardCropScreen extends StatefulWidget {
+class BusinessCardCropScreen extends ConsumerStatefulWidget {
   const BusinessCardCropScreen({super.key, required this.imagePath});
 
   final String imagePath;
 
   @override
-  State<BusinessCardCropScreen> createState() => _BusinessCardCropScreenState();
+  ConsumerState<BusinessCardCropScreen> createState() =>
+      _BusinessCardCropScreenState();
 }
 
 enum _DragKind { none, move, nw, ne, sw, se }
 
-class _BusinessCardCropScreenState extends State<BusinessCardCropScreen> {
+class _BusinessCardCropScreenState
+    extends ConsumerState<BusinessCardCropScreen> {
   ui.Image? _image;
+  Uint8List? _bytes;
   Rect _crop = Rect.zero;
   Size _viewSize = Size.zero;
   _DragKind _drag = _DragKind.none;
   Offset _dragStart = Offset.zero;
   Rect _cropAtStart = Rect.zero;
   bool _saving = false;
-  bool _lockAspect = true;
+  bool _lockAspect = false;
+  bool _detecting = true;
 
   @override
   void initState() {
@@ -54,7 +61,63 @@ class _BusinessCardCropScreenState extends State<BusinessCardCropScreen> {
     final codec = await ui.instantiateImageCodec(bytes);
     final frame = await codec.getNextFrame();
     if (!mounted) return;
-    setState(() => _image = frame.image);
+    setState(() {
+      _bytes = bytes;
+      _image = frame.image;
+    });
+    await _detectAndApply();
+  }
+
+  Future<void> _detectAndApply() async {
+    final bytes = _bytes;
+    if (bytes == null) return;
+    setState(() => _detecting = true);
+    NormalizedCardBox? box = await detectBusinessCardBox(bytes);
+    if (box == null && mounted) {
+      try {
+        box = await ref
+            .read(aiExtractorServiceProvider)
+            .detectBusinessCardBoxAi(bytes);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() => _detecting = false);
+    if (box == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('테두리를 찾지 못했습니다. 네모를 직접 맞춰 주세요.')),
+      );
+      return;
+    }
+    _applyNormalizedBox(box);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          box.isPortrait ? '세로 명함 테두리를 맞췄습니다.' : '가로 명함 테두리를 맞췄습니다.',
+        ),
+      ),
+    );
+  }
+
+  void _applyNormalizedBox(NormalizedCardBox box) {
+    if (_viewSize == Size.zero) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyNormalizedBox(box);
+      });
+      return;
+    }
+    final disp = _imageDisplayRect(_viewSize);
+    if (disp.isEmpty) return;
+    final next = Rect.fromLTRB(
+      disp.left + box.left * disp.width,
+      disp.top + box.top * disp.height,
+      disp.left + box.right * disp.width,
+      disp.top + box.bottom * disp.height,
+    );
+    setState(() {
+      _lockAspect = false;
+      _crop = _clampTo(next, disp);
+    });
   }
 
   Rect _imageDisplayRect(Size view) {
@@ -258,8 +321,13 @@ class _BusinessCardCropScreenState extends State<BusinessCardCropScreen> {
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
         ),
         actions: [
+          if (!_detecting)
+            TextButton(
+              onPressed: _saving ? null : _detectAndApply,
+              child: const Text('다시 찾기', style: TextStyle(color: Colors.white)),
+            ),
           TextButton(
-            onPressed: _saving ? null : _confirm,
+            onPressed: _saving || _detecting ? null : _confirm,
             child: Text(
               _saving ? '저장 중…' : '이 영역만 저장',
               style: const TextStyle(
@@ -274,6 +342,7 @@ class _BusinessCardCropScreenState extends State<BusinessCardCropScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                if (_detecting) const LinearProgressIndicator(minHeight: 2),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
@@ -304,14 +373,16 @@ class _BusinessCardCropScreenState extends State<BusinessCardCropScreen> {
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text(
-                            '명함 비율 고정 (90×50)',
+                            '명함 비율 고정 (90×50 가로)',
                             style: TextStyle(color: Colors.white, fontSize: 14),
                           ),
                           value: _lockAspect,
                           onChanged: (v) => setState(() => _lockAspect = v),
                         ),
                         Text(
-                          '모서리를 끌어 명함에 맞춘 뒤 저장하세요. 잘린 사진만 보관됩니다.',
+                          _detecting
+                              ? '세로·가로 명함 테두리를 찾는 중…'
+                              : '테두리를 맞췄습니다. 틀리면 네모를 조정한 뒤 저장하세요.',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.7),
                             fontSize: 12,

@@ -96,6 +96,63 @@ class BusinessCardBlacklistChip extends StatelessWidget {
   }
 }
 
+Future<void> openBusinessCardImageViewer(
+  BuildContext context, {
+  required String url,
+  String title = '명함 사진',
+}) {
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => _BusinessCardImageViewer(url: url, title: title),
+    ),
+  );
+}
+
+class _BusinessCardImageViewer extends StatelessWidget {
+  const _BusinessCardImageViewer({required this.url, required this.title});
+
+  final String url;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+        ),
+      ),
+      body: InteractiveViewer(
+        minScale: 0.7,
+        maxScale: 6,
+        child: Center(
+          child: CachedAppImage(
+            url: url,
+            fit: BoxFit.contain,
+            placeholder: const Padding(
+              padding: EdgeInsets.all(48),
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+            errorWidget: const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                '이미지를 불러올 수 없습니다.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 InputDecoration businessCardInputDecoration(BuildContext context, String hint) {
   final scheme = Theme.of(context).colorScheme;
   return InputDecoration(

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:coad_customer_calls/core/network/api_exception.dart';
+import 'package:coad_customer_calls/data/business_card_detect.dart';
 import 'package:coad_customer_calls/data/business_card_ocr.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
@@ -166,6 +167,60 @@ class AiExtractorService {
       }
     }
     throw lastError ?? ApiException('명함 인식에 실패했습니다.');
+  }
+
+  static const _cardBoxPrompt = '''
+사진에서 명함(종이 카드)의 테두리를 찾아 JSON만 반환하세요. 세로 명함·가로 명함 모두 해당합니다.
+좌표는 이미지 비율 0~1. 명함 바깥 배경은 제외한 꽉 맞는 사각형.
+{
+  "left": 0.0,
+  "top": 0.0,
+  "right": 1.0,
+  "bottom": 1.0
+}
+''';
+
+  Future<NormalizedCardBox?> detectBusinessCardBoxAi(Uint8List imageBytes) async {
+    if (apiKey.trim().isEmpty) return null;
+    final mime = _imageMime(imageBytes);
+    for (final modelName in _businessCardModels) {
+      try {
+        final model = GenerativeModel(
+          model: modelName,
+          apiKey: apiKey,
+          generationConfig: GenerationConfig(
+            responseMimeType: 'application/json',
+            temperature: 0.0,
+          ),
+        );
+        final response = await model.generateContent([
+          Content.multi([
+            TextPart(_cardBoxPrompt),
+            DataPart(mime, imageBytes),
+          ]),
+        ]);
+        final text = response.text?.trim() ?? '';
+        if (text.isEmpty) continue;
+        final json = jsonDecode(_cleanJson(text)) as Map<String, dynamic>;
+        double n(Object? v) {
+          if (v is num) return v.toDouble();
+          return double.tryParse(v?.toString() ?? '') ?? -1;
+        }
+        final box = NormalizedCardBox(
+          left: n(json['left']).clamp(0.0, 1.0),
+          top: n(json['top']).clamp(0.0, 1.0),
+          right: n(json['right']).clamp(0.0, 1.0),
+          bottom: n(json['bottom']).clamp(0.0, 1.0),
+        );
+        if (box.right - box.left < 0.12 || box.bottom - box.top < 0.12) {
+          continue;
+        }
+        return box;
+      } catch (e) {
+        debugPrint('명함 테두리 인식 실패 $modelName: $e');
+      }
+    }
+    return null;
   }
 
   static String _humanizeOcrError(Object error) {
