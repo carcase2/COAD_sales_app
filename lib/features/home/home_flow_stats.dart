@@ -286,6 +286,7 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
     this.onTapAllPending,
     this.allIncomplete = 0,
     this.onTapAllIncomplete,
+    this.headerAlert,
     this.compact = true,
   });
 
@@ -305,6 +306,7 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
   final VoidCallback? onTapAllPending;
   final int allIncomplete;
   final VoidCallback? onTapAllIncomplete;
+  final Widget? headerAlert;
   final bool compact;
 
   @override
@@ -328,6 +330,7 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
               height: 1.1,
             ),
           ),
+          if (headerAlert != null) ...[SizedBox(height: gap), headerAlert!],
           SizedBox(height: gap),
           IntrinsicHeight(
             child: Row(
