@@ -28,6 +28,7 @@ class HomeMiniStatsWidget extends StatefulWidget {
     this.onLongPressTodayFollow,
     this.onLongPressUpdated,
     this.compact = false,
+    this.headerAlerts = const [],
   });
 
   final String receptionLabel;
@@ -52,6 +53,7 @@ class HomeMiniStatsWidget extends StatefulWidget {
   final VoidCallback onTapUncalledRate;
   final VoidCallback onTapFirstResponse;
   final bool compact;
+  final List<Widget> headerAlerts;
 
   @override
   State<HomeMiniStatsWidget> createState() => _HomeMiniStatsWidgetState();
@@ -59,6 +61,9 @@ class HomeMiniStatsWidget extends StatefulWidget {
 
 bool _iosHomeCards(BuildContext context) =>
     Theme.of(context).platform == TargetPlatform.iOS;
+
+bool _isBlankAlert(Widget w) =>
+    w is SizedBox && (w.width ?? 0) == 0 && (w.height ?? 0) == 0;
 
 class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
   bool _qualityExpanded = false;
@@ -86,7 +91,12 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
               ),
             ),
           ),
-          SizedBox(height: gap),
+          if (widget.headerAlerts.isNotEmpty) ...[
+            for (final alert in widget.headerAlerts)
+              if (!_isBlankAlert(alert)) ...[SizedBox(height: gap), alert],
+            SizedBox(height: gap),
+          ] else
+            SizedBox(height: gap),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -272,6 +282,10 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
     required this.onTapPending,
     required this.onTapVisit,
     required this.onTapUpdated,
+    this.allPending = 0,
+    this.onTapAllPending,
+    this.allIncomplete = 0,
+    this.onTapAllIncomplete,
     this.compact = true,
   });
 
@@ -287,6 +301,10 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
   final VoidCallback onTapPending;
   final VoidCallback onTapVisit;
   final VoidCallback onTapUpdated;
+  final int allPending;
+  final VoidCallback? onTapAllPending;
+  final int allIncomplete;
+  final VoidCallback? onTapAllIncomplete;
   final bool compact;
 
   @override
@@ -368,7 +386,99 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
               ],
             ),
           ),
+          if (onTapAllPending != null || onTapAllIncomplete != null) ...[
+            SizedBox(height: gap),
+            Row(
+              children: [
+                if (onTapAllPending != null)
+                  Expanded(
+                    child: _HomeWideStat(
+                      icon: Icons.phone_callback_rounded,
+                      label: '전체 미처리',
+                      count: allPending,
+                      accent: accent,
+                      alert: allPending > 0,
+                      onTap: onTapAllPending!,
+                    ),
+                  ),
+                if (onTapAllPending != null && onTapAllIncomplete != null)
+                  SizedBox(width: gap),
+                if (onTapAllIncomplete != null)
+                  Expanded(
+                    child: _HomeWideStat(
+                      icon: Icons.assignment_late_outlined,
+                      label: '전체 미완료',
+                      count: allIncomplete,
+                      accent: accent,
+                      alert: allIncomplete > 0,
+                      onTap: onTapAllIncomplete!,
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _HomeWideStat extends StatelessWidget {
+  const _HomeWideStat({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.accent,
+    required this.alert,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color accent;
+  final bool alert;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: alert
+          ? scheme.errorContainer.withValues(alpha: 0.7)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: alert ? scheme.error : accent),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: alert ? scheme.error : accent,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

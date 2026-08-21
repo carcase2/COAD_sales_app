@@ -46,6 +46,7 @@ class SupportQuoteDocument {
     required this.id,
     required this.customerName,
     this.phone = '',
+    this.email = '',
     this.site = '',
     this.address = '',
     required this.ymd,
@@ -58,6 +59,7 @@ class SupportQuoteDocument {
   final String id;
   final String customerName;
   final String phone;
+  final String email;
   final String site;
   final String address;
   final String ymd;
@@ -72,6 +74,7 @@ class SupportQuoteDocument {
     'id': id,
     'customerName': customerName,
     'phone': phone,
+    'email': email,
     'site': site,
     'address': address,
     'ymd': ymd,
@@ -87,6 +90,7 @@ class SupportQuoteDocument {
       id: (json['id'] ?? '').toString(),
       customerName: (json['customerName'] ?? '').toString(),
       phone: (json['phone'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
       site: (json['site'] ?? '').toString(),
       address: (json['address'] ?? '').toString(),
       ymd: (json['ymd'] ?? '').toString(),
@@ -112,6 +116,7 @@ bool supportQuoteMatches(SupportQuoteDocument doc, String query) {
   final blob = [
     doc.customerName,
     doc.phone,
+    doc.email,
     doc.site,
     doc.address,
     doc.note,
@@ -119,6 +124,33 @@ bool supportQuoteMatches(SupportQuoteDocument doc, String query) {
     ...doc.lines.map((e) => '${e.name} ${e.spec} ${e.note}'),
   ].join(' ').toLowerCase();
   return blob.contains(q);
+}
+
+String supportQuoteFileStem(SupportQuoteDocument doc) {
+  final raw = doc.customerName.trim().isEmpty ? '고객' : doc.customerName.trim();
+  final safe = raw.replaceAll(RegExp(r'[\\/:*?"<>|\s]+'), '_');
+  final day = doc.ymd.trim().isEmpty ? '' : '_${doc.ymd.trim()}';
+  return 'AS견적서_$safe$day';
+}
+
+String supportQuoteEmailSubject(SupportQuoteDocument doc) {
+  final name = doc.customerName.trim().isEmpty ? '고객' : doc.customerName.trim();
+  return '[COAD A/S 견적서] $name ${doc.ymd}'.trim();
+}
+
+String supportQuoteEmailBody(
+  SupportQuoteDocument doc, {
+  required String totalLabel,
+}) {
+  final name = doc.customerName.trim().isEmpty ? '고객' : doc.customerName.trim();
+  final site = doc.site.trim();
+  return [
+    '$name 고객님 A/S 견적서입니다.',
+    if (site.isNotEmpty) '현장: $site',
+    '견적일: ${doc.ymd}',
+    '합계: $totalLabel',
+    '첨부된 견적서를 확인해 주세요.',
+  ].join('\n');
 }
 
 const _prefsKey = 'support_as_quotes_v1';

@@ -78,4 +78,84 @@ void main() {
     expect(isSupportVisitReportText('[결과: 방문 요청 · 방문예정 2026-08-20]'), isFalse);
     expect(parseSupportVisitReport('현장 확인'), isNull);
   });
+
+  test('완료+유상은 금액·입금예정일이 필요하다', () {
+    expect(
+      supportVisitReportIssue(
+        const SupportVisitReport(
+          visitYmd: '2026-08-20',
+          completed: true,
+          paid: true,
+          notes: '교체 완료',
+        ),
+      ),
+      '유상이면 금액을 입력해 주세요.',
+    );
+    expect(
+      supportVisitReportIssue(
+        const SupportVisitReport(
+          visitYmd: '2026-08-20',
+          completed: true,
+          paid: true,
+          amount: 85000,
+          notes: '교체 완료',
+        ),
+      ),
+      '유상이면 입금예정일을 선택해 주세요.',
+    );
+    expect(
+      supportVisitReportIssue(
+        const SupportVisitReport(
+          visitYmd: '2026-08-20',
+          completed: true,
+          paid: true,
+          amount: 85000,
+          depositYmd: '2026-08-27',
+          notes: '교체 완료',
+        ),
+      ),
+      isNull,
+    );
+  });
+
+  test('미완료는 다음 방문일만 필요하고 유상은 보지 않는다', () {
+    expect(
+      supportVisitReportIssue(
+        const SupportVisitReport(
+          visitYmd: '2026-08-20',
+          completed: false,
+          paid: true,
+          amount: 1000,
+          notes: '부품 대기',
+        ),
+      ),
+      '미완료이면 다음 방문일을 선택해 주세요.',
+    );
+    expect(
+      supportVisitReportIssue(
+        const SupportVisitReport(
+          visitYmd: '2026-08-20',
+          completed: false,
+          paid: false,
+          nextVisitYmd: '2026-08-25',
+          notes: '부품 대기',
+        ),
+      ),
+      isNull,
+    );
+  });
+
+  test('완료+무상은 금액 없이 저장한다', () {
+    expect(
+      supportVisitReportIssue(
+        const SupportVisitReport(
+          visitYmd: '2026-08-20',
+          completed: true,
+          paid: false,
+          notes: '무상 점검',
+        ),
+      ),
+      isNull,
+    );
+  });
 }

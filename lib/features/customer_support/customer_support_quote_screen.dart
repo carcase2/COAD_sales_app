@@ -23,7 +23,7 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               children: [
                 const SupportComingSoonBanner(
-                  message: 'A/S 단가표는 직접 입력·검색합니다. 메일·이미지 저장은 다음 작업입니다.',
+                  message: 'A/S 견적서를 작성하면 이미지·PDF 저장과 이메일 발송이 됩니다.',
                 ),
                 if (site != null) ...[
                   const SizedBox(height: 8),
@@ -56,28 +56,14 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 SupportSectionCard(
-                  title: '견적서 작성',
-                  subtitle: '고객지원팀 전용 양식 · 검색 (영업 견적서 아님)',
+                  title: '견적서 작성 · 발송',
+                  subtitle: 'A/S 양식 작성 → 이미지/PDF 저장 → 이메일',
                   icon: Icons.edit_document,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => SupportQuoteWriterScreen(site: site),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                SupportSectionCard(
-                  title: 'B. 이메일 발송',
-                  subtitle: 'PDF 변환 후 메일',
-                  icon: Icons.email_outlined,
-                  onTap: () => showSupportSkeletonSnack(context, '이메일 PDF 발송'),
-                ),
-                const SizedBox(height: 8),
-                SupportSectionCard(
-                  title: 'C. 휴대폰 이미지 저장',
-                  subtitle: '견적서 이미지로 보관',
-                  icon: Icons.photo_outlined,
-                  onTap: () => showSupportSkeletonSnack(context, '이미지 저장'),
                 ),
                 const SizedBox(height: 8),
                 SupportSectionCard(

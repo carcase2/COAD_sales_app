@@ -6,7 +6,6 @@ import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_date_picker.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -149,47 +148,35 @@ class _SupportVisitReportSheetState
   }
 
   Future<void> _save() async {
-    if (_notesCtrl.text.trim().isEmpty) {
+    final paid = _completed && _paid;
+    final report = SupportVisitReport(
+      visitYmd: _visitYmd,
+      completed: _completed,
+      paid: paid,
+      amount: paid ? _amount : null,
+      depositYmd: paid ? _depositYmd : null,
+      depositPaid: paid && _depositPaid,
+      parts: List.of(_parts),
+      photoUrls: _completed ? List.of(_photos) : const [],
+      nextVisitYmd: _completed ? null : _nextVisitYmd,
+      notes: _notesCtrl.text.trim(),
+      createdBy:
+          ref.read(authControllerProvider)?.name ??
+          ref.read(authControllerProvider)?.id,
+    );
+    final issue = supportVisitReportIssue(report);
+    if (issue != null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('방문 내용을 입력해 주세요.')));
-      return;
-    }
-    if (_paid && _amount == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('유상이면 금액을 입력해 주세요.')));
-      return;
-    }
-    if (!_completed && (_nextVisitYmd == null || _nextVisitYmd!.isEmpty)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('미완료이면 다음 방문일을 선택해 주세요.')));
+      ).showSnackBar(SnackBar(content: Text(issue)));
       return;
     }
     setState(() => _saving = true);
     try {
-      final user = ref.read(authControllerProvider);
-      final paid = _paid && _amount != null;
       await ref
           .read(supportCallLogRepositoryProvider)
-          .addVisitReport(
-            callLogId: widget.log.id,
-            report: SupportVisitReport(
-              visitYmd: _visitYmd,
-              completed: _completed,
-              paid: paid,
-              amount: paid ? _amount : null,
-              depositYmd: paid ? _depositYmd : null,
-              depositPaid: paid && _depositPaid,
-              parts: List.of(_parts),
-              photoUrls: _completed ? List.of(_photos) : const [],
-              nextVisitYmd: _completed ? null : _nextVisitYmd,
-              notes: _notesCtrl.text.trim(),
-              createdBy: user?.name ?? user?.id,
-            ),
-          );
-      ref.invalidate(supportHomeStatsProvider);
+          .addVisitReport(callLogId: widget.log.id, report: report);
+      invalidateSupportWorkCaches(ref);
       unawaited(refreshSupportDueReminders(ref));
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -222,7 +209,7 @@ class _SupportVisitReportSheetState
             ),
             const SizedBox(height: 4),
             Text(
-              '${widget.log.customerName} · 현장 방문 내용이 접수에 남습니다',
+              '${widget.log.customerName} · 완료하면 유무상·입금을 챙기고, 미완료면 다음 방문일을 잡습니다',
               style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
             ),
             if (writer.isNotEmpty) ...[
@@ -260,55 +247,77 @@ class _SupportVisitReportSheetState
               ),
             ),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
+            Row(
               children: [
-                ChoiceChip(
-                  label: const Text('완료'),
-                  selected: _completed,
-                  onSelected: _saving
-                      ? null
-                      : (_) => setState(() => _completed = true),
+                Expanded(
+                  child: _FlowChip(
+                    label: '완료',
+                    selected: _completed,
+                    color: AppTokens.success(scheme),
+                    enabled: !_saving,
+                    onTap: () => setState(() => _completed = true),
+                  ),
                 ),
-                ChoiceChip(
-                  label: const Text('미완료 · 재방문'),
-                  selected: !_completed,
-                  onSelected: _saving
-                      ? null
-                      : (_) => setState(() => _completed = false),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _FlowChip(
+                    label: '미완료 · 재방문',
+                    selected: !_completed,
+                    color: scheme.error,
+                    enabled: !_saving,
+                    onTap: () => setState(() => _completed = false),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
-              '유상 / 무상',
+              _completed
+                  ? '완료면 유무상을 고르고, 유상이면 금액·입금예정일로 입금을 챙깁니다.'
+                  : '끝나지 않았으면 다음 방문일을 잡고 다시 방문합니다.',
               style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: scheme.onSurfaceVariant,
+                fontSize: 12.5,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurface,
               ),
             ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('무상'),
-                  selected: !_paid,
-                  onSelected: _saving
-                      ? null
-                      : (_) => setState(() => _paid = false),
+            if (_completed) ...[
+              const SizedBox(height: 12),
+              Text(
+                '유상 / 무상',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurfaceVariant,
                 ),
-                ChoiceChip(
-                  label: const Text('유상'),
-                  selected: _paid,
-                  onSelected: _saving
-                      ? null
-                      : (_) => setState(() => _paid = true),
-                ),
-              ],
-            ),
-            if (_paid) ...[
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _FlowChip(
+                      label: '무상',
+                      selected: !_paid,
+                      color: scheme.primary,
+                      enabled: !_saving,
+                      onTap: () => setState(() => _paid = false),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _FlowChip(
+                      label: '유상',
+                      selected: _paid,
+                      color: const Color(0xFFD97706),
+                      enabled: !_saving,
+                      onTap: () => setState(() => _paid = true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (_completed && _paid) ...[
               const SizedBox(height: 10),
               TextField(
                 controller: _amountCtrl,
@@ -339,7 +348,9 @@ class _SupportVisitReportSheetState
                 leading: const Icon(Icons.payments_outlined),
                 title: const Text('입금예정일'),
                 subtitle: Text(
-                  _depositYmd == null ? '선택 (선택 사항)' : _ymdLabel(_depositYmd!),
+                  _depositYmd == null
+                      ? '달력에서 입금을 챙기려면 날짜를 선택'
+                      : _ymdLabel(_depositYmd!),
                 ),
                 trailing: const Icon(Icons.event_rounded),
                 onTap: _saving
@@ -480,11 +491,76 @@ class _SupportVisitReportSheetState
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('저장'),
+                      : Text(
+                          _completed
+                              ? (_paid ? '완료 · 입금예정 저장' : '완료 저장')
+                              : '재방문 저장',
+                        ),
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FlowChip extends StatelessWidget {
+  const _FlowChip({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: Material(
+        color: selected
+            ? color
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.72),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: selected
+                ? color
+                : scheme.outlineVariant.withValues(alpha: 0.75),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled
+              ? () {
+                  HapticFeedback.selectionClick();
+                  onTap();
+                }
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                color: selected ? Colors.white : scheme.onSurface,
+              ),
+            ),
+          ),
         ),
       ),
     );

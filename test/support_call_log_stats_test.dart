@@ -12,6 +12,14 @@ void main() {
     expect(isSupportServiceStatusPending(5), isFalse);
   });
 
+  test('마무리·방문 완료만 완료이고 나머지는 미완료', () {
+    expect(isSupportServiceStatusIncomplete(null), isTrue);
+    expect(isSupportServiceStatusIncomplete(4), isTrue);
+    expect(isSupportServiceStatusIncomplete(2), isTrue);
+    expect(isSupportServiceStatusIncomplete(5), isTrue);
+    expect(isSupportServiceStatusIncomplete(1), isFalse);
+  });
+
   test('parseSupportIssueBody reads urgency, product, site, body', () {
     final parsed = parseSupportIssueBody('[긴급도 상] 오버헤드도어\n현장: 항\n가');
     expect(parsed.urgency, SupportUrgency.high);
@@ -51,6 +59,192 @@ void main() {
     expect(parsed.outcome, SupportConsultOutcome.visit);
     expect(parsed.ymd, '2026-08-25');
     expect(parsed.body, '현장 확인 후 교체');
+  });
+
+  test('견적서 발송예정에 발송완료 날짜를 남긴다', () {
+    final planned = supportConsultOutcomeLine(
+      SupportConsultOutcome.quoteSend,
+      ymd: '2026-08-22',
+    );
+    expect(planned, '[결과: 견적서 발송 · 발송예정 2026-08-22]');
+    final parsed = parseSupportConsultation('$planned\n단가 안내');
+    expect(parsed.outcome, SupportConsultOutcome.quoteSend);
+    expect(parsed.ymd, '2026-08-22');
+    expect(parsed.sentYmd, isNull);
+    final sent = rewriteSupportQuoteSentLine(
+      '$planned\n단가 안내',
+      sentYmd: '2026-08-23',
+    );
+    expect(sent, contains('발송완료 2026-08-23'));
+    final done = parseSupportConsultation(sent);
+    expect(done.sentYmd, '2026-08-23');
+    expect(done.ymd, '2026-08-22');
+    expect(done.body, '단가 안내');
+    final cleared = rewriteSupportQuoteSentLine(sent);
+    expect(parseSupportConsultation(cleared).sentYmd, isNull);
+  });
+
+  test('발송 완료된 견적서는 예정 알림에서 빼다', () {
+    SupportCallLog log({required String id}) => SupportCallLog(
+      id: id,
+      customerName: id,
+      customerPhone: '010',
+      issue: 'x',
+      serviceStatusId: kSupportStatusInProgress,
+    );
+    final summary = SupportDueScheduleSummary.fromEvents([
+      SupportScheduleEvent(
+        kind: SupportScheduleKind.quoteSend,
+        ymd: '2026-08-20',
+        log: log(id: 'open'),
+      ),
+      SupportScheduleEvent(
+        kind: SupportScheduleKind.quoteSend,
+        ymd: '2026-08-20',
+        log: log(id: 'done'),
+        quoteSentYmd: '2026-08-20',
+      ),
+    ], '2026-08-20');
+    expect(summary.todaySend, 1);
+  });
+
+  test('방문 기록은 방문 요청으로 일정이 잡힌 뒤에만 필요하다', () {
+    expect(supportVisitRecordAllowed(), isFalse);
+    expect(
+      supportVisitRecordAllowed(
+        consultationDescriptions: ['[결과: 마무리]\n전화로 안내 완료'],
+      ),
+      isFalse,
+    );
+    expect(
+      supportVisitRecordAllowed(
+        consultationDescriptions: ['[결과: 구두 견적]\n견적 안내'],
+      ),
+      isFalse,
+    );
+    expect(
+      supportVisitRecordAllowed(
+        consultationDescriptions: ['[결과: 견적서 발송 · 발송예정 2026-08-22]\n발송'],
+      ),
+      isFalse,
+    );
+    expect(
+      supportVisitRecordAllowed(
+        consultationDescriptions: ['[결과: 방문 요청]\n일정 미정'],
+      ),
+      isFalse,
+    );
+    expect(
+      supportVisitRecordAllowed(
+        consultationDescriptions: ['[결과: 방문 요청 · 방문예정 2026-08-25]\n현장 확인'],
+      ),
+      isTrue,
+    );
+    expect(supportVisitRecordAllowed(visitDate: '2026-08-25'), isTrue);
+    expect(
+      supportVisitRecordAllowed(serviceStatusId: kSupportStatusVisitScheduled),
+      isTrue,
+    );
+    expect(supportVisitRecordAllowed(existingVisitReportCount: 1), isTrue);
+  });
+
+  test('상담 결과 힌트는 마무리·답 대기·정식 견적서·방문이다', () {
+    expect(
+      supportConsultOutcomeHint(SupportConsultOutcome.closed),
+      contains('끝냅니다'),
+    );
+    expect(
+      supportConsultOutcomeHint(SupportConsultOutcome.verbalQuote),
+      contains('방문일'),
+    );
+    expect(
+      supportConsultOutcomeHint(SupportConsultOutcome.quoteSend),
+      contains('보낼 날'),
+    );
+    expect(
+      supportConsultOutcomeHint(SupportConsultOutcome.visit),
+      contains('방문 기록'),
+    );
+  });
+
+  test('진행 상태 라벨', () {
+    expect(supportCallLogProgressLabel(null), '미처리');
+    expect(supportCallLogProgressLabel(4), '미처리');
+    expect(supportCallLogProgressLabel(2), '답 대기·견적서');
+    expect(supportCallLogProgressLabel(5), '방문예정');
+    expect(supportCallLogProgressLabel(1), '완료');
+  });
+
+  test('다음 단계는 접수·상담·방문·입금 순이다', () {
+    expect(
+      supportFlowCue(serviceStatusId: 4, consultationCount: 0).progressLabel,
+      '다음: 1차 상담',
+    );
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusInProgress,
+        consultationCount: 1,
+        lastOutcome: SupportConsultOutcome.verbalQuote,
+      ).progressLabel,
+      '고객 전화 대기',
+    );
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusInProgress,
+        consultationCount: 1,
+        lastOutcome: SupportConsultOutcome.quoteSend,
+        quoteSendYmd: '2026-08-22',
+      ).progressLabel,
+      '발송예정 2026-08-22',
+    );
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusInProgress,
+        consultationCount: 1,
+        lastOutcome: SupportConsultOutcome.quoteSend,
+        quoteSendYmd: '2026-08-22',
+        quoteSentYmd: '2026-08-23',
+      ).progressLabel,
+      '발송완료 2026-08-23',
+    );
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusVisitScheduled,
+        canAddVisit: true,
+        visitDate: '2026-08-25',
+      ).progressLabel,
+      '다음: 방문 2026-08-25',
+    );
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusCompleted,
+        depositYmd: '2026-08-27',
+        depositPaid: false,
+      ).progressLabel,
+      '입금대기 2026-08-27',
+    );
+    expect(
+      supportFlowCue(serviceStatusId: kSupportStatusCompleted).action,
+      SupportNextAction.done,
+    );
+  });
+
+  test('완료된 접수는 방문 기록을 추가하지 않는다', () {
+    expect(
+      supportVisitRecordCanAdd(
+        visitDate: '2026-08-25',
+        serviceStatusId: kSupportStatusCompleted,
+        existingVisitReportCount: 1,
+      ),
+      isFalse,
+    );
+    expect(
+      supportVisitRecordCanAdd(
+        visitDate: '2026-08-25',
+        serviceStatusId: kSupportStatusVisitScheduled,
+      ),
+      isTrue,
+    );
   });
 
   test('naive support timestamps are UTC shown as KST', () {

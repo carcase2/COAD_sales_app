@@ -10,20 +10,94 @@ export 'package:coad_customer_calls/models/business_card.dart'
     show BusinessCardListFilter;
 
 /// 이름 입력으로 명함을 고를 때: 완전 일치 → 앞글자 일치 → (3글자 이상) 포함.
-BusinessCard? bestBusinessCardNameMatch(
+List<BusinessCard> matchingBusinessCardsByName(
   String query,
   List<BusinessCard> cards,
 ) {
   final q = query.trim().toLowerCase();
-  if (q.length < 2 || cards.isEmpty) return null;
-  for (final card in cards) {
-    if (card.name.trim().toLowerCase() == q) return card;
+  if (q.length < 2 || cards.isEmpty) return const [];
+  final exact = cards
+      .where((c) => c.name.trim().toLowerCase() == q)
+      .toList(growable: false);
+  if (exact.isNotEmpty) return exact;
+  final prefix = cards
+      .where((c) => c.name.trim().toLowerCase().startsWith(q))
+      .toList(growable: false);
+  if (prefix.isNotEmpty) return prefix;
+  if (q.length < 3) return const [];
+  return cards
+      .where((c) => c.name.trim().toLowerCase().contains(q))
+      .toList(growable: false);
+}
+
+BusinessCard? bestBusinessCardNameMatch(
+  String query,
+  List<BusinessCard> cards,
+) {
+  final matches = matchingBusinessCardsByName(query, cards);
+  return matches.isEmpty ? null : matches.first;
+}
+
+class BusinessCardPhoneOption {
+  const BusinessCardPhoneOption({required this.label, required this.phone});
+
+  final String label;
+  final String phone;
+}
+
+List<BusinessCardPhoneOption> businessCardPhoneOptions(BusinessCard card) {
+  final out = <BusinessCardPhoneOption>[];
+  final seen = <String>{};
+  void add(String label, String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return;
+    final digits = normalizePhoneDigits(t);
+    if (digits.length < 8 || !seen.add(digits)) return;
+    out.add(
+      BusinessCardPhoneOption(
+        label: label,
+        phone: formatKoreanPhoneHyphenated(t),
+      ),
+    );
   }
-  for (final card in cards) {
-    if (card.name.trim().toLowerCase().startsWith(q)) return card;
+
+  add('휴대폰', card.mobilePhone);
+  add('사무실', card.officePhone);
+  add('팩스', card.faxPhone);
+  return out;
+}
+
+class BusinessCardFill {
+  const BusinessCardFill({
+    required this.card,
+    required this.phone,
+    required this.phoneLabel,
+  });
+
+  final BusinessCard card;
+  final String phone;
+  final String phoneLabel;
+}
+
+List<BusinessCardFill> businessCardFillChoices(
+  String query,
+  List<BusinessCard> cards,
+) {
+  final matches = matchingBusinessCardsByName(query, cards);
+  final out = <BusinessCardFill>[];
+  for (final card in matches) {
+    final phones = businessCardPhoneOptions(card);
+    if (phones.isEmpty) {
+      out.add(BusinessCardFill(card: card, phone: '', phoneLabel: ''));
+      continue;
+    }
+    for (final p in phones) {
+      out.add(
+        BusinessCardFill(card: card, phone: p.phone, phoneLabel: p.label),
+      );
+    }
   }
-  if (q.length < 3) return null;
-  return cards.first;
+  return out;
 }
 
 class BusinessCardRepository {

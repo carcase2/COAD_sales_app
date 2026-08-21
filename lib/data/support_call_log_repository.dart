@@ -21,6 +21,8 @@ class SupportCallLog {
     this.secondImageUrls = const [],
     this.serviceStatusId,
     this.visitDate,
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
@@ -35,12 +37,25 @@ class SupportCallLog {
   final List<String> secondImageUrls;
   final int? serviceStatusId;
   final String? visitDate;
+  final double? latitude;
+  final double? longitude;
+
+  bool get hasCoords =>
+      latitude != null &&
+      longitude != null &&
+      latitude!.abs() <= 90 &&
+      longitude!.abs() <= 180;
 
   List<String> get attachmentUrls => [...firstImageUrls, ...secondImageUrls];
 
   bool get isPending => isSupportServiceStatusPending(serviceStatusId);
 
-  SupportCallLog copyWith({int? serviceStatusId, String? visitDate}) {
+  SupportCallLog copyWith({
+    int? serviceStatusId,
+    String? visitDate,
+    double? latitude,
+    double? longitude,
+  }) {
     return SupportCallLog(
       id: id,
       customerName: customerName,
@@ -54,6 +69,8 @@ class SupportCallLog {
       secondImageUrls: secondImageUrls,
       serviceStatusId: serviceStatusId ?? this.serviceStatusId,
       visitDate: visitDate ?? this.visitDate,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
     );
   }
 
@@ -75,6 +92,8 @@ class SupportCallLog {
         if (raw.isEmpty) return null;
         return raw.length >= 10 ? raw.substring(0, 10) : raw;
       }(),
+      latitude: double.tryParse('${json['latitude'] ?? ''}'),
+      longitude: double.tryParse('${json['longitude'] ?? ''}'),
     );
   }
 }
@@ -128,7 +147,7 @@ const kSupportStatusReceived = 4;
 const kSupportStatusVisitScheduled = 5;
 
 const _supportCallLogSelect =
-    'id, customer_name, customer_phone, issue, address, created_by, created_at, call_date, first_image_urls, second_image_urls, service_status_id, visit_date';
+    'id, customer_name, customer_phone, issue, address, created_by, created_at, call_date, first_image_urls, second_image_urls, service_status_id, visit_date, latitude, longitude';
 
 class SupportCallLogRepository {
   SupportCallLogRepository();
@@ -139,6 +158,8 @@ class SupportCallLogRepository {
     String? toYmdInclusive,
     bool pendingOnly = false,
     bool visitOnly = false,
+    bool incompleteOnly = false,
+    int? statusId,
   }) async {
     try {
       final fromIso = fromYmd == null ? null : '${fromYmd}T00:00:00+09:00';
@@ -155,8 +176,14 @@ class SupportCallLogRepository {
       } else if (fromIso != null && toIso != null) {
         query = query.gte('created_at', fromIso).lt('created_at', toIso);
       }
-      if (pendingOnly) {
+      if (statusId != null) {
+        query = query.eq('service_status_id', statusId);
+      } else if (pendingOnly) {
         query = query.or('service_status_id.is.null,service_status_id.eq.4');
+      } else if (incompleteOnly) {
+        query = query.or(
+          'service_status_id.is.null,service_status_id.neq.$kSupportStatusCompleted',
+        );
       }
       final rows = await query
           .order('created_at', ascending: false)
@@ -167,6 +194,40 @@ class SupportCallLogRepository {
     } catch (e) {
       throw ApiException('A/S 접수 내역을 불러오지 못했습니다. $e');
     }
+  }
+
+  /// 지도용. 완료가 아닌 접수(주소 있는 것).
+  Future<List<SupportCallLog>> listForMap({int limit = 400}) async {
+    try {
+      final rows = await supportSupabaseClient()
+          .from('call_logs')
+          .select(_supportCallLogSelect)
+          .not('address', 'is', null)
+          .or(
+            'service_status_id.is.null,service_status_id.eq.$kSupportStatusReceived,service_status_id.eq.$kSupportStatusInProgress,service_status_id.eq.$kSupportStatusVisitScheduled',
+          )
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return List<Map<String, dynamic>>.from(rows)
+          .map(SupportCallLog.fromJson)
+          .where((e) => (e.address ?? '').trim().isNotEmpty)
+          .toList();
+    } catch (e) {
+      throw ApiException('지도 접수를 불러오지 못했습니다. $e');
+    }
+  }
+
+  Future<void> saveCoords({
+    required String id,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      await supportSupabaseClient()
+          .from('call_logs')
+          .update({'latitude': latitude, 'longitude': longitude})
+          .eq('id', id);
+    } catch (_) {}
   }
 
   Future<SupportHomePeriodStats> periodStats({
@@ -350,17 +411,19 @@ class SupportCallLogRepository {
     required String callLogId,
     required SupportVisitReport report,
   }) async {
-    if (report.visitYmd.trim().isEmpty) {
-      throw ApiException('방문일을 선택해 주세요.');
-    }
-    if (report.notes.trim().isEmpty) {
-      throw ApiException('방문 내용을 입력해 주세요.');
-    }
-    if (report.isPaid && (report.amount ?? 0) <= 0) {
-      throw ApiException('유상이면 금액을 입력해 주세요.');
-    }
-    if (!report.completed && (report.nextVisitYmd ?? '').trim().isEmpty) {
-      throw ApiException('미완료이면 다음 방문일을 선택해 주세요.');
+    final issue = supportVisitReportIssue(report);
+    if (issue != null) throw ApiException(issue);
+    final log = await getById(callLogId);
+    final consults = await listConsultations(callLogId);
+    if (!supportVisitRecordCanAdd(
+      visitDate: log.visitDate,
+      serviceStatusId: log.serviceStatusId,
+      consultationDescriptions: consults.map((c) => c.description),
+    )) {
+      if (log.serviceStatusId == kSupportStatusCompleted) {
+        throw ApiException('완료된 접수는 방문 기록을 추가할 수 없습니다.');
+      }
+      throw ApiException('방문 요청으로 일정이 잡힌 뒤에 방문 기록을 남길 수 있습니다.');
     }
     try {
       final client = supportSupabaseClient();
@@ -451,6 +514,30 @@ class SupportCallLogRepository {
     } catch (e) {
       if (e is ApiException) rethrow;
       throw ApiException('상담 내용 저장에 실패했습니다. $e');
+    }
+  }
+
+  Future<void> markQuoteSent({
+    required String consultationId,
+    required String description,
+    String? sentYmd,
+  }) async {
+    final id = consultationId.trim();
+    if (id.isEmpty) {
+      throw ApiException('상담 id가 없습니다.');
+    }
+    try {
+      await supportSupabaseClient()
+          .from('service_requests')
+          .update({
+            'description': rewriteSupportQuoteSentLine(
+              description,
+              sentYmd: sentYmd,
+            ),
+          })
+          .eq('id', id);
+    } catch (e) {
+      throw ApiException('견적서 발송 여부를 저장하지 못했습니다. $e');
     }
   }
 
@@ -569,10 +656,10 @@ class SupportCallLogRepository {
       try {
         final reqs = await client
             .from('service_requests')
-            .select('description, call_log_id')
+            .select('id, description, call_log_id')
             .ilike('description', '%발송예정%')
             .limit(500);
-        final ymdByLogId = <String, String>{};
+        final rowsByLog = <String, List<Map<String, dynamic>>>{};
         for (final row in List<Map<String, dynamic>>.from(reqs)) {
           final parsed = parseSupportConsultation(
             (row['description'] ?? '').toString(),
@@ -584,27 +671,39 @@ class SupportCallLogRepository {
               ymd.compareTo(toYmdInclusive) > 0) {
             continue;
           }
-          final id = (row['call_log_id'] ?? '').toString();
-          if (id.isEmpty) continue;
-          ymdByLogId[id] = ymd;
+          final logId = (row['call_log_id'] ?? '').toString();
+          if (logId.isEmpty) continue;
+          rowsByLog.putIfAbsent(logId, () => []).add(row);
         }
-        if (ymdByLogId.isNotEmpty) {
+        if (rowsByLog.isNotEmpty) {
           final logs = await client
               .from('call_logs')
               .select(_supportCallLogSelect)
-              .inFilter('id', ymdByLogId.keys.toList())
+              .inFilter('id', rowsByLog.keys.toList())
               .limit(400);
           for (final row in List<Map<String, dynamic>>.from(logs)) {
             final log = SupportCallLog.fromJson(row);
-            final ymd = ymdByLogId[log.id];
-            if (ymd == null) continue;
-            events.add(
-              SupportScheduleEvent(
-                kind: SupportScheduleKind.quoteSend,
-                ymd: ymd,
-                log: log,
-              ),
-            );
+            for (final req in rowsByLog[log.id] ?? const []) {
+              final parsed = parseSupportConsultation(
+                (req['description'] ?? '').toString(),
+              );
+              final ymd = parsed.ymd;
+              if (ymd == null) continue;
+              addEvent(
+                SupportScheduleEvent(
+                  kind: SupportScheduleKind.quoteSend,
+                  ymd: ymd,
+                  log: log,
+                  consultationId: (req['id'] ?? '').toString(),
+                  consultationDescription: (req['description'] ?? '')
+                      .toString(),
+                  quoteSentYmd: parsed.sentYmd,
+                  caption: (parsed.sentYmd ?? '').isEmpty
+                      ? '견적서 발송예정'
+                      : '발송완료 ${parsed.sentYmd}',
+                ),
+              );
+            }
           }
         }
       } catch (_) {}
@@ -686,6 +785,10 @@ class SupportConsultation {
 bool isSupportServiceStatusPending(int? status) =>
     status == null || status == 4;
 
+/// 마무리·방문 완료가 아니면 미완료.
+bool isSupportServiceStatusIncomplete(int? status) =>
+    status != kSupportStatusCompleted;
+
 enum SupportScheduleKind { visit, quoteSend, deposit }
 
 class SupportScheduleEvent {
@@ -697,6 +800,9 @@ class SupportScheduleEvent {
     this.amount,
     this.depositPaid,
     this.visitReport,
+    this.consultationId,
+    this.consultationDescription,
+    this.quoteSentYmd,
   });
 
   final SupportScheduleKind kind;
@@ -706,12 +812,18 @@ class SupportScheduleEvent {
   final int? amount;
   final bool? depositPaid;
   final SupportVisitReport? visitReport;
+  final String? consultationId;
+  final String? consultationDescription;
+  final String? quoteSentYmd;
+
+  bool get quoteSent => (quoteSentYmd ?? '').trim().isNotEmpty;
 
   String get label {
     if (caption != null) return caption!;
     return switch (kind) {
       SupportScheduleKind.visit => '방문예정',
-      SupportScheduleKind.quoteSend => '견적서 발송예정',
+      SupportScheduleKind.quoteSend =>
+        quoteSent ? '발송완료 $quoteSentYmd' : '견적서 발송예정',
       SupportScheduleKind.deposit => (depositPaid ?? false) ? '입금완료' : '입금예정',
     };
   }
@@ -723,9 +835,38 @@ String supportConsultOutcomeLabel(SupportConsultOutcome outcome) =>
     switch (outcome) {
       SupportConsultOutcome.closed => '마무리',
       SupportConsultOutcome.verbalQuote => '구두 견적',
-      SupportConsultOutcome.quoteSend => '견적서 발송',
+      SupportConsultOutcome.quoteSend => '정식 견적서',
       SupportConsultOutcome.visit => '방문 요청',
     };
+
+String supportConsultOutcomeHint(SupportConsultOutcome outcome) =>
+    switch (outcome) {
+      SupportConsultOutcome.closed => '이 전화로 접수를 끝냅니다.',
+      SupportConsultOutcome.verbalQuote =>
+        '구두로 먼저 전달합니다. 고객이 다시 전화하면 방문일을 잡고, 그날 방문한 뒤 기록을 남깁니다.',
+      SupportConsultOutcome.quoteSend =>
+        '정식 견적서를 작성하고, 보낼 날을 정한 뒤 보냅니다. 받은 다음 방문 요청이면 방문일을 잡습니다.',
+      SupportConsultOutcome.visit => '방문일을 잡고 현장에 갑니다. 다녀온 뒤에 방문 기록을 남깁니다.',
+    };
+
+String supportCallLogProgressLabel(int? status) {
+  if (isSupportServiceStatusPending(status)) return '미처리';
+  if (status == kSupportStatusVisitScheduled) return '방문예정';
+  if (status == kSupportStatusCompleted) return '완료';
+  if (status == kSupportStatusInProgress) return '답 대기·견적서';
+  return '진행중';
+}
+
+SupportConsultOutcome? lastSupportConsultOutcome(
+  Iterable<String> consultationDescriptions,
+) {
+  SupportConsultOutcome? last;
+  for (final raw in consultationDescriptions) {
+    final parsed = parseSupportConsultation(raw);
+    if (parsed.outcome != null) last = parsed.outcome;
+  }
+  return last;
+}
 
 int supportConsultOutcomeStatusId(SupportConsultOutcome outcome) =>
     switch (outcome) {
@@ -735,26 +876,52 @@ int supportConsultOutcomeStatusId(SupportConsultOutcome outcome) =>
       SupportConsultOutcome.visit => kSupportStatusVisitScheduled,
     };
 
-String supportConsultOutcomeLine(SupportConsultOutcome outcome, {String? ymd}) {
-  final label = supportConsultOutcomeLabel(outcome);
+String supportConsultOutcomeLine(
+  SupportConsultOutcome outcome, {
+  String? ymd,
+  String? sentYmd,
+}) {
+  final stored = switch (outcome) {
+    SupportConsultOutcome.closed => '마무리',
+    SupportConsultOutcome.verbalQuote => '구두 견적',
+    SupportConsultOutcome.quoteSend => '견적서 발송',
+    SupportConsultOutcome.visit => '방문 요청',
+  };
   final day = (ymd ?? '').trim();
+  final sent = (sentYmd ?? '').trim();
   if (outcome == SupportConsultOutcome.quoteSend && day.isNotEmpty) {
-    return '[결과: $label · 발송예정 $day]';
+    if (sent.isNotEmpty) {
+      return '[결과: $stored · 발송예정 $day · 발송완료 $sent]';
+    }
+    return '[결과: $stored · 발송예정 $day]';
   }
   if (outcome == SupportConsultOutcome.visit && day.isNotEmpty) {
-    return '[결과: $label · 방문예정 $day]';
+    return '[결과: $stored · 방문예정 $day]';
   }
-  return '[결과: $label]';
+  return '[결과: $stored]';
 }
 
-({SupportConsultOutcome? outcome, String? ymd, String body})
+String rewriteSupportQuoteSentLine(String description, {String? sentYmd}) {
+  final parsed = parseSupportConsultation(description);
+  final planned = (parsed.ymd ?? '').trim();
+  final head = supportConsultOutcomeLine(
+    SupportConsultOutcome.quoteSend,
+    ymd: planned.isEmpty ? sentYmd : planned,
+    sentYmd: sentYmd,
+  );
+  if (parsed.body.isEmpty) return head;
+  return '$head\n${parsed.body}';
+}
+
+({SupportConsultOutcome? outcome, String? ymd, String? sentYmd, String body})
 parseSupportConsultation(String raw) {
   SupportConsultOutcome? outcome;
   String? ymd;
+  String? sentYmd;
   final rest = <String>[];
   for (final line in raw.split('\n')) {
     final m = RegExp(
-      r'^\[결과:\s*(마무리|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?\]$',
+      r'^\[결과:\s*(마무리|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*발송완료\s*(\d{4}-\d{2}-\d{2}))?\]$',
     ).firstMatch(line.trim());
     if (m != null && outcome == null) {
       outcome = switch (m.group(1)) {
@@ -765,11 +932,178 @@ parseSupportConsultation(String raw) {
         _ => null,
       };
       ymd = m.group(2);
+      sentYmd = m.group(3);
       continue;
     }
     rest.add(line);
   }
-  return (outcome: outcome, ymd: ymd, body: rest.join('\n').trim());
+  return (
+    outcome: outcome,
+    ymd: ymd,
+    sentYmd: sentYmd,
+    body: rest.join('\n').trim(),
+  );
+}
+
+/// 방문 요청으로 방문 일정이 잡힌 뒤에만 방문 기록이 필요하다.
+bool supportVisitRecordAllowed({
+  String? visitDate,
+  int? serviceStatusId,
+  Iterable<String> consultationDescriptions = const [],
+  int existingVisitReportCount = 0,
+}) {
+  if (existingVisitReportCount > 0) return true;
+  if ((visitDate ?? '').trim().isNotEmpty) return true;
+  if (serviceStatusId == kSupportStatusVisitScheduled) return true;
+  for (final raw in consultationDescriptions) {
+    final parsed = parseSupportConsultation(raw);
+    if (parsed.outcome == SupportConsultOutcome.visit &&
+        (parsed.ymd ?? '').trim().isNotEmpty) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// 완료된 접수는 방문 기록을 더 남기지 않는다. 미완료·재방문만 추가한다.
+bool supportVisitRecordCanAdd({
+  String? visitDate,
+  int? serviceStatusId,
+  Iterable<String> consultationDescriptions = const [],
+  int existingVisitReportCount = 0,
+}) {
+  if (serviceStatusId == kSupportStatusCompleted) return false;
+  return supportVisitRecordAllowed(
+    visitDate: visitDate,
+    serviceStatusId: serviceStatusId,
+    consultationDescriptions: consultationDescriptions,
+    existingVisitReportCount: existingVisitReportCount,
+  );
+}
+
+enum SupportNextAction { consult, quote, visit, deposit, done }
+
+class SupportFlowCue {
+  const SupportFlowCue({
+    required this.action,
+    required this.title,
+    required this.subtitle,
+    required this.actionLabel,
+    required this.progressLabel,
+  });
+
+  final SupportNextAction action;
+  final String title;
+  final String subtitle;
+  final String actionLabel;
+  final String progressLabel;
+}
+
+/// 목록·상세에서 지금 할 일.
+/// 접수 → 1차 상담(마무리 / 구두 견적 답 대기 / 정식 견적서 발송) → 방문일 → 방문 기록.
+SupportFlowCue supportFlowCue({
+  required int? serviceStatusId,
+  int consultationCount = 0,
+  bool canAddVisit = false,
+  String? visitDate,
+  String? depositYmd,
+  bool depositPaid = true,
+  SupportConsultOutcome? lastOutcome,
+  String? quoteSendYmd,
+  String? quoteSentYmd,
+}) {
+  if (serviceStatusId == kSupportStatusCompleted) {
+    final due = (depositYmd ?? '').trim();
+    if (due.isNotEmpty && !depositPaid) {
+      return SupportFlowCue(
+        action: SupportNextAction.deposit,
+        title: '입금 대기',
+        subtitle: '입금예정일 $due · 달력에서 입금을 확인합니다',
+        actionLabel: '달력',
+        progressLabel: '입금대기 $due',
+      );
+    }
+    return const SupportFlowCue(
+      action: SupportNextAction.done,
+      title: '완료',
+      subtitle: '이 접수는 끝났습니다',
+      actionLabel: '',
+      progressLabel: '완료',
+    );
+  }
+  if (canAddVisit) {
+    final day = (visitDate ?? '').trim();
+    return SupportFlowCue(
+      action: SupportNextAction.visit,
+      title: '다음: 방문 기록',
+      subtitle: day.isEmpty
+          ? '방문한 뒤에 완료·유무상을 남깁니다. 미완료면 다음 방문일을 잡습니다'
+          : '방문일 $day · 다녀온 뒤 방문 기록을 남깁니다',
+      actionLabel: '방문 기록',
+      progressLabel: day.isEmpty ? '다음: 방문 기록' : '다음: 방문 $day',
+    );
+  }
+  if (consultationCount == 0 ||
+      isSupportServiceStatusPending(serviceStatusId)) {
+    return const SupportFlowCue(
+      action: SupportNextAction.consult,
+      title: '다음: 1차 상담',
+      subtitle: '전화 내용을 남기고 마무리, 구두 견적(답 대기), 정식 견적서, 방문 중 하나를 고릅니다',
+      actionLabel: '1차 상담',
+      progressLabel: '다음: 1차 상담',
+    );
+  }
+  final stage = consultationCount + 1;
+  if (lastOutcome == SupportConsultOutcome.verbalQuote) {
+    return SupportFlowCue(
+      action: SupportNextAction.consult,
+      title: '고객 전화 대기',
+      subtitle: '구두 견적을 전했습니다. 다시 전화 오면 $stage차 상담에서 방문일을 잡고, 그날 방문합니다',
+      actionLabel: '$stage차 상담',
+      progressLabel: '고객 전화 대기',
+    );
+  }
+  if (lastOutcome == SupportConsultOutcome.quoteSend) {
+    final sent = (quoteSentYmd ?? '').trim();
+    if (sent.isNotEmpty) {
+      return SupportFlowCue(
+        action: SupportNextAction.consult,
+        title: '견적서 발송 완료',
+        subtitle: '발송완료 $sent. 고객이 다시 오면 방문일을 잡거나 마무리합니다',
+        actionLabel: '$stage차 상담',
+        progressLabel: '발송완료 $sent',
+      );
+    }
+    final day = (quoteSendYmd ?? '').trim();
+    return SupportFlowCue(
+      action: SupportNextAction.quote,
+      title: day.isEmpty ? '정식 견적서 작성' : '견적서 발송예정 $day',
+      subtitle: '견적서를 작성해 보낼 날 발송했다고 체크합니다. 오늘이나 다른 날도 됩니다',
+      actionLabel: '견적서',
+      progressLabel: day.isEmpty ? '정식 견적서' : '발송예정 $day',
+    );
+  }
+  return SupportFlowCue(
+    action: SupportNextAction.consult,
+    title: '다음: $stage차 상담',
+    subtitle: '답이 왔으면 마무리하거나, 정식 견적서·방문 요청을 고릅니다',
+    actionLabel: '$stage차 상담',
+    progressLabel: '답 대기·견적서',
+  );
+}
+
+SupportFlowCue supportFlowCueFromLog(SupportCallLog log) {
+  return supportFlowCue(
+    serviceStatusId: log.serviceStatusId,
+    consultationCount: isSupportServiceStatusPending(log.serviceStatusId)
+        ? 0
+        : 1,
+    canAddVisit: supportVisitRecordCanAdd(
+      visitDate: log.visitDate,
+      serviceStatusId: log.serviceStatusId,
+    ),
+    visitDate: log.visitDate,
+  );
 }
 
 List<String> parseSupportUrlList(Object? raw) {

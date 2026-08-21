@@ -21,7 +21,7 @@ import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_hub_screen.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
@@ -609,11 +609,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     switch (kind) {
       case ReceptionKind.afterSales:
         _trackTab(user, 'customer_support');
-        await Navigator.of(context).push(
-          AppMotion.fadeSlideRoute<void>(
-            builder: (_) => const CustomerSupportIntakeScreen(),
-          ),
-        );
+        await openSupportIntakeThenDetail(context);
       case ReceptionKind.sales:
         await Navigator.of(context).push(
           AppMotion.fadeSlideRoute<void>(

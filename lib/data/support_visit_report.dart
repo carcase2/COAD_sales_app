@@ -3,6 +3,25 @@ const kSupportVisitReportMarker = '[방문기록]';
 bool isSupportVisitReportText(String raw) =>
     raw.trimLeft().startsWith(kSupportVisitReportMarker);
 
+/// 방문 기록 저장 전 검증. 완료+유상이면 금액·입금예정일이 필요하다.
+String? supportVisitReportIssue(SupportVisitReport report) {
+  if (report.visitYmd.trim().isEmpty) return '방문일을 선택해 주세요.';
+  if (report.notes.trim().isEmpty) return '방문 내용을 입력해 주세요.';
+  if (!report.completed) {
+    if ((report.nextVisitYmd ?? '').trim().isEmpty) {
+      return '미완료이면 다음 방문일을 선택해 주세요.';
+    }
+    return null;
+  }
+  if (report.paid) {
+    if ((report.amount ?? 0) <= 0) return '유상이면 금액을 입력해 주세요.';
+    if ((report.depositYmd ?? '').trim().isEmpty) {
+      return '유상이면 입금예정일을 선택해 주세요.';
+    }
+  }
+  return null;
+}
+
 class SupportVisitReport {
   const SupportVisitReport({
     this.id,

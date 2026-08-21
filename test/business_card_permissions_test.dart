@@ -161,4 +161,26 @@ hong@coad.co.kr
     expect(bestBusinessCardNameMatch('홍길', [hong])?.id, 'c1');
     expect(bestBusinessCardNameMatch('길동', [hong]), isNull);
   });
+
+  test('같은 이름 명함은 휴대폰·사무실 번호를 나눠 고른다', () {
+    final mobile = _card().copyWith(id: 'c1', officePhone: '');
+    final both = _card().copyWith(
+      id: 'c2',
+      name: '홍길동',
+      mobilePhone: '010-1111-2222',
+      officePhone: '053-123-4567',
+    );
+    final choices = businessCardFillChoices('홍길동', [mobile, both]);
+    expect(choices.length, 3);
+    expect(choices.map((e) => e.phoneLabel).toSet(), {'휴대폰', '사무실'});
+    expect(choices.where((e) => e.card.id == 'c2').length, 2);
+  });
+
+  test('번호가 하나면 선택 없이 바로 채운다', () {
+    final one = _card().copyWith(officePhone: '', faxPhone: '');
+    final choices = businessCardFillChoices('홍길동', [one]);
+    expect(choices.length, 1);
+    expect(choices.first.phoneLabel, '휴대폰');
+    expect(choices.first.phone, '010-1234-5678');
+  });
 }

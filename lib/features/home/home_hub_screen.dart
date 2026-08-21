@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -1401,7 +1402,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         ),
       ),
     );
-    ref.invalidate(supportHomeStatsProvider);
+    invalidateSupportWorkCaches(ref);
   }
 
   Future<_PrevUncalledKind?> _pickPrevUncalledKind({
@@ -1937,7 +1938,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     ref.invalidate(hubPendingUncalledCallsProvider);
     ref.invalidate(tempManagerOverridesProvider);
     ref.invalidate(hubPendingUncalledSummaryProvider);
-    ref.invalidate(supportHomeStatsProvider);
+    invalidateSupportWorkCaches(ref);
   }
 
   Future<void> _onRefresh() async {
@@ -2212,36 +2213,33 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }) {
     final overdue = _overdueFollowCount();
     if (prevUncalled <= 0 && overdue <= 0) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          if (prevUncalled > 0)
-            Expanded(
-              child: _HomeOneLineAlert(
-                icon: Icons.history_rounded,
-                label: '전일 미통화',
-                count: prevUncalled,
-                color: scheme.tertiary,
-                onTap: () => _openPreviousDayIncompletePicker(),
-                onLongPress: () =>
-                    _openPreviousDayIncompletePicker(forcePicker: true),
-              ),
+    return Row(
+      children: [
+        if (prevUncalled > 0)
+          Expanded(
+            child: _HomeOneLineAlert(
+              icon: Icons.history_rounded,
+              label: '전일 미통화',
+              count: prevUncalled,
+              color: scheme.tertiary,
+              onTap: () => _openPreviousDayIncompletePicker(),
+              onLongPress: () =>
+                  _openPreviousDayIncompletePicker(forcePicker: true),
             ),
-          if (prevUncalled > 0 && overdue > 0) const SizedBox(width: 6),
-          if (overdue > 0)
-            Expanded(
-              child: _HomeOneLineAlert(
-                icon: Icons.event_busy_rounded,
-                label: '지연 팔로우',
-                count: overdue,
-                color: scheme.error,
-                onTap: () => _openOverdueFollowPicker(),
-                onLongPress: () => _openOverdueFollowPicker(forcePicker: true),
-              ),
+          ),
+        if (prevUncalled > 0 && overdue > 0) const SizedBox(width: 6),
+        if (overdue > 0)
+          Expanded(
+            child: _HomeOneLineAlert(
+              icon: Icons.event_busy_rounded,
+              label: '지연 팔로우',
+              count: overdue,
+              color: scheme.error,
+              onTap: () => _openOverdueFollowPicker(),
+              onLongPress: () => _openOverdueFollowPicker(forcePicker: true),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 
@@ -2249,6 +2247,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final stats =
         ref.watch(supportHomeStatsProvider(periodKey)).valueOrNull ??
         SupportHomePeriodStats.empty;
+    final desk =
+        ref.watch(supportDeskCountsProvider).valueOrNull ??
+        SupportDeskCounts.empty;
+    final allPending = desk.pending;
     final range = switch (periodKey.period) {
       HubPeriod.day => (periodKey.anchorYmd, periodKey.anchorYmd),
       HubPeriod.week => seoulWeekRangeContaining(periodKey.anchorYmd),
@@ -2271,7 +2273,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           ),
         ),
       );
-      ref.invalidate(supportHomeStatsProvider);
+      invalidateSupportWorkCaches(ref);
     }
 
     Future<void> openVisitCalendar() async {
@@ -2283,7 +2285,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           ),
         ),
       );
-      ref.invalidate(supportHomeStatsProvider);
+      invalidateSupportWorkCaches(ref);
     }
 
     final receptionLabel = switch (_hubNavStep) {
@@ -2321,6 +2323,32 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           unawaited(openList(title: pendingLabel, pendingOnly: true)),
       onTapVisit: () => unawaited(openVisitCalendar()),
       onTapUpdated: () => unawaited(openList(title: updatedLabel)),
+      allPending: allPending,
+      allIncomplete: desk.incomplete,
+      onTapAllPending: () async {
+        HapticFeedback.selectionClick();
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const CustomerSupportReceptionListScreen(
+              title: '전체 A/S 미처리',
+              pendingOnly: true,
+            ),
+          ),
+        );
+        invalidateSupportWorkCaches(ref);
+      },
+      onTapAllIncomplete: () async {
+        HapticFeedback.selectionClick();
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const CustomerSupportReceptionListScreen(
+              title: '전체 A/S 미완료',
+              incompleteOnly: true,
+            ),
+          ),
+        );
+        invalidateSupportWorkCaches(ref);
+      },
     );
   }
 
@@ -2333,19 +2361,16 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ? summary.userCount
             : summary.total;
         if (count == 0) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: UxStatusHeroBanner(
-            icon: Icons.phone_missed_rounded,
-            title: '처리할 미통화 $count건',
-            subtitle:
-                '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount} · 탭하면 바로 목록',
-            actionLabel: '지금 처리',
-            tone: UxStatusHeroTone.attention,
-            compact: true,
-            onTap: () => _openPendingUncalledPicker(),
-            onLongPress: () => _openPendingUncalledPicker(forcePicker: true),
-          ),
+        return UxStatusHeroBanner(
+          icon: Icons.phone_missed_rounded,
+          title: '처리할 미통화 $count건',
+          subtitle:
+              '오늘 ${summary.todayCount} · 이월 ${summary.carriedOverCount} · 탭하면 바로 목록',
+          actionLabel: '지금 처리',
+          tone: UxStatusHeroTone.attention,
+          compact: true,
+          onTap: () => _openPendingUncalledPicker(),
+          onLongPress: () => _openPendingUncalledPicker(forcePicker: true),
         );
       },
       loading: () => Padding(
@@ -2532,24 +2557,24 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (prevStatsAsync.hasValue) ...[
-                        _buildFlowReceptionCompareBanner(
-                          scheme: scheme,
-                          compareLabel: _comparePeriodLabel(),
-                          reception: reception,
-                          prevReception: prevReception,
-                        ),
-                        const SizedBox(height: 6),
-                      ],
-                      _buildPendingUncalledBanner(scheme),
-                      _buildPrevUncalledAndOverdueRow(
-                        scheme: scheme,
-                        prevUncalled: previousDayYmd == null
-                            ? 0
-                            : prevIncomplete + prevSupportPending,
-                      ),
                       HomeMiniStatsWidget(
                         compact: true,
+                        headerAlerts: [
+                          if (prevStatsAsync.hasValue)
+                            _buildFlowReceptionCompareBanner(
+                              scheme: scheme,
+                              compareLabel: _comparePeriodLabel(),
+                              reception: reception,
+                              prevReception: prevReception,
+                            ),
+                          _buildPendingUncalledBanner(scheme),
+                          _buildPrevUncalledAndOverdueRow(
+                            scheme: scheme,
+                            prevUncalled: previousDayYmd == null
+                                ? 0
+                                : prevIncomplete + prevSupportPending,
+                          ),
+                        ],
                         receptionLabel: receptionLabel,
                         incompleteLabel: incompleteLabel,
                         followLabel: followLabel,

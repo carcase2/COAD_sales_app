@@ -3,7 +3,7 @@ import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_completion_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
@@ -285,11 +285,7 @@ class CustomerSupportSiteDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => CustomerSupportIntakeScreen(site: site),
-              ),
-            ),
+            onPressed: () => openSupportIntakeThenDetail(context, site: site),
             icon: const Icon(Icons.add_ic_call_rounded),
             label: const Text('이 현장 AS 접수'),
           ),

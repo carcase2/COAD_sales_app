@@ -1,9 +1,15 @@
 import 'dart:async';
 
+import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/data/business_card_repository.dart';
+import 'package:coad_customer_calls/features/business_cards/business_card_fill_sheet.dart';
+import 'package:coad_customer_calls/models/business_card.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_export.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -73,6 +79,8 @@ class _SupportQuoteWriterScreenState
       next.insert(0, saved);
     }
     await _persist(next);
+    if (!mounted) return;
+    await showSupportQuoteExportSheet(context, doc: saved);
   }
 
   Future<void> _delete(SupportQuoteDocument doc) async {
@@ -135,7 +143,7 @@ class _SupportQuoteWriterScreenState
                         ? '작성한 A/S 견적서가 없습니다.'
                         : '검색 결과가 없습니다.',
                     detail: _query.trim().isEmpty
-                        ? '영업 셔터 견적서와 별개입니다. 고객지원팀 양식으로 작성합니다.'
+                        ? '저장하면 이미지·PDF로 만들고 바로 이메일을 보낼 수 있습니다.'
                         : null,
                     actionLabel: _query.trim().isEmpty ? '견적서 작성' : null,
                     onAction: _query.trim().isEmpty ? () => _edit() : null,
@@ -169,12 +177,27 @@ class _SupportQuoteWriterScreenState
                                 doc.createdBy!.trim(),
                             ].join(' · '),
                           ),
-                          trailing: Text(
-                            doc.total <= 0 ? '-' : '${_won.format(doc.total)}원',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: accent,
-                            ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                doc.total <= 0
+                                    ? '-'
+                                    : '${_won.format(doc.total)}원',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: accent,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: '이미지 · PDF · 이메일',
+                                icon: const Icon(Icons.ios_share_rounded),
+                                onPressed: () => showSupportQuoteExportSheet(
+                                  context,
+                                  doc: doc,
+                                ),
+                              ),
+                            ],
                           ),
                           onTap: () => _edit(existing: doc),
                           onLongPress: () => _delete(doc),
@@ -204,12 +227,20 @@ class _SupportQuoteEditorPageState
     extends ConsumerState<_SupportQuoteEditorPage> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
+  late final TextEditingController _emailCtrl;
   late final TextEditingController _siteCtrl;
   late final TextEditingController _addressCtrl;
   late final TextEditingController _noteCtrl;
   late String _ymd;
   List<SupportQuoteLine> _lines = [];
   final _won = NumberFormat('#,###');
+  Timer? _nameLookupDebounce;
+  bool _nameLookupBusy = false;
+  bool _applyingName = false;
+  bool _fromCard = false;
+  String? _lookedUpName;
+  BusinessCard? _matchedCard;
+  List<BusinessCardFill> _nameFillChoices = const [];
 
   @override
   void initState() {
@@ -220,6 +251,7 @@ class _SupportQuoteEditorPageState
       text: e?.customerName ?? site?.name ?? '',
     );
     _phoneCtrl = TextEditingController(text: e?.phone ?? site?.phone ?? '');
+    _emailCtrl = TextEditingController(text: e?.email ?? '');
     _siteCtrl = TextEditingController(text: e?.site ?? site?.name ?? '');
     _addressCtrl = TextEditingController(
       text: e?.address ?? site?.address ?? '',
@@ -227,12 +259,18 @@ class _SupportQuoteEditorPageState
     _noteCtrl = TextEditingController(text: e?.note ?? '');
     _ymd = (e?.ymd ?? '').trim().isNotEmpty ? e!.ymd : todayYmdSeoul();
     _lines = List.of(e?.lines ?? const []);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scheduleNameLookup(_nameCtrl.text);
+    });
   }
 
   @override
   void dispose() {
+    _nameLookupDebounce?.cancel();
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
+    _emailCtrl.dispose();
     _siteCtrl.dispose();
     _addressCtrl.dispose();
     _noteCtrl.dispose();
@@ -240,6 +278,113 @@ class _SupportQuoteEditorPageState
   }
 
   int get _total => _lines.fold(0, (sum, e) => sum + e.amount);
+
+  void _setCtrl(TextEditingController ctrl, String value) {
+    ctrl.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
+  void _onNameChanged(String value) {
+    if (_applyingName) return;
+    _fromCard = false;
+    _scheduleNameLookup(value);
+  }
+
+  void _scheduleNameLookup(String value) {
+    _nameLookupDebounce?.cancel();
+    final q = value.trim();
+    if (q.length < 2) {
+      if (_matchedCard != null || _nameLookupBusy) {
+        setState(() {
+          _matchedCard = null;
+          _nameLookupBusy = false;
+          _lookedUpName = null;
+          _nameFillChoices = const [];
+        });
+      }
+      return;
+    }
+    _nameLookupDebounce = Timer(const Duration(milliseconds: 320), () {
+      unawaited(_lookupCardByName(q));
+    });
+  }
+
+  Future<void> _lookupCardByName(String name) async {
+    final user = ref.read(authControllerProvider);
+    if (user == null || !canAccessBusinessCards(user)) return;
+    setState(() {
+      _nameLookupBusy = true;
+      _lookedUpName = name;
+    });
+    try {
+      final found = await ref
+          .read(businessCardRepositoryProvider)
+          .findByName(user: user, name: name);
+      if (!mounted || _lookedUpName != name) return;
+      final choices = businessCardFillChoices(name, found);
+      setState(() {
+        _nameFillChoices = choices;
+        _nameLookupBusy = false;
+      });
+      if (choices.isEmpty) {
+        setState(() => _matchedCard = null);
+        return;
+      }
+      final pick = await resolveBusinessCardFill(
+        context,
+        query: name,
+        found: found,
+      );
+      if (!mounted || _lookedUpName != name) return;
+      if (pick == null) {
+        setState(() => _matchedCard = null);
+        return;
+      }
+      _applyFillFromCard(pick);
+    } catch (_) {
+      if (!mounted || _lookedUpName != name) return;
+      setState(() {
+        _matchedCard = null;
+        _nameLookupBusy = false;
+      });
+    }
+  }
+
+  void _applyFillFromCard(BusinessCardFill pick) {
+    setState(() {
+      _matchedCard = pick.card;
+      _fromCard = true;
+    });
+    _applyingName = true;
+    final cardName = pick.card.name.trim();
+    if (cardName.isNotEmpty) _setCtrl(_nameCtrl, cardName);
+    if (pick.phone.isNotEmpty) {
+      _setCtrl(_phoneCtrl, formatKoreanPhoneHyphenated(pick.phone));
+    }
+    if (pick.card.email.trim().isNotEmpty) {
+      _setCtrl(_emailCtrl, pick.card.email.trim());
+    }
+    if (_addressCtrl.text.trim().isEmpty &&
+        pick.card.address.trim().isNotEmpty) {
+      _setCtrl(_addressCtrl, pick.card.address.trim());
+    }
+    if (_siteCtrl.text.trim().isEmpty && pick.card.company.trim().isNotEmpty) {
+      _setCtrl(_siteCtrl, pick.card.company.trim());
+    }
+    _applyingName = false;
+  }
+
+  Future<void> _repickFromNameMatches() async {
+    if (_nameFillChoices.length < 2) return;
+    final pick = await showBusinessCardFillSheet(
+      context,
+      choices: _nameFillChoices,
+    );
+    if (!mounted || pick == null) return;
+    _applyFillFromCard(pick);
+  }
 
   Future<void> _pickYmd() async {
     final initial = DateTime.tryParse(_ymd) ?? DateTime.now();
@@ -300,6 +445,7 @@ class _SupportQuoteEditorPageState
             DateTime.now().millisecondsSinceEpoch.toString(),
         customerName: name,
         phone: _phoneCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
         site: _siteCtrl.text.trim(),
         address: _addressCtrl.text.trim(),
         ymd: _ymd,
@@ -319,20 +465,83 @@ class _SupportQuoteEditorPageState
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.existing == null ? '견적서 작성' : '견적서 수정'),
-        actions: [TextButton(onPressed: _save, child: const Text('저장'))],
+        actions: [TextButton(onPressed: _save, child: const Text('저장하고 보내기'))],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
           TextField(
             controller: _nameCtrl,
-            decoration: const InputDecoration(labelText: '고객명', filled: true),
+            decoration: InputDecoration(
+              labelText: '고객명',
+              hintText: '이름 넣으면 명함에서 전화·이메일을 채웁니다',
+              filled: true,
+              suffixIcon: _nameLookupBusy
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : _matchedCard == null
+                  ? null
+                  : Icon(Icons.contact_page_rounded, color: accent),
+            ),
+            textInputAction: TextInputAction.next,
+            onChanged: _onNameChanged,
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _phoneCtrl,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(labelText: '전화', filled: true),
+            decoration: InputDecoration(
+              labelText: '전화',
+              filled: true,
+              helperText: _fromCard ? '명함에서 자동 입력됨' : null,
+            ),
+            onChanged: (value) {
+              final formatted = formatKoreanPhoneHyphenated(value);
+              if (formatted != value) _setCtrl(_phoneCtrl, formatted);
+            },
+          ),
+          if (_matchedCard != null) ...[
+            const SizedBox(height: 8),
+            Material(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              child: ListTile(
+                leading: Icon(Icons.contact_page_rounded, color: accent),
+                title: Text(
+                  '명함 있음 · ${_matchedCard!.displayName}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(
+                  [
+                    if (_fromCard) '전화·이메일 자동 입력',
+                    if (_matchedCard!.company.trim().isNotEmpty)
+                      _matchedCard!.company.trim(),
+                  ].join(' · '),
+                ),
+                trailing: _nameFillChoices.length > 1
+                    ? TextButton(
+                        onPressed: _repickFromNameMatches,
+                        child: const Text('번호 바꾸기'),
+                      )
+                    : null,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextField(
+            controller: _emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: '이메일',
+              hintText: '견적서 받을 주소 (선택)',
+              filled: true,
+            ),
           ),
           const SizedBox(height: 8),
           TextField(

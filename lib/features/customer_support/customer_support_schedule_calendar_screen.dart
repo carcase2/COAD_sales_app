@@ -122,6 +122,32 @@ class _CustomerSupportScheduleCalendarScreenState
     return _visible.where((e) => e.ymd == ymd).toList();
   }
 
+  Future<void> _toggleQuoteSent(SupportScheduleEvent event) async {
+    final id = (event.consultationId ?? '').trim();
+    final raw = (event.consultationDescription ?? '').trim();
+    if (id.isEmpty || raw.isEmpty) return;
+    try {
+      String? sentYmd;
+      if (!event.quoteSent) {
+        sentYmd = await askSupportQuoteSentYmd(context, plannedYmd: event.ymd);
+        if (sentYmd == null || !mounted) return;
+      }
+      await ref
+          .read(supportCallLogRepositoryProvider)
+          .markQuoteSent(
+            consultationId: id,
+            description: raw,
+            sentYmd: sentYmd,
+          );
+      if (mounted) unawaited(_loadMonth());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+    }
+  }
+
   Future<void> _toggleDepositPaid(SupportScheduleEvent event) async {
     final report = event.visitReport;
     if (report == null || (report.id ?? '').isEmpty) return;
@@ -497,7 +523,11 @@ class _CustomerSupportScheduleCalendarScreenState
                                     }
                                   },
                                 )
-                              : null,
+                              : Checkbox(
+                                  value: e.quoteSent,
+                                  onChanged: (_) =>
+                                      unawaited(_toggleQuoteSent(e)),
+                                ),
                           onTap: () => unawaited(_open(e.log)),
                         ),
                       );

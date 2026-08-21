@@ -8,9 +8,10 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/data/business_card_repository.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
-import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_detail_screen.dart';
+import 'package:coad_customer_calls/features/business_cards/business_card_fill_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
+import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/kakao_address_field.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
@@ -127,6 +128,7 @@ class _CustomerSupportIntakeScreenState
   bool _phoneLookupBusy = false;
   String? _lookedUpName;
   String? _lookedUpPhoneDigits;
+  List<BusinessCardFill> _nameFillChoices = const [];
   String? _pendingProductName;
   final List<String> _attachmentUrls = [];
   bool _uploadBusy = false;
@@ -177,7 +179,8 @@ class _CustomerSupportIntakeScreenState
   }
 
   void _onNameChanged(String value) {
-    if (!_applyingName) _nameFromCard = false;
+    if (_applyingName) return;
+    _nameFromCard = false;
     _scheduleNameLookup(value);
   }
 
@@ -185,11 +188,14 @@ class _CustomerSupportIntakeScreenState
     _nameLookupDebounce?.cancel();
     final q = value.trim();
     if (q.length < 2) {
-      if (_matchedByName != null || _nameLookupBusy) {
+      if (_matchedByName != null ||
+          _nameLookupBusy ||
+          _nameFillChoices.isNotEmpty) {
         setState(() {
           _matchedByName = null;
           _nameLookupBusy = false;
           _lookedUpName = null;
+          _nameFillChoices = const [];
         });
       }
       return;
@@ -211,16 +217,26 @@ class _CustomerSupportIntakeScreenState
           .read(businessCardRepositoryProvider)
           .findByName(user: user, name: name);
       if (!mounted || _lookedUpName != name) return;
-      final match = bestBusinessCardNameMatch(name, found);
+      final choices = businessCardFillChoices(name, found);
       setState(() {
-        _matchedByName = match;
+        _nameFillChoices = choices;
         _nameLookupBusy = false;
       });
-      if (match == null) return;
-      final phone = match.primaryPhone.trim();
-      if (phone.isEmpty) return;
-      if (_phoneCtrl.text.trim().isNotEmpty && !_phoneFromCard) return;
-      _applyPhoneFromCard(phone);
+      if (choices.isEmpty) {
+        setState(() => _matchedByName = null);
+        return;
+      }
+      final pick = await resolveBusinessCardFill(
+        context,
+        query: name,
+        found: found,
+      );
+      if (!mounted || _lookedUpName != name) return;
+      if (pick == null) {
+        setState(() => _matchedByName = null);
+        return;
+      }
+      _applyFillFromCard(pick);
     } catch (_) {
       if (!mounted || _lookedUpName != name) return;
       setState(() {
@@ -277,6 +293,30 @@ class _CustomerSupportIntakeScreenState
         _phoneLookupBusy = false;
       });
     }
+  }
+
+  void _applyFillFromCard(BusinessCardFill pick) {
+    setState(() => _matchedByName = pick.card);
+    final cardName = pick.card.name.trim();
+    if (cardName.isNotEmpty) _applyNameFromCard(cardName);
+    if (pick.phone.isNotEmpty) _applyPhoneFromCard(pick.phone);
+    if (_addressCtrl.text.trim().isEmpty &&
+        pick.card.address.trim().isNotEmpty) {
+      _addressCtrl.text = pick.card.address.trim();
+    }
+    if (_siteCtrl.text.trim().isEmpty && pick.card.company.trim().isNotEmpty) {
+      _siteCtrl.text = pick.card.company.trim();
+    }
+  }
+
+  Future<void> _repickFromNameMatches() async {
+    if (_nameFillChoices.length < 2) return;
+    final pick = await showBusinessCardFillSheet(
+      context,
+      choices: _nameFillChoices,
+    );
+    if (!mounted || pick == null) return;
+    _applyFillFromCard(pick);
   }
 
   void _applyPhoneFromCard(String phone) {
@@ -391,7 +431,7 @@ class _CustomerSupportIntakeScreenState
       final repo = ref.read(supportCallLogRepositoryProvider);
       if (_isEdit) {
         final updated = await repo.update(widget.existing!.id, draft);
-        ref.invalidate(supportHomeStatsProvider);
+        invalidateSupportWorkCaches(ref);
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
@@ -400,14 +440,10 @@ class _CustomerSupportIntakeScreenState
         return;
       }
       final created = await repo.create(draft);
-      ref.invalidate(supportHomeStatsProvider);
+      invalidateSupportWorkCaches(ref);
       unawaited(_notifyAdmins(created));
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('A/S 접수가 저장되었습니다.')));
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(created);
     } catch (e) {
       if (!mounted) return;
       _toast(koreanErrorMessage(e));
@@ -636,7 +672,7 @@ class _CustomerSupportIntakeScreenState
                   controller: _nameCtrl,
                   decoration: InputDecoration(
                     labelText: '이름',
-                    hintText: '이름 넣으면 명함에서 전화를 채웁니다',
+                    hintText: '이름 넣으면 명함에서 전화·주소를 채웁니다',
                     suffixIcon: _nameLookupBusy
                         ? const Padding(
                             padding: EdgeInsets.all(12),
@@ -693,6 +729,8 @@ class _CustomerSupportIntakeScreenState
                     card: _matchedCard!,
                     phoneFilled: _phoneFromCard,
                     nameFilled: _nameFromCard,
+                    canChangePhone: _nameFillChoices.length > 1,
+                    onChangePhone: _repickFromNameMatches,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => BusinessCardDetailScreen(
@@ -922,12 +960,16 @@ class _MatchedCardBanner extends StatelessWidget {
     required this.card,
     required this.phoneFilled,
     this.nameFilled = false,
+    this.canChangePhone = false,
+    this.onChangePhone,
     required this.onTap,
   });
 
   final BusinessCard card;
   final bool phoneFilled;
   final bool nameFilled;
+  final bool canChangePhone;
+  final VoidCallback? onChangePhone;
   final VoidCallback onTap;
 
   @override
@@ -985,7 +1027,16 @@ class _MatchedCardBanner extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
+              if (canChangePhone)
+                TextButton(
+                  onPressed: onChangePhone,
+                  child: const Text('번호 바꾸기'),
+                )
+              else
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: scheme.onSurfaceVariant,
+                ),
             ],
           ),
         ),

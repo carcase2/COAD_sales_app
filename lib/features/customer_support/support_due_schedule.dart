@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/foundation.dart';
@@ -85,6 +86,7 @@ class SupportDueScheduleSummary {
           overdueVisit += 1;
         }
       } else if (e.kind == SupportScheduleKind.quoteSend) {
+        if (e.quoteSent) continue;
         if (today) {
           todaySend += 1;
         } else {
@@ -102,6 +104,79 @@ class SupportDueScheduleSummary {
     );
   }
 }
+
+class SupportDeskCounts {
+  const SupportDeskCounts({
+    required this.todayPending,
+    required this.pending,
+    required this.incomplete,
+    required this.inProgress,
+    required this.todayVisit,
+    required this.overdueVisit,
+    required this.todayDeposit,
+    required this.overdueDeposit,
+  });
+
+  final int todayPending;
+  final int pending;
+  final int incomplete;
+  final int inProgress;
+  final int todayVisit;
+  final int overdueVisit;
+  final int todayDeposit;
+  final int overdueDeposit;
+
+  static const empty = SupportDeskCounts(
+    todayPending: 0,
+    pending: 0,
+    incomplete: 0,
+    inProgress: 0,
+    todayVisit: 0,
+    overdueVisit: 0,
+    todayDeposit: 0,
+    overdueDeposit: 0,
+  );
+
+  bool get hasAttention =>
+      todayPending > 0 || pending > 0 || overdueVisit > 0 || overdueDeposit > 0;
+}
+
+/// 접수 삭제·상담·방문 저장 후 홈/허브 미처리·미완료 숫자를 다시 불러온다.
+void invalidateSupportWorkCaches(WidgetRef ref) {
+  ref.invalidate(supportHomeStatsProvider);
+  ref.invalidate(supportDeskCountsProvider);
+}
+
+final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
+  ref,
+) async {
+  final repo = ref.read(supportCallLogRepositoryProvider);
+  final today = todayYmdSeoul();
+  final events = await repo.listDueScheduleEvents(todayYmd: today);
+  final due = SupportDueScheduleSummary.fromEvents(events, today);
+  final pending = await repo.list(pendingOnly: true, limit: 200);
+  final todayPending = await repo.list(
+    pendingOnly: true,
+    fromYmd: today,
+    toYmdInclusive: today,
+    limit: 200,
+  );
+  final progress = await repo.list(
+    statusId: kSupportStatusInProgress,
+    limit: 200,
+  );
+  final incomplete = await repo.list(incompleteOnly: true, limit: 400);
+  return SupportDeskCounts(
+    todayPending: todayPending.length,
+    pending: pending.length,
+    incomplete: incomplete.length,
+    inProgress: progress.length,
+    todayVisit: due.todayVisit,
+    overdueVisit: due.overdueVisit,
+    todayDeposit: due.todayDeposit,
+    overdueDeposit: due.overdueDeposit,
+  );
+});
 
 /// 로그인·재개·상담 저장 후 9/13/18 로컬 예약을 맞춘다.
 Future<void> refreshSupportDueReminders(WidgetRef ref) async {
