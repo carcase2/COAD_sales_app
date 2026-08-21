@@ -17,10 +17,17 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class CustomerSupportScheduleCalendarScreen extends ConsumerStatefulWidget {
-  const CustomerSupportScheduleCalendarScreen({super.key, this.initialKind});
+  const CustomerSupportScheduleCalendarScreen({
+    super.key,
+    this.initialKind,
+    this.initialBranch,
+    this.initialYmd,
+  });
 
   /// null 이면 방문+발송 모두.
   final SupportScheduleKind? initialKind;
+  final String? initialBranch;
+  final String? initialYmd;
 
   @override
   ConsumerState<CustomerSupportScheduleCalendarScreen> createState() =>
@@ -41,8 +48,13 @@ class _CustomerSupportScheduleCalendarScreenState
   void initState() {
     super.initState();
     _kind = widget.initialKind;
+    final branch = (widget.initialBranch ?? '').trim();
+    if (kSupportBranchTabOrder.contains(branch)) {
+      _branchTab = branch;
+    }
     final today = todayYmdSeoul();
-    _focused = _fromYmd(today);
+    final ymd = (widget.initialYmd ?? '').trim();
+    _focused = _fromYmd(ymd.length >= 10 ? ymd : today);
     _selected = _focused;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_loadMonth());

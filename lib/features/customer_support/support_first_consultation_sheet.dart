@@ -169,7 +169,9 @@ class _SupportFirstConsultationSheetState
             const SizedBox(height: 4),
             Text(
               widget.stage == 1
-                  ? '${widget.log.customerName} · 마무리 / 구두 견적(전화 오면 방문일) / 정식 견적서 / 방문'
+                  ? '${widget.log.customerName} · 마무리 / 피드백 대기 / 구두 견적 / 정식 견적서 / 방문'
+                  : widget.lastOutcome == SupportConsultOutcome.feedbackWait
+                  ? '${widget.log.customerName} · 다시 연락 왔으면 마무리하거나 방문·견적을 잡습니다'
                   : widget.lastOutcome == SupportConsultOutcome.verbalQuote
                   ? '${widget.log.customerName} · 다시 전화 왔으면 방문일을 잡고, 그날 방문합니다'
                   : '${widget.log.customerName} · 답이 왔으면 마무리·정식 견적서·방문을 고릅니다',
@@ -202,11 +204,12 @@ class _SupportFirstConsultationSheetState
                     const SizedBox(width: 8),
                     Expanded(
                       child: _OutcomeChip(
-                        outcome: SupportConsultOutcome.verbalQuote,
-                        selected: _outcome == SupportConsultOutcome.verbalQuote,
+                        outcome: SupportConsultOutcome.feedbackWait,
+                        selected:
+                            _outcome == SupportConsultOutcome.feedbackWait,
                         enabled: !_saving,
                         onTap: () => setState(
-                          () => _outcome = SupportConsultOutcome.verbalQuote,
+                          () => _outcome = SupportConsultOutcome.feedbackWait,
                         ),
                       ),
                     ),
@@ -217,6 +220,17 @@ class _SupportFirstConsultationSheetState
                   children: [
                     Expanded(
                       child: _OutcomeChip(
+                        outcome: SupportConsultOutcome.verbalQuote,
+                        selected: _outcome == SupportConsultOutcome.verbalQuote,
+                        enabled: !_saving,
+                        onTap: () => setState(
+                          () => _outcome = SupportConsultOutcome.verbalQuote,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _OutcomeChip(
                         outcome: SupportConsultOutcome.quoteSend,
                         selected: _outcome == SupportConsultOutcome.quoteSend,
                         enabled: !_saving,
@@ -225,23 +239,19 @@ class _SupportFirstConsultationSheetState
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _OutcomeChip(
-                        outcome: SupportConsultOutcome.visit,
-                        selected: _outcome == SupportConsultOutcome.visit,
-                        enabled: !_saving,
-                        onTap: () {
-                          setState(
-                            () => _outcome = SupportConsultOutcome.visit,
-                          );
-                          if (_visitYmd == null) {
-                            unawaited(_pickDate(visit: true));
-                          }
-                        },
-                      ),
-                    ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                _OutcomeChip(
+                  outcome: SupportConsultOutcome.visit,
+                  selected: _outcome == SupportConsultOutcome.visit,
+                  enabled: !_saving,
+                  onTap: () {
+                    setState(() => _outcome = SupportConsultOutcome.visit);
+                    if (_visitYmd == null) {
+                      unawaited(_pickDate(visit: true));
+                    }
+                  },
                 ),
               ],
             ),
@@ -300,8 +310,10 @@ class _SupportFirstConsultationSheetState
               minLines: 3,
               maxLines: 6,
               enabled: !_saving,
-              decoration: const InputDecoration(
-                hintText: '상담 내용을 입력해 주세요',
+              decoration: InputDecoration(
+                hintText: _outcome == SupportConsultOutcome.feedbackWait
+                    ? '전화로 안내·조치한 내용을 적어 주세요'
+                    : '상담 내용을 입력해 주세요',
                 filled: true,
               ),
             ),
@@ -330,6 +342,7 @@ class _SupportFirstConsultationSheetState
                         )
                       : Text(switch (_outcome) {
                           SupportConsultOutcome.closed => '마무리 저장',
+                          SupportConsultOutcome.feedbackWait => '피드백 대기로 저장',
                           SupportConsultOutcome.verbalQuote => '답 대기로 저장',
                           SupportConsultOutcome.quoteSend => '발송일 저장',
                           SupportConsultOutcome.visit => '방문일 저장',
@@ -363,12 +376,14 @@ class _OutcomeChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color = switch (outcome) {
       SupportConsultOutcome.closed => AppTokens.success(scheme),
+      SupportConsultOutcome.feedbackWait => const Color(0xFFD97706),
       SupportConsultOutcome.verbalQuote => AppTokens.info(scheme),
       SupportConsultOutcome.quoteSend => scheme.primary,
       SupportConsultOutcome.visit => AppTokens.customerSupportAccent(scheme),
     };
     final icon = switch (outcome) {
       SupportConsultOutcome.closed => Icons.task_alt_rounded,
+      SupportConsultOutcome.feedbackWait => Icons.phonelink_ring_rounded,
       SupportConsultOutcome.verbalQuote => Icons.forum_outlined,
       SupportConsultOutcome.quoteSend => Icons.send_outlined,
       SupportConsultOutcome.visit => Icons.event_available_rounded,

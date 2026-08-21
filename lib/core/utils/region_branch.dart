@@ -80,3 +80,24 @@ bool _containsSido(String address, String sido) {
   }
   return false;
 }
+
+String supportBranchTabOf(String address, List<Region> regions) {
+  final type = matchSupportBranchType(address, regions);
+  return kSupportBranchTabOrder.contains(type) ? type : '기타';
+}
+
+/// 전체 · 본사 · 대구 · 대전 · 전남 · 기타 건수. 탭에 없는 지사는 기타로 넣는다.
+Map<String, int> supportBranchCounts(
+  Iterable<String> addresses,
+  List<Region> regions,
+) {
+  final counts = {for (final tab in kSupportBranchTabOrder) tab: 0};
+  var total = 0;
+  for (final address in addresses) {
+    total += 1;
+    final tab = supportBranchTabOf(address, regions);
+    counts[tab] = (counts[tab] ?? 0) + 1;
+  }
+  counts['전체'] = total;
+  return counts;
+}

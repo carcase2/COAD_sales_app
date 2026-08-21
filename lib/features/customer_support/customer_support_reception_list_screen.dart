@@ -55,6 +55,7 @@ class CustomerSupportReceptionListScreen extends ConsumerStatefulWidget {
     this.incompleteOnly = false,
     this.statusId,
     this.initialStatusTab,
+    this.initialBranch,
   });
 
   final String title;
@@ -65,6 +66,7 @@ class CustomerSupportReceptionListScreen extends ConsumerStatefulWidget {
   final bool incompleteOnly;
   final int? statusId;
   final String? initialStatusTab;
+  final String? initialBranch;
 
   @override
   ConsumerState<CustomerSupportReceptionListScreen> createState() =>
@@ -91,6 +93,10 @@ class _CustomerSupportReceptionListScreenState
             : widget.visitOnly
             ? '방문예정'
             : '전체');
+    final branch = (widget.initialBranch ?? '').trim();
+    if (kSupportBranchTabOrder.contains(branch)) {
+      _branchTab = branch;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_reload());
     });
@@ -222,8 +228,10 @@ class _CustomerSupportReceptionListScreenState
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) =>
-                      SupportSitesMapScreen(pendingOnly: widget.pendingOnly),
+                  builder: (_) => SupportSitesMapScreen(
+                    pendingOnly: widget.pendingOnly,
+                    initialBranch: _branchTab,
+                  ),
                 ),
               );
             },

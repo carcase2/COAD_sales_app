@@ -829,11 +829,18 @@ class SupportScheduleEvent {
   }
 }
 
-enum SupportConsultOutcome { closed, verbalQuote, quoteSend, visit }
+enum SupportConsultOutcome {
+  closed,
+  feedbackWait,
+  verbalQuote,
+  quoteSend,
+  visit,
+}
 
 String supportConsultOutcomeLabel(SupportConsultOutcome outcome) =>
     switch (outcome) {
       SupportConsultOutcome.closed => '마무리',
+      SupportConsultOutcome.feedbackWait => '피드백 대기',
       SupportConsultOutcome.verbalQuote => '구두 견적',
       SupportConsultOutcome.quoteSend => '정식 견적서',
       SupportConsultOutcome.visit => '방문 요청',
@@ -842,6 +849,8 @@ String supportConsultOutcomeLabel(SupportConsultOutcome outcome) =>
 String supportConsultOutcomeHint(SupportConsultOutcome outcome) =>
     switch (outcome) {
       SupportConsultOutcome.closed => '이 전화로 접수를 끝냅니다.',
+      SupportConsultOutcome.feedbackWait =>
+        '전화로 이것저것 안내하고 일단 해보게 합니다. 고객이 다시 연락 오면 다음 상담에서 마무리하거나 방문·견적을 잡습니다.',
       SupportConsultOutcome.verbalQuote =>
         '구두로 먼저 전달합니다. 고객이 다시 전화하면 방문일을 잡고, 그날 방문한 뒤 기록을 남깁니다.',
       SupportConsultOutcome.quoteSend =>
@@ -871,6 +880,7 @@ SupportConsultOutcome? lastSupportConsultOutcome(
 int supportConsultOutcomeStatusId(SupportConsultOutcome outcome) =>
     switch (outcome) {
       SupportConsultOutcome.closed => kSupportStatusCompleted,
+      SupportConsultOutcome.feedbackWait => kSupportStatusInProgress,
       SupportConsultOutcome.verbalQuote => kSupportStatusInProgress,
       SupportConsultOutcome.quoteSend => kSupportStatusInProgress,
       SupportConsultOutcome.visit => kSupportStatusVisitScheduled,
@@ -883,6 +893,7 @@ String supportConsultOutcomeLine(
 }) {
   final stored = switch (outcome) {
     SupportConsultOutcome.closed => '마무리',
+    SupportConsultOutcome.feedbackWait => '피드백 대기',
     SupportConsultOutcome.verbalQuote => '구두 견적',
     SupportConsultOutcome.quoteSend => '견적서 발송',
     SupportConsultOutcome.visit => '방문 요청',
@@ -921,11 +932,12 @@ parseSupportConsultation(String raw) {
   final rest = <String>[];
   for (final line in raw.split('\n')) {
     final m = RegExp(
-      r'^\[결과:\s*(마무리|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*발송완료\s*(\d{4}-\d{2}-\d{2}))?\]$',
+      r'^\[결과:\s*(마무리|피드백 대기|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*발송완료\s*(\d{4}-\d{2}-\d{2}))?\]$',
     ).firstMatch(line.trim());
     if (m != null && outcome == null) {
       outcome = switch (m.group(1)) {
         '마무리' => SupportConsultOutcome.closed,
+        '피드백 대기' => SupportConsultOutcome.feedbackWait,
         '구두 견적' => SupportConsultOutcome.verbalQuote,
         '견적서 발송' => SupportConsultOutcome.quoteSend,
         '방문 요청' => SupportConsultOutcome.visit,
@@ -1000,7 +1012,7 @@ class SupportFlowCue {
 }
 
 /// 목록·상세에서 지금 할 일.
-/// 접수 → 1차 상담(마무리 / 구두 견적 답 대기 / 정식 견적서 발송) → 방문일 → 방문 기록.
+/// 접수 → 1차 상담(마무리 / 피드백 대기 / 구두 견적 / 정식 견적서 / 방문) → 방문일 → 방문 기록.
 SupportFlowCue supportFlowCue({
   required int? serviceStatusId,
   int consultationCount = 0,
@@ -1048,12 +1060,21 @@ SupportFlowCue supportFlowCue({
     return const SupportFlowCue(
       action: SupportNextAction.consult,
       title: '다음: 1차 상담',
-      subtitle: '전화 내용을 남기고 마무리, 구두 견적(답 대기), 정식 견적서, 방문 중 하나를 고릅니다',
+      subtitle: '전화 내용을 남기고 마무리, 피드백 대기, 구두 견적, 정식 견적서, 방문 중 하나를 고릅니다',
       actionLabel: '1차 상담',
       progressLabel: '다음: 1차 상담',
     );
   }
   final stage = consultationCount + 1;
+  if (lastOutcome == SupportConsultOutcome.feedbackWait) {
+    return SupportFlowCue(
+      action: SupportNextAction.consult,
+      title: '피드백 대기',
+      subtitle: '전화로 안내했습니다. 다시 연락 오면 $stage차 상담에서 마무리하거나 방문·견적을 잡습니다',
+      actionLabel: '$stage차 상담',
+      progressLabel: '피드백 대기',
+    );
+  }
   if (lastOutcome == SupportConsultOutcome.verbalQuote) {
     return SupportFlowCue(
       action: SupportNextAction.consult,

@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_branch_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
@@ -689,6 +690,20 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   String? _listInitialAssignee(String assignee) =>
       assignee == '전체' ? null : assignee;
+
+  Future<String?> _pickSupportBranchForLogs({
+    required String title,
+    required String subtitle,
+    required Future<List<SupportCallLog>> Function() load,
+  }) {
+    return pickSupportBranch(
+      context: context,
+      ref: ref,
+      title: title,
+      subtitle: subtitle,
+      loadAddresses: () async => (await load()).map((e) => e.address ?? ''),
+    );
+  }
 
   String _hubPeriodScopeLabel(HubPeriod scope, {bool follow = false}) {
     final weekR = seoulWeekRangeContaining(_hubFlowAnchorYmd);
@@ -2256,38 +2271,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       HubPeriod.week => seoulWeekRangeContaining(periodKey.anchorYmd),
       HubPeriod.month => seoulMonthRangeContaining(periodKey.anchorYmd),
     };
-    Future<void> openList({
-      required String title,
-      bool pendingOnly = false,
-      bool visitOnly = false,
-    }) async {
-      HapticFeedback.selectionClick();
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => CustomerSupportReceptionListScreen(
-            title: title,
-            fromYmd: range.$1,
-            toYmdInclusive: range.$2,
-            pendingOnly: pendingOnly,
-            visitOnly: visitOnly,
-          ),
-        ),
-      );
-      invalidateSupportWorkCaches(ref);
-    }
-
-    Future<void> openVisitCalendar() async {
-      HapticFeedback.selectionClick();
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const CustomerSupportScheduleCalendarScreen(
-            initialKind: SupportScheduleKind.visit,
-          ),
-        ),
-      );
-      invalidateSupportWorkCaches(ref);
-    }
-
     final receptionLabel = switch (_hubNavStep) {
       HubNavStep.day => '금일 A/S',
       HubNavStep.week => '금주 A/S',
@@ -2308,6 +2291,146 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       HubNavStep.week => '금주 업데이트',
       HubNavStep.month => '금월 업데이트',
     };
+    Future<void> openList({
+      required String title,
+      bool pendingOnly = false,
+      bool visitOnly = false,
+      String? initialBranch,
+    }) async {
+      HapticFeedback.selectionClick();
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportReceptionListScreen(
+            title: title,
+            fromYmd: range.$1,
+            toYmdInclusive: range.$2,
+            pendingOnly: pendingOnly,
+            visitOnly: visitOnly,
+            initialBranch: initialBranch,
+          ),
+        ),
+      );
+      invalidateSupportWorkCaches(ref);
+    }
+
+    Future<void> openReceptionBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: 'A/S 지사 선택',
+        subtitle: _hubPeriodScopeLabel(periodKey.period),
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .list(fromYmd: range.$1, toYmdInclusive: range.$2, limit: 200),
+      );
+      if (!mounted || selected == null) return;
+      await openList(title: receptionLabel, initialBranch: selected);
+    }
+
+    Future<void> openPendingBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '미처리 지사 선택',
+        subtitle: _hubPeriodScopeLabel(periodKey.period),
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .list(
+              pendingOnly: true,
+              fromYmd: range.$1,
+              toYmdInclusive: range.$2,
+              limit: 200,
+            ),
+      );
+      if (!mounted || selected == null) return;
+      await openList(
+        title: pendingLabel,
+        pendingOnly: true,
+        initialBranch: selected,
+      );
+    }
+
+    Future<void> openVisitBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '방문 지사 선택',
+        subtitle: _hubPeriodScopeLabel(periodKey.period),
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .list(
+              visitOnly: true,
+              fromYmd: range.$1,
+              toYmdInclusive: range.$2,
+              limit: 200,
+            ),
+      );
+      if (!mounted || selected == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportScheduleCalendarScreen(
+            initialKind: SupportScheduleKind.visit,
+            initialBranch: selected,
+            initialYmd: periodKey.anchorYmd,
+          ),
+        ),
+      );
+      invalidateSupportWorkCaches(ref);
+    }
+
+    Future<void> openUpdatedBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '업데이트 지사 선택',
+        subtitle: _hubPeriodScopeLabel(periodKey.period),
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .list(fromYmd: range.$1, toYmdInclusive: range.$2, limit: 200),
+      );
+      if (!mounted || selected == null) return;
+      await openList(title: updatedLabel, initialBranch: selected);
+    }
+
+    Future<void> openAllPendingBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '미처리 지사 선택',
+        subtitle: '날짜 상관없이 1차 상담 전',
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .list(pendingOnly: true, limit: 200),
+      );
+      if (!mounted || selected == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportReceptionListScreen(
+            title: '전체 A/S 미처리',
+            pendingOnly: true,
+            initialBranch: selected,
+          ),
+        ),
+      );
+      invalidateSupportWorkCaches(ref);
+    }
+
+    Future<void> openAllIncompleteBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '미완료 지사 선택',
+        subtitle: '마무리·방문 완료가 아닌 모든 건',
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .list(incompleteOnly: true, limit: 400),
+      );
+      if (!mounted || selected == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportReceptionListScreen(
+            title: '전체 A/S 미완료',
+            incompleteOnly: true,
+            initialBranch: selected,
+          ),
+        ),
+      );
+      invalidateSupportWorkCaches(ref);
+    }
 
     return HomeSupportMiniStatsWidget(
       receptionLabel: receptionLabel,
@@ -2318,37 +2441,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       pending: stats.pending,
       visits: stats.visits,
       updated: stats.updated,
-      onTapReception: () => unawaited(openList(title: receptionLabel)),
-      onTapPending: () =>
-          unawaited(openList(title: pendingLabel, pendingOnly: true)),
-      onTapVisit: () => unawaited(openVisitCalendar()),
-      onTapUpdated: () => unawaited(openList(title: updatedLabel)),
+      onTapReception: () => unawaited(openReceptionBranchPicker()),
+      onTapPending: () => unawaited(openPendingBranchPicker()),
+      onTapVisit: () => unawaited(openVisitBranchPicker()),
+      onTapUpdated: () => unawaited(openUpdatedBranchPicker()),
       allPending: allPending,
       allIncomplete: desk.incomplete,
-      onTapAllPending: () async {
-        HapticFeedback.selectionClick();
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => const CustomerSupportReceptionListScreen(
-              title: '전체 A/S 미처리',
-              pendingOnly: true,
-            ),
-          ),
-        );
-        invalidateSupportWorkCaches(ref);
-      },
-      onTapAllIncomplete: () async {
-        HapticFeedback.selectionClick();
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => const CustomerSupportReceptionListScreen(
-              title: '전체 A/S 미완료',
-              incompleteOnly: true,
-            ),
-          ),
-        );
-        invalidateSupportWorkCaches(ref);
-      },
+      onTapAllPending: () => unawaited(openAllPendingBranchPicker()),
+      onTapAllIncomplete: () => unawaited(openAllIncompleteBranchPicker()),
     );
   }
 

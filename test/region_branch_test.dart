@@ -53,4 +53,21 @@ void main() {
     expect(matchSupportBranchType('', regions), '기타');
     expect(matchSupportBranchType('미국 뉴욕', regions), '기타');
   });
+
+  test('지사 건수는 전체와 본사·대구·대전·전남·기타를 모두 둔다', () {
+    final counts = supportBranchCounts([
+      '서울 강남구 테헤란로 1',
+      '대구 수성구',
+      '대전 서구',
+      '광주 북구 임동',
+      '미국 뉴욕',
+      '서울 송파구',
+    ], regions);
+    expect(counts['전체'], 6);
+    expect(counts['본사'], 2);
+    expect(counts['대구'], 1);
+    expect(counts['대전'], 1);
+    expect(counts['전남'], 1);
+    expect(counts['기타'], 1);
+  });
 }

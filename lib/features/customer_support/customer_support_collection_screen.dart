@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +17,14 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class CustomerSupportCollectionScreen extends ConsumerStatefulWidget {
-  const CustomerSupportCollectionScreen({super.key});
+  const CustomerSupportCollectionScreen({
+    super.key,
+    this.initialBranch,
+    this.initialFilter,
+  });
+
+  final String? initialBranch;
+  final String? initialFilter;
 
   @override
   ConsumerState<CustomerSupportCollectionScreen> createState() =>
@@ -26,6 +36,7 @@ class _CustomerSupportCollectionScreenState
   late DateTime _focused;
   late DateTime _selected;
   String _filter = 'due';
+  String _branchTab = '전체';
   List<SupportScheduleEvent> _events = const [];
   bool _loading = true;
   Object? _error;
@@ -37,6 +48,17 @@ class _CustomerSupportCollectionScreenState
     final today = DateTime.parse(todayYmdSeoul());
     _focused = today;
     _selected = today;
+    final branch = (widget.initialBranch ?? '').trim();
+    if (kSupportBranchTabOrder.contains(branch)) {
+      _branchTab = branch;
+    }
+    final filter = (widget.initialFilter ?? '').trim();
+    if (filter == 'all' ||
+        filter == 'due' ||
+        filter == 'overdue' ||
+        filter == 'done') {
+      _filter = filter;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });
@@ -78,6 +100,24 @@ class _CustomerSupportCollectionScreenState
     }
   }
 
+  List<SupportScheduleEvent> get _branchSource {
+    if (_branchTab == '전체') return _events;
+    final regions = ref.watch(regionsRawProvider).valueOrNull ?? const [];
+    return _events
+        .where(
+          (e) => supportBranchTabOf(e.log.address ?? '', regions) == _branchTab,
+        )
+        .toList(growable: false);
+  }
+
+  Map<String, int> _branchCounts() {
+    final regions = ref.watch(regionsRawProvider).valueOrNull ?? const [];
+    return supportBranchCounts(
+      _events.map((e) => e.log.address ?? ''),
+      regions,
+    );
+  }
+
   bool _matchesFilter(SupportScheduleEvent e) {
     final today = todayYmdSeoul();
     final paid = e.depositPaid == true;
@@ -92,21 +132,21 @@ class _CustomerSupportCollectionScreenState
 
   List<SupportScheduleEvent> _onDay(DateTime day) {
     final ymd = _toYmd(day);
-    return _events
+    return _branchSource
         .where((e) => e.ymd == ymd && _matchesFilter(e))
         .toList(growable: false);
   }
 
   int get _overdueCount {
     final today = todayYmdSeoul();
-    return _events
+    return _branchSource
         .where((e) => e.depositPaid != true && e.ymd.compareTo(today) < 0)
         .length;
   }
 
   int get _dueAmount {
     var sum = 0;
-    for (final e in _events) {
+    for (final e in _branchSource) {
       if (e.depositPaid == true) continue;
       sum += e.amount ?? 0;
     }
@@ -115,7 +155,7 @@ class _CustomerSupportCollectionScreenState
 
   int get _doneAmount {
     var sum = 0;
-    for (final e in _events) {
+    for (final e in _branchSource) {
       if (e.depositPaid != true) continue;
       sum += e.amount ?? 0;
     }
@@ -172,6 +212,12 @@ class _CustomerSupportCollectionScreenState
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
               children: [
+                SupportBranchFilterBar(
+                  selected: _branchTab,
+                  counts: _branchCounts(),
+                  onSelected: (tab) => setState(() => _branchTab = tab),
+                ),
+                const SizedBox(height: 8),
                 if (overdue > 0)
                   Material(
                     color: scheme.errorContainer,

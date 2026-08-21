@@ -124,6 +124,12 @@ void main() {
     );
     expect(
       supportVisitRecordAllowed(
+        consultationDescriptions: ['[결과: 피드백 대기]\n전원 리셋 안내'],
+      ),
+      isFalse,
+    );
+    expect(
+      supportVisitRecordAllowed(
         consultationDescriptions: ['[결과: 견적서 발송 · 발송예정 2026-08-22]\n발송'],
       ),
       isFalse,
@@ -148,10 +154,14 @@ void main() {
     expect(supportVisitRecordAllowed(existingVisitReportCount: 1), isTrue);
   });
 
-  test('상담 결과 힌트는 마무리·답 대기·정식 견적서·방문이다', () {
+  test('상담 결과 힌트는 마무리·피드백 대기·구두 견적·정식 견적서·방문이다', () {
     expect(
       supportConsultOutcomeHint(SupportConsultOutcome.closed),
       contains('끝냅니다'),
+    );
+    expect(
+      supportConsultOutcomeHint(SupportConsultOutcome.feedbackWait),
+      contains('다시 연락'),
     );
     expect(
       supportConsultOutcomeHint(SupportConsultOutcome.verbalQuote),
@@ -179,6 +189,22 @@ void main() {
     expect(
       supportFlowCue(serviceStatusId: 4, consultationCount: 0).progressLabel,
       '다음: 1차 상담',
+    );
+    expect(
+      supportConsultOutcomeStatusId(SupportConsultOutcome.feedbackWait),
+      kSupportStatusInProgress,
+    );
+    expect(
+      parseSupportConsultation('[결과: 피드백 대기]\n전원 리셋 안내').outcome,
+      SupportConsultOutcome.feedbackWait,
+    );
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusInProgress,
+        consultationCount: 1,
+        lastOutcome: SupportConsultOutcome.feedbackWait,
+      ).progressLabel,
+      '피드백 대기',
     );
     expect(
       supportFlowCue(

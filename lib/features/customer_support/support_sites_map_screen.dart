@@ -2,11 +2,15 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
+import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/core/utils/support_map_distance.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/kakao_local_client.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/models/region.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -19,10 +23,12 @@ class SupportSitesMapScreen extends ConsumerStatefulWidget {
     super.key,
     this.focusLog,
     this.pendingOnly = false,
+    this.initialBranch,
   });
 
   final SupportCallLog? focusLog;
   final bool pendingOnly;
+  final String? initialBranch;
 
   @override
   ConsumerState<SupportSitesMapScreen> createState() =>
@@ -43,6 +49,7 @@ class _SupportSitesMapScreenState extends ConsumerState<SupportSitesMapScreen> {
   bool _loading = true;
   Object? _error;
   String _filter = 'pending';
+  String _branchTab = '전체';
   SupportCallLog? _selected;
 
   static const _korea = LatLng(36.35, 127.7);
@@ -52,6 +59,10 @@ class _SupportSitesMapScreenState extends ConsumerState<SupportSitesMapScreen> {
     super.initState();
     _filter = widget.pendingOnly ? 'pending' : 'open';
     _selected = widget.focusLog;
+    final branch = (widget.initialBranch ?? '').trim();
+    if (kSupportBranchTabOrder.contains(branch)) {
+      _branchTab = branch;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });
@@ -134,9 +145,21 @@ class _SupportSitesMapScreenState extends ConsumerState<SupportSitesMapScreen> {
     }
   }
 
+  List<Region> get _regions =>
+      ref.watch(regionsRawProvider).valueOrNull ?? const [];
+
+  Map<String, int> _branchCounts() {
+    return supportBranchCounts(_pins.map((p) => p.log.address ?? ''), _regions);
+  }
+
   List<_Pin> get _visible {
     final rows = _pins.where((p) {
       final keepFocus = p.log.id == widget.focusLog?.id;
+      if (!keepFocus &&
+          _branchTab != '전체' &&
+          supportBranchTabOf(p.log.address ?? '', _regions) != _branchTab) {
+        return false;
+      }
       return keepFocus ||
           switch (_filter) {
             'pending' => p.log.isPending,
@@ -256,6 +279,14 @@ class _SupportSitesMapScreenState extends ConsumerState<SupportSitesMapScreen> {
             )
           : Column(
               children: [
+                SupportBranchFilterBar(
+                  selected: _branchTab,
+                  counts: _branchCounts(),
+                  onSelected: (tab) {
+                    setState(() => _branchTab = tab);
+                    _fit();
+                  },
+                ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                   child: Wrap(
