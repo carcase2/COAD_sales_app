@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/data/business_card_ocr.dart';
+import 'package:coad_customer_calls/data/business_card_repository.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/models/business_card.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,38 +10,36 @@ AppUser _user({
   String role = 'user',
   String? groupName,
   List<String> permissions = const [],
-}) =>
-    AppUser(
-      id: id,
-      name: '테스트',
-      role: role,
-      permissions: permissions,
-      groupName: groupName,
-    );
+}) => AppUser(
+  id: id,
+  name: '테스트',
+  role: role,
+  permissions: permissions,
+  groupName: groupName,
+);
 
 BusinessCard _card({
   String createdBy = 'u1',
   BusinessCardVisibility visibility = BusinessCardVisibility.team,
-}) =>
-    BusinessCard(
-      id: 'c1',
-      name: '홍길동',
-      company: '코아드',
-      title: '대표',
-      mobilePhone: '010-1234-5678',
-      officePhone: '02-111-2222',
-      email: 'a@b.com',
-      address: '서울',
-      memo: '',
-      imageUrl: '',
-      visibility: visibility,
-      createdBy: createdBy,
-      createdByName: '작성자',
-      updatedBy: createdBy,
-      updatedByName: '작성자',
-      createdAt: DateTime.utc(2026, 8, 19),
-      updatedAt: DateTime.utc(2026, 8, 19),
-    );
+}) => BusinessCard(
+  id: 'c1',
+  name: '홍길동',
+  company: '코아드',
+  title: '대표',
+  mobilePhone: '010-1234-5678',
+  officePhone: '02-111-2222',
+  email: 'a@b.com',
+  address: '서울',
+  memo: '',
+  imageUrl: '',
+  visibility: visibility,
+  createdBy: createdBy,
+  createdByName: '작성자',
+  updatedBy: createdBy,
+  updatedByName: '작성자',
+  createdAt: DateTime.utc(2026, 8, 19),
+  updatedAt: DateTime.utc(2026, 8, 19),
+);
 
 void main() {
   test('canAccessBusinessCards — 레거시 빈 권한 허용', () {
@@ -61,7 +60,10 @@ void main() {
     final private = _card(visibility: BusinessCardVisibility.private);
     expect(canViewBusinessCard(_user(id: 'u1'), private), isTrue);
     expect(canViewBusinessCard(_user(id: 'u2'), private), isFalse);
-    expect(canViewBusinessCard(_user(id: 'u2', role: 'admin'), private), isTrue);
+    expect(
+      canViewBusinessCard(_user(id: 'u2', role: 'admin'), private),
+      isTrue,
+    );
   });
 
   test('팀 공유 명함은 로그인 사용자 열람, 수정은 작성자만', () {
@@ -83,11 +85,17 @@ void main() {
       updatedAt: DateTime.utc(2026, 8, 19),
     );
     expect(
-      canEditBusinessCardComment(user: _user(id: 'u1'), comment: comment),
+      canEditBusinessCardComment(
+        user: _user(id: 'u1'),
+        comment: comment,
+      ),
       isTrue,
     );
     expect(
-      canEditBusinessCardComment(user: _user(id: 'u2'), comment: comment),
+      canEditBusinessCardComment(
+        user: _user(id: 'u2'),
+        comment: comment,
+      ),
       isFalse,
     );
     expect(
@@ -142,5 +150,37 @@ hong@coad.co.kr
     expect(parsed.phone, '010-1234-5678');
     expect(parsed.email.toLowerCase(), 'hong@coad.co.kr');
     expect(parsed.hasAnyField, isTrue);
+  });
+
+  test('bestBusinessCardNameMatch — 완전 일치 우선', () {
+    final hong = _card();
+    final hongGil = _card().copyWith(id: 'c2', name: '홍길동팀장');
+    expect(bestBusinessCardNameMatch('홍길동', [hongGil, hong])?.id, 'c1');
+    expect(bestBusinessCardNameMatch('홍', [hong, hongGil]), isNull);
+    expect(bestBusinessCardNameMatch('홍길동팀', [hongGil, hong])?.id, 'c2');
+    expect(bestBusinessCardNameMatch('홍길', [hong])?.id, 'c1');
+    expect(bestBusinessCardNameMatch('길동', [hong]), isNull);
+  });
+
+  test('같은 이름 명함은 휴대폰·사무실 번호를 나눠 고른다', () {
+    final mobile = _card().copyWith(id: 'c1', officePhone: '');
+    final both = _card().copyWith(
+      id: 'c2',
+      name: '홍길동',
+      mobilePhone: '010-1111-2222',
+      officePhone: '053-123-4567',
+    );
+    final choices = businessCardFillChoices('홍길동', [mobile, both]);
+    expect(choices.length, 3);
+    expect(choices.map((e) => e.phoneLabel).toSet(), {'휴대폰', '사무실'});
+    expect(choices.where((e) => e.card.id == 'c2').length, 2);
+  });
+
+  test('번호가 하나면 선택 없이 바로 채운다', () {
+    final one = _card().copyWith(officePhone: '', faxPhone: '');
+    final choices = businessCardFillChoices('홍길동', [one]);
+    expect(choices.length, 1);
+    expect(choices.first.phoneLabel, '휴대폰');
+    expect(choices.first.phone, '010-1234-5678');
   });
 }

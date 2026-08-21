@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
+import 'package:coad_customer_calls/core/utils/support_permissions.dart';
+import 'package:coad_customer_calls/core/utils/support_visit_capacity.dart';
+import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -27,6 +32,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late bool _notifyIssuance;
   late bool _notifyGeneralSchedule;
   late bool _notifyDaeguSchedule;
+  late bool _notifyAsDue;
+  late int _visitTeamsHq;
+  late int _visitTeamsBranch;
   int _updateHistoryReloadToken = 0;
 
   @override
@@ -38,10 +46,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _notifyIssuance =
         prefs.getBool(NotificationService.prefKeyNotifyIssuance) ?? true;
     _notifyGeneralSchedule =
-        prefs.getBool(NotificationService.prefKeyNotifyGeneralSchedule) ??
-            true;
+        prefs.getBool(NotificationService.prefKeyNotifyGeneralSchedule) ?? true;
     _notifyDaeguSchedule =
         prefs.getBool(NotificationService.prefKeyNotifyDaeguSchedule) ?? true;
+    _notifyAsDue =
+        prefs.getBool(NotificationService.prefKeyNotifyAsDue) ?? true;
+    _visitTeamsHq = supportVisitTeamsHq(prefs);
+    _visitTeamsBranch = supportVisitTeamsBranch(prefs);
     _loadFlowUncalledPref();
   }
 
@@ -86,6 +97,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildTeamStepper({
+    required String title,
+    required String subtitle,
+    required int value,
+    required ValueChanged<int> onChanged,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: value <= 1 ? null : () => onChanged(value - 1),
+            icon: const Icon(Icons.remove_rounded),
+          ),
+          Text('$value팀', style: const TextStyle(fontWeight: FontWeight.w900)),
+          IconButton(
+            onPressed: value >= 9 ? null : () => onChanged(value + 1),
+            icon: const Icon(Icons.add_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -103,9 +145,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (user != null) ...[
             Text(
               '계정',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             ListTile(
@@ -122,13 +164,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
               ),
-              title: Text(loginName != null && loginName.isNotEmpty ? loginName : '사용자'),
+              title: Text(
+                loginName != null && loginName.isNotEmpty ? loginName : '사용자',
+              ),
               subtitle: Text('사번/ID: ${user.id}'),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.logout, color: scheme.error),
-              title: Text('로그아웃', style: TextStyle(color: scheme.error, fontWeight: FontWeight.w700)),
+              title: Text(
+                '로그아웃',
+                style: TextStyle(
+                  color: scheme.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               onTap: () async {
                 final confirm = await showDialog<bool>(
                   context: context,
@@ -136,8 +186,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     title: const Text('로그아웃'),
                     content: const Text('정말 로그아웃 하시겠습니까?'),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('취소'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('로그아웃'),
+                      ),
                     ],
                   ),
                 );
@@ -151,9 +207,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (user != null && isAppAdmin(user)) ...[
             Text(
               '관리',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             ListTile(
@@ -188,9 +244,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
           Text(
             '자료',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           if (canViewStandardUnitPrice(ref.watch(authControllerProvider)))
@@ -240,9 +296,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 20),
           Text(
             '앱',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           ListTile(
@@ -299,13 +355,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.system_update_alt_rounded, color: scheme.primary),
+            leading: Icon(
+              Icons.system_update_alt_rounded,
+              color: scheme.primary,
+            ),
             title: const Text('업데이트 확인'),
             subtitle: Text(
               updateStatus?.hasUpdate == true
                   ? (updateStatus?.latestVersion != null
-                      ? '새 버전 v${updateStatus!.latestVersion} 사용 가능 · 탭하여 업데이트'
-                      : '새 버전 사용 가능 · 탭하여 업데이트')
+                        ? '새 버전 v${updateStatus!.latestVersion} 사용 가능 · 탭하여 업데이트'
+                        : '새 버전 사용 가능 · 탭하여 업데이트')
                   : 'Play 스토어에서 최신 버전으로 업데이트를 시도합니다.',
             ),
             trailing: updateStatus?.hasUpdate == true
@@ -326,9 +385,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
           Text(
             '알림',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           _buildNotifyToggle(
@@ -367,18 +426,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             value: _notifyDaeguSchedule,
             onChanged: (v) {
               setState(() => _notifyDaeguSchedule = v);
-              _setNotifyPref(
-                NotificationService.prefKeyNotifyDaeguSchedule,
-                v,
-              );
+              _setNotifyPref(NotificationService.prefKeyNotifyDaeguSchedule, v);
             },
           ),
+          if (canAccessCustomerSupport(user)) ...[
+            _buildNotifyToggle(
+              title: 'A/S 방문·발송 예정 알림',
+              subtitle: '매일 오전 9시, 오후 1시, 오후 6시에 오늘·지난 일정을 알려줍니다.',
+              value: _notifyAsDue,
+              onChanged: (v) {
+                setState(() => _notifyAsDue = v);
+                unawaited(() async {
+                  await _setNotifyPref(
+                    NotificationService.prefKeyNotifyAsDue,
+                    v,
+                  );
+                  await refreshSupportDueReminders(ref);
+                }());
+              },
+            ),
+            _buildTeamStepper(
+              title: '본사 방문 팀',
+              subtitle: '하루 방문 가능 팀 수',
+              value: _visitTeamsHq,
+              onChanged: (v) {
+                setState(() => _visitTeamsHq = v);
+                unawaited(
+                  ref
+                      .read(appDependenciesProvider)
+                      .prefs
+                      .setInt(kSupportVisitTeamsHqPref, v),
+                );
+              },
+            ),
+            _buildTeamStepper(
+              title: '지사 방문 팀',
+              subtitle: '대구·대전·전남 등 지사 하루 팀 수',
+              value: _visitTeamsBranch,
+              onChanged: (v) {
+                setState(() => _visitTeamsBranch = v);
+                unawaited(
+                  ref
+                      .read(appDependenciesProvider)
+                      .prefs
+                      .setInt(kSupportVisitTeamsBranchPref, v),
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 16),
           Text(
             '흐름',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           SwitchListTile(
@@ -409,8 +510,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Text(
                   '업데이트 내역',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               IconButton(
@@ -452,10 +553,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const SizedBox(height: 6),
                         Text(
                           '${snapshot.error}',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: scheme.error,
-                          ),
+                          style: TextStyle(fontSize: 12.5, color: scheme.error),
                         ),
                         const SizedBox(height: 10),
                         OutlinedButton.icon(
@@ -516,7 +614,11 @@ class _UpdateHistoryCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.new_releases_outlined, size: 18, color: scheme.primary),
+                Icon(
+                  Icons.new_releases_outlined,
+                  size: 18,
+                  color: scheme.primary,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   'v${item.version}',

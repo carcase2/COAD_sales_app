@@ -16,6 +16,7 @@ void main() {
     expect(appUsageTabLabel('quoter'), '견적');
     expect(appUsageTabLabel('standard_unit_price'), '표준단가(테스트중)');
     expect(appUsageTabLabel('quoter_log'), '견적 로그');
+    expect(appUsageTabLabel('customer_support'), '고객지원팀');
     expect(appUsageTabLabel('unknown'), 'unknown');
     expect(appUsageTabLabel(''), '—');
   });
@@ -27,12 +28,7 @@ void main() {
       weekOpens: 7,
       activeDays: 7,
       topTabKey: 'reception',
-      tabCounts: {
-        'home': 10,
-        'reception': 20,
-        'issuance': 5,
-        'menu': 2,
-      },
+      tabCounts: {'home': 10, 'reception': 20, 'issuance': 5, 'menu': 2},
     );
     const sparse = AppUsageSummary(
       userId: 'b',
@@ -49,33 +45,30 @@ void main() {
   });
 
   test('AppUsageInsights ranks features and users', () {
-    final insights = AppUsageInsights.fromUsers(
-      const [
-        AppUsageSummary(
-          userId: '1',
-          userName: '김사용',
-          weekOpens: 12,
-          activeDays: 3,
-          topTabKey: 'home',
-          tabCounts: {'home': 5, 'reception': 2},
-        ),
-        AppUsageSummary(
-          userId: '2',
-          userName: '이활용',
-          weekOpens: 6,
-          activeDays: 6,
-          topTabKey: 'reception',
-          tabCounts: {
-            'home': 3,
-            'reception': 12,
-            'issuance': 3,
-            'menu': 1,
-            'settings': 1,
-          },
-        ),
-      ],
-      periodDays: 7,
-    );
+    final insights = AppUsageInsights.fromUsers(const [
+      AppUsageSummary(
+        userId: '1',
+        userName: '김사용',
+        weekOpens: 12,
+        activeDays: 3,
+        topTabKey: 'home',
+        tabCounts: {'home': 5, 'reception': 2},
+      ),
+      AppUsageSummary(
+        userId: '2',
+        userName: '이활용',
+        weekOpens: 6,
+        activeDays: 6,
+        topTabKey: 'reception',
+        tabCounts: {
+          'home': 3,
+          'reception': 12,
+          'issuance': 3,
+          'menu': 1,
+          'settings': 1,
+        },
+      ),
+    ], periodDays: 7);
 
     expect(insights.activeUserCount, 2);
     expect(insights.totalOpens, 18);

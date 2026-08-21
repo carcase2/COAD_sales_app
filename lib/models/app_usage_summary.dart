@@ -19,20 +19,24 @@ class AppUsageSummary {
   final DateTime? lastUsed;
   final bool isAdmin;
 
-  int get totalTabTaps =>
-      tabCounts.values.fold<int>(0, (sum, v) => sum + v);
+  int get totalTabTaps => tabCounts.values.fold<int>(0, (sum, v) => sum + v);
 
-  int get distinctTabs =>
-      tabCounts.entries.where((e) => e.value > 0).length;
+  int get distinctTabs => tabCounts.entries.where((e) => e.value > 0).length;
 
   /// 꾸준함·기능 다양성·탭 활동을 합친 활용도(0~100).
   int engagementScore(int periodDays) {
     if (periodDays <= 0) return 0;
     final consistency = (activeDays / periodDays).clamp(0.0, 1.0);
-    final breadth = (distinctTabs / appUsageKnownTabKeys.length).clamp(0.0, 1.0);
+    final breadth = (distinctTabs / appUsageKnownTabKeys.length).clamp(
+      0.0,
+      1.0,
+    );
     final activity = (totalTabTaps / (periodDays * 8)).clamp(0.0, 1.0);
     final opens = (weekOpens / (periodDays * 3)).clamp(0.0, 1.0);
-    return ((consistency * 45) + (breadth * 25) + (activity * 20) + (opens * 10))
+    return ((consistency * 45) +
+            (breadth * 25) +
+            (activity * 20) +
+            (opens * 10))
         .round()
         .clamp(0, 100);
   }
@@ -60,19 +64,16 @@ class AppUsageInsights {
 
   int get activeUserCount => users.length;
 
-  double get avgOpensPerUser =>
-      users.isEmpty ? 0 : totalOpens / users.length;
+  double get avgOpensPerUser => users.isEmpty ? 0 : totalOpens / users.length;
 
-  double get avgActiveDays =>
-      users.isEmpty
-          ? 0
-          : users.fold<int>(0, (s, u) => s + u.activeDays) / users.length;
+  double get avgActiveDays => users.isEmpty
+      ? 0
+      : users.fold<int>(0, (s, u) => s + u.activeDays) / users.length;
 
   String get topFeatureKey =>
       featureRanking.isEmpty ? '' : featureRanking.first.key;
 
-  AppUsageSummary? get topUsageUser =>
-      byUsage.isEmpty ? null : byUsage.first;
+  AppUsageSummary? get topUsageUser => byUsage.isEmpty ? null : byUsage.first;
 
   AppUsageSummary? get topEngagementUser =>
       byEngagement.isEmpty ? null : byEngagement.first;
@@ -95,14 +96,13 @@ class AppUsageInsights {
       }
     }
 
-    final featureRanking = featureTotals.entries
-        .map((e) => (key: e.key, count: e.value))
-        .toList()
-      ..sort((a, b) {
-        final byCount = b.count.compareTo(a.count);
-        if (byCount != 0) return byCount;
-        return a.key.compareTo(b.key);
-      });
+    final featureRanking =
+        featureTotals.entries.map((e) => (key: e.key, count: e.value)).toList()
+          ..sort((a, b) {
+            final byCount = b.count.compareTo(a.count);
+            if (byCount != 0) return byCount;
+            return a.key.compareTo(b.key);
+          });
 
     final byUsage = List<AppUsageSummary>.from(users)
       ..sort((a, b) {
@@ -115,8 +115,9 @@ class AppUsageInsights {
 
     final byEngagement = List<AppUsageSummary>.from(users)
       ..sort((a, b) {
-        final byScore =
-            b.engagementScore(days).compareTo(a.engagementScore(days));
+        final byScore = b
+            .engagementScore(days)
+            .compareTo(a.engagementScore(days));
         if (byScore != 0) return byScore;
         final byDays = b.activeDays.compareTo(a.activeDays);
         if (byDays != 0) return byDays;
@@ -144,6 +145,7 @@ const List<String> appUsageKnownTabKeys = [
   'quoter_log',
   'general_schedule',
   'daegu_schedule',
+  'customer_support',
   'menu',
   'settings',
   'checksheet',
@@ -178,6 +180,8 @@ String appUsageTabLabel(String key) {
       return '본사일반';
     case 'daegu_schedule':
       return '대구지사';
+    case 'customer_support':
+      return '고객지원팀';
     case 'menu':
       return '메뉴';
     case 'settings':

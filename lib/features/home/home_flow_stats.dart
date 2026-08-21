@@ -28,6 +28,7 @@ class HomeMiniStatsWidget extends StatefulWidget {
     this.onLongPressTodayFollow,
     this.onLongPressUpdated,
     this.compact = false,
+    this.headerAlerts = const [],
   });
 
   final String receptionLabel;
@@ -52,10 +53,17 @@ class HomeMiniStatsWidget extends StatefulWidget {
   final VoidCallback onTapUncalledRate;
   final VoidCallback onTapFirstResponse;
   final bool compact;
+  final List<Widget> headerAlerts;
 
   @override
   State<HomeMiniStatsWidget> createState() => _HomeMiniStatsWidgetState();
 }
+
+bool _iosHomeCards(BuildContext context) =>
+    Theme.of(context).platform == TargetPlatform.iOS;
+
+bool _isBlankAlert(Widget w) =>
+    w is SizedBox && (w.width ?? 0) == 0 && (w.height ?? 0) == 0;
 
 class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
   bool _qualityExpanded = false;
@@ -64,12 +72,31 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final compact = widget.compact;
-    final gap = compact ? 6.0 : 8.0;
+    final roomy = compact && _iosHomeCards(context);
+    final gap = compact ? (roomy ? 7.0 : 4.0) : 8.0;
     return Container(
-      padding: EdgeInsets.all(compact ? 10 : 12),
+      padding: EdgeInsets.all(compact ? (roomy ? 11 : 8) : 12),
       decoration: HomeHubVisual.elevatedCard(scheme),
       child: Column(
         children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '영업부',
+              style: TextStyle(
+                fontSize: roomy ? 13 : 11,
+                fontWeight: FontWeight.w800,
+                color: scheme.primary,
+                height: 1.1,
+              ),
+            ),
+          ),
+          if (widget.headerAlerts.isNotEmpty) ...[
+            for (final alert in widget.headerAlerts)
+              if (!_isBlankAlert(alert)) ...[SizedBox(height: gap), alert],
+            SizedBox(height: gap),
+          ] else
+            SizedBox(height: gap),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -140,7 +167,7 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
             ),
           ),
           if (_qualityExpanded) ...[
-            SizedBox(height: compact ? 8 : 10),
+            SizedBox(height: compact ? (roomy ? 10 : 8) : 10),
             if (widget.followProgressHint != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -213,7 +240,7 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
               ),
             ),
           ],
-          const SizedBox(height: 6),
+          const SizedBox(height: 2),
           TextButton.icon(
             onPressed: () =>
                 setState(() => _qualityExpanded = !_qualityExpanded),
@@ -221,18 +248,237 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
               _qualityExpanded
                   ? Icons.expand_less_rounded
                   : Icons.expand_more_rounded,
-              size: 18,
+              size: 16,
             ),
             label: Text(
-              _qualityExpanded ? '품질 지표 접기' : '품질 지표 더보기',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              _qualityExpanded ? '품질 지표 접기' : '품질 지표',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
             ),
             style: TextButton.styleFrom(
               visualDensity: VisualDensity.compact,
-              minimumSize: const Size(0, 36),
+              minimumSize: const Size(0, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class HomeSupportMiniStatsWidget extends StatelessWidget {
+  const HomeSupportMiniStatsWidget({
+    super.key,
+    required this.receptionLabel,
+    required this.pendingLabel,
+    required this.visitLabel,
+    required this.updatedLabel,
+    required this.reception,
+    required this.pending,
+    required this.visits,
+    required this.updated,
+    required this.onTapReception,
+    required this.onTapPending,
+    required this.onTapVisit,
+    required this.onTapUpdated,
+    this.allPending = 0,
+    this.onTapAllPending,
+    this.allIncomplete = 0,
+    this.onTapAllIncomplete,
+    this.compact = true,
+  });
+
+  final String receptionLabel;
+  final String pendingLabel;
+  final String visitLabel;
+  final String updatedLabel;
+  final int reception;
+  final int pending;
+  final int visits;
+  final int updated;
+  final VoidCallback onTapReception;
+  final VoidCallback onTapPending;
+  final VoidCallback onTapVisit;
+  final VoidCallback onTapUpdated;
+  final int allPending;
+  final VoidCallback? onTapAllPending;
+  final int allIncomplete;
+  final VoidCallback? onTapAllIncomplete;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.18)!;
+    final roomy = compact && _iosHomeCards(context);
+    final gap = compact ? (roomy ? 7.0 : 4.0) : 8.0;
+    return Container(
+      padding: EdgeInsets.all(compact ? (roomy ? 11 : 8) : 12),
+      decoration: HomeHubVisual.elevatedCard(scheme),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '고객지원팀',
+            style: TextStyle(
+              fontSize: roomy ? 13 : 11,
+              fontWeight: FontWeight.w800,
+              color: accent,
+              height: 1.1,
+            ),
+          ),
+          SizedBox(height: gap),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.handyman_outlined,
+                    label: receptionLabel,
+                    value: reception.toString(),
+                    color: accent,
+                    onTap: onTapReception,
+                    compact: compact,
+                  ),
+                ),
+                SizedBox(width: gap),
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.pending_actions_rounded,
+                    label: pendingLabel,
+                    value: pending.toString(),
+                    color: scheme.error,
+                    onTap: onTapPending,
+                    compact: compact,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: gap),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.event_available_rounded,
+                    label: visitLabel,
+                    value: visits.toString(),
+                    color: scheme.tertiary,
+                    onTap: onTapVisit,
+                    compact: compact,
+                  ),
+                ),
+                SizedBox(width: gap),
+                Expanded(
+                  child: _FlowStatTile(
+                    icon: Icons.update_rounded,
+                    label: updatedLabel,
+                    value: updated.toString(),
+                    color: scheme.secondary,
+                    onTap: onTapUpdated,
+                    compact: compact,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onTapAllPending != null || onTapAllIncomplete != null) ...[
+            SizedBox(height: gap),
+            Row(
+              children: [
+                if (onTapAllPending != null)
+                  Expanded(
+                    child: _HomeWideStat(
+                      icon: Icons.phone_callback_rounded,
+                      label: '전체 미처리',
+                      count: allPending,
+                      accent: accent,
+                      alert: allPending > 0,
+                      onTap: onTapAllPending!,
+                    ),
+                  ),
+                if (onTapAllPending != null && onTapAllIncomplete != null)
+                  SizedBox(width: gap),
+                if (onTapAllIncomplete != null)
+                  Expanded(
+                    child: _HomeWideStat(
+                      icon: Icons.assignment_late_outlined,
+                      label: '전체 미완료',
+                      count: allIncomplete,
+                      accent: accent,
+                      alert: allIncomplete > 0,
+                      onTap: onTapAllIncomplete!,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeWideStat extends StatelessWidget {
+  const _HomeWideStat({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.accent,
+    required this.alert,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color accent;
+  final bool alert;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: alert
+          ? scheme.errorContainer.withValues(alpha: 0.7)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: alert ? scheme.error : accent),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: alert ? scheme.error : accent,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -262,6 +508,7 @@ class _FlowStatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final roomy = compact && _iosHomeCards(context);
     return Semantics(
       button: true,
       label: semanticsLabel ?? '$label $value',
@@ -290,20 +537,26 @@ class _FlowStatTile extends StatelessWidget {
             children: [
               Padding(
                 padding: EdgeInsets.fromLTRB(
-                  8,
-                  compact ? 10 : 12,
-                  8,
-                  compact ? 10 : 12,
+                  compact ? (roomy ? 10 : 7) : 10,
+                  compact ? (roomy ? 12 : 6) : 10,
+                  compact ? (roomy ? 10 : 6) : 10,
+                  compact ? (roomy ? 12 : 6) : 10,
                 ),
-                child: _StatItem(
-                  icon: icon,
-                  label: label,
-                  value: value,
-                  color: color,
-                  compact: compact,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: compact && roomy ? 28 : 0,
+                  ),
+                  child: _StatItem(
+                    icon: icon,
+                    label: label,
+                    value: value,
+                    color: color,
+                    compact: compact,
+                    roomy: roomy,
+                  ),
                 ),
               ),
-              if (onLongPress != null)
+              if (onLongPress != null && !compact)
                 Positioned(
                   top: 2,
                   right: 2,
@@ -360,9 +613,7 @@ class _InsightItem extends StatelessWidget {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(11),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.2),
-          ),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.2)),
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(11),
@@ -370,7 +621,7 @@ class _InsightItem extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.symmetric(
               horizontal: 8,
-              vertical: compact ? 10 : 12,
+              vertical: compact ? (_iosHomeCards(context) ? 14 : 10) : 12,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -418,6 +669,7 @@ class _StatItem extends StatelessWidget {
     required this.value,
     required this.color,
     this.compact = false,
+    this.roomy = false,
   });
 
   final IconData icon;
@@ -425,51 +677,49 @@ class _StatItem extends StatelessWidget {
   final String value;
   final Color color;
   final bool compact;
+  final bool roomy;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final valueSize = compact ? 18.0 : 20.0;
-    final labelSize = compact ? 12.0 : 13.0;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Row(
       children: [
         Icon(
           icon,
-          size: compact ? 16 : 18,
-          color: color.withValues(alpha: 0.8),
+          size: compact ? (roomy ? 16 : 13) : 16,
+          color: color.withValues(alpha: 0.85),
         ),
-        SizedBox(height: compact ? 8 : 10),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
+        SizedBox(width: compact ? (roomy ? 6 : 4) : 6),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
                 label,
                 maxLines: 1,
+                softWrap: false,
                 style: TextStyle(
-                  fontSize: labelSize,
-                  height: 1.2,
+                  fontSize: compact ? (roomy ? 13.5 : 12) : 12.5,
+                  height: 1.1,
                   fontWeight: FontWeight.w700,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.92),
                 ),
               ),
-              const SizedBox(width: 6),
-              Text(
-                value,
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: valueSize,
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
-                  letterSpacing: -0.4,
-                  height: 1.2,
-                ),
-              ),
-            ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          maxLines: 1,
+          style: TextStyle(
+            fontSize: compact ? (roomy ? 18 : 15) : 17,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurface,
+            letterSpacing: -0.3,
+            height: 1.1,
           ),
         ),
       ],

@@ -321,6 +321,12 @@ verify_jwt = false
 [functions.notify-general-schedule]
 verify_jwt = false
 
+[functions.notify-as-reception]
+verify_jwt = false
+
+[functions.notify-as-due-schedule]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/features/sales_calls/master_data_provider.da
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
+import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +17,8 @@ import 'package:table_calendar/table_calendar.dart';
 const String homeFlowUncalledPopupPrefKey = 'home_flow_no_uncalled_popup_v2';
 
 /// 금일 팔로우 최초 예정 건수(기기·일자별) — 완료 후 목록에서 빠져도 진행률 유지.
-String homeFlowFollowBaselinePrefKey(String ymd) => 'hub_follow_baseline_v1_$ymd';
+String homeFlowFollowBaselinePrefKey(String ymd) =>
+    'hub_follow_baseline_v1_$ymd';
 
 /// 처리할 미통화 조회 기간 — 접수일 무관, 최근 N일.
 const int pendingUncalledLookbackDays = 60;
@@ -61,8 +63,7 @@ PendingUncalledSummary summarizePendingUncalled({
     } else {
       carried++;
     }
-    if (me.isNotEmpty &&
-        displayAssigneeForCall(call, overrides, now) == me) {
+    if (me.isNotEmpty && displayAssigneeForCall(call, overrides, now) == me) {
       userCount++;
     }
   }
@@ -80,11 +81,13 @@ enum HomeHubSection { flow, calendar }
 /// 흐름 탭 상단 일/주/월 — 달력과 공유.
 enum HubNavStep { day, week, month }
 
-final homeHubNavStepProvider =
-    StateProvider<HubNavStep>((ref) => HubNavStep.day);
+final homeHubNavStepProvider = StateProvider<HubNavStep>(
+  (ref) => HubNavStep.day,
+);
 
-final homeHubFlowAnchorYmdProvider =
-    StateProvider<String>((ref) => todayYmdSeoul());
+final homeHubFlowAnchorYmdProvider = StateProvider<String>(
+  (ref) => todayYmdSeoul(),
+);
 
 typedef ConsultationLaunchTarget = ({
   HomeHubSection section,
@@ -170,10 +173,14 @@ class CallQualityOverview {
 List<AssigneeCountRow> _groupByAssignee(List<SalesCall> rows) {
   final Map<String, int> counts = {};
   for (final c in rows) {
-    final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+    final a = (c.assignedTo == null || c.assignedTo!.isEmpty)
+        ? '미지정'
+        : c.assignedTo!;
     counts[a] = (counts[a] ?? 0) + 1;
   }
-  final list = counts.entries.map((e) => (assignee: e.key, count: e.value)).toList();
+  final list = counts.entries
+      .map((e) => (assignee: e.key, count: e.value))
+      .toList();
   list.sort((a, b) {
     if (a.assignee == '미지정') return 1;
     if (b.assignee == '미지정') return -1;
@@ -210,7 +217,9 @@ double? _firstResponseMinutes(SalesCall c) {
 CallQualityOverview _buildCallQualityOverview(List<SalesCall> rows) {
   final Map<String, List<SalesCall>> byAssignee = {};
   for (final c in rows) {
-    final a = (c.assignedTo == null || c.assignedTo!.isEmpty) ? '미지정' : c.assignedTo!;
+    final a = (c.assignedTo == null || c.assignedTo!.isEmpty)
+        ? '미지정'
+        : c.assignedTo!;
     byAssignee.putIfAbsent(a, () => []).add(c);
   }
 
@@ -235,14 +244,13 @@ CallQualityOverview _buildCallQualityOverview(List<SalesCall> rows) {
   }
 
   final totalMetric = metricFor('전체', rows);
-  final assigneeRows = byAssignee.entries
-      .map((e) => metricFor(e.key, e.value))
-      .toList()
-    ..sort((a, b) {
-      final c = b.total.compareTo(a.total);
-      if (c != 0) return c;
-      return a.assignee.compareTo(b.assignee);
-    });
+  final assigneeRows =
+      byAssignee.entries.map((e) => metricFor(e.key, e.value)).toList()
+        ..sort((a, b) {
+          final c = b.total.compareTo(a.total);
+          if (c != 0) return c;
+          return a.assignee.compareTo(b.assignee);
+        });
 
   return CallQualityOverview(
     total: totalMetric.total,
@@ -258,24 +266,36 @@ enum HubPeriod { day, week, month }
 
 typedef HubPeriodKey = ({HubPeriod period, String anchorYmd});
 
+final supportHomeStatsProvider = FutureProvider.autoDispose
+    .family<SupportHomePeriodStats, HubPeriodKey>((ref, key) async {
+      final range = switch (key.period) {
+        HubPeriod.day => (key.anchorYmd, key.anchorYmd),
+        HubPeriod.week => seoulWeekRangeContaining(key.anchorYmd),
+        HubPeriod.month => seoulMonthRangeContaining(key.anchorYmd),
+      };
+      return ref
+          .read(supportCallLogRepositoryProvider)
+          .periodStats(fromYmd: range.$1, toYmdInclusive: range.$2);
+    });
+
 HubPeriodKey hubPeriodKeyFromNav(HubNavStep step, String anchorYmd) => (
-      period: switch (step) {
-        HubNavStep.day => HubPeriod.day,
-        HubNavStep.week => HubPeriod.week,
-        HubNavStep.month => HubPeriod.month,
-      },
-      anchorYmd: anchorYmd,
-    );
+  period: switch (step) {
+    HubNavStep.day => HubPeriod.day,
+    HubNavStep.week => HubPeriod.week,
+    HubNavStep.month => HubPeriod.month,
+  },
+  anchorYmd: anchorYmd,
+);
 
 /// 담당자 칩·달력 범례용 — Material 톤에 맞춘 팔레트.
 List<Color> hubAssigneeChartColors(ColorScheme scheme) => [
-      scheme.primary,
-      scheme.secondary,
-      scheme.tertiary,
-      scheme.error,
-      Color.lerp(scheme.primary, scheme.tertiary, 0.5)!,
-      Color.lerp(scheme.secondary, scheme.error, 0.35)!,
-    ];
+  scheme.primary,
+  scheme.secondary,
+  scheme.tertiary,
+  scheme.error,
+  Color.lerp(scheme.primary, scheme.tertiary, 0.5)!,
+  Color.lerp(scheme.secondary, scheme.error, 0.35)!,
+];
 
 Color hubAssigneeColor(
   ColorScheme scheme,
@@ -289,7 +309,10 @@ Color hubAssigneeColor(
   if (cached != null) return cached;
   final palette = hubAssigneeChartColors(scheme);
   final idx = orderedAssignees.indexOf(assignee);
-  final color = palette[idx < 0 ? assignee.hashCode.abs() % palette.length : idx % palette.length];
+  final color =
+      palette[idx < 0
+          ? assignee.hashCode.abs() % palette.length
+          : idx % palette.length];
   cache[assignee] = color;
   return color;
 }
@@ -331,25 +354,27 @@ Future<List<SalesCall>> _fetchHubPeriodReceptionCalls(
 /// 금일(단일 일자) 접수 목록 1회 — 흐름 bundle·미통화 breakdown이 공유.
 final hubDayReceptionCallsProvider = FutureProvider.autoDispose
     .family<List<SalesCall>, String>((ref, anchorYmd) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCallsAllPages(
-    date: anchorYmd,
-    includeCallHistory: true,
-    callHistoryQualityOnly: true,
-  );
-});
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      return repo.fetchCallsAllPages(
+        date: anchorYmd,
+        includeCallHistory: true,
+        callHistoryQualityOnly: true,
+      );
+    });
 
 /// 금일 미통화 — [hubDayReceptionCallsProvider] 결과에서 파생(추가 네트워크 없음).
 final hubDayUncalledCallsProvider = FutureProvider.autoDispose
     .family<List<SalesCall>, String>((ref, anchorYmd) async {
-  final calls = await ref.watch(hubDayReceptionCallsProvider(anchorYmd).future);
-  return uncalledCallsFrom(calls);
-});
+      final calls = await ref.watch(
+        hubDayReceptionCallsProvider(anchorYmd).future,
+      );
+      return uncalledCallsFrom(calls);
+    });
 
 /// 흐름 기간별 접수 목록 1회 조회 → 품질·미통화 집계에 재사용.
 class HubPeriodReceptionBundle {
   HubPeriodReceptionBundle(this.calls, {required List<SalesCall> uncalledCalls})
-      : uncalledCalls = uncalledCalls;
+    : uncalledCalls = uncalledCalls;
 
   final List<SalesCall> calls;
   final List<SalesCall> uncalledCalls;
@@ -364,15 +389,15 @@ class HubPeriodReceptionBundle {
 
 final hubPeriodReceptionBundleProvider = FutureProvider.autoDispose
     .family<HubPeriodReceptionBundle, HubPeriodKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  final calls = key.period == HubPeriod.day
-      ? await ref.watch(hubDayReceptionCallsProvider(key.anchorYmd).future)
-      : await _fetchHubPeriodReceptionCalls(repo, key);
-  return HubPeriodReceptionBundle(
-    calls,
-    uncalledCalls: uncalledCallsFrom(calls),
-  );
-});
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      final calls = key.period == HubPeriod.day
+          ? await ref.watch(hubDayReceptionCallsProvider(key.anchorYmd).future)
+          : await _fetchHubPeriodReceptionCalls(repo, key);
+      return HubPeriodReceptionBundle(
+        calls,
+        uncalledCalls: uncalledCallsFrom(calls),
+      );
+    });
 
 TodayStats _statsFromReceptionCalls(List<SalesCall> calls) {
   final total = calls.length;
@@ -388,28 +413,29 @@ TodayStats _statsFromReceptionCalls(List<SalesCall> calls) {
 /// reload/refresh 중에는 이전 수치를 유지해 카드가 잠깐 0으로 떨어지지 않게 한다.
 final hubPeriodStatsProvider = Provider.autoDispose
     .family<AsyncValue<TodayStats>, HubPeriodKey>((ref, key) {
-  final bundleAsync = ref.watch(hubPeriodReceptionBundleProvider(key));
-  return bundleAsync.when(
-    skipLoadingOnReload: true,
-    skipLoadingOnRefresh: true,
-    data: (bundle) => AsyncValue.data(_statsFromReceptionCalls(bundle.calls)),
-    loading: () => const AsyncValue.loading(),
-    error: (e, st) => AsyncValue.error(e, st),
-  );
-});
+      final bundleAsync = ref.watch(hubPeriodReceptionBundleProvider(key));
+      return bundleAsync.when(
+        skipLoadingOnReload: true,
+        skipLoadingOnRefresh: true,
+        data: (bundle) =>
+            AsyncValue.data(_statsFromReceptionCalls(bundle.calls)),
+        loading: () => const AsyncValue.loading(),
+        error: (e, st) => AsyncValue.error(e, st),
+      );
+    });
 
 /// 전기간(전일·전주·전월) 비교 배너용 경량 통계 — 전건 조회 없이
 /// `id·status_id·call_stage` 컬럼만 내려받음. 상세 목록이 필요하면 탭 시점에 조회.
 final hubPeriodLightStatsProvider = FutureProvider.autoDispose
     .family<TodayStats, HubPeriodKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  final (String start, String end) = switch (key.period) {
-    HubPeriod.day => (key.anchorYmd, key.anchorYmd),
-    HubPeriod.week => seoulWeekRangeContaining(key.anchorYmd),
-    HubPeriod.month => seoulMonthRangeContaining(key.anchorYmd),
-  };
-  return repo.fetchStatsForDateRange(start, end);
-});
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      final (String start, String end) = switch (key.period) {
+        HubPeriod.day => (key.anchorYmd, key.anchorYmd),
+        HubPeriod.week => seoulWeekRangeContaining(key.anchorYmd),
+        HubPeriod.month => seoulMonthRangeContaining(key.anchorYmd),
+      };
+      return repo.fetchStatsForDateRange(start, end);
+    });
 
 Future<List<SalesCall>> _fetchHubPeriodFollowCalls(
   SalesCallsRepository repo,
@@ -462,9 +488,9 @@ class HubPeriodFollowSnapshot {
   int get completed => (total - remaining).clamp(0, total);
 
   AssigneeOverview get incompleteOverview => AssigneeOverview(
-        total: remaining,
-        byAssignee: _groupByAssignee(remainingCalls),
-      );
+    total: remaining,
+    byAssignee: _groupByAssignee(remainingCalls),
+  );
 }
 
 Future<int> _resolveFollowDayBaseline(
@@ -497,41 +523,41 @@ List<SalesCall> _followRemainingCalls(List<SalesCall> calls) =>
 
 final hubPeriodFollowSnapshotProvider = FutureProvider.autoDispose
     .family<HubPeriodFollowSnapshot, HubPeriodKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  final calls = await _fetchHubPeriodFollowCalls(repo, key);
-  final remainingCalls = _followRemainingCalls(calls);
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      final calls = await _fetchHubPeriodFollowCalls(repo, key);
+      final remainingCalls = _followRemainingCalls(calls);
 
-  if (key.period == HubPeriod.day) {
-    final baseline = await _resolveFollowDayBaseline(
-      ref,
-      key.anchorYmd,
-      calls.length,
-      remainingCalls.length,
-    );
-    return HubPeriodFollowSnapshot(
-      calls: calls,
-      remainingCalls: remainingCalls,
-      dayBaselineTotal: baseline,
-    );
-  }
+      if (key.period == HubPeriod.day) {
+        final baseline = await _resolveFollowDayBaseline(
+          ref,
+          key.anchorYmd,
+          calls.length,
+          remainingCalls.length,
+        );
+        return HubPeriodFollowSnapshot(
+          calls: calls,
+          remainingCalls: remainingCalls,
+          dayBaselineTotal: baseline,
+        );
+      }
 
-  return HubPeriodFollowSnapshot(
-    calls: calls,
-    remainingCalls: remainingCalls,
-  );
-});
+      return HubPeriodFollowSnapshot(
+        calls: calls,
+        remainingCalls: remainingCalls,
+      );
+    });
 
 final hubPeriodFollowOverviewProvider = Provider.autoDispose
     .family<AsyncValue<AssigneeOverview>, HubPeriodKey>((ref, key) {
-  final snapshotAsync = ref.watch(hubPeriodFollowSnapshotProvider(key));
-  return snapshotAsync.when(
-    skipLoadingOnReload: true,
-    skipLoadingOnRefresh: true,
-    data: (snapshot) => AsyncValue.data(snapshot.incompleteOverview),
-    loading: () => const AsyncValue.loading(),
-    error: (e, st) => AsyncValue.error(e, st),
-  );
-});
+      final snapshotAsync = ref.watch(hubPeriodFollowSnapshotProvider(key));
+      return snapshotAsync.when(
+        skipLoadingOnReload: true,
+        skipLoadingOnRefresh: true,
+        data: (snapshot) => AsyncValue.data(snapshot.incompleteOverview),
+        loading: () => const AsyncValue.loading(),
+        error: (e, st) => AsyncValue.error(e, st),
+      );
+    });
 
 Future<List<SalesCall>> _fetchHubPeriodUpdatedCalls(
   SalesCallsRepository repo,
@@ -563,29 +589,34 @@ Future<List<SalesCall>> _fetchHubPeriodUpdatedCalls(
 /// 기간 내 `updated_at` 건 — coad_home 「금일 업데이트」와 동일 기준.
 final hubPeriodUpdatedCallsProvider = FutureProvider.autoDispose
     .family<List<SalesCall>, HubPeriodKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return _fetchHubPeriodUpdatedCalls(repo, key);
-});
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      return _fetchHubPeriodUpdatedCalls(repo, key);
+    });
 
 final hubPeriodUpdatedOverviewProvider = Provider.autoDispose
     .family<AsyncValue<AssigneeOverview>, HubPeriodKey>((ref, key) {
-  final callsAsync = ref.watch(hubPeriodUpdatedCallsProvider(key));
-  return callsAsync.when(
-    skipLoadingOnReload: true,
-    skipLoadingOnRefresh: true,
-    data: (calls) => AsyncValue.data(
-      AssigneeOverview(total: calls.length, byAssignee: _groupByAssignee(calls)),
-    ),
-    loading: () => const AsyncValue.loading(),
-    error: (e, st) => AsyncValue.error(e, st),
-  );
-});
+      final callsAsync = ref.watch(hubPeriodUpdatedCallsProvider(key));
+      return callsAsync.when(
+        skipLoadingOnReload: true,
+        skipLoadingOnRefresh: true,
+        data: (calls) => AsyncValue.data(
+          AssigneeOverview(
+            total: calls.length,
+            byAssignee: _groupByAssignee(calls),
+          ),
+        ),
+        loading: () => const AsyncValue.loading(),
+        error: (e, st) => AsyncValue.error(e, st),
+      );
+    });
 
 final hubPeriodQualityOverviewProvider = FutureProvider.autoDispose
     .family<CallQualityOverview, HubPeriodKey>((ref, key) async {
-  final bundle = await ref.watch(hubPeriodReceptionBundleProvider(key).future);
-  return bundle.quality;
-});
+      final bundle = await ref.watch(
+        hubPeriodReceptionBundleProvider(key).future,
+      );
+      return bundle.quality;
+    });
 
 /// 흐름 탭 기간 데이터를 병렬로 미리 불러 워터폴 대기를 줄임.
 /// 전기간은 비교 배너용 경량 통계만 미리 조회(전건 fetch 없음).
@@ -670,70 +701,75 @@ Future<List<TempManagerOverride>> _pendingUncalledOverrides(Ref ref) async {
 /// 배지·담당자 집계 전용 경량 조회(필요 컬럼만) — 목록 화면은 자체 전체 조회 사용.
 final hubPendingUncalledCallsProvider =
     FutureProvider.autoDispose<List<SalesCall>>((ref) async {
-  final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  final calls = await repo.fetchPendingUncalledLite(
-    fromYmd: pendingUncalledFromYmd(anchor),
-  );
-  final overrides = await _pendingUncalledOverrides(ref);
-  return applyCallDisplayOverrides(calls, overrides, DateTime.now());
-});
+      final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      final calls = await repo.fetchPendingUncalledLite(
+        fromYmd: pendingUncalledFromYmd(anchor),
+      );
+      final overrides = await _pendingUncalledOverrides(ref);
+      return applyCallDisplayOverrides(calls, overrides, DateTime.now());
+    });
 
 final hubPendingUncalledSummaryProvider =
     FutureProvider.autoDispose<PendingUncalledSummary>((ref) async {
-  final calls = await ref.watch(hubPendingUncalledCallsProvider.future);
-  final overrides = await _pendingUncalledOverrides(ref);
-  return summarizePendingUncalled(
-    calls: calls,
-    todayYmd: todayYmdSeoul(),
-    overrides: overrides,
-    loginName: ref.watch(
-      authControllerProvider.select((u) => u?.name),
-    ),
-  );
-});
+      final calls = await ref.watch(hubPendingUncalledCallsProvider.future);
+      final overrides = await _pendingUncalledOverrides(ref);
+      return summarizePendingUncalled(
+        calls: calls,
+        todayYmd: todayYmdSeoul(),
+        overrides: overrides,
+        loginName: ref.watch(authControllerProvider.select((u) => u?.name)),
+      );
+    });
 
 /// 예정일이 오늘보다 과거인 미종료 팔로우.
 final hubOverdueFollowCallsProvider =
     FutureProvider.autoDispose<List<SalesCall>>((ref) async {
-  final today = todayYmdSeoul();
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  final calls = await repo.fetchCallsAllPages(
-    followRangeStart: addDaysToYmd(today, -overdueFollowLookbackDays),
-    followRangeEndInclusive: addDaysToYmd(today, -1),
-    incompleteOnly: true,
-    excludeSimpleInquiries: true,
-    includeCallHistory: false,
-    cacheLocally: false,
-  );
-  final overrides = await _pendingUncalledOverrides(ref);
-  final applied = applyCallDisplayOverrides(calls, overrides, DateTime.now());
-  applied.sort((a, b) {
-    final ak = a.followCalendarDateKey ?? '';
-    final bk = b.followCalendarDateKey ?? '';
-    final byDate = ak.compareTo(bk);
-    if (byDate != 0) return byDate;
-    return (a.customerName ?? '').compareTo(b.customerName ?? '');
-  });
-  return applied;
-});
+      final today = todayYmdSeoul();
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      final calls = await repo.fetchCallsAllPages(
+        followRangeStart: addDaysToYmd(today, -overdueFollowLookbackDays),
+        followRangeEndInclusive: addDaysToYmd(today, -1),
+        incompleteOnly: true,
+        excludeSimpleInquiries: true,
+        includeCallHistory: false,
+        cacheLocally: false,
+      );
+      final overrides = await _pendingUncalledOverrides(ref);
+      final applied = applyCallDisplayOverrides(
+        calls,
+        overrides,
+        DateTime.now(),
+      );
+      applied.sort((a, b) {
+        final ak = a.followCalendarDateKey ?? '';
+        final bk = b.followCalendarDateKey ?? '';
+        final byDate = ak.compareTo(bk);
+        if (byDate != 0) return byDate;
+        return (a.customerName ?? '').compareTo(b.customerName ?? '');
+      });
+      return applied;
+    });
 
 /// 달력에 표시 중인 주·월 구간 (`next_scheduled_date` 기준, 목록 `followDate`/`followRange`와 동일).
 typedef CalendarFollowRangeKey = ({String startYmd, String endYmd});
 
 /// [CalendarFollowRangeKey] 구간의 팔로우 통화 — `SalesCallListScreen.incompleteByDate`와 동일 API 조건.
 final calendarFollowRangeProvider =
-    FutureProvider.family<List<SalesCall>, CalendarFollowRangeKey>((ref, key) async {
-  final repo = ref.watch(salesCallsRepositoryProvider);
-  return repo.fetchCallsAllPages(
-    followRangeStart: key.startYmd,
-    followRangeEndInclusive: key.endYmd,
-    incompleteOnly: true,
-    excludeSimpleInquiries: true,
-    includeCallHistory: false,
-    cacheLocally: false,
-  );
-});
+    FutureProvider.family<List<SalesCall>, CalendarFollowRangeKey>((
+      ref,
+      key,
+    ) async {
+      final repo = ref.watch(salesCallsRepositoryProvider);
+      return repo.fetchCallsAllPages(
+        followRangeStart: key.startYmd,
+        followRangeEndInclusive: key.endYmd,
+        incompleteOnly: true,
+        excludeSimpleInquiries: true,
+        includeCallHistory: false,
+        cacheLocally: false,
+      );
+    });
 
 /// 세그먼트 배지: 로그인 담당자 건수, 없으면 전체.
 int segmentBadgeCountForUser(AssigneeOverview overview, String? loginName) {
@@ -794,8 +830,9 @@ int _countCalendarBadgeInPeriod({
 /// 홈 [흐름] 탭 배지 — 처리할 미통화(최근 60일), 로그인 담당자 건수.
 final hubSegmentIncompleteBadgeProvider = Provider<AsyncValue<int>>((ref) {
   final summaryAsync = ref.watch(hubPendingUncalledSummaryProvider);
-  final loginName = ref
-      .watch(authControllerProvider.select((u) => u?.name.trim()));
+  final loginName = ref.watch(
+    authControllerProvider.select((u) => u?.name.trim()),
+  );
   return summaryAsync.when(
     data: (summary) {
       if (loginName != null && loginName.isNotEmpty) {
@@ -812,8 +849,9 @@ final hubSegmentIncompleteBadgeProvider = Provider<AsyncValue<int>>((ref) {
 final hubSegmentCalendarBadgeProvider = Provider<AsyncValue<int>>((ref) {
   final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
   final navStep = ref.watch(homeHubNavStepProvider);
-  final loginName = ref
-      .watch(authControllerProvider.select((u) => u?.name.trim()));
+  final loginName = ref.watch(
+    authControllerProvider.select((u) => u?.name.trim()),
+  );
 
   final range = switch (navStep) {
     HubNavStep.day => (anchor, anchor),
@@ -823,7 +861,8 @@ final hubSegmentCalendarBadgeProvider = Provider<AsyncValue<int>>((ref) {
   final callsAsync = ref.watch(
     calendarFollowRangeProvider((startYmd: range.$1, endYmd: range.$2)),
   );
-  final overrides = ref.watch(tempManagerOverridesProvider).valueOrNull ??
+  final overrides =
+      ref.watch(tempManagerOverridesProvider).valueOrNull ??
       const <TempManagerOverride>[];
 
   return callsAsync.when(

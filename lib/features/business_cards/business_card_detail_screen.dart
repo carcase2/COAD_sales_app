@@ -329,40 +329,40 @@ class _BusinessCardDetailScreenState
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             children: [
               if (card.imageUrl.isNotEmpty) ...[
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => unawaited(
-                      openBusinessCardImageViewer(
-                        context,
-                        url: card.imageUrl,
-                        title: card.displayName,
-                      ),
-                    ),
-                    borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            CachedAppImage(
-                              url: card.imageUrl,
-                              fit: BoxFit.cover,
-                            ),
-                            const Positioned(
-                              right: 8,
-                              bottom: 8,
-                              child: Icon(
-                                Icons.zoom_in_rounded,
-                                color: Colors.white,
-                                size: 22,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CachedAppImage(
+                          url: card.imageUrl,
+                          fit: BoxFit.cover,
+                        ),
+                        const Positioned(
+                          right: 8,
+                          bottom: 8,
+                          child: Icon(
+                            Icons.zoom_in_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => unawaited(
+                              openBusinessCardImageViewer(
+                                context,
+                                url: card.imageUrl,
+                                title: card.displayName,
                               ),
                             ),
-                          ],
+                            child: const ColoredBox(color: Color(0x00000000)),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ),

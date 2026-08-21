@@ -106,6 +106,22 @@ class B2UploadRepository {
     return _putPublicObject(filePath: filePath, objectPath: objectPath);
   }
 
+  /// A/S 접수 첨부. 경로: as_calls/연락처/날짜_타임스탬프_파일명
+  Future<String> uploadSupportCallFile({
+    required String filePath,
+    String? customerPhone,
+  }) async {
+    final now = DateTime.now();
+    final dateStr = DateFormat('yyyyMMdd').format(now);
+    final fileName = p.basename(filePath);
+    final timestamp = now.millisecondsSinceEpoch;
+    final phoneFolder =
+        customerPhone?.replaceAll(RegExp(r'[^0-9]'), '') ?? 'unknown';
+    final safePhone = phoneFolder.isEmpty ? 'unknown' : phoneFolder;
+    final objectPath = 'as_calls/$safePhone/${dateStr}_${timestamp}_$fileName';
+    return _putPublicObject(filePath: filePath, objectPath: objectPath);
+  }
+
   Future<String> _putPublicObject({
     required String filePath,
     required String objectPath,
