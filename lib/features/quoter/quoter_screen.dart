@@ -2682,6 +2682,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       label = '스라트';
       bg = Colors.blue.withValues(alpha: 0.15);
       fg = Colors.blue.shade800;
+    } else if (n.contains('절곡')) {
+      label = '절곡';
+      bg = Colors.deepPurple.withValues(alpha: 0.14);
+      fg = Colors.deepPurple.shade700;
     } else if (n.contains('기본')) {
       label = '기본';
       bg = Colors.teal.withValues(alpha: 0.14);
@@ -2885,6 +2889,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   }
 
   void _showBreakdownSheet(ColorScheme scheme) {
+    final typeColor = QuoterTypeStyle.color(_selectedType);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -2894,62 +2899,411 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       enableDrag: false,
       backgroundColor: scheme.surface,
       builder: (ctx) {
+        var materialOnly = false;
         final maxH = MediaQuery.sizeOf(ctx).height * 0.88;
-        return SizedBox(
-          height: maxH,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.receipt_long_rounded,
-                      size: 18,
-                      color: scheme.primary,
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final result = _result;
+            final materialTotal = result == null
+                ? 0
+                : ShutterCalculator.materialCostTotal(result);
+            final footerLabel = materialOnly ? '자재비 합계' : '견적 총액';
+            final footerAmount = materialOnly
+                ? materialTotal
+                : (result?.totalAmount ?? 0);
+
+            return SizedBox(
+              height: maxH,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          materialOnly
+                              ? Icons.inventory_2_rounded
+                              : Icons.receipt_long_rounded,
+                          size: 18,
+                          color: materialOnly ? typeColor : scheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            materialOnly ? '자재비 내역' : '견적 내역',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '닫기',
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '견적 내역',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: scheme.onSurface,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: _buildMaterialOnlyToggle(
+                      value: materialOnly,
+                      onChanged: (v) => setSheetState(() => materialOnly = v),
+                      scheme: scheme,
+                      accent: typeColor,
+                    ),
+                  ),
+                  Divider(
+                    height: 1,
+                    color: scheme.outlineVariant.withValues(alpha: 0.45),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      physics: const ClampingScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      children: [
+                        if (materialOnly)
+                          _buildMaterialOnlyBreakdown(scheme, typeColor)
+                        else ...[
+                          if (_companyComparisons.isNotEmpty) ...[
+                            _buildCompanyDeltaSummaryCard(scheme),
+                            const SizedBox(height: 12),
+                          ],
+                          _buildGroupedBreakdown(scheme),
+                        ],
+                      ],
+                    ),
+                  ),
+                  _buildBreakdownFooter(
+                    scheme: scheme,
+                    accent: materialOnly ? typeColor : scheme.primary,
+                    label: footerLabel,
+                    amount: footerAmount,
+                    hint: materialOnly ? '스라트 · 모터 · 절곡비용' : null,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMaterialOnlyToggle({
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    required ColorScheme scheme,
+    required Color accent,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: value
+              ? accent.withValues(alpha: 0.10)
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: value
+                ? accent.withValues(alpha: 0.38)
+                : scheme.outlineVariant.withValues(alpha: 0.40),
+          ),
+        ),
+        child: SwitchListTile.adaptive(
+          value: value,
+          onChanged: onChanged,
+          contentPadding: const EdgeInsets.fromLTRB(12, 2, 8, 2),
+          visualDensity: VisualDensity.compact,
+          secondary: Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: value
+                  ? accent.withValues(alpha: 0.16)
+                  : scheme.surface.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.inventory_2_outlined,
+              size: 18,
+              color: value ? accent : scheme.onSurfaceVariant,
+            ),
+          ),
+          title: Text(
+            '자재비만 보기',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurface,
+            ),
+          ),
+          subtitle: Text(
+            '스라트 · 모터 · 절곡비용',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMaterialOnlyBreakdown(ColorScheme scheme, Color accent) {
+    final result = _result;
+    if (result == null) return const SizedBox.shrink();
+    final items = ShutterCalculator.materialCostItems(result);
+
+    if (items.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 22),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.32),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              Icons.inventory_2_outlined,
+              size: 28,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '표시할 자재비가 없습니다',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '이 견적에는 스라트·모터·절곡비용이 포함되지 않았습니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.08),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  '자재비',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${items.length}건',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: accent,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  _krwFormat.format(
+                    ShutterCalculator.materialCostTotal(result),
+                  ),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...items.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final item = entry.value;
+            final isLast = idx == items.length - 1;
+            final note = item.note?.trim();
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                border: isLast
+                    ? null
+                    : Border(
+                        bottom: BorderSide(
+                          color: scheme.outlineVariant.withValues(alpha: 0.16),
                         ),
                       ),
+                borderRadius: isLast
+                    ? const BorderRadius.vertical(bottom: Radius.circular(16))
+                    : BorderRadius.zero,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: _buildMaterialTypeBadge(item, scheme),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _compactItemName(item.name),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: scheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (note != null && note.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            note,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    IconButton(
-                      tooltip: '닫기',
-                      onPressed: () => Navigator.of(ctx).pop(),
-                      icon: const Icon(Icons.close_rounded),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _krwFormat.format(item.amount),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurface,
                     ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreakdownFooter({
+    required ColorScheme scheme,
+    required Color accent,
+    required String label,
+    required int amount,
+    String? hint,
+  }) {
+    return Material(
+      color: scheme.surface,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: scheme.outlineVariant.withValues(alpha: 0.45),
+            ),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (hint != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        hint,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant.withValues(
+                            alpha: 0.85,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              Divider(
-                height: 1,
-                color: scheme.outlineVariant.withValues(alpha: 0.45),
-              ),
-              Expanded(
-                child: ListView(
-                  // 바운스/오버스크롤이 뒤 화면을 끌어올리지 않도록
-                  physics: const ClampingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-                  children: [
-                    if (_companyComparisons.isNotEmpty) ...[
-                      _buildCompanyDeltaSummaryCard(scheme),
-                      const SizedBox(height: 12),
-                    ],
-                    _buildGroupedBreakdown(scheme),
-                  ],
+              Text(
+                _krwFormat.format(amount),
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.4,
+                  color: accent,
                 ),
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 

@@ -34,7 +34,8 @@ class ShutterCalculator {
     if (type == ShutterType.fireSteel || type == ShutterType.fireScreen) {
       return 0;
     }
-    final isInsulated = type == ShutterType.doubleExtrusionInsulated ||
+    final isInsulated =
+        type == ShutterType.doubleExtrusionInsulated ||
         type == ShutterType.windproofInsulated;
     final weightPerM2 = isInsulated ? 15.0 : 10.0;
     final calcWidth = widthMm + 100;
@@ -73,8 +74,7 @@ class ShutterCalculator {
     }
     final idx = _motorModelOrder.indexOf(base);
     if (idx < 0) return base;
-    return _motorModelOrder[
-        idx + 1 < _motorModelOrder.length ? idx + 1 : idx];
+    return _motorModelOrder[idx + 1 < _motorModelOrder.length ? idx + 1 : idx];
   }
 
   static String motorPowerByModel(String model) {
@@ -109,7 +109,11 @@ class ShutterCalculator {
     return modelIdx >= kem800Idx && modelIdx >= 0;
   }
 
-  static String _resolve500B800(String bracket, double weightKg, double widthMm) {
+  static String _resolve500B800(
+    String bracket,
+    double weightKg,
+    double widthMm,
+  ) {
     if (bracket != 'KEM-500B, KEM-800') return bracket;
     if (weightKg <= 0) return 'KEM-500B, KEM-800';
     return _isMotorAtLeastKem800(weightKg, widthMm) ? 'KEM-800' : 'KEM-500B';
@@ -204,10 +208,8 @@ class ShutterCalculator {
     Map<String, int>? unitPriceOverrideMap,
   }) {
     final area = calculateArea(input.widthMm, input.heightMm);
-    final weightKg =
-        calculateWeight(input.widthMm, input.heightMm, input.type);
-    final motorModel =
-        selectEffectiveMotorModel(weightKg, input.widthMm);
+    final weightKg = calculateWeight(input.widthMm, input.heightMm, input.type);
+    final motorModel = selectEffectiveMotorModel(weightKg, input.widthMm);
     final powerSpec = motorPowerByModel(motorModel);
 
     final info = getDbInfo(input.type);
@@ -266,8 +268,9 @@ class ShutterCalculator {
         orElse: () => <String, dynamic>{},
       );
       var unitPriceValue = (unitEntry['unit_price'] as num?)?.toInt() ?? 0;
-      final overrideUnitPrice =
-          modelType == null ? null : unitPriceOverrideMap?[modelType];
+      final overrideUnitPrice = modelType == null
+          ? null
+          : unitPriceOverrideMap?[modelType];
       if ((overrideUnitPrice ?? 0) > 0) {
         unitPriceValue = overrideUnitPrice!;
       }
@@ -323,8 +326,8 @@ class ShutterCalculator {
 
       // 내풍압: 윈드락 + 프레임
       if (modelType?.contains('내풍압') ?? false) {
-        final windlockQty =
-            (((input.heightMm + 400) / 72 / 10).ceil() * 2).toInt();
+        final windlockQty = (((input.heightMm + 400) / 72 / 10).ceil() * 2)
+            .toInt();
         final windlockUnitCost = modelType!.contains('단열') ? 10000 : 8000;
         final windlockTotal = windlockQty * windlockUnitCost;
         total += windlockTotal;
@@ -335,8 +338,8 @@ class ShutterCalculator {
           ),
         );
 
-        final framePrice =
-            (((input.heightMm + 200) * 2 / 1000.0) * 70000).round();
+        final framePrice = (((input.heightMm + 200) * 2 / 1000.0) * 70000)
+            .round();
         total += framePrice;
         breakdown.add(ShutterBreakdownItem(name: '프레임', amount: framePrice));
       }
@@ -446,5 +449,32 @@ class ShutterCalculator {
     return result.breakdown
         .where((item) => item.name.contains('스라트'))
         .fold<int>(0, (sum, item) => sum + item.amount);
+  }
+
+  /// 자재비 항목 — 스라트, 모터, 절곡비용.
+  static bool isMaterialCostItem(ShutterBreakdownItem item) {
+    final n = item.name;
+    return n.contains('스라트') || n.contains('모터') || n.contains('절곡');
+  }
+
+  /// 스라트 → 모터 → 절곡 순.
+  static List<ShutterBreakdownItem> materialCostItems(
+    ShutterEstimateResult result,
+  ) {
+    final items = result.breakdown.where(isMaterialCostItem).toList();
+    items.sort((a, b) => _materialRank(a).compareTo(_materialRank(b)));
+    return items;
+  }
+
+  static int materialCostTotal(ShutterEstimateResult result) {
+    return materialCostItems(result).fold<int>(0, (sum, e) => sum + e.amount);
+  }
+
+  static int _materialRank(ShutterBreakdownItem item) {
+    final n = item.name;
+    if (n.contains('스라트')) return 0;
+    if (n.contains('모터')) return 1;
+    if (n.contains('절곡')) return 2;
+    return 9;
   }
 }

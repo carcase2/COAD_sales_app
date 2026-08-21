@@ -6,10 +6,7 @@ void main() {
   group('ShutterCalculator.calculateArea', () {
     test('공식 ((w+100)/1000)*((h+500)/1000)', () {
       // ((3000+100)/1000) * ((2500+500)/1000) = 3.1 * 3.0 = 9.3
-      expect(
-        ShutterCalculator.calculateArea(3000, 2500),
-        closeTo(9.3, 0.0001),
-      );
+      expect(ShutterCalculator.calculateArea(3000, 2500), closeTo(9.3, 0.0001));
     });
   });
 
@@ -41,14 +38,8 @@ void main() {
 
     test('폭 7500↑ 시 모터 1단계 상향', () {
       // 270kg → KEM-300, 8인치면 KEM-400
-      expect(
-        ShutterCalculator.selectEffectiveMotorModel(270, 7500),
-        'KEM-400',
-      );
-      expect(
-        ShutterCalculator.selectEffectiveMotorModel(270, 7400),
-        'KEM-300',
-      );
+      expect(ShutterCalculator.selectEffectiveMotorModel(270, 7500), 'KEM-400');
+      expect(ShutterCalculator.selectEffectiveMotorModel(270, 7400), 'KEM-300');
     });
   });
 
@@ -66,17 +57,11 @@ void main() {
 
     test('브라켓→박스 매핑', () {
       expect(
-        ShutterCalculator.getShutterBoxSize(
-          isInsulated: false,
-          heightMm: 1800,
-        ),
+        ShutterCalculator.getShutterBoxSize(isInsulated: false, heightMm: 1800),
         '650*505',
       );
       expect(
-        ShutterCalculator.getShutterBoxSize(
-          isInsulated: false,
-          heightMm: 4000,
-        ),
+        ShutterCalculator.getShutterBoxSize(isInsulated: false, heightMm: 4000),
         '700*555',
       );
     });
@@ -108,11 +93,7 @@ void main() {
       },
     ];
     final unitPrices = <Map<String, dynamic>>[
-      {
-        'category': '방범',
-        'model_type': '이중압출',
-        'unit_price': 81000,
-      },
+      {'category': '방범', 'model_type': '이중압출', 'unit_price': 81000},
     ];
 
     test('슬라트+시공비+부대비용 합산', () {
@@ -144,6 +125,52 @@ void main() {
       expect(slat, closeTo(753300, 1));
     });
 
+    test('자재비는 스라트·모터·절곡만 합산', () {
+      final input = ShutterEstimateInput(
+        type: ShutterType.doubleExtrusion,
+        widthMm: 3000,
+        heightMm: 2500,
+        includeProfit: true,
+      );
+      final result = ShutterCalculator.calculate(
+        input: input,
+        gridPrices: gridPrices,
+        unitPrices: unitPrices,
+      );
+
+      expect(
+        result.breakdown
+            .where(ShutterCalculator.isMaterialCostItem)
+            .map((e) => e.name)
+            .toList(),
+        ['스라트 (본체)', '모터', '절곡비용'],
+      );
+      expect(
+        ShutterCalculator.isMaterialCostItem(
+          const ShutterBreakdownItem(name: '시공 예상 비용', amount: 1),
+        ),
+        isFalse,
+      );
+      expect(
+        ShutterCalculator.isMaterialCostItem(
+          const ShutterBreakdownItem(name: '장비대', amount: 1),
+        ),
+        isFalse,
+      );
+      expect(
+        ShutterCalculator.isMaterialCostItem(
+          const ShutterBreakdownItem(name: '당사이익', amount: 1),
+        ),
+        isFalse,
+      );
+
+      final items = ShutterCalculator.materialCostItems(result);
+      expect(items.map((e) => e.name).toList(), ['스라트 (본체)', '모터', '절곡비용']);
+      final expected = items.fold<int>(0, (sum, e) => sum + e.amount);
+      expect(ShutterCalculator.materialCostTotal(result), expected);
+      expect(expected, lessThan(result.totalAmount));
+    });
+
     test('회사 단가 오버라이드 반영', () {
       final input = ShutterEstimateInput(
         type: ShutterType.doubleExtrusion,
@@ -172,13 +199,10 @@ void main() {
   group('ShutterCalculator.unitPriceMapFromCompany', () {
     test('일반/단열 단가 매핑', () {
       final fallback = ShutterCalculator.buildSecurityFallbackUnitPriceMap([]);
-      final map = ShutterCalculator.unitPriceMapFromCompany(
-        {
-          'unit_price_general': 90000,
-          'unit_price_insulated': 150000,
-        },
-        fallback,
-      );
+      final map = ShutterCalculator.unitPriceMapFromCompany({
+        'unit_price_general': 90000,
+        'unit_price_insulated': 150000,
+      }, fallback);
       expect(map['이중압출'], 90000);
       expect(map['내풍압'], 90000);
       expect(map['이중압출단열'], 150000);
