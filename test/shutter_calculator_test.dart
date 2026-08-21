@@ -166,9 +166,54 @@ void main() {
 
       final items = ShutterCalculator.materialCostItems(result);
       expect(items.map((e) => e.name).toList(), ['스라트 (본체)', '모터', '절곡비용']);
+      expect(
+        ShutterCalculator.materialCostHint(ShutterType.doubleExtrusion),
+        '스라트 · 모터 · 절곡비용',
+      );
       final expected = items.fold<int>(0, (sum, e) => sum + e.amount);
       expect(ShutterCalculator.materialCostTotal(result), expected);
       expect(expected, lessThan(result.totalAmount));
+    });
+
+    test('내풍압 자재비는 윈드락·프레임 포함', () {
+      for (final type in [
+        ShutterType.windproof,
+        ShutterType.windproofInsulated,
+      ]) {
+        final result = ShutterCalculator.calculate(
+          input: ShutterEstimateInput(
+            type: type,
+            widthMm: 3000,
+            heightMm: 2500,
+            includeProfit: true,
+          ),
+          gridPrices: const [],
+          unitPrices: const [],
+        );
+
+        expect(result.breakdown.any((e) => e.name.contains('윈드락')), isTrue);
+        expect(result.breakdown.any((e) => e.name == '프레임'), isTrue);
+
+        final names = ShutterCalculator.materialCostItems(
+          result,
+        ).map((e) => e.name).toList();
+        expect(names.any((n) => n.contains('스라트')), isTrue);
+        expect(names, contains('모터'));
+        expect(names, contains('절곡비용'));
+        expect(names.any((n) => n.contains('윈드락')), isTrue);
+        expect(names, contains('프레임'));
+        expect(names.any((n) => n.contains('시공')), isFalse);
+        expect(names, isNot(contains('당사이익')));
+
+        expect(
+          ShutterCalculator.materialCostHint(type),
+          '스라트 · 모터 · 절곡 · 윈드락 · 프레임',
+        );
+        expect(
+          ShutterCalculator.materialCostTotal(result),
+          lessThan(result.totalAmount),
+        );
+      }
     });
 
     test('회사 단가 오버라이드 반영', () {

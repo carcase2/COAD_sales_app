@@ -2652,9 +2652,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
     for (final item in _result!.breakdown) {
       final n = item.name.toLowerCase();
-      if (n.contains('스라트') || n.contains('모터') || n.contains('기본')) {
+      if (ShutterCalculator.isMaterialCostItem(item) || n.contains('기본')) {
         result['자재/모터']!.add(item);
-      } else if (n.contains('시공') || n.contains('장비') || n.contains('절곡')) {
+      } else if (n.contains('시공') || n.contains('장비')) {
         result['시공/부대']!.add(item);
       } else {
         result['기타']!.add(item);
@@ -2686,6 +2686,14 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       label = '절곡';
       bg = Colors.deepPurple.withValues(alpha: 0.14);
       fg = Colors.deepPurple.shade700;
+    } else if (n.contains('윈드락')) {
+      label = '윈드락';
+      bg = Colors.indigo.withValues(alpha: 0.14);
+      fg = Colors.indigo.shade700;
+    } else if (n.contains('프레임')) {
+      label = '프레임';
+      bg = Colors.brown.withValues(alpha: 0.14);
+      fg = Colors.brown.shade700;
     } else if (n.contains('기본')) {
       label = '기본';
       bg = Colors.teal.withValues(alpha: 0.14);
@@ -2848,21 +2856,20 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                             ],
                           ),
                           const Divider(height: 20),
-                          Row(
-                            children: [
-                              _buildSpecItem(
-                                '브라켓 종류',
-                                _result!.bracketType,
-                                scheme,
-                              ),
-                              _buildSpecItem(
-                                '롤파이프',
-                                ShutterCalculator.getRollPipeType(
-                                  _result!.input.widthMm,
-                                ),
-                                scheme,
-                              ),
-                            ],
+                          _buildSpecItem(
+                            '롤파이프',
+                            ShutterCalculator.getRollPipeType(
+                              _result!.input.widthMm,
+                            ),
+                            scheme,
+                            expanded: false,
+                          ),
+                          const Divider(height: 20),
+                          _buildSpecItem(
+                            '브라켓 종류',
+                            _result!.bracketType,
+                            scheme,
+                            expanded: false,
                           ),
                         ],
                       ),
@@ -2982,7 +2989,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     accent: materialOnly ? typeColor : scheme.primary,
                     label: footerLabel,
                     amount: footerAmount,
-                    hint: materialOnly ? '스라트 · 모터 · 절곡비용' : null,
+                    hint: materialOnly
+                        ? ShutterCalculator.materialCostHint(_selectedType)
+                        : null,
                   ),
                 ],
               ),
@@ -3045,7 +3054,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
             ),
           ),
           subtitle: Text(
-            '스라트 · 모터 · 절곡비용',
+            ShutterCalculator.materialCostHint(_selectedType),
             style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
@@ -3091,7 +3100,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '이 견적에는 스라트·모터·절곡비용이 포함되지 않았습니다.',
+              '이 견적에는 ${ShutterCalculator.materialCostHint(_selectedType)}이 포함되지 않았습니다.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -3768,29 +3777,38 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
-  Widget _buildSpecItem(String label, String value, ColorScheme scheme) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
-              fontWeight: FontWeight.w700,
-            ),
+  Widget _buildSpecItem(
+    String label,
+    String value,
+    ColorScheme scheme, {
+    bool expanded = true,
+  }) {
+    final item = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+            fontWeight: FontWeight.w700,
           ),
-          const SizedBox(height: 4),
-          Text(
+        ),
+        const SizedBox(height: 4),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
             value,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            softWrap: false,
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
           ),
-        ],
-      ),
+        ),
+      ],
     );
+    if (!expanded) return SizedBox(width: double.infinity, child: item);
+    return Expanded(child: item);
   }
 
   // ─────────────────────────────────────────────────

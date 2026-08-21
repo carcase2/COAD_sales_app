@@ -452,12 +452,28 @@ class ShutterCalculator {
   }
 
   /// 자재비 항목 — 스라트, 모터, 절곡비용.
+  /// 내풍압·내풍압단열은 윈드락·프레임도 포함.
   static bool isMaterialCostItem(ShutterBreakdownItem item) {
     final n = item.name;
-    return n.contains('스라트') || n.contains('모터') || n.contains('절곡');
+    return n.contains('스라트') ||
+        n.contains('모터') ||
+        n.contains('절곡') ||
+        n.contains('윈드락') ||
+        n.contains('프레임');
   }
 
-  /// 스라트 → 모터 → 절곡 순.
+  static bool isWindproofType(ShutterType type) =>
+      type == ShutterType.windproof || type == ShutterType.windproofInsulated;
+
+  /// 견적 내역 토글·푸터에 쓰는 자재비 범위 안내.
+  static String materialCostHint(ShutterType type) {
+    if (isWindproofType(type)) {
+      return '스라트 · 모터 · 절곡 · 윈드락 · 프레임';
+    }
+    return '스라트 · 모터 · 절곡비용';
+  }
+
+  /// 스라트 → 모터 → 절곡 → 윈드락 → 프레임 순.
   static List<ShutterBreakdownItem> materialCostItems(
     ShutterEstimateResult result,
   ) {
@@ -475,6 +491,8 @@ class ShutterCalculator {
     if (n.contains('스라트')) return 0;
     if (n.contains('모터')) return 1;
     if (n.contains('절곡')) return 2;
+    if (n.contains('윈드락')) return 3;
+    if (n.contains('프레임')) return 4;
     return 9;
   }
 }
