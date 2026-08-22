@@ -7,6 +7,10 @@ const String kBaseUrlDefine = String.fromEnvironment(
   defaultValue: '',
 );
 
+/// COAD_home 웹(메일 발송 `/api/send-mail` 등) 기본 주소.
+/// `.env`의 `BASE_URL`이 비어 있을 때 사용.
+const String kDefaultCoadHomeUrl = 'https://coadsales.netlify.app';
+
 String get geminiApiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
 
 String get kakaoRestApiKey =>

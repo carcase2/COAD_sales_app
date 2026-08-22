@@ -38,6 +38,41 @@ BusinessCard? bestBusinessCardNameMatch(
   return matches.isEmpty ? null : matches.first;
 }
 
+bool businessCardHasEmail(BusinessCard card) {
+  final e = card.email.trim();
+  if (e.isEmpty || !e.contains('@')) return false;
+  final at = e.indexOf('@');
+  return at > 0 && e.indexOf('.', at) > at + 1;
+}
+
+/// 메일 받는 사람용 — 이메일이 있는 명함만, 이름·회사·메일 일치 우선.
+List<BusinessCard> businessCardsForMailRecipient(
+  String query,
+  List<BusinessCard> cards, {
+  int limit = 20,
+}) {
+  final withMail = cards.where(businessCardHasEmail).toList();
+  if (withMail.isEmpty) return const [];
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return withMail.take(limit).toList(growable: false);
+
+  int score(BusinessCard c) {
+    final name = c.name.trim().toLowerCase();
+    final company = c.company.trim().toLowerCase();
+    final email = c.email.trim().toLowerCase();
+    if (name == q || email == q) return 0;
+    if (name.startsWith(q) || email.startsWith(q)) return 1;
+    if (company == q || company.startsWith(q)) return 2;
+    if (name.contains(q) || email.contains(q) || company.contains(q)) return 3;
+    return 9;
+  }
+
+  final ranked = withMail.where((c) => score(c) < 9).toList()
+    ..sort((a, b) => score(a).compareTo(score(b)));
+  if (ranked.length <= limit) return ranked;
+  return ranked.take(limit).toList(growable: false);
+}
+
 class BusinessCardPhoneOption {
   const BusinessCardPhoneOption({required this.label, required this.phone});
 

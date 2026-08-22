@@ -146,6 +146,7 @@ const List<String> appUsageKnownTabKeys = [
   'general_schedule',
   'daegu_schedule',
   'customer_support',
+  'mail',
   'menu',
   'settings',
   'checksheet',
@@ -182,6 +183,8 @@ String appUsageTabLabel(String key) {
       return '대구지사';
     case 'customer_support':
       return '고객지원팀';
+    case 'mail':
+      return '메일 발송';
     case 'menu':
       return '메뉴';
     case 'settings':

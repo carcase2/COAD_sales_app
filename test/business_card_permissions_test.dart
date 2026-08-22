@@ -162,6 +162,31 @@ hong@coad.co.kr
     expect(bestBusinessCardNameMatch('길동', [hong]), isNull);
   });
 
+  test('메일 받는 사람은 이메일이 있는 명함만', () {
+    final withMail = _card();
+    final noMail = _card().copyWith(id: 'c2', name: '김무메일', email: '');
+    final byCompany = _card().copyWith(
+      id: 'c3',
+      name: '이영희',
+      company: '대한문',
+      email: 'lee@daehan.com',
+    );
+    expect(businessCardHasEmail(withMail), isTrue);
+    expect(businessCardHasEmail(noMail), isFalse);
+    expect(
+      businessCardsForMailRecipient('홍길동', [withMail, noMail]).map((e) => e.id),
+      ['c1'],
+    );
+    expect(
+      businessCardsForMailRecipient('대한문', [
+        withMail,
+        byCompany,
+      ]).map((e) => e.id),
+      ['c3'],
+    );
+    expect(businessCardsForMailRecipient('', [noMail]), isEmpty);
+  });
+
   test('같은 이름 명함은 휴대폰·사무실 번호를 나눠 고른다', () {
     final mobile = _card().copyWith(id: 'c1', officePhone: '');
     final both = _card().copyWith(

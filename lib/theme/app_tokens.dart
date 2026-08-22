@@ -50,6 +50,10 @@ class AppTokens {
   static Color customerSupportAccent(ColorScheme scheme) =>
       Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.18)!;
 
+  /// 메일 발송 — COAD_home mail 탭의 로즈.
+  static Color mailAccent(ColorScheme scheme) =>
+      Color.lerp(const Color(0xFFE11D48), scheme.primary, 0.12)!;
+
   /// A/S 지사 필터 — 전체/본사/대구/대전/전남/기타.
   static Color supportBranchAccent(String branch, ColorScheme scheme) {
     switch (branch) {

@@ -42,6 +42,7 @@ class SalesApiTransport {
     required String path,
     Map<String, String>? query,
     Map<String, dynamic>? jsonBody,
+    Duration? timeout,
   }) async {
     final root = _normalizeBase(baseUrl);
     var uri = Uri.parse('$root${_lead(path)}');
@@ -80,10 +81,14 @@ class SalesApiTransport {
         req.headers.set(HttpHeaders.cookieHeader, ch);
       }
 
+      final wait = timeout ?? (_connectionTimeout + const Duration(seconds: 40));
       final res = await req.close().timeout(
-        _connectionTimeout + const Duration(seconds: 40),
+        wait,
         onTimeout: () {
-          throw ApiException('서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
+          throw ApiException(
+            '서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
+            statusCode: 408,
+          );
         },
       );
       final body = await res.transform(utf8.decoder).join();

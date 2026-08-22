@@ -40,7 +40,7 @@ class AuthRepository {
   Future<AppUser> login({required String id, required String password}) async {
     final res = await Supabase.instance.client
         .from('users')
-        .select('*, groups(name)')
+        .select('*, groups(name, permissions)')
         .eq('id', id)
         .eq('password', password)
         .maybeSingle();
@@ -53,11 +53,32 @@ class AuthRepository {
       throw ApiException('사용할 수 없는 계정입니다. 관리자에게 문의하세요.', statusCode: 403);
     }
 
+    Map<String, dynamic>? groupMap;
+    final groups = res['groups'];
+    if (groups is Map<String, dynamic>) {
+      groupMap = groups;
+    } else if (groups is Map) {
+      groupMap = Map<String, dynamic>.from(groups);
+    } else if (groups is List && groups.isNotEmpty && groups.first is Map) {
+      groupMap = Map<String, dynamic>.from(groups.first as Map);
+    }
+
+    final mergedPerms = <String>[];
+    void addPerms(dynamic raw) {
+      if (raw is! List) return;
+      for (final e in raw) {
+        final s = e.toString().trim();
+        if (s.isNotEmpty && !mergedPerms.contains(s)) mergedPerms.add(s);
+      }
+    }
+
+    addPerms(res['permissions']);
+    addPerms(groupMap?['permissions']);
+
     final Map<String, dynamic> userMap = {
       ...res,
-      'groupName': res['groups'] != null ? res['groups']['name'] : null,
-      // DB permissions를 우선 사용하고, 미존재 시에도 fromJson이 빈 배열로 안전 처리
-      if (res.containsKey('permissions')) 'permissions': res['permissions'],
+      'groupName': groupMap?['name'] ?? res['groups']?['name'],
+      'permissions': mergedPerms,
     };
 
     final u = AppUser.fromJson(userMap);
@@ -66,8 +87,11 @@ class AuthRepository {
     }
 
     _user = u;
-    await _deps.secure.write(key: StorageKeys.userJson, value: jsonEncode(u.toJson()));
-    
+    await _deps.secure.write(
+      key: StorageKeys.userJson,
+      value: jsonEncode(u.toJson()),
+    );
+
     // Register FCM Token
     NotificationService.updateTokenInSupabase(u.id);
     NotificationService.listenToTokenRefresh(u.id);

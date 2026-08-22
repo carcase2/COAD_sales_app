@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
+import 'package:coad_customer_calls/core/utils/mail_permissions.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
+import 'package:coad_customer_calls/features/mail/mail_hub_screen.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
@@ -1113,6 +1115,23 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 MaterialPageRoute<void>(
                   builder: (_) => const CustomerSupportHubScreen(),
                 ),
+              );
+            }),
+          ),
+        if (canAccessMail(user))
+          AppMenuEntry(
+            id: 'mail',
+            sectionId: 'tools',
+            icon: Icons.mail_outline_rounded,
+            title: '메일 발송',
+            subtitle: '등록된 자료 선택 발송 (COAD_home과 동일)',
+            quickAccess: true,
+            quickLabel: '메일',
+            keywords: const ['메일', '이메일', '발송', '첨부', 'mail', '자료실'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'mail');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(builder: (_) => const MailHubScreen()),
               );
             }),
           ),
