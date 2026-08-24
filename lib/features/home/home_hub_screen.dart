@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
-import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
@@ -2055,11 +2054,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   double _homeBottomInset(BuildContext context) => 4;
 
-  Widget _buildFlowBody(ColorScheme scheme, AppUser? user) {
+  Widget _buildFlowBody(ColorScheme scheme) {
     return Padding(
       padding: EdgeInsets.fromLTRB(12, 0, 12, 4 + _homeBottomInset(context)),
       child: _buildPeriodFlowBlock(
-        user: user,
         scheme: scheme,
         periodKey: switch (_hubNavStep) {
           HubNavStep.day => _dayKey,
@@ -2141,7 +2139,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   _openPreviousDayIncompletePicker(forcePicker: true),
             ),
           ),
-        if (prevUncalled > 0 && overdue > 0) const SizedBox(width: 6),
+        if (prevUncalled > 0 && overdue > 0) const SizedBox(width: 8),
         if (overdue > 0)
           Expanded(
             child: _HomeOneLineAlert(
@@ -2457,10 +2455,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: Theme.of(context).platform == TargetPlatform.iOS ? 8 : 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(10),
@@ -2471,7 +2466,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             TextSpan(
               text: '$compareLabel 접수 ',
               style: TextStyle(
-                fontSize: 11.5,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: scheme.onSurfaceVariant,
               ),
@@ -2479,7 +2474,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             TextSpan(
               text: deltaText,
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: 14.5,
                 fontWeight: FontWeight.w900,
                 color: deltaColor,
               ),
@@ -2487,7 +2482,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             TextSpan(
               text: ' (현재 $reception건 / 이전 $prevReception건)',
               style: TextStyle(
-                fontSize: 11.5,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: scheme.onSurfaceVariant,
               ),
@@ -2501,7 +2496,6 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   Widget _buildPeriodFlowBlock({
-    required AppUser? user,
     required ColorScheme scheme,
     required HubPeriodKey periodKey,
     required String receptionLabel,
@@ -2629,10 +2623,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           scope: scope,
                         ),
                       ),
-                      if (canAccessCustomerSupport(user)) ...[
-                        const SizedBox(height: 6),
-                        _buildSupportPeriodStats(periodKey: periodKey),
-                      ],
+                      const SizedBox(height: 10),
+                      _buildSupportPeriodStats(periodKey: periodKey),
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
@@ -2781,7 +2773,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 children: [
                   _lazySectionPage(
                     HomeHubSection.flow,
-                    _buildFlowBody(scheme, user),
+                    _buildFlowBody(scheme),
                   ),
                   _lazySectionPage(
                     HomeHubSection.calendar,
@@ -2822,7 +2814,7 @@ class _HomeOneLineAlert extends StatelessWidget {
       label: '$label $count건',
       child: Material(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: () {
             HapticFeedback.selectionClick();
@@ -2834,26 +2826,17 @@ class _HomeOneLineAlert extends StatelessWidget {
                   HapticFeedback.mediumImpact();
                   onLongPress!();
                 },
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: Theme.of(context).platform == TargetPlatform.iOS
-                  ? 10
-                  : 8,
-              vertical: Theme.of(context).platform == TargetPlatform.iOS
-                  ? 10
-                  : 6,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
                 Icon(
                   icon,
-                  size: Theme.of(context).platform == TargetPlatform.iOS
-                      ? 16
-                      : 14,
+                  size: 18,
                   color: color,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
@@ -2865,7 +2848,7 @@ class _HomeOneLineAlert extends StatelessWidget {
                         maxLines: 1,
                         softWrap: false,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 14.5,
                           height: 1.1,
                           fontWeight: FontWeight.w700,
                           color: scheme.onSurfaceVariant.withValues(
@@ -2876,14 +2859,12 @@ class _HomeOneLineAlert extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
                 Text(
                   '$count',
                   maxLines: 1,
                   style: TextStyle(
-                    fontSize: Theme.of(context).platform == TargetPlatform.iOS
-                        ? 17
-                        : 15,
+                    fontSize: 20,
                     fontWeight: FontWeight.w800,
                     color: scheme.onSurface,
                     letterSpacing: -0.3,
