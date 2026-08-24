@@ -2460,37 +2460,42 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text.rich(
-        TextSpan(
-          children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text.rich(
             TextSpan(
-              text: '$compareLabel 접수 ',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: scheme.onSurfaceVariant,
-              ),
+              children: [
+                TextSpan(
+                  text: '$compareLabel 접수 ',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                TextSpan(
+                  text: deltaText,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                    color: deltaColor,
+                  ),
+                ),
+              ],
             ),
-            TextSpan(
-              text: deltaText,
-              style: TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w900,
-                color: deltaColor,
-              ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '현재 $reception건 / 이전 $prevReception건',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant,
+              height: 1.2,
             ),
-            TextSpan(
-              text: ' (현재 $reception건 / 이전 $prevReception건)',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
