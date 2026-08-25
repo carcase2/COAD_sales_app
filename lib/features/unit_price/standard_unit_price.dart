@@ -34,6 +34,11 @@ const standardSizeMin = 2000;
 const standardSizeMax = 8000;
 const standardSizeStep = 1000;
 
+/// 현장에서 자주 누르는 폭/높이. 차고문은 높이만 4단·5단.
+const standardQuickWidths = [2000, 2500, 3000, 3500, 4000, 4500, 5000, 6000];
+const standardQuickHeights = [2000, 2500, 3000, 3500, 4000, 4500, 5000, 6000];
+const garageQuickHeights = [2150, 2700];
+
 enum StandardAdjustType { percent, amount, manual }
 
 class StandardPriceCell {
@@ -184,7 +189,7 @@ int? _usableCellPrice(StandardPriceCell? cell) {
   );
 }
 
-double _lerpPrice(num a, num b, num t) => a + (b - a) * t;
+double _lerpPrice(num a, num b, num t) => (a + (b - a) * t).toDouble();
 
 double _tAlong(num val, num lo, num hi) {
   if (hi == lo) return 0;
@@ -477,6 +482,76 @@ String describeSizeLookup(StandardPriceInference inference) {
     return '입력 $inputWidth × $inputHeight → 표 칸 $lowerWidth × ${heightDanLabel(lowerHeight)}';
   }
   return '입력 $inputWidth × $inputHeight → 가까운 칸 ${inference.bucketWidth} × ${heightDanLabel(inference.bucketHeight)}';
+}
+
+class SameSizeModelQuote {
+  const SameSizeModelQuote({
+    required this.modelId,
+    required this.modelName,
+    required this.color,
+    required this.inference,
+  });
+
+  final String modelId;
+  final String modelName;
+  final String color;
+  final StandardPriceInference inference;
+
+  int? get price {
+    if (inference.outOfRange) return null;
+    final v = inference.estimatedPrice;
+    if (v == null || v <= 0) return null;
+    return v;
+  }
+
+  bool get unavailable => price == null;
+}
+
+/// 같은 폭×높이로 분류 안 모델들의 단가.
+List<SameSizeModelQuote> sameSizeQuotes({
+  required List<({String id, String name, String color})> models,
+  required Map<String, List<StandardPriceCell>> cellsByModel,
+  required int widthMm,
+  required int heightMm,
+  bool ceilingHeights = false,
+}) {
+  if (widthMm <= 0 || heightMm <= 0 || models.isEmpty) return const [];
+  return [
+    for (final model in models)
+      SameSizeModelQuote(
+        modelId: model.id,
+        modelName: model.name,
+        color: model.color,
+        inference: inferStandardPrice(
+          cells: cellsByModel[model.id] ?? const [],
+          widthMm: widthMm,
+          heightMm: heightMm,
+          ceilingHeights: ceilingHeights,
+        ),
+      ),
+  ];
+}
+
+String formatStandardQuoteLine({
+  required String categoryName,
+  required String modelName,
+  required StandardPriceInference inference,
+}) {
+  final cat = categoryName.trim().isEmpty ? '분류' : categoryName.trim();
+  final model = modelName.trim().isEmpty ? '모델' : modelName.trim();
+  final size = '${inference.inputWidth}×${inference.inputHeight}';
+  final head = '$cat / $model · $size';
+  if (inference.outOfRange) return '$head · 표 범위 초과 · 불가';
+  final price = inference.estimatedPrice;
+  if (price == null || price <= 0) {
+    if (!inference.isEstimated && inference.match?.available == false) {
+      return '$head · 해당 사이즈 불가';
+    }
+    return '$head · 단가 없음';
+  }
+  final won = '${_plainWon(price)}원';
+  if (inference.isEstimated) return '$head · $won (사이값 추정)';
+  return '$head · $won';
 }
 
 String standardAdjustTypeLabel(String type) {

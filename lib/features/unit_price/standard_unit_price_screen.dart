@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 bool canViewStandardUnitPrice(AppUser? user) {
   if (user == null) return false;
@@ -42,15 +43,21 @@ class StandardUnitPriceScreen extends ConsumerStatefulWidget {
 
 class _StandardUnitPriceScreenState
     extends ConsumerState<StandardUnitPriceScreen> {
+  static const _kPrefCat = 'std_unit_price_category';
+  static const _kPrefModel = 'std_unit_price_model';
+  static const _kPrefW = 'std_unit_price_width';
+  static const _kPrefH = 'std_unit_price_height';
+
   StandardUnitPriceCatalog? _catalog;
   String? _categoryId;
   String? _modelId;
-  List<StandardUnitPriceRow> _cells = const [];
+  Map<String, List<StandardUnitPriceRow>> _cellsByModel = {};
   List<StandardUnitPriceAdjustment> _adjustments = const [];
   List<StandardUnitPriceChangeLog> _logs = const [];
   Object? _error;
   bool _loading = true;
   bool _saving = false;
+  bool _editingWidth = true;
   StandardAdjustType _adjustType = StandardAdjustType.percent;
   final _widthCtrl = TextEditingController();
   final _heightCtrl = TextEditingController();
@@ -59,6 +66,9 @@ class _StandardUnitPriceScreenState
   String? _openAdjustmentId;
   final _won = NumberFormat('#,###');
   final _dt = DateFormat('yyyy.MM.dd HH:mm');
+
+  List<StandardUnitPriceRow> get _cells =>
+      _cellsByModel[_modelId] ?? const [];
 
   @override
   void initState() {
@@ -97,7 +107,14 @@ class _StandardUnitPriceScreenState
       _error = null;
     });
     try {
-      final catalog = await _repo.fetchCatalog();
+      final catalogFut = _repo.fetchCatalog();
+      final allFut = _repo.fetchAllPrices();
+      final adjFut = _repo.fetchAdjustments();
+      final logsFut = _repo.fetchChangeLogs();
+      final catalog = await catalogFut;
+      final all = await allFut;
+      final adjustments = await adjFut;
+      final logs = await logsFut;
       final firstCat = catalog.orderedCategories.isEmpty
           ? null
           : catalog.orderedCategories.first;
@@ -110,17 +127,44 @@ class _StandardUnitPriceScreenState
       } else if (catalog.models.isNotEmpty) {
         firstModel = catalog.models.first;
       }
-      final cells = firstModel == null
-          ? const <StandardUnitPriceRow>[]
-          : await _repo.fetchPrices(firstModel.id);
-      final adjustments = await _repo.fetchAdjustments();
-      final logs = await _repo.fetchChangeLogs();
+      final byModel = <String, List<StandardUnitPriceRow>>{};
+      for (final cell in all) {
+        byModel.putIfAbsent(cell.modelId, () => []).add(cell);
+      }
       if (!mounted) return;
+      final prefs = ref.read(appDependenciesProvider).prefs;
+      var categoryId = firstCat?.id;
+      var modelId = firstModel?.id;
+      final savedCat = prefs.getString(_kPrefCat);
+      if (savedCat != null &&
+          catalog.categories.any((c) => c.id == savedCat)) {
+        categoryId = savedCat;
+        final inCat = catalog.modelsFor(savedCat);
+        final savedModel = prefs.getString(_kPrefModel);
+        if (savedModel != null && inCat.any((m) => m.id == savedModel)) {
+          modelId = savedModel;
+        } else {
+          modelId = inCat.isEmpty ? null : inCat.first.id;
+        }
+      } else {
+        final savedModel = prefs.getString(_kPrefModel);
+        if (savedModel != null &&
+            catalog.models.any((m) => m.id == savedModel)) {
+          final matched =
+              catalog.models.firstWhere((m) => m.id == savedModel);
+          categoryId = matched.categoryId;
+          modelId = matched.id;
+        }
+      }
+      final savedW = prefs.getInt(_kPrefW) ?? 0;
+      final savedH = prefs.getInt(_kPrefH) ?? 0;
+      if (savedW > 0) _widthCtrl.text = _won.format(savedW);
+      if (savedH > 0) _heightCtrl.text = _won.format(savedH);
       setState(() {
         _catalog = catalog;
-        _categoryId = firstCat?.id;
-        _modelId = firstModel?.id;
-        _cells = cells;
+        _categoryId = categoryId;
+        _modelId = modelId;
+        _cellsByModel = byModel;
         _adjustments = adjustments;
         _logs = logs;
         _loading = false;
@@ -139,20 +183,23 @@ class _StandardUnitPriceScreenState
     if (catalog == null) return;
     final next = catalog.modelsFor(id);
     final modelId = next.isEmpty ? null : next.first.id;
-    if (id != _categoryId) {
-      _widthCtrl.clear();
-      _heightCtrl.clear();
-    }
     setState(() {
       _categoryId = id;
       _modelId = modelId;
     });
-    if (modelId != null) await _reloadCells(modelId);
+    _persistLookup();
+    if (modelId != null) await _ensureCells(modelId);
   }
 
   Future<void> _selectModel(String id) async {
     setState(() => _modelId = id);
-    await _reloadCells(id);
+    _persistLookup();
+    await _ensureCells(id);
+  }
+
+  Future<void> _ensureCells(String modelId) async {
+    if (_cellsByModel.containsKey(modelId)) return;
+    await _reloadCells(modelId);
   }
 
   Future<void> _exportExcel() async {
@@ -213,11 +260,184 @@ class _StandardUnitPriceScreenState
     try {
       final cells = await _repo.fetchPrices(modelId);
       if (!mounted) return;
-      setState(() => _cells = cells);
+      setState(() => _cellsByModel = {..._cellsByModel, modelId: cells});
     } catch (e) {
       if (!mounted) return;
       _showError(e);
     }
+  }
+
+  void _writeSize({int? widthMm, int? heightMm}) {
+    if (widthMm != null) {
+      _widthCtrl.text = widthMm > 0 ? _won.format(widthMm) : '';
+    }
+    if (heightMm != null) {
+      _heightCtrl.text = heightMm > 0 ? _won.format(heightMm) : '';
+    }
+    setState(() {});
+    _persistLookup();
+  }
+
+  void _persistLookup() {
+    final prefs = ref.read(appDependenciesProvider).prefs;
+    if (_categoryId != null) {
+      unawaited(prefs.setString(_kPrefCat, _categoryId!));
+    }
+    if (_modelId != null) {
+      unawaited(prefs.setString(_kPrefModel, _modelId!));
+    }
+    unawaited(prefs.setInt(_kPrefW, _widthMm));
+    unawaited(prefs.setInt(_kPrefH, _heightMm));
+  }
+
+  void _setEditingWidth(bool width) {
+    HapticFeedback.selectionClick();
+    setState(() => _editingWidth = width);
+  }
+
+  void _quickWidth(int mm) {
+    HapticFeedback.selectionClick();
+    _writeSize(widthMm: mm);
+    setState(() => _editingWidth = false);
+  }
+
+  void _quickHeight(int mm) {
+    HapticFeedback.selectionClick();
+    _writeSize(heightMm: mm);
+  }
+
+  int get _currentAxisMm => _editingWidth ? _widthMm : _heightMm;
+
+  void _appendDigit(String d) {
+    HapticFeedback.selectionClick();
+    final cur = _currentAxisMm;
+    final raw = cur == 0 ? d.replaceFirst(RegExp(r'^0+'), '') : '$cur$d';
+    if (raw.isEmpty) {
+      if (_editingWidth) {
+        _writeSize(widthMm: 0);
+      } else {
+        _writeSize(heightMm: 0);
+      }
+      return;
+    }
+    final next = int.tryParse(raw);
+    if (next == null || next > 99999) return;
+    if (_editingWidth) {
+      _writeSize(widthMm: next);
+    } else {
+      _writeSize(heightMm: next);
+    }
+  }
+
+  void _backspaceSize() {
+    HapticFeedback.selectionClick();
+    final s = '$_currentAxisMm';
+    final next = s.length <= 1 ? 0 : (int.tryParse(s.substring(0, s.length - 1)) ?? 0);
+    if (_editingWidth) {
+      _writeSize(widthMm: next);
+    } else {
+      _writeSize(heightMm: next);
+    }
+  }
+
+  void _clearCurrentAxis() {
+    HapticFeedback.selectionClick();
+    if (_editingWidth) {
+      _writeSize(widthMm: 0);
+    } else {
+      _writeSize(heightMm: 0);
+    }
+  }
+
+  void _openGridSheet() {
+    if (_catalog == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final height = MediaQuery.sizeOf(ctx).height * 0.72;
+        return SizedBox(
+          height: height,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${_selectedCategory?.name ?? ''}  ${_selectedModel?.name ?? ''} 단가표',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _PriceGrid(
+                  cells: _cells,
+                  inference: _inference,
+                  hasSize: _hasSize,
+                  won: _won,
+                  onSetSize: (w, h) {
+                    _writeSize(widthMm: w, heightMm: h);
+                    Navigator.pop(ctx);
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String get _quoteLine => formatStandardQuoteLine(
+        categoryName: _selectedCategory?.name ?? '',
+        modelName: _selectedModel?.name ?? '',
+        inference: _inference,
+      );
+
+  List<SameSizeModelQuote> get _comparisons {
+    if (!_hasSize) return const [];
+    final catalog = _catalog;
+    final catId = _categoryId;
+    if (catalog == null || catId == null) return const [];
+    return sameSizeQuotes(
+      models: catalog
+          .modelsFor(catId)
+          .map((m) => (id: m.id, name: m.name, color: m.color))
+          .toList(),
+      cellsByModel: {
+        for (final e in _cellsByModel.entries)
+          e.key: e.value.map((c) => c.asCell).toList(),
+      },
+      widthMm: _widthMm,
+      heightMm: _heightMm,
+      ceilingHeights: _isGarageDoor,
+    );
+  }
+
+  Future<void> _copyQuote({bool share = false}) async {
+    if (!_hasSize) return;
+    final line = _quoteLine;
+    await Clipboard.setData(ClipboardData(text: line));
+    if (!mounted) return;
+    if (share) {
+      await SharePlus.instance.share(ShareParams(text: line));
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('단가를 복사했습니다')),
+    );
   }
 
   Future<void> _reloadHistory() async {
@@ -473,6 +693,11 @@ class _StandardUnitPriceScreenState
         title: const Text('표준단가'),
         actions: [
           IconButton(
+            tooltip: '단가표',
+            onPressed: _loading || _error != null ? null : _openGridSheet,
+            icon: const Icon(Icons.grid_on_rounded),
+          ),
+          IconButton(
             tooltip: '새로고침',
             onPressed: () {
               HapticFeedback.selectionClick();
@@ -556,9 +781,10 @@ class _StandardUnitPriceScreenState
                   catalog: _catalog!,
                   categoryId: _categoryId,
                   modelId: _modelId,
-                  cells: _cells,
-                  widthCtrl: _widthCtrl,
-                  heightCtrl: _heightCtrl,
+                  comparisons: _comparisons,
+                  widthMm: _widthMm,
+                  heightMm: _heightMm,
+                  editingWidth: _editingWidth,
                   inference: _inference,
                   hasSize: _hasSize,
                   selectedCategory: _selectedCategory,
@@ -566,118 +792,22 @@ class _StandardUnitPriceScreenState
                   won: _won,
                   onSelectCategory: _selectCategory,
                   onSelectModel: _selectModel,
-                  onSizeChanged: () => setState(() {}),
-                  onCopyPrice: () async {
-                    final price = _hasSize
-                        ? (_inference.estimatedPrice ?? 0)
-                        : 0;
-                    if (price <= 0 ||
-                        _inference.outOfRange ||
-                        (!_inference.isEstimated &&
-                            _inference.match?.available == false)) {
-                      return;
-                    }
-                    final messenger = ScaffoldMessenger.of(context);
-                    await Clipboard.setData(
-                      ClipboardData(text: '$price'),
-                    );
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('단가를 복사했습니다')),
-                    );
+                  onEditWidth: _setEditingWidth,
+                  onQuickWidth: _quickWidth,
+                  onQuickHeight: _quickHeight,
+                  onDigit: _appendDigit,
+                  onBackspace: _backspaceSize,
+                  onClearCurrent: _clearCurrentAxis,
+                  onClearAll: () {
+                    _widthCtrl.clear();
+                    _heightCtrl.clear();
+                    setState(() => _editingWidth = true);
+                    _persistLookup();
                   },
+                  onCopyPrice: () => unawaited(_copyQuote()),
+                  onSharePrice: () => unawaited(_copyQuote(share: true)),
+                  onShowGrid: _openGridSheet,
                 ),
-    );
-  }
-}
-
-class _TablePager extends StatelessWidget {
-  const _TablePager({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.onPrev,
-    required this.onNext,
-    required this.enabled,
-    this.onPick,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
-  final bool enabled;
-  final VoidCallback? onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 52,
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-          ),
-        ),
-        IconButton.outlined(
-          onPressed: enabled ? onPrev : null,
-          icon: const Icon(Icons.chevron_left_rounded, size: 18),
-          tooltip: '$label 이전',
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            minimumSize: const Size(32, 32),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: EdgeInsets.zero,
-          ),
-        ),
-        Expanded(
-          child: Material(
-            color: color.withValues(alpha: 0.14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: color.withValues(alpha: 0.4)),
-            ),
-            child: InkWell(
-              onTap: onPick,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        value,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: color,
-                        ),
-                      ),
-                    ),
-                    if (onPick != null)
-                      Icon(Icons.unfold_more_rounded, size: 16, color: color),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        IconButton.outlined(
-          onPressed: enabled ? onNext : null,
-          icon: const Icon(Icons.chevron_right_rounded, size: 18),
-          tooltip: '$label 다음',
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            minimumSize: const Size(32, 32),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: EdgeInsets.zero,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -687,9 +817,10 @@ class _LookupTab extends StatelessWidget {
     required this.catalog,
     required this.categoryId,
     required this.modelId,
-    required this.cells,
-    required this.widthCtrl,
-    required this.heightCtrl,
+    required this.comparisons,
+    required this.widthMm,
+    required this.heightMm,
+    required this.editingWidth,
     required this.inference,
     required this.hasSize,
     required this.selectedCategory,
@@ -697,16 +828,25 @@ class _LookupTab extends StatelessWidget {
     required this.won,
     required this.onSelectCategory,
     required this.onSelectModel,
-    required this.onSizeChanged,
+    required this.onEditWidth,
+    required this.onQuickWidth,
+    required this.onQuickHeight,
+    required this.onDigit,
+    required this.onBackspace,
+    required this.onClearCurrent,
+    required this.onClearAll,
     required this.onCopyPrice,
+    required this.onSharePrice,
+    required this.onShowGrid,
   });
 
   final StandardUnitPriceCatalog catalog;
   final String? categoryId;
   final String? modelId;
-  final List<StandardUnitPriceRow> cells;
-  final TextEditingController widthCtrl;
-  final TextEditingController heightCtrl;
+  final List<SameSizeModelQuote> comparisons;
+  final int widthMm;
+  final int heightMm;
+  final bool editingWidth;
   final StandardPriceInference inference;
   final bool hasSize;
   final StandardUnitPriceCategory? selectedCategory;
@@ -714,8 +854,17 @@ class _LookupTab extends StatelessWidget {
   final NumberFormat won;
   final ValueChanged<String> onSelectCategory;
   final ValueChanged<String> onSelectModel;
-  final VoidCallback onSizeChanged;
+  final ValueChanged<bool> onEditWidth;
+  final ValueChanged<int> onQuickWidth;
+  final ValueChanged<int> onQuickHeight;
+  final ValueChanged<String> onDigit;
+  final VoidCallback onBackspace;
+  final VoidCallback onClearCurrent;
+  final VoidCallback onClearAll;
   final VoidCallback onCopyPrice;
+  final VoidCallback onSharePrice;
+  final VoidCallback onShowGrid;
+
 
   @override
   Widget build(BuildContext context) {
@@ -723,16 +872,12 @@ class _LookupTab extends StatelessWidget {
     final models = categoryId == null
         ? const <StandardUnitPriceModel>[]
         : catalog.modelsFor(categoryId!);
-    final axes = gridAxesFromCells(cells.map((c) => c.asCell));
     final price = hasSize ? (inference.estimatedPrice ?? 0) : 0;
     final unavailable = hasSize &&
         (inference.outOfRange ||
             (!inference.isEstimated &&
                 inference.match?.available == false &&
                 (inference.isExactBucket || price <= 0)));
-    final highlightKeys = {
-      for (final cell in inference.highlightCells) cell.key,
-    };
     final accent = hexToColor(
       selectedModel?.color ?? selectedCategory?.color ?? '#334155',
     );
@@ -741,10 +886,14 @@ class _LookupTab extends StatelessWidget {
         : hasSize && inference.isEstimated
             ? const Color(0xFFB45309)
             : accent;
-    String heightLabel(int size) {
-      if (size == 2150) return '2150 4단';
-      if (size == 2700) return '2700 5단';
-      return '$size';
+    final heightChips = selectedCategory?.name == '차고문'
+        ? garageQuickHeights
+        : standardQuickHeights;
+    SameSizeModelQuote? quoteOf(String id) {
+      for (final q in comparisons) {
+        if (q.modelId == id) return q;
+      }
+      return null;
     }
 
     return Column(
@@ -752,7 +901,7 @@ class _LookupTab extends StatelessWidget {
         Material(
           color: headerColor,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+            padding: const EdgeInsets.fromLTRB(14, 10, 8, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -761,84 +910,59 @@ class _LookupTab extends StatelessWidget {
                     Expanded(
                       child: Text(
                         hasSize && inference.isEstimated
-                            ? '예상단가  ·  ${selectedCategory?.name ?? '분류'}  ·  ${selectedModel?.name ?? '모델'}'
-                            : '${selectedCategory?.name ?? '분류'}  ·  ${selectedModel?.name ?? '모델'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                            ? '예상단가'
+                            : (selectedModel?.name ?? '표준단가'),
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           color: Colors.white.withValues(alpha: 0.92),
                         ),
                       ),
                     ),
-                    if (hasSize && inference.outOfRange)
-                      Container(
-                        margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFECACA),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          '표 범위 초과',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF7F1D1D),
-                          ),
-                        ),
-                      ),
                     if (hasSize && inference.isEstimated)
-                      Container(
-                        margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFDE68A),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          '사이값 추정',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF78350F),
-                          ),
-                        ),
+                      const _HeaderTag(
+                        label: '사이값 추정',
+                        bg: Color(0xFFFDE68A),
+                        fg: Color(0xFF78350F),
                       ),
+                    if (hasSize && inference.outOfRange)
+                      const _HeaderTag(
+                        label: '표 범위 초과',
+                        bg: Color(0xFFFECACA),
+                        fg: Color(0xFF7F1D1D),
+                      ),
+                    IconButton(
+                      tooltip: '단가표',
+                      onPressed: onShowGrid,
+                      color: Colors.white,
+                      icon: const Icon(Icons.grid_on_rounded),
+                    ),
                     if (hasSize && !unavailable && price > 0)
-                      TextButton(
-                        onPressed: onCopyPrice,
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        child: const Text('복사'),
+                      IconButton(
+                        tooltip: '공유',
+                        onPressed: onSharePrice,
+                        color: Colors.white,
+                        icon: const Icon(Icons.ios_share_rounded),
                       ),
                   ],
                 ),
-                Text(
-                  !hasSize
-                      ? '아래 칸을 누르세요'
-                      : unavailable
-                          ? inference.outOfRange
-                              ? '해당 사이즈 불가'
-                              : '해당 사이즈 불가 (X)'
-                          : price > 0
-                              ? '${won.format(price)}원'
-                              : inference.isExactBucket
-                                  ? '단가 없음'
-                                  : '추정 불가',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    height: 1.1,
+                GestureDetector(
+                  onTap: hasSize && !unavailable && price > 0
+                      ? onCopyPrice
+                      : null,
+                  child: Text(
+                    !hasSize
+                        ? '모델 고르고 폭·높이를 넣으세요'
+                        : unavailable
+                            ? '해당 사이즈 불가'
+                            : price > 0
+                                ? '${won.format(price)}원'
+                                : '단가 없음',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      height: 1.05,
+                    ),
                   ),
                 ),
                 if (hasSize && !unavailable && price > 0)
@@ -847,7 +971,7 @@ class _LookupTab extends StatelessWidget {
                     child: Text(
                       koreanWonInWords(price),
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),
@@ -855,37 +979,14 @@ class _LookupTab extends StatelessWidget {
                   ),
                 if (hasSize)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       describeSizeLookup(inference),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white.withValues(alpha: 0.88),
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
-                    ),
-                  ),
-                if (hasSize)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        _SizeBadge(
-                          caption: '폭 · 가로',
-                          value: '${inference.lowerWidth}${inference.lowerWidth != inference.upperWidth ? '~${inference.upperWidth}' : ''}',
-                          color: const Color(0xFF1D4ED8),
-                        ),
-                        _SizeBadge(
-                          caption: '높이 · 세로',
-                          value: heightLabel(inference.lowerHeight) +
-                              (inference.lowerHeight != inference.upperHeight
-                                  ? '~${heightLabel(inference.upperHeight)}'
-                                  : ''),
-                          color: const Color(0xFF0F766E),
-                        ),
-                      ],
                     ),
                   ),
               ],
@@ -893,34 +994,19 @@ class _LookupTab extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
           child: Row(
             children: [
               for (final cat in catalog.orderedCategories)
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: FilledButton(
-                      onPressed: () => onSelectCategory(cat.id),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: cat.id == categoryId
-                            ? hexToColor(cat.color)
-                            : scheme.surfaceContainerHighest,
-                        foregroundColor: cat.id == categoryId
-                            ? Colors.white
-                            : scheme.onSurface,
-                        minimumSize: const Size(0, 44),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                      ),
-                      child: Text(
-                        cat.name,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
+                    child: _ChoicePill(
+                      label: cat.name,
+                      selected: cat.id == categoryId,
+                      color: hexToColor(cat.color),
+                      expanded: true,
+                      onTap: () => onSelectCategory(cat.id),
                     ),
                   ),
                 ),
@@ -928,203 +1014,447 @@ class _LookupTab extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: _TablePager(
-            label: '모델',
-            value: selectedModel?.name ?? '-',
-            color: hexToColor(selectedModel?.color ?? '#334155'),
-            onPrev: () {
-              if (models.isEmpty) return;
-              final idx = models.indexWhere((m) => m.id == modelId);
-              final next = models[
-                  ((idx < 0 ? 0 : idx) - 1 + models.length) % models.length];
-              onSelectModel(next.id);
-            },
-            onNext: () {
-              if (models.isEmpty) return;
-              final idx = models.indexWhere((m) => m.id == modelId);
-              final next = models[
-                  ((idx < 0 ? 0 : idx) + 1) % models.length];
-              onSelectModel(next.id);
-            },
-            enabled: models.length > 1,
-            onPick: models.length < 2
-                ? null
-                : () async {
-                    final picked = await showModalBottomSheet<String>(
-                      context: context,
-                      showDragHandle: true,
-                      builder: (ctx) => SafeArea(
-                        child: ListView(
-                          shrinkWrap: true,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-                              child: Text(
-                                '모델 선택',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                            for (final model in models)
-                              ListTile(
-                                selected: model.id == modelId,
-                                leading: CircleAvatar(
-                                  backgroundColor: hexToColor(model.color),
-                                  radius: 10,
-                                ),
-                                title: Text(
-                                  model.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                onTap: () => Navigator.pop(ctx, model.id),
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                    if (picked != null) onSelectModel(picked);
-                  },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: _LabeledSizeField(
-                  caption: '폭 · 가로',
-                  color: const Color(0xFF1D4ED8),
-                  controller: widthCtrl,
-                  textInputAction: TextInputAction.next,
-                  onChanged: onSizeChanged,
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(6, 16, 6, 0),
-                child: Text('×', style: TextStyle(fontWeight: FontWeight.w900)),
-              ),
-              Expanded(
-                child: _LabeledSizeField(
-                  caption: '높이 · 세로',
-                  color: const Color(0xFF0F766E),
-                  controller: heightCtrl,
-                  textInputAction: TextInputAction.done,
-                  onChanged: onSizeChanged,
-                ),
-              ),
-              TextButton(
-                onPressed: widthCtrl.text.isEmpty && heightCtrl.text.isEmpty
-                    ? null
-                    : () {
-                        widthCtrl.clear();
-                        heightCtrl.clear();
-                        onSizeChanged();
-                      },
-                child: const Text('지움'),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              selectedCategory?.name == '차고문'
-                  ? '위쪽=폭 · 왼쪽=높이 · 2150(4단) 초과 시 2700(5단) · 표 최대 초과는 불가'
-                  : '위쪽 숫자는 폭(가로) · 왼쪽 숫자는 높이(세로) · 사이값은 예상단가 · 표 최대 초과는 불가',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
-            ),
-          ),
-        ),
-        Expanded(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: LayoutBuilder(
-            builder: (context, constraints) {
-              const pad = 12.0;
-              const minAxis = 64.0;
-              const minData = 52.0;
-              const minHead = 36.0;
-              const minCell = 40.0;
-              final availW = constraints.maxWidth - pad * 2;
-              final dataCols = axes.widths.length;
-              final minTableW = minAxis + minData * dataCols;
-              final fillW = dataCols > 0 && minTableW <= availW;
-              final axisW = fillW ? (availW * 0.24).clamp(64.0, 92.0) : minAxis;
-              final dataW = dataCols == 0
-                  ? minData
-                  : fillW
-                      ? (availW - axisW) / dataCols
-                      : minData;
-              final headH = minHead;
-              final cellH = fillW ? 56.0 : minCell;
-              final table = Table(
-                border: TableBorder.all(color: scheme.outlineVariant),
-                columnWidths: {
-                  0: FixedColumnWidth(axisW),
-                  for (var i = 0; i < dataCols; i++)
-                    i + 1: FixedColumnWidth(dataW),
-                },
+            builder: (context, c) {
+              final n = models.length;
+              final cols = n <= 1
+                  ? 1
+                  : n == 3
+                      ? 3
+                      : 2;
+              final gap = 8.0;
+              final tileW = (c.maxWidth - gap * (cols - 1)) / cols;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
                 children: [
-                  TableRow(
-                    children: [
-                      _GridCorner(height: headH),
-                      for (final w in axes.widths)
-                        _GridHead(caption: '폭', value: '$w', height: headH),
-                    ],
-                  ),
-                  for (final h in axes.heights)
-                    TableRow(
-                      children: [
-                        _GridAxisCell(
-                          caption: '높이',
-                          value: heightLabel(h),
-                          height: cellH,
-                        ),
-                        for (final w in axes.widths)
-                          _LookupGridCell(
-                            cell: _lookupCell(cells, w, h),
-                            selected: hasSize &&
-                                !inference.isEstimated &&
-                                !inference.outOfRange &&
-                                inference.bucketWidth == w &&
-                                inference.bucketHeight == h,
-                            highlighted: hasSize &&
-                                highlightKeys.contains('${w}_$h'),
-                            outOfRange: hasSize && inference.outOfRange,
-                            estimated: hasSize && inference.isEstimated,
-                            height: cellH,
-                            large: fillW,
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              widthCtrl.text = won.format(w);
-                              heightCtrl.text = won.format(h);
-                              onSizeChanged();
-                            },
-                          ),
-                      ],
+                  for (final model in models)
+                    SizedBox(
+                      width: tileW,
+                      child: _ModelTile(
+                        name: model.name,
+                        color: hexToColor(model.color),
+                        selected: model.id == modelId,
+                        quote: quoteOf(model.id),
+                        hasSize: hasSize,
+                        won: won,
+                        onTap: () => onSelectModel(model.id),
+                      ),
                     ),
                 ],
               );
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(pad, 0, pad, 16),
-                  child: table,
-                ),
-              );
             },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: _SizeTapCard(
+                  caption: editingWidth ? '폭 · 입력 중' : '폭 · 가로',
+                  value: widthMm > 0 ? '${won.format(widthMm)} mm' : '탭해서 입력',
+                  color: const Color(0xFF1D4ED8),
+                  selected: editingWidth,
+                  onTap: () => onEditWidth(true),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  '×',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+                ),
+              ),
+              Expanded(
+                child: _SizeTapCard(
+                  caption: !editingWidth ? '높이 · 입력 중' : '높이 · 세로',
+                  value: heightMm > 0 ? '${won.format(heightMm)} mm' : '탭해서 입력',
+                  color: const Color(0xFF0F766E),
+                  selected: !editingWidth,
+                  onTap: () => onEditWidth(false),
+                ),
+              ),
+              IconButton(
+                tooltip: '사이즈 지움',
+                onPressed: widthMm > 0 || heightMm > 0 ? onClearAll : null,
+                icon: const Icon(Icons.backspace_outlined),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: _LabeledChipRow(
+            label: '폭',
+            color: const Color(0xFF1D4ED8),
+            children: [
+              for (final mm in standardQuickWidths)
+                _ChoicePill(
+                  label: '$mm',
+                  selected: widthMm == mm,
+                  color: const Color(0xFF1D4ED8),
+                  onTap: () => onQuickWidth(mm),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          child: _LabeledChipRow(
+            label: '높이',
+            color: const Color(0xFF0F766E),
+            children: [
+              for (final mm in heightChips)
+                _ChoicePill(
+                  label: mm == 2150
+                      ? '2150 4단'
+                      : mm == 2700
+                          ? '2700 5단'
+                          : '$mm',
+                  selected: heightMm == mm,
+                  color: const Color(0xFF0F766E),
+                  onTap: () => onQuickHeight(mm),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: _InlineKeypad(
+              editingWidth: editingWidth,
+              onDigit: onDigit,
+              onBackspace: onBackspace,
+              onClear: onClearCurrent,
+              onToggleAxis: () => onEditWidth(!editingWidth),
+            ),
           ),
         ),
       ],
     );
   }
 }
+
+class _HeaderTag extends StatelessWidget {
+  const _HeaderTag({
+    required this.label,
+    required this.bg,
+    required this.fg,
+  });
+
+  final String label;
+  final Color bg;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          color: fg,
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelTile extends StatelessWidget {
+  const _ModelTile({
+    required this.name,
+    required this.color,
+    required this.selected,
+    required this.quote,
+    required this.hasSize,
+    required this.won,
+    required this.onTap,
+  });
+
+  final String name;
+  final Color color;
+  final bool selected;
+  final SameSizeModelQuote? quote;
+  final bool hasSize;
+  final NumberFormat won;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final priceText = !hasSize
+        ? '선택'
+        : (quote == null || quote!.unavailable)
+            ? '불가'
+            : '${won.format(quote!.price)}원';
+    return Material(
+      color: selected ? color : scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: selected ? Colors.white : color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  priceText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.95)
+                        : scheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LabeledChipRow extends StatelessWidget {
+  const _LabeledChipRow({
+    required this.label,
+    required this.color,
+    required this.children,
+  });
+
+  final String label;
+  final Color color;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 36,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ),
+        Expanded(child: _ChoiceChipRow(children: children)),
+      ],
+    );
+  }
+}
+
+class _InlineKeypad extends StatelessWidget {
+  const _InlineKeypad({
+    required this.editingWidth,
+    required this.onDigit,
+    required this.onBackspace,
+    required this.onClear,
+    required this.onToggleAxis,
+  });
+
+  final bool editingWidth;
+  final ValueChanged<String> onDigit;
+  final VoidCallback onBackspace;
+  final VoidCallback onClear;
+  final VoidCallback onToggleAxis;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '←'];
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.count(
+            crossAxisCount: 3,
+            childAspectRatio: 2.05,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              for (final key in keys)
+                FilledButton.tonal(
+                  onPressed: () {
+                    if (key == '←') {
+                      onBackspace();
+                    } else {
+                      onDigit(key);
+                    }
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: scheme.surfaceContainerHighest,
+                    foregroundColor: scheme.onSurface,
+                    textStyle: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  child: Text(key),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: onClear,
+                child: Text(editingWidth ? '폭 지움' : '높이 지움'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: onToggleAxis,
+                child: Text(editingWidth ? '다음 · 높이' : '폭으로'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _PriceGrid extends StatelessWidget {
+  const _PriceGrid({
+    required this.cells,
+    required this.inference,
+    required this.hasSize,
+    required this.won,
+    required this.onSetSize,
+  });
+
+  final List<StandardUnitPriceRow> cells;
+  final StandardPriceInference inference;
+  final bool hasSize;
+  final NumberFormat won;
+  final void Function(int widthMm, int heightMm) onSetSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final axes = gridAxesFromCells(cells.map((c) => c.asCell));
+    final highlightKeys = {
+      for (final cell in inference.highlightCells) cell.key,
+    };
+    String heightLabel(int size) {
+      if (size == 2150) return '2150 4단';
+      if (size == 2700) return '2700 5단';
+      return '$size';
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const pad = 12.0;
+        const minAxis = 64.0;
+        const minData = 52.0;
+        const minHead = 36.0;
+        const minCell = 40.0;
+        final availW = constraints.maxWidth - pad * 2;
+        final dataCols = axes.widths.length;
+        final minTableW = minAxis + minData * dataCols;
+        final fillW = dataCols > 0 && minTableW <= availW;
+        final axisW = fillW ? (availW * 0.24).clamp(64.0, 92.0) : minAxis;
+        final dataW = dataCols == 0
+            ? minData
+            : fillW
+                ? (availW - axisW) / dataCols
+                : minData;
+        final headH = minHead;
+        final cellH = fillW ? 56.0 : minCell;
+        final table = Table(
+          border: TableBorder.all(color: scheme.outlineVariant),
+          columnWidths: {
+            0: FixedColumnWidth(axisW),
+            for (var i = 0; i < dataCols; i++)
+              i + 1: FixedColumnWidth(dataW),
+          },
+          children: [
+            TableRow(
+              children: [
+                _GridCorner(height: headH),
+                for (final w in axes.widths)
+                  _GridHead(caption: '폭', value: '$w', height: headH),
+              ],
+            ),
+            for (final h in axes.heights)
+              TableRow(
+                children: [
+                  _GridAxisCell(
+                    caption: '높이',
+                    value: heightLabel(h),
+                    height: cellH,
+                  ),
+                  for (final w in axes.widths)
+                    _LookupGridCell(
+                      cell: _lookupCell(cells, w, h),
+                      selected: hasSize &&
+                          !inference.isEstimated &&
+                          !inference.outOfRange &&
+                          inference.bucketWidth == w &&
+                          inference.bucketHeight == h,
+                      highlighted: hasSize &&
+                          highlightKeys.contains('${w}_$h'),
+                      outOfRange: hasSize && inference.outOfRange,
+                      estimated: hasSize && inference.isEstimated,
+                      height: cellH,
+                      large: fillW,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onSetSize(w, h);
+                      },
+                    ),
+                ],
+              ),
+          ],
+        );
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(pad, 0, pad, 16),
+            child: table,
+          ),
+        );
+      },
+    );
+  }
+}
+
 
 StandardUnitPriceRow? _lookupCell(
   List<StandardUnitPriceRow> cells,
@@ -1137,100 +1467,129 @@ StandardUnitPriceRow? _lookupCell(
   return null;
 }
 
-class _SizeBadge extends StatelessWidget {
-  const _SizeBadge({
-    required this.caption,
-    required this.value,
-    required this.color,
-  });
-
-  final String caption;
-  final String value;
-  final Color color;
+class _ChoiceChipRow extends StatelessWidget {
+  const _ChoiceChipRow({required this.children});
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(
-              text: '$caption  ',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-            TextSpan(
-              text: value,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-          ],
-        ),
+    if (children.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: children.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) => children[i],
       ),
     );
   }
 }
 
-class _LabeledSizeField extends StatelessWidget {
-  const _LabeledSizeField({
-    required this.caption,
+class _ChoicePill extends StatelessWidget {
+  const _ChoicePill({
+    required this.label,
+    required this.selected,
     required this.color,
-    required this.controller,
-    required this.textInputAction,
-    required this.onChanged,
+    required this.onTap,
+    this.expanded = false,
   });
 
-  final String caption;
+  final String label;
+  final bool selected;
   final Color color;
-  final TextEditingController controller;
-  final TextInputAction textInputAction;
-  final VoidCallback onChanged;
+  final VoidCallback onTap;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          caption,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w900,
-            color: color,
+    final pill = Material(
+      color: selected ? color : Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: expanded ? 48 : 40,
+            minWidth: 56,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: expanded ? 15 : 13,
+                  fontWeight: FontWeight.w900,
+                  color: selected
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 4),
-        TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          textInputAction: textInputAction,
-          inputFormatters: const [ThousandsFormatter()],
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
-          decoration: InputDecoration(
-            isDense: true,
-            suffixText: 'mm',
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: color.withValues(alpha: 0.45), width: 1.4),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: color, width: 1.8),
-            ),
+      ),
+    );
+    return pill;
+  }
+}
+
+class _SizeTapCard extends StatelessWidget {
+  const _SizeTapCard({
+    required this.caption,
+    required this.value,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String caption;
+  final String value;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? color.withValues(alpha: 0.12) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: color, width: selected ? 2 : 1.2),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                caption,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-          onChanged: (_) => onChanged(),
         ),
-      ],
+      ),
     );
   }
 }

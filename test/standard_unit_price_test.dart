@@ -257,4 +257,60 @@ void main() {
       expect(overFive.estimatedPrice, isNull);
     });
   });
+
+  group('sameSizeQuotes / formatStandardQuoteLine', () {
+    test('같은 사이즈로 모델별 단가를 모은다', () {
+      final quotes = sameSizeQuotes(
+        models: const [
+          (id: 'a', name: 'STANDARD', color: '#111111'),
+          (id: 'b', name: 'PREMIUM', color: '#222222'),
+        ],
+        cellsByModel: const {
+          'a': [
+            StandardPriceCell(widthMm: 4000, heightMm: 3000, price: 1000000),
+          ],
+          'b': [
+            StandardPriceCell(widthMm: 4000, heightMm: 3000, price: 1300000),
+          ],
+        },
+        widthMm: 4000,
+        heightMm: 3000,
+      );
+      expect(quotes.map((q) => q.price).toList(), [1000000, 1300000]);
+      expect(quotes.first.unavailable, isFalse);
+    });
+
+    test('견적 한 줄은 분류·모델·사이즈·금액', () {
+      const cells = [
+        StandardPriceCell(widthMm: 3000, heightMm: 4000, price: 800000),
+        StandardPriceCell(widthMm: 4000, heightMm: 4000, price: 900000),
+      ];
+      final exact = inferStandardPrice(
+        cells: cells,
+        widthMm: 3000,
+        heightMm: 4000,
+      );
+      expect(
+        formatStandardQuoteLine(
+          categoryName: '스피드도어',
+          modelName: 'STANDARD',
+          inference: exact,
+        ),
+        '스피드도어 / STANDARD · 3000×4000 · 800,000원',
+      );
+      final mid = inferStandardPrice(
+        cells: cells,
+        widthMm: 3200,
+        heightMm: 4000,
+      );
+      expect(
+        formatStandardQuoteLine(
+          categoryName: '스피드도어',
+          modelName: 'STANDARD',
+          inference: mid,
+        ),
+        contains('사이값 추정'),
+      );
+    });
+  });
 }
