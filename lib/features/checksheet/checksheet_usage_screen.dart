@@ -122,11 +122,11 @@ class _ChecksheetUsageScreenState extends ConsumerState<ChecksheetUsageScreen> {
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
 
-    if (!isAppAdmin(user)) {
+    if (!isAdminGroup(user)) {
       return Scaffold(
         appBar: AppBar(title: const Text('체크시트 사용 내역')),
         body: const AppEmpty(
-          message: '관리자만 조회할 수 있습니다.',
+          message: '관리자 그룹만 조회할 수 있습니다.',
           icon: Icons.lock_outline_rounded,
         ),
       );

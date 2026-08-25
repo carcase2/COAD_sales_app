@@ -1275,7 +1275,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             );
           }),
         ),
-        if (isAppAdmin(user))
+        if (isAdminGroup(user))
           AppMenuEntry(
             id: 'checksheet_usage',
             sectionId: 'tools',
@@ -1358,7 +1358,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             );
           }),
         ),
-        if (isAppAdmin(user))
+        if (isAdminGroup(user))
           AppMenuEntry(
             id: 'app_usage',
             sectionId: 'account',
@@ -1372,7 +1372,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               );
             }),
           ),
-        if (isAppAdmin(user))
+        if (isAdminGroup(user))
           AppMenuEntry(
             id: 'shutter_estimator_log',
             sectionId: 'account',

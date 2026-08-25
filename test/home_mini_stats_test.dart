@@ -30,12 +30,9 @@ void main() {
       ),
     );
 
-    expect(find.text('영업부'), findsOneWidget);
+    expect(find.text('영업부'), findsNothing);
     expect(find.text('금일 접수'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
-
-    final title = tester.widget<Text>(find.text('영업부'));
-    expect(title.style?.fontSize, 14);
 
     final value = tester.widget<Text>(find.text('3'));
     expect(value.style?.fontSize, 20);
@@ -67,9 +64,7 @@ void main() {
       ),
     );
 
-    expect(find.text('고객지원팀'), findsOneWidget);
-    final title = tester.widget<Text>(find.text('고객지원팀'));
-    expect(title.style?.fontSize, 14);
+    expect(find.text('고객지원팀'), findsNothing);
 
     final value = tester.widget<Text>(find.text('5'));
     expect(value.style?.fontSize, 20);

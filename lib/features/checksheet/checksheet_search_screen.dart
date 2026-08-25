@@ -217,7 +217,7 @@ class _ChecksheetSearchScreenState
       appBar: AppBar(
         title: const Text('체크시트 검색'),
         actions: [
-          if (isAppAdmin(ref.watch(authControllerProvider)))
+          if (isAdminGroup(ref.watch(authControllerProvider)))
             IconButton(
               tooltip: '사용 내역',
               onPressed: () {

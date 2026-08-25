@@ -204,7 +204,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 20),
           ],
-          if (user != null && isAppAdmin(user)) ...[
+          if (user != null && isAdminGroup(user)) ...[
             Text(
               '관리',
               style: Theme.of(
@@ -278,7 +278,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               );
             },
           ),
-          if (isAppAdmin(user))
+          if (isAdminGroup(user))
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.bar_chart_rounded, color: scheme.primary),

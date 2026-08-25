@@ -75,24 +75,10 @@ class _HomeMiniStatsWidgetState extends State<HomeMiniStatsWidget> {
       decoration: HomeHubVisual.elevatedCard(scheme),
       child: Column(
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '영업부',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: scheme.primary,
-                height: 1.1,
-              ),
-            ),
-          ),
           if (widget.headerAlerts.isNotEmpty) ...[
             for (final alert in widget.headerAlerts)
-              if (!_isBlankAlert(alert)) ...[SizedBox(height: gap), alert],
-            SizedBox(height: gap),
-          ] else
-            SizedBox(height: gap),
+              if (!_isBlankAlert(alert)) ...[alert, SizedBox(height: gap)],
+          ],
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -314,17 +300,7 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '고객지원팀',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: accent,
-              height: 1.1,
-            ),
-          ),
-          if (headerAlert != null) ...[SizedBox(height: gap), headerAlert!],
-          SizedBox(height: gap),
+          if (headerAlert != null) ...[headerAlert!, SizedBox(height: gap)],
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -448,27 +424,34 @@ class _HomeWideStat extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           child: Row(
             children: [
-              Icon(icon, size: 18, color: alert ? scheme.error : accent),
-              const SizedBox(width: 8),
+              Icon(icon, size: 16, color: alert ? scheme.error : accent),
+              const SizedBox(width: 6),
               Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 '$count',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
+                  height: 1.0,
                   color: alert ? scheme.error : accent,
                 ),
               ),

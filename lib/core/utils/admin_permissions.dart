@@ -4,6 +4,12 @@ import 'package:coad_customer_calls/models/app_user.dart';
 bool isAppAdmin(AppUser? user) {
   if (user == null) return false;
   if (user.role.trim().toLowerCase() == 'admin') return true;
-  if (user.groupName?.trim() == '관리자') return true;
+  if (isAdminGroup(user)) return true;
   return user.permissions.contains('all');
+}
+
+/// 부서(그룹) 이름이 관리자인 계정만.
+bool isAdminGroup(AppUser? user) {
+  if (user == null) return false;
+  return user.groupName?.trim() == '관리자';
 }

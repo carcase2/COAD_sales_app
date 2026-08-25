@@ -42,6 +42,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   ];
 
   late PageController _sectionPageController;
+  late PageController _deptPageController;
+  int _deptPageIndex = 0;
   late String _hubFlowAnchorYmd;
   HubNavStep _hubNavStep = HubNavStep.day;
   HomeHubSection _section = HomeHubSection.flow;
@@ -240,8 +242,16 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
-  /// 금일/금주/금월 · 기간 이동 · 오늘로 를 한 줄에 배치.
+  /// 금일/금주/금월 · 기간 이동 · 오늘로 — 한 줄.
   Widget _buildCompactFlowControls(ColorScheme scheme) {
+    final chevronStyle = IconButton.styleFrom(
+      foregroundColor: scheme.onPrimary,
+      disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.35),
+      minimumSize: const Size(26, 26),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       decoration: BoxDecoration(
@@ -256,13 +266,13 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             step: HubNavStep.day,
             label: '일',
           ),
-          const SizedBox(width: 3),
+          const SizedBox(width: 2),
           _buildMiniPeriodChip(
             scheme: scheme,
             step: HubNavStep.week,
             label: '주',
           ),
-          const SizedBox(width: 3),
+          const SizedBox(width: 2),
           _buildMiniPeriodChip(
             scheme: scheme,
             step: HubNavStep.month,
@@ -271,41 +281,31 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           IconButton(
             onPressed: () => _shiftHubNav(-1),
             tooltip: '이전 기간',
-            icon: const Icon(Icons.chevron_left_rounded, size: 20),
-            style: IconButton.styleFrom(
-              foregroundColor: scheme.onPrimary,
-              minimumSize: const Size(28, 28),
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+            icon: const Icon(Icons.chevron_left_rounded, size: 18),
+            style: chevronStyle,
           ),
           Expanded(
-            child: Text(
-              _hubFlowNavigatedPeriodLabel(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: scheme.onPrimary,
-                height: 1.1,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                _hubFlowNavigatedPeriodLabel(),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: scheme.onPrimary,
+                  height: 1.1,
+                ),
               ),
             ),
           ),
           IconButton(
             onPressed: _canShiftHubNavNewer() ? () => _shiftHubNav(1) : null,
             tooltip: '다음 기간',
-            icon: const Icon(Icons.chevron_right_rounded, size: 20),
-            style: IconButton.styleFrom(
-              foregroundColor: scheme.onPrimary,
-              disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.35),
-              minimumSize: const Size(28, 28),
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+            icon: const Icon(Icons.chevron_right_rounded, size: 18),
+            style: chevronStyle,
           ),
           _buildTodayJumpButton(scheme),
         ],
@@ -328,7 +328,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         borderRadius: BorderRadius.circular(8),
         onTap: () => _selectHubNavStep(step),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: Text(
             label,
             style: TextStyle(
@@ -1772,6 +1772,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     super.initState();
     _hubFlowAnchorYmd = todayYmdSeoul();
     _sectionPageController = PageController(initialPage: 0);
+    _deptPageController = PageController(initialPage: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _publishHubPeriod();
       _checkAndSyncPending();
@@ -1792,6 +1793,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _jumpSectionPage(0);
+        if (_deptPageController.hasClients) {
+          _deptPageController.jumpToPage(0);
+        }
+        setState(() => _deptPageIndex = 0);
       });
     });
     _pendingLaunchSub = ref.listenManual(
@@ -1818,6 +1823,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _pendingLaunchSub?.close();
     _homeFlowResetSub?.close();
     _sectionPageController.dispose();
+    _deptPageController.dispose();
     super.dispose();
   }
 
@@ -2500,6 +2506,85 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
+  Widget _deptTabBar(ColorScheme scheme) {
+    const tabs = ['영업부', '고객지원팀'];
+    final supportAccent = AppTokens.customerSupportAccent(scheme);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            for (var i = 0; i < tabs.length; i++)
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _goDeptPage(i),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _deptPageIndex == i
+                          ? (i == 0 ? scheme.primary : supportAccent)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Text(
+                      tabs[i],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        height: 1.1,
+                        color: _deptPageIndex == i
+                            ? Colors.white
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _flowDeptPage({required Widget body}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: body,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _goDeptPage(int index) {
+    if (!_deptPageController.hasClients) {
+      setState(() => _deptPageIndex = index);
+      return;
+    }
+    _deptPageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   Widget _buildPeriodFlowBlock({
     required ColorScheme scheme,
     required HubPeriodKey periodKey,
@@ -2563,159 +2648,234 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ? _previousPeriodKey.anchorYmd
             : null;
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            return RefreshIndicator(
-              onRefresh: _onRefresh,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+        final salesCard = HomeMiniStatsWidget(
+          compact: true,
+          headerAlerts: [
+            if (prevStatsAsync.hasValue)
+              _buildFlowReceptionCompareBanner(
+                scheme: scheme,
+                compareLabel: _comparePeriodLabel(),
+                reception: reception,
+                prevReception: prevReception,
+              ),
+            _buildPendingUncalledBanner(scheme),
+            _buildPrevUncalledAndOverdueRow(
+              scheme: scheme,
+              prevUncalled: previousDayYmd == null ? 0 : prevIncomplete,
+            ),
+          ],
+          receptionLabel: receptionLabel,
+          incompleteLabel: incompleteLabel,
+          followLabel: followLabel,
+          updatedLabel: updatedLabel,
+          today: reception,
+          incomplete: incomplete,
+          todayFollow: followCount,
+          updated: updatedCount,
+          followProgressHint: followProgressHint,
+          uncalledRateText: quality == null
+              ? '-'
+              : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
+          avgFirstResponseText: quality == null
+              ? '-'
+              : _formatMinutes(quality.avgFirstResponseMinutes),
+          onTapToday: () => _openReceptionPicker(scope),
+          onLongPressToday: () =>
+              _openReceptionPicker(scope, forcePicker: true),
+          onTapIncomplete: () => _openIncompletePicker(scope),
+          onLongPressIncomplete: () =>
+              _openIncompletePicker(scope, forcePicker: true),
+          onTapTodayFollow: () => _openFollowPicker(scope),
+          onLongPressTodayFollow: () =>
+              _openFollowPicker(scope, forcePicker: true),
+          onTapUpdated: () => _openUpdatedPicker(scope),
+          onLongPressUpdated: () =>
+              _openUpdatedPicker(scope, forcePicker: true),
+          onTapUncalledRate: () => _openQualityPicker(
+            forUncalledRate: true,
+            scope: scope,
+          ),
+          onTapFirstResponse: () => _openQualityPicker(
+            forUncalledRate: false,
+            scope: scope,
+          ),
+        );
+
+        final salesExtras = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            salesCard,
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsScreen(),
+                    ),
+                  );
+                  if (mounted) await _loadHomeFlowPrefs();
+                },
+                icon: Icon(
+                  Icons.tune_rounded,
+                  size: 14,
+                  color: scheme.primary,
+                ),
+                label: Text(
+                  '미통화 안내 설정',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+            if (_showLongPressHint)
+              Material(
+                color: scheme.secondaryContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 4, 2, 4),
+                  child: Row(
                     children: [
-                      HomeMiniStatsWidget(
-                        compact: true,
-                        headerAlerts: [
-                          if (prevStatsAsync.hasValue)
-                            _buildFlowReceptionCompareBanner(
-                              scheme: scheme,
-                              compareLabel: _comparePeriodLabel(),
-                              reception: reception,
-                              prevReception: prevReception,
-                            ),
-                          _buildPendingUncalledBanner(scheme),
-                          _buildPrevUncalledAndOverdueRow(
-                            scheme: scheme,
-                            prevUncalled: previousDayYmd == null
-                                ? 0
-                                : prevIncomplete,
-                          ),
-                        ],
-                        receptionLabel: receptionLabel,
-                        incompleteLabel: incompleteLabel,
-                        followLabel: followLabel,
-                        updatedLabel: updatedLabel,
-                        today: reception,
-                        incomplete: incomplete,
-                        todayFollow: followCount,
-                        updated: updatedCount,
-                        followProgressHint: followProgressHint,
-                        uncalledRateText: quality == null
-                            ? '-'
-                            : '${(quality.uncalledRate * 100).toStringAsFixed(1)}%',
-                        avgFirstResponseText: quality == null
-                            ? '-'
-                            : _formatMinutes(quality.avgFirstResponseMinutes),
-                        onTapToday: () => _openReceptionPicker(scope),
-                        onLongPressToday: () =>
-                            _openReceptionPicker(scope, forcePicker: true),
-                        onTapIncomplete: () => _openIncompletePicker(scope),
-                        onLongPressIncomplete: () =>
-                            _openIncompletePicker(scope, forcePicker: true),
-                        onTapTodayFollow: () => _openFollowPicker(scope),
-                        onLongPressTodayFollow: () =>
-                            _openFollowPicker(scope, forcePicker: true),
-                        onTapUpdated: () => _openUpdatedPicker(scope),
-                        onLongPressUpdated: () =>
-                            _openUpdatedPicker(scope, forcePicker: true),
-                        onTapUncalledRate: () => _openQualityPicker(
-                          forUncalledRate: true,
-                          scope: scope,
-                        ),
-                        onTapFirstResponse: () => _openQualityPicker(
-                          forUncalledRate: false,
-                          scope: scope,
-                        ),
+                      Icon(
+                        Icons.touch_app_rounded,
+                        size: 14,
+                        color: scheme.onSecondaryContainer,
                       ),
-                      const SizedBox(height: 10),
-                      _buildSupportPeriodStats(periodKey: periodKey),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: () async {
-                            await Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const SettingsScreen(),
-                              ),
-                            );
-                            if (mounted) await _loadHomeFlowPrefs();
-                          },
-                          icon: Icon(
-                            Icons.tune_rounded,
-                            size: 14,
-                            color: scheme.primary,
-                          ),
-                          label: Text(
-                            '미통화 안내 설정',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: scheme.primary,
-                            ),
-                          ),
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            minimumSize: const Size(0, 28),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '길게 누르면 담당자를 고를 수 있습니다.',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSecondaryContainer,
                           ),
                         ),
                       ),
-                      if (_showLongPressHint)
-                        Material(
-                          color: scheme.secondaryContainer.withValues(
-                            alpha: 0.45,
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 4, 2, 4),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.touch_app_rounded,
-                                  size: 14,
-                                  color: scheme.onSecondaryContainer,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    '길게 누르면 담당자를 고를 수 있습니다.',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: scheme.onSecondaryContainer,
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: '힌트 닫기',
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 28,
-                                    minHeight: 28,
-                                  ),
-                                  onPressed: _dismissLongPressHint,
-                                  icon: Icon(
-                                    Icons.close_rounded,
-                                    size: 16,
-                                    color: scheme.onSecondaryContainer
-                                        .withValues(alpha: 0.75),
-                                  ),
-                                ),
-                              ],
-                            ),
+                      IconButton(
+                        tooltip: '힌트 닫기',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        onPressed: _dismissLongPressHint,
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: scheme.onSecondaryContainer.withValues(
+                            alpha: 0.75,
                           ),
                         ),
+                      ),
                     ],
                   ),
                 ),
               ),
-            );
-          },
+          ],
+        );
+
+        return Column(
+          children: [
+            _deptTabBar(scheme),
+            Expanded(
+              child: Stack(
+                children: [
+                  PageView(
+                    controller: _deptPageController,
+                    onPageChanged: (index) {
+                      HapticFeedback.selectionClick();
+                      setState(() => _deptPageIndex = index);
+                    },
+                    children: [
+                      _flowDeptPage(body: salesExtras),
+                      _flowDeptPage(
+                        body: _buildSupportPeriodStats(periodKey: periodKey),
+                      ),
+                    ],
+                  ),
+                  if (_deptPageIndex == 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: IconButton(
+                          tooltip: '고객지원팀',
+                          onPressed: () => _goDeptPage(1),
+                          style: IconButton.styleFrom(
+                            backgroundColor: scheme.surface.withValues(
+                              alpha: 0.72,
+                            ),
+                            foregroundColor: AppTokens.customerSupportAccent(
+                              scheme,
+                            ),
+                          ),
+                          icon: const Icon(Icons.chevron_right_rounded),
+                        ),
+                      ),
+                    ),
+                  if (_deptPageIndex == 1)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: IconButton(
+                          tooltip: '영업부',
+                          onPressed: () => _goDeptPage(0),
+                          style: IconButton.styleFrom(
+                            backgroundColor: scheme.surface.withValues(
+                              alpha: 0.72,
+                            ),
+                            foregroundColor: scheme.primary,
+                          ),
+                          icon: const Icon(Icons.chevron_left_rounded),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 6,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < 2; i++)
+                          Container(
+                            width: _deptPageIndex == i ? 16 : 6,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(99),
+                              color: _deptPageIndex == i
+                                  ? (i == 0
+                                        ? scheme.primary
+                                        : AppTokens.customerSupportAccent(
+                                            scheme,
+                                          ))
+                                  : scheme.outlineVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
       },
       loading: () => const Center(child: LinearProgressIndicator(minHeight: 3)),

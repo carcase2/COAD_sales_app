@@ -139,10 +139,10 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
-    if (!isAppAdmin(user)) {
+    if (!isAdminGroup(user)) {
       return Scaffold(
         appBar: AppBar(title: const Text('앱 사용량')),
-        body: const Center(child: Text('관리자만 이용할 수 있습니다.')),
+        body: const Center(child: Text('관리자 그룹만 이용할 수 있습니다.')),
       );
     }
 

@@ -34,4 +34,12 @@ void main() {
     expect(isAppAdmin(_user(groupName: '본사영업')), isFalse);
     expect(isAppAdmin(null), isFalse);
   });
+
+  test('isAdminGroup — 관리자 그룹만', () {
+    expect(isAdminGroup(_user(groupName: '관리자')), isTrue);
+    expect(isAdminGroup(_user(role: 'admin')), isFalse);
+    expect(isAdminGroup(_user(permissions: ['all'])), isFalse);
+    expect(isAdminGroup(_user(groupName: '본사영업')), isFalse);
+    expect(isAdminGroup(null), isFalse);
+  });
 }
