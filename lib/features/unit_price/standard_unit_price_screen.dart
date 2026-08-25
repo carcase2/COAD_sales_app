@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
@@ -19,19 +18,11 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
 bool canViewStandardUnitPrice(AppUser? user) {
-  if (user == null) return false;
-  if (isAppAdmin(user)) return true;
-  return user.permissions.contains('standard_unit_price') ||
-      user.permissions.contains('standard_unit_price_edit') ||
-      user.permissions.contains('all');
+  return user != null;
 }
 
-bool canEditStandardUnitPrice(AppUser? user) {
-  if (user == null) return false;
-  if (isAppAdmin(user)) return true;
-  return user.permissions.contains('standard_unit_price_edit') ||
-      user.permissions.contains('all');
-}
+/// 단가 수정은 인트라넷에서만 한다. 앱은 조회 전용.
+bool canEditStandardUnitPrice(AppUser? user) => false;
 
 class StandardUnitPriceScreen extends ConsumerStatefulWidget {
   const StandardUnitPriceScreen({super.key});
