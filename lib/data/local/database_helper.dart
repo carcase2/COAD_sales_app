@@ -20,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -54,7 +54,20 @@ class DatabaseHelper {
     if (oldVersion < 4) {
       await db.execute(_createPendingConsultationsSql);
     }
+    if (oldVersion < 5) {
+      await db.execute(_createPendingMesPhotosSql);
+    }
   }
+
+  static const _createPendingMesPhotosSql = '''
+      CREATE TABLE pending_mes_photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id TEXT,
+        file_path TEXT,
+        original_name TEXT,
+        created_at TEXT
+      )
+    ''';
 
   static const _createPendingConsultationsSql = '''
       CREATE TABLE pending_consultations (
@@ -111,6 +124,7 @@ class DatabaseHelper {
     ''');
 
     await db.execute(_createPendingConsultationsSql);
+    await db.execute(_createPendingMesPhotosSql);
   }
 
   // --- Sales Call Operations ---

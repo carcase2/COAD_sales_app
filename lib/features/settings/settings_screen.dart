@@ -253,7 +253,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.grid_on_rounded, color: scheme.primary),
-              title: const Text('사이즈 표준단가(테스트중)'),
+              title: const Text('사이즈 표준단가'),
               subtitle: const Text('폭×높이·모델별 표준단가 조회'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () {

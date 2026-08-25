@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:coad_customer_calls/core/constants/storage_keys.dart';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/call_permissions.dart';
+import 'package:coad_customer_calls/core/utils/mes_permissions.dart';
+import 'package:coad_customer_calls/data/mes_repository.dart';
+import 'package:coad_customer_calls/data/mes_photo_queue.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -82,11 +85,16 @@ class AuthRepository {
     };
 
     final u = AppUser.fromJson(userMap);
-    if (!canAccessSalesCalls(u)) {
-      throw ApiException('고객전화 메뉴 접근 권한이 없습니다. 관리자에게 문의하세요.');
+    if (!canAccessSalesCalls(u) && !canAccessMes(u)) {
+      throw ApiException('메뉴 접근 권한이 없습니다. 관리자에게 문의하세요.');
     }
 
     _user = u;
+    final mes = MesRepository(_deps);
+    await mes.login(id, password);
+    try {
+      await MesPhotoQueue.flush(mes);
+    } catch (_) {}
     await _deps.secure.write(
       key: StorageKeys.userJson,
       value: jsonEncode(u.toJson()),
@@ -105,6 +113,7 @@ class AuthRepository {
   Future<void> logout() async {
     _user = null;
     _deps.transport.cookieHeader = null;
+    await MesRepository(_deps).logout();
     await _deps.secure.delete(key: StorageKeys.userJson);
     await _deps.secure.delete(key: StorageKeys.sessionCookies);
     // 사용자가 의도적으로 로그아웃한 경우 자동 재로그인을 막는다.

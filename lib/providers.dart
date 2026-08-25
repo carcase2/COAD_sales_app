@@ -8,6 +8,7 @@ import 'package:coad_customer_calls/data/usage_repository.dart';
 import 'package:coad_customer_calls/data/ai_extractor_service.dart';
 import 'package:coad_customer_calls/data/business_card_repository.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/data/mes_repository.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -63,4 +64,8 @@ final supportCallLogRepositoryProvider = Provider<SupportCallLogRepository>((
   ref,
 ) {
   return SupportCallLogRepository();
+});
+
+final mesRepositoryProvider = Provider<MesRepository>((ref) {
+  return MesRepository(ref.watch(appDependenciesProvider));
 });

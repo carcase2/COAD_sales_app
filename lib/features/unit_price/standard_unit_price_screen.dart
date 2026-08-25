@@ -243,10 +243,13 @@ class _StandardUnitPriceScreenState
 
   bool get _hasSize => _widthMm > 0 && _heightMm > 0;
 
+  bool get _isGarageDoor => _selectedCategory?.name == '차고문';
+
   StandardPriceInference get _inference => inferStandardPrice(
         cells: _cells.map((c) => c.asCell).toList(),
         widthMm: _widthMm == 0 ? 2000 : _widthMm,
         heightMm: _heightMm == 0 ? 2000 : _heightMm,
+        ceilingHeights: _isGarageDoor,
       );
 
   StandardUnitPriceModel? get _selectedModel {
@@ -467,7 +470,7 @@ class _StandardUnitPriceScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('표준단가(테스트중)'),
+        title: const Text('표준단가'),
         actions: [
           IconButton(
             tooltip: '새로고침',
@@ -566,10 +569,12 @@ class _StandardUnitPriceScreenState
                   onSizeChanged: () => setState(() {}),
                   onCopyPrice: () async {
                     final price = _hasSize
-                        ? (_inference.match?.price ?? 0)
+                        ? (_inference.estimatedPrice ?? 0)
                         : 0;
                     if (price <= 0 ||
-                        _inference.match?.available == false) {
+                        _inference.outOfRange ||
+                        (!_inference.isEstimated &&
+                            _inference.match?.available == false)) {
                       return;
                     }
                     final messenger = ScaffoldMessenger.of(context);
@@ -719,11 +724,23 @@ class _LookupTab extends StatelessWidget {
         ? const <StandardUnitPriceModel>[]
         : catalog.modelsFor(categoryId!);
     final axes = gridAxesFromCells(cells.map((c) => c.asCell));
-    final price = hasSize ? (inference.match?.price ?? 0) : 0;
-    final unavailable = hasSize && inference.match?.available == false;
+    final price = hasSize ? (inference.estimatedPrice ?? 0) : 0;
+    final unavailable = hasSize &&
+        (inference.outOfRange ||
+            (!inference.isEstimated &&
+                inference.match?.available == false &&
+                (inference.isExactBucket || price <= 0)));
+    final highlightKeys = {
+      for (final cell in inference.highlightCells) cell.key,
+    };
     final accent = hexToColor(
       selectedModel?.color ?? selectedCategory?.color ?? '#334155',
     );
+    final headerColor = unavailable
+        ? scheme.error
+        : hasSize && inference.isEstimated
+            ? const Color(0xFFB45309)
+            : accent;
     String heightLabel(int size) {
       if (size == 2150) return '2150 4단';
       if (size == 2700) return '2700 5단';
@@ -733,7 +750,7 @@ class _LookupTab extends StatelessWidget {
     return Column(
       children: [
         Material(
-          color: unavailable ? scheme.error : accent,
+          color: headerColor,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
             child: Column(
@@ -743,7 +760,9 @@ class _LookupTab extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '${selectedCategory?.name ?? '분류'}  ·  ${selectedModel?.name ?? '모델'}',
+                        hasSize && inference.isEstimated
+                            ? '예상단가  ·  ${selectedCategory?.name ?? '분류'}  ·  ${selectedModel?.name ?? '모델'}'
+                            : '${selectedCategory?.name ?? '분류'}  ·  ${selectedModel?.name ?? '모델'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -752,6 +771,46 @@ class _LookupTab extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (hasSize && inference.outOfRange)
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFECACA),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          '표 범위 초과',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF7F1D1D),
+                          ),
+                        ),
+                      ),
+                    if (hasSize && inference.isEstimated)
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFDE68A),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          '사이값 추정',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF78350F),
+                          ),
+                        ),
+                      ),
                     if (hasSize && !unavailable && price > 0)
                       TextButton(
                         onPressed: onCopyPrice,
@@ -767,10 +826,14 @@ class _LookupTab extends StatelessWidget {
                   !hasSize
                       ? '아래 칸을 누르세요'
                       : unavailable
-                          ? '해당 사이즈 불가 (X)'
+                          ? inference.outOfRange
+                              ? '해당 사이즈 불가'
+                              : '해당 사이즈 불가 (X)'
                           : price > 0
                               ? '${won.format(price)}원'
-                              : '단가 없음',
+                              : inference.isExactBucket
+                                  ? '단가 없음'
+                                  : '추정 불가',
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -793,22 +856,33 @@ class _LookupTab extends StatelessWidget {
                 if (hasSize)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      describeSizeLookup(inference),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.88),
+                      ),
+                    ),
+                  ),
+                if (hasSize)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
                     child: Wrap(
                       spacing: 6,
                       runSpacing: 4,
                       children: [
                         _SizeBadge(
                           caption: '폭 · 가로',
-                          value: '${inference.bucketWidth}',
+                          value: '${inference.lowerWidth}${inference.lowerWidth != inference.upperWidth ? '~${inference.upperWidth}' : ''}',
                           color: const Color(0xFF1D4ED8),
                         ),
                         _SizeBadge(
                           caption: '높이 · 세로',
-                          value: inference.bucketHeight == 2150
-                              ? '2150 4단'
-                              : inference.bucketHeight == 2700
-                                  ? '2700 5단'
-                                  : '${inference.bucketHeight}',
+                          value: heightLabel(inference.lowerHeight) +
+                              (inference.lowerHeight != inference.upperHeight
+                                  ? '~${heightLabel(inference.upperHeight)}'
+                                  : ''),
                           color: const Color(0xFF0F766E),
                         ),
                       ],
@@ -957,13 +1031,15 @@ class _LookupTab extends StatelessWidget {
             ],
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '위쪽 숫자는 폭(가로) · 왼쪽 숫자는 높이(세로)',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+              selectedCategory?.name == '차고문'
+                  ? '위쪽=폭 · 왼쪽=높이 · 2150(4단) 초과 시 2700(5단) · 표 최대 초과는 불가'
+                  : '위쪽 숫자는 폭(가로) · 왼쪽 숫자는 높이(세로) · 사이값은 예상단가 · 표 최대 초과는 불가',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
             ),
           ),
         ),
@@ -1014,8 +1090,14 @@ class _LookupTab extends StatelessWidget {
                           _LookupGridCell(
                             cell: _lookupCell(cells, w, h),
                             selected: hasSize &&
+                                !inference.isEstimated &&
+                                !inference.outOfRange &&
                                 inference.bucketWidth == w &&
                                 inference.bucketHeight == h,
+                            highlighted: hasSize &&
+                                highlightKeys.contains('${w}_$h'),
+                            outOfRange: hasSize && inference.outOfRange,
+                            estimated: hasSize && inference.isEstimated,
                             height: cellH,
                             large: fillW,
                             onTap: () {
@@ -1281,12 +1363,18 @@ class _LookupGridCell extends StatelessWidget {
     required this.cell,
     required this.selected,
     required this.onTap,
+    this.highlighted = false,
+    this.outOfRange = false,
+    this.estimated = false,
     this.height = 40,
     this.large = false,
   });
 
   final StandardUnitPriceRow? cell;
   final bool selected;
+  final bool highlighted;
+  final bool outOfRange;
+  final bool estimated;
   final VoidCallback onTap;
   final double height;
   final bool large;
@@ -1300,27 +1388,43 @@ class _LookupGridCell extends StatelessWidget {
         : priced
             ? '${(cell!.price / 10000).round()}만'
             : '-';
+    final ring = selected
+        ? const Color(0xFF0F172A)
+        : highlighted
+            ? (outOfRange ? const Color(0xFFDC2626) : const Color(0xFFFBBF24))
+            : null;
     return Material(
       color: blocked
           ? const Color(0xFF7F1D1D)
           : selected
               ? const Color(0xFFFFF7ED)
-              : Colors.white,
+              : highlighted && estimated
+                  ? const Color(0xFFFEF3C7)
+                  : highlighted && outOfRange
+                      ? const Color(0xFFFEE2E2)
+                      : Colors.white,
       child: InkWell(
         onTap: onTap,
-        child: SizedBox(
-          height: height,
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: large ? 18 : 11,
-                fontWeight: FontWeight.w900,
-                color: blocked
-                    ? Colors.white
-                    : selected
-                        ? const Color(0xFF9A3412)
-                        : null,
+        child: DecoratedBox(
+          decoration: ring == null
+              ? const BoxDecoration()
+              : BoxDecoration(
+                  border: Border.all(color: ring, width: 2),
+                ),
+          child: SizedBox(
+            height: height,
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: large ? 18 : 11,
+                  fontWeight: FontWeight.w900,
+                  color: blocked
+                      ? Colors.white
+                      : selected
+                          ? const Color(0xFF9A3412)
+                          : null,
+                ),
               ),
             ),
           ),
@@ -1515,6 +1619,11 @@ class _HistoryTabState extends State<_HistoryTab> {
           ),
         )
         .toList();
+    String editorOf(StandardUnitPriceAdjustment row) {
+      final name = row.userName.trim();
+      return name.isEmpty ? '알 수 없음' : name;
+    }
+
     String labelOf(StandardUnitPriceAdjustment row) {
       final base = describeStandardAdjustment(
         type: row.adjustmentType,
@@ -1528,6 +1637,9 @@ class _HistoryTabState extends State<_HistoryTab> {
       }
       return base;
     }
+
+    String labelWithEditor(StandardUnitPriceAdjustment row) =>
+        '${labelOf(row)} · ${editorOf(row)}';
 
     var raiseCount = 0;
     var cutCount = 0;
@@ -1545,13 +1657,22 @@ class _HistoryTabState extends State<_HistoryTab> {
       }
     }
     final periodMap = <String, List<String>>{};
+    final periodEditors = <String, List<String>>{};
+    final byUser = <String, int>{};
     for (final row in adjustments) {
       final q = seoulYearQuarter(row.createdAt);
       final key = _yearly ? '${q.year}년' : '${q.year}년 ${q.quarter}분기';
-      periodMap.putIfAbsent(key, () => []).add(labelOf(row));
+      periodMap.putIfAbsent(key, () => []).add(labelWithEditor(row));
+      final editors = periodEditors.putIfAbsent(key, () => []);
+      final editor = editorOf(row);
+      if (!editors.contains(editor)) editors.add(editor);
+      byUser[editor] = (byUser[editor] ?? 0) + 1;
     }
     final periodKeys = periodMap.keys.toList()..sort((a, b) => b.compareTo(a));
-    final lastLabel = adjustments.isEmpty ? '-' : labelOf(adjustments.first);
+    final lastLabel =
+        adjustments.isEmpty ? '-' : labelWithEditor(adjustments.first);
+    final userNames = byUser.keys.toList()
+      ..sort((a, b) => (byUser[b] ?? 0).compareTo(byUser[a] ?? 0));
     if (adjustments.isEmpty && logs.isEmpty) {
       return const AppEmpty(
         message: '아직 단가 변경 이력이 없습니다. 수정하면 연도별·분기별 통계가 쌓입니다.',
@@ -1577,16 +1698,28 @@ class _HistoryTabState extends State<_HistoryTab> {
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         if (adjustments.isNotEmpty)
-          Text('최근 변경 ${dt.format(adjustments.first.createdAt.toLocal())}'),
+          Text(
+            '최근 수정 ${editorOf(adjustments.first)} · ${dt.format(adjustments.first.createdAt.toLocal())}',
+          ),
         const SizedBox(height: 8),
         for (final key in periodKeys)
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(key, style: const TextStyle(fontWeight: FontWeight.w800)),
             subtitle: Text(
-              '${periodMap[key]!.length}회 · ${periodMap[key]!.join(' · ')}',
+              '${periodMap[key]!.length}회 · ${periodMap[key]!.join(' · ')}\n수정한 사람: ${(periodEditors[key] ?? const []).join(', ')}',
             ),
           ),
+        if (userNames.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text('수정한 사람', style: TextStyle(fontWeight: FontWeight.w800)),
+          for (final name in userNames)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              trailing: Text('${byUser[name]}회'),
+            ),
+        ],
         const SizedBox(height: 16),
         const Text('변경이 어떻게 이뤄졌는지', style: TextStyle(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
@@ -1611,8 +1744,11 @@ class _HistoryTabState extends State<_HistoryTab> {
                     const SizedBox(height: 4),
                     Text(
                       '${labelOf(row)}'
-                      '${row.adjustmentType != 'manual' && row.cellsAffected > 1 ? ' · ${row.cellsAffected}칸에 각각 적용' : ''}'
-                      ' · ${row.userName}',
+                      '${row.adjustmentType != 'manual' && row.cellsAffected > 1 ? ' · ${row.cellsAffected}칸에 각각 적용' : ''}',
+                    ),
+                    Text(
+                      '수정한 사람: ${row.userName.trim().isEmpty ? '알 수 없음' : row.userName}',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                     Text('사유: ${row.reason}'),
                     Text(
@@ -1625,7 +1761,7 @@ class _HistoryTabState extends State<_HistoryTab> {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text(
-                            '${log.widthMm}×${log.heightMm}  ${won.format(log.oldPrice)} → ${won.format(log.newPrice)}',
+                            '${log.widthMm}×${log.heightMm}${log.userName.trim().isEmpty ? '' : ' · ${log.userName}'}  ${won.format(log.oldPrice)} → ${won.format(log.newPrice)}',
                           ),
                         ),
                     ],

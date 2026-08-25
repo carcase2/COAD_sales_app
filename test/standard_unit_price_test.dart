@@ -137,13 +137,124 @@ void main() {
       final result = inferStandardPrice(
         cells: cells,
         widthMm: 3200,
-        heightMm: 4100,
+        heightMm: 3900,
       );
       expect(result.bucketWidth, 3000);
       expect(result.bucketHeight, 4000);
       expect(result.isExactBucket, isFalse);
+      expect(result.outOfRange, isFalse);
       expect(result.match?.price, 800000);
       expect(result.nearby.map((c) => c.price), containsAll([900000, 700000]));
+    });
+
+    test('X칸이 있어도 4001은 표 최대 초과로 불가', () {
+      const cells = [
+        StandardPriceCell(widthMm: 2000, heightMm: 2000, price: 3500000),
+        StandardPriceCell(widthMm: 3000, heightMm: 3000, price: 3800000),
+        StandardPriceCell(widthMm: 3000, heightMm: 4000, price: 4000000),
+        StandardPriceCell(widthMm: 4000, heightMm: 4000, price: 4300000),
+        StandardPriceCell(
+          widthMm: 5000,
+          heightMm: 4000,
+          price: 0,
+          available: false,
+        ),
+        StandardPriceCell(
+          widthMm: 5000,
+          heightMm: 5000,
+          price: 0,
+          available: false,
+        ),
+      ];
+      final overWidth = inferStandardPrice(
+        cells: cells,
+        widthMm: 4001,
+        heightMm: 4000,
+      );
+      expect(overWidth.outOfRange, isTrue);
+      expect(overWidth.estimatedPrice, isNull);
+      expect(
+        describeSizeLookup(overWidth),
+        '입력 4001 × 4000 · 폭 최대 4000mm까지 · 불가',
+      );
+
+      final overHeight = inferStandardPrice(
+        cells: cells,
+        widthMm: 4000,
+        heightMm: 4001,
+      );
+      expect(overHeight.outOfRange, isTrue);
+      expect(overHeight.estimatedPrice, isNull);
+    });
+
+    test('사이값이면 보간 예상단가', () {
+      const cells = [
+        StandardPriceCell(widthMm: 3000, heightMm: 4000, price: 800000),
+        StandardPriceCell(widthMm: 4000, heightMm: 4000, price: 900000),
+        StandardPriceCell(widthMm: 3000, heightMm: 3000, price: 700000),
+        StandardPriceCell(widthMm: 4000, heightMm: 3000, price: 780000),
+      ];
+      final result = inferStandardPrice(
+        cells: cells,
+        widthMm: 3200,
+        heightMm: 4000,
+      );
+      expect(result.isEstimated, isTrue);
+      expect(result.estimatedPrice, 820000);
+      expect(result.outOfRange, isFalse);
+    });
+
+    test('차고문은 2150 초과 시 2700 5단 가격', () {
+      const garage = [
+        StandardPriceCell(widthMm: 4000, heightMm: 2150, price: 3200000),
+        StandardPriceCell(widthMm: 4500, heightMm: 2150, price: 3300000),
+        StandardPriceCell(widthMm: 5000, heightMm: 2150, price: 3400000),
+        StandardPriceCell(widthMm: 4000, heightMm: 2700, price: 3600000),
+        StandardPriceCell(widthMm: 4500, heightMm: 2700, price: 3900000),
+        StandardPriceCell(widthMm: 5000, heightMm: 2700, price: 4200000),
+      ];
+      final four = inferStandardPrice(
+        cells: garage,
+        widthMm: 4000,
+        heightMm: 2150,
+        ceilingHeights: true,
+      );
+      expect(four.estimatedPrice, 3200000);
+      expect(four.isEstimated, isFalse);
+
+      final overFour = inferStandardPrice(
+        cells: garage,
+        widthMm: 4000,
+        heightMm: 2151,
+        ceilingHeights: true,
+      );
+      expect(overFour.outOfRange, isFalse);
+      expect(overFour.isEstimated, isFalse);
+      expect(overFour.estimatedPrice, 3600000);
+      expect(overFour.lowerHeight, 2700);
+      expect(
+        describeSizeLookup(overFour),
+        '입력 4000 × 2151 · 높이 2151 → 2700 (5단)',
+      );
+
+      final midWidth = inferStandardPrice(
+        cells: garage,
+        widthMm: 4250,
+        heightMm: 2400,
+        ceilingHeights: true,
+      );
+      expect(midWidth.isEstimated, isTrue);
+      expect(midWidth.estimatedPrice, 3750000);
+      expect(midWidth.lowerHeight, 2700);
+
+      final overFive = inferStandardPrice(
+        cells: garage,
+        widthMm: 4000,
+        heightMm: 2701,
+        ceilingHeights: true,
+      );
+      expect(overFive.outOfRange, isTrue);
+      expect(overFive.estimatedPrice, isNull);
     });
   });
 }

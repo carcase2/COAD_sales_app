@@ -12,4 +12,5 @@ abstract final class StorageKeys {
   static const shutterPriceCachedAt = 'shutter_price_cached_at';
   /// 백그라운드 isolate 알림 탭 → 메인 앱으로 전달할 FCM/로컬 payload
   static const pendingNotificationPayload = 'pending_notification_payload';
+  static const mesJwt = 'mes_jwt';
 }

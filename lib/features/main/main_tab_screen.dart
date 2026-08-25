@@ -5,6 +5,13 @@ import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/core/utils/mail_permissions.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
+import 'package:coad_customer_calls/core/utils/mes_permissions.dart';
+import 'package:coad_customer_calls/data/mes_repository.dart';
+import 'package:coad_customer_calls/features/mes/mes_home_screen.dart';
+import 'package:coad_customer_calls/features/mes/mes_calendar_screen.dart';
+import 'package:coad_customer_calls/features/mes/mes_install_screen.dart';
+import 'package:coad_customer_calls/features/mes/mes_payments_screen.dart';
+import 'package:coad_customer_calls/features/mes/mes_order_screen.dart';
 import 'package:coad_customer_calls/features/mail/mail_hub_screen.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
@@ -1151,7 +1158,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             id: 'standard_unit_price',
             sectionId: 'tools',
             icon: Icons.grid_on_rounded,
-            title: '사이즈 표준단가(테스트중)',
+            title: '사이즈 표준단가',
             subtitle: '셔터 단가와 별개 · 폭×높이·모델 표준단가',
             keywords: const ['단가', '표준단가', '사이즈', '폭', '높이', '모델', '인상'],
             onTap: () => closeDrawerThen(() {
@@ -1179,6 +1186,74 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 MaterialPageRoute<void>(
                   builder: (_) => const BusinessCardListScreen(),
                 ),
+              );
+            }),
+          ),
+        if (canAccessMes(user) && mesApiUrl.isNotEmpty)
+          AppMenuEntry(
+            id: 'mes_home',
+            sectionId: 'tools',
+            icon: Icons.precision_manufacturing_outlined,
+            title: 'MES 홈',
+            subtitle: '권한별 홈 스와이프',
+            quickAccess: true,
+            quickLabel: 'MES',
+            keywords: const ['MES', '제조', '시공', '수금', '달력'],
+            onTap: () => closeDrawerThen(() {
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(builder: (_) => const MesHomeScreen()),
+              );
+            }),
+          ),
+        if (canMes(user, 'mes.orders.create') && mesApiUrl.isNotEmpty)
+          AppMenuEntry(
+            id: 'mes_order',
+            sectionId: 'tools',
+            icon: Icons.add_business_outlined,
+            title: 'MES 영업 등록',
+            keywords: const ['MES', '영업', '수주', '등록'],
+            onTap: () => closeDrawerThen(() {
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(builder: (_) => const MesOrderScreen()),
+              );
+            }),
+          ),
+        if (canMes(user, 'mes.calendar') && mesApiUrl.isNotEmpty)
+          AppMenuEntry(
+            id: 'mes_calendar',
+            sectionId: 'tools',
+            icon: Icons.event_available_outlined,
+            title: 'MES 달력',
+            keywords: const ['MES', '달력', '제조', '시공'],
+            onTap: () => closeDrawerThen(() {
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(builder: (_) => const MesCalendarScreen()),
+              );
+            }),
+          ),
+        if (canMes(user, 'mes.installation.view') && mesApiUrl.isNotEmpty)
+          AppMenuEntry(
+            id: 'mes_install',
+            sectionId: 'tools',
+            icon: Icons.handyman_outlined,
+            title: '시공완료 확인',
+            keywords: const ['시공', '완료', 'MES'],
+            onTap: () => closeDrawerThen(() {
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(builder: (_) => const MesInstallScreen()),
+              );
+            }),
+          ),
+        if (canMes(user, 'mes.payments.view') && mesApiUrl.isNotEmpty)
+          AppMenuEntry(
+            id: 'mes_pay',
+            sectionId: 'tools',
+            icon: Icons.payments_outlined,
+            title: 'MES 수금',
+            keywords: const ['수금', '입금', '연체', 'MES'],
+            onTap: () => closeDrawerThen(() {
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(builder: (_) => const MesPaymentsScreen()),
               );
             }),
           ),

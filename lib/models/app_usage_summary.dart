@@ -174,7 +174,7 @@ String appUsageTabLabel(String key) {
     case 'quoter':
       return '견적';
     case 'standard_unit_price':
-      return '표준단가(테스트중)';
+      return '표준단가';
     case 'quoter_log':
       return '견적 로그';
     case 'general_schedule':

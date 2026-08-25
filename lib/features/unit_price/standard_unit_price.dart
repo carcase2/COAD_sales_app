@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 /// 표준단가 격자: 폭/높이 2000~8000mm, 1000mm 단위.
 const standardSizeSteps = [2000, 3000, 4000, 5000, 6000, 7000, 8000];
 
@@ -50,6 +52,15 @@ class StandardPriceCell {
   final bool available;
 }
 
+class StandardHighlightCell {
+  const StandardHighlightCell({required this.widthMm, required this.heightMm});
+
+  final int widthMm;
+  final int heightMm;
+
+  String get key => '${widthMm}_$heightMm';
+}
+
 class StandardPriceInference {
   const StandardPriceInference({
     required this.inputWidth,
@@ -59,6 +70,18 @@ class StandardPriceInference {
     required this.isExactBucket,
     required this.match,
     required this.nearby,
+    required this.lowerWidth,
+    required this.upperWidth,
+    required this.lowerHeight,
+    required this.upperHeight,
+    required this.estimatedPrice,
+    required this.isEstimated,
+    required this.outOfRange,
+    required this.rangeMinWidth,
+    required this.rangeMaxWidth,
+    required this.rangeMinHeight,
+    required this.rangeMaxHeight,
+    required this.highlightCells,
   });
 
   final int inputWidth;
@@ -68,6 +91,18 @@ class StandardPriceInference {
   final bool isExactBucket;
   final StandardPriceCell? match;
   final List<StandardPriceCell> nearby;
+  final int lowerWidth;
+  final int upperWidth;
+  final int lowerHeight;
+  final int upperHeight;
+  final int? estimatedPrice;
+  final bool isEstimated;
+  final bool outOfRange;
+  final int rangeMinWidth;
+  final int rangeMaxWidth;
+  final int rangeMinHeight;
+  final int rangeMaxHeight;
+  final List<StandardHighlightCell> highlightCells;
 }
 
 int toStandardSizeBucket(num val) {
@@ -99,6 +134,155 @@ int nearestSize(num val, List<int> axes) {
   );
 }
 
+({int lo, int hi}) enclosingSizes(num val, List<int> axes) {
+  if (axes.isEmpty) {
+    final bucket = toStandardSizeBucket(val);
+    return (lo: bucket, hi: bucket);
+  }
+  if (val <= axes.first) return (lo: axes.first, hi: axes.first);
+  for (var i = 0; i < axes.length; i++) {
+    if (val == axes[i]) return (lo: axes[i], hi: axes[i]);
+    if (i < axes.length - 1 && val > axes[i] && val < axes[i + 1]) {
+      return (lo: axes[i], hi: axes[i + 1]);
+    }
+  }
+  return (lo: axes.last, hi: axes.last);
+}
+
+bool sizeInAxisRange(num val, List<int> axes) {
+  if (axes.isEmpty) return false;
+  return val >= axes.first && val <= axes.last;
+}
+
+int? ceilingSize(num val, List<int> axes) {
+  if (axes.isEmpty) return null;
+  for (final axis in axes) {
+    if (axis >= val) return axis;
+  }
+  return null;
+}
+
+String heightDanLabel(int mm) {
+  if (mm == 2150) return '2150 (4단)';
+  if (mm == 2700) return '2700 (5단)';
+  return '$mm';
+}
+
+int? _usableCellPrice(StandardPriceCell? cell) {
+  if (cell == null || cell.available == false) return null;
+  if (cell.price <= 0) return null;
+  return cell.price;
+}
+
+({List<int> widths, List<int> heights}) pricedAxesFromCells(
+  Iterable<StandardPriceCell> cells,
+) {
+  final priced = cells.where((cell) => _usableCellPrice(cell) != null);
+  return (
+    widths: uniqueSortedSizes(priced.map((c) => c.widthMm)),
+    heights: uniqueSortedSizes(priced.map((c) => c.heightMm)),
+  );
+}
+
+double _lerpPrice(num a, num b, num t) => a + (b - a) * t;
+
+double _tAlong(num val, num lo, num hi) {
+  if (hi == lo) return 0;
+  return (val - lo) / (hi - lo);
+}
+
+List<StandardHighlightCell> _uniqueHighlightCells(
+  Iterable<StandardHighlightCell> cells,
+) {
+  final seen = <String>{};
+  final out = <StandardHighlightCell>[];
+  for (final cell in cells) {
+    if (!seen.add(cell.key)) continue;
+    out.add(cell);
+  }
+  return out;
+}
+
+int? _interpolateGridPrice({
+  required Map<String, StandardPriceCell> byKey,
+  required int widthMm,
+  required int heightMm,
+  required int wLo,
+  required int wHi,
+  required int hLo,
+  required int hHi,
+}) {
+  int? get(int w, int h) => _usableCellPrice(byKey['${w}_$h']);
+  var p00 = get(wLo, hLo);
+  var p10 = get(wHi, hLo);
+  var p01 = get(wLo, hHi);
+  var p11 = get(wHi, hHi);
+  final present = [p00, p10, p01, p11].whereType<int>().length;
+  if (present == 0) return null;
+
+  if (present == 3) {
+    if (p00 == null && p10 != null && p01 != null && p11 != null) {
+      p00 = p10 + p01 - p11;
+    } else if (p10 == null && p00 != null && p01 != null && p11 != null) {
+      p10 = p00 + p11 - p01;
+    } else if (p01 == null && p00 != null && p10 != null && p11 != null) {
+      p01 = p00 + p11 - p10;
+    } else if (p11 == null && p00 != null && p10 != null && p01 != null) {
+      p11 = p10 + p01 - p00;
+    }
+  }
+
+  final tx = _tAlong(widthMm, wLo, wHi);
+  final ty = _tAlong(heightMm, hLo, hHi);
+
+  if (p00 != null && p10 != null && p01 != null && p11 != null) {
+    final alongLo = _lerpPrice(p00, p10, tx);
+    final alongHi = _lerpPrice(p01, p11, tx);
+    final v = _lerpPrice(alongLo, alongHi, ty).round();
+    return v < 0 ? 0 : v;
+  }
+
+  int lerp1(int a, int b, double t) {
+    final v = _lerpPrice(a, b, t).round();
+    return v < 0 ? 0 : v;
+  }
+
+  if (p00 != null && p10 != null && p01 == null && p11 == null) {
+    return lerp1(p00, p10, tx);
+  }
+  if (p01 != null && p11 != null && p00 == null && p10 == null) {
+    return lerp1(p01, p11, tx);
+  }
+  if (p00 != null && p01 != null && p10 == null && p11 == null) {
+    return lerp1(p00, p01, ty);
+  }
+  if (p10 != null && p11 != null && p00 == null && p01 == null) {
+    return lerp1(p10, p11, ty);
+  }
+
+  final pts = <({int w, int h, int p})>[
+    if (p00 != null) (w: wLo, h: hLo, p: p00),
+    if (p10 != null) (w: wHi, h: hLo, p: p10),
+    if (p01 != null) (w: wLo, h: hHi, p: p01),
+    if (p11 != null) (w: wHi, h: hHi, p: p11),
+  ];
+  var weightedSum = 0.0;
+  var weightSum = 0.0;
+  for (final pt in pts) {
+    final dist = _hypot(widthMm - pt.w, heightMm - pt.h);
+    final weight = 1 / (dist == 0 ? 1e-6 : dist);
+    weightedSum += pt.p * weight;
+    weightSum += weight;
+  }
+  if (weightSum <= 0) return null;
+  final v = (weightedSum / weightSum).round();
+  return v < 0 ? 0 : v;
+}
+
+double _hypot(num a, num b) => math.sqrt(
+      a.toDouble() * a.toDouble() + b.toDouble() * b.toDouble(),
+    );
+
 int applyPriceAdjustment({
   required int oldPrice,
   required StandardAdjustType type,
@@ -120,17 +304,63 @@ StandardPriceInference inferStandardPrice({
   required List<StandardPriceCell> cells,
   required int widthMm,
   required int heightMm,
+  bool ceilingHeights = false,
 }) {
-  final axes = gridAxesFromCells(cells);
+  final axes = pricedAxesFromCells(cells);
+  final snappedHeight =
+      ceilingHeights ? ceilingSize(heightMm, axes.heights) : null;
   final bucketWidth = nearestSize(widthMm, axes.widths);
-  final bucketHeight = nearestSize(heightMm, axes.heights);
-  StandardPriceCell? match;
-  for (final cell in cells) {
-    if (cell.widthMm == bucketWidth && cell.heightMm == bucketHeight) {
-      match = cell;
-      break;
-    }
+  final bucketHeight = ceilingHeights
+      ? (snappedHeight ?? nearestSize(heightMm, axes.heights))
+      : nearestSize(heightMm, axes.heights);
+  final widthBracket = enclosingSizes(widthMm, axes.widths);
+  final ({int lo, int hi}) heightBracket;
+  if (ceilingHeights && snappedHeight != null) {
+    heightBracket = (lo: snappedHeight, hi: snappedHeight);
+  } else {
+    heightBracket = enclosingSizes(heightMm, axes.heights);
   }
+  final lowerWidth = widthBracket.lo;
+  final upperWidth = widthBracket.hi;
+  final lowerHeight = heightBracket.lo;
+  final upperHeight = heightBracket.hi;
+  final byKey = <String, StandardPriceCell>{
+    for (final cell in cells) '${cell.widthMm}_${cell.heightMm}': cell,
+  };
+  final match = byKey['${bucketWidth}_$bucketHeight'];
+  final rangeMinWidth = axes.widths.isEmpty ? standardSizeMin : axes.widths.first;
+  final rangeMaxWidth = axes.widths.isEmpty ? standardSizeMax : axes.widths.last;
+  final rangeMinHeight =
+      axes.heights.isEmpty ? standardSizeMin : axes.heights.first;
+  final rangeMaxHeight =
+      axes.heights.isEmpty ? standardSizeMax : axes.heights.last;
+  final widthOut =
+      axes.widths.isEmpty || !sizeInAxisRange(widthMm, axes.widths);
+  final heightOut = axes.heights.isEmpty ||
+      (ceilingHeights
+          ? snappedHeight == null
+          : !sizeInAxisRange(heightMm, axes.heights));
+  final outOfRange = widthOut || heightOut;
+  final isExactBucket = !outOfRange &&
+      axes.widths.contains(widthMm) &&
+      axes.heights.contains(heightMm);
+  final betweenOnGrid =
+      !outOfRange && (lowerWidth != upperWidth || lowerHeight != upperHeight);
+  final interpolated = outOfRange
+      ? null
+      : betweenOnGrid
+          ? _interpolateGridPrice(
+              byKey: byKey,
+              widthMm: widthMm,
+              heightMm: heightMm,
+              wLo: lowerWidth,
+              wHi: upperWidth,
+              hLo: lowerHeight,
+              hHi: upperHeight,
+            )
+          : _usableCellPrice(byKey['${lowerWidth}_$lowerHeight']);
+  final estimatedPrice =
+      outOfRange ? null : interpolated ?? _usableCellPrice(match);
 
   final nearby = cells
       .where(
@@ -159,10 +389,94 @@ StandardPriceInference inferStandardPrice({
     inputHeight: heightMm,
     bucketWidth: bucketWidth,
     bucketHeight: bucketHeight,
-    isExactBucket: widthMm == bucketWidth && heightMm == bucketHeight,
+    isExactBucket: isExactBucket,
     match: match,
     nearby: nearby.take(8).map((row) => row.cell).toList(growable: false),
+    lowerWidth: lowerWidth,
+    upperWidth: upperWidth,
+    lowerHeight: lowerHeight,
+    upperHeight: upperHeight,
+    estimatedPrice: estimatedPrice,
+    isEstimated: betweenOnGrid && interpolated != null,
+    outOfRange: outOfRange,
+    rangeMinWidth: rangeMinWidth,
+    rangeMaxWidth: rangeMaxWidth,
+    rangeMinHeight: rangeMinHeight,
+    rangeMaxHeight: rangeMaxHeight,
+    highlightCells: _uniqueHighlightCells(
+      outOfRange
+          ? [
+              StandardHighlightCell(
+                widthMm: widthMm > rangeMaxWidth
+                    ? rangeMaxWidth
+                    : widthMm < rangeMinWidth
+                        ? rangeMinWidth
+                        : lowerWidth,
+                heightMm: heightMm > rangeMaxHeight
+                    ? rangeMaxHeight
+                    : heightMm < rangeMinHeight
+                        ? rangeMinHeight
+                        : lowerHeight,
+              ),
+            ]
+          : [
+              StandardHighlightCell(widthMm: lowerWidth, heightMm: lowerHeight),
+              StandardHighlightCell(widthMm: upperWidth, heightMm: lowerHeight),
+              StandardHighlightCell(widthMm: lowerWidth, heightMm: upperHeight),
+              StandardHighlightCell(widthMm: upperWidth, heightMm: upperHeight),
+            ],
+    ),
   );
+}
+
+String describeSizeLookup(StandardPriceInference inference) {
+  final inputWidth = inference.inputWidth;
+  final inputHeight = inference.inputHeight;
+  final lowerWidth = inference.lowerWidth;
+  final upperWidth = inference.upperWidth;
+  final lowerHeight = inference.lowerHeight;
+  final upperHeight = inference.upperHeight;
+  if (inference.outOfRange) {
+    final parts = <String>[];
+    if (inputWidth > inference.rangeMaxWidth) {
+      parts.add('폭 최대 ${inference.rangeMaxWidth}mm');
+    }
+    if (inputHeight > inference.rangeMaxHeight) {
+      parts.add('높이 최대 ${inference.rangeMaxHeight}mm');
+    }
+    if (inputWidth < inference.rangeMinWidth) {
+      parts.add('폭 최소 ${inference.rangeMinWidth}mm');
+    }
+    if (inputHeight < inference.rangeMinHeight) {
+      parts.add('높이 최소 ${inference.rangeMinHeight}mm');
+    }
+    return '입력 $inputWidth × $inputHeight · ${parts.join(', ')}까지 · 불가';
+  }
+  final heightSnapped = lowerHeight == upperHeight && inputHeight != lowerHeight;
+  final heightSnapText = heightSnapped
+      ? '높이 $inputHeight → ${heightDanLabel(lowerHeight)}'
+      : '';
+  if (inference.isExactBucket) {
+    return '격자 $lowerWidth × ${heightDanLabel(lowerHeight)}';
+  }
+  final widthLabel = lowerWidth == upperWidth
+      ? '폭 $lowerWidth'
+      : '폭 $lowerWidth~$upperWidth';
+  final heightLabel = lowerHeight == upperHeight
+      ? '높이 ${heightDanLabel(lowerHeight)}'
+      : '높이 $lowerHeight~$upperHeight';
+  if (inference.isEstimated) {
+    return heightSnapText.isNotEmpty
+        ? '입력 $inputWidth × $inputHeight · $widthLabel 사이 추정 · $heightSnapText'
+        : '입력 $inputWidth × $inputHeight · $widthLabel × $heightLabel 사이 추정';
+  }
+  if (heightSnapText.isNotEmpty && lowerWidth == upperWidth) {
+    return '입력 $inputWidth × $inputHeight · $heightSnapText';
+  }
+  if (lowerWidth == upperWidth && lowerHeight == upperHeight) {
+    return '입력 $inputWidth × $inputHeight → 표 칸 $lowerWidth × ${heightDanLabel(lowerHeight)}';
+  }
+  return '입력 $inputWidth × $inputHeight → 가까운 칸 ${inference.bucketWidth} × ${heightDanLabel(inference.bucketHeight)}';
 }
 
 String standardAdjustTypeLabel(String type) {
