@@ -1409,28 +1409,23 @@ class _InlineKeypad extends StatelessWidget {
               children: [for (final key in row) keyBtn(key)],
             ),
           ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         SizedBox(
-          height: 40,
+          height: 56,
           child: Row(
             children: [
               Expanded(
                 child: OutlinedButton(
                   onPressed: onClear,
                   style: OutlinedButton.styleFrom(
-                    minimumSize: Size.zero,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size.fromHeight(56),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     textStyle: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(editingWidth ? '폭 지움' : '높이 지움'),
-                  ),
+                  child: Text(editingWidth ? '폭 지움' : '높이 지움'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1438,19 +1433,14 @@ class _InlineKeypad extends StatelessWidget {
                 child: FilledButton(
                   onPressed: onToggleAxis,
                   style: FilledButton.styleFrom(
-                    minimumSize: Size.zero,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size.fromHeight(56),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     textStyle: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(editingWidth ? '다음 · 높이' : '폭으로'),
-                  ),
+                  child: Text(editingWidth ? '다음 · 높이' : '폭으로'),
                 ),
               ),
             ],
