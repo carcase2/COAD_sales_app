@@ -8,6 +8,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/models/region.dart';
+import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/sales_call_draft.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
@@ -572,8 +573,12 @@ class SalesCallsRepository {
         queryBuilder = queryBuilder.gte('call_date', '$fromDate 00:00:00');
       }
       if (incompleteOnly == true) {
-        // 미종료: 수주(3), 미수주(2), 단순문의(4)가 아닌 모든 상태
-        queryBuilder = queryBuilder.not('status_id', 'in', '(2,3,4)');
+        // 미종료: 미결정만. 수주·미수주·단순문의·설계문의·기타는 팔로우 제외.
+        queryBuilder = queryBuilder.not(
+          'status_id',
+          'in',
+          kFollowClosedStatusIdsSql,
+        );
       }
       if (uncalledOnly == true) {
         // 미통화: 단순문의 제외하고 단계가 초기인 건
@@ -611,7 +616,7 @@ class SalesCallsRepository {
       }
 
       if (incompleteOnly == true) {
-        parsed = parsed.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
+        parsed = parsed.where((c) => !isClosedForFollow(c.statusId)).toList();
       }
 
       if (excludeSimpleInquiries) {
@@ -837,7 +842,7 @@ class SalesCallsRepository {
   }
 
   /// 해당 일자(`next_scheduled_date`)에 이미 잡혀 있는 미종료 팔로우 건수.
-  /// 홈 달력·날짜 팔로우와 동일하게 수주·미수주·단순문의는 제외한다.
+  /// 홈 달력·날짜 팔로우와 동일하게 수주·미수주·단순문의·설계문의·기타는 제외한다.
   Future<int> countFollowUpsOnDate({
     required String ymd,
     String? excludeId,
@@ -849,7 +854,7 @@ class SalesCallsRepository {
           .select('id')
           .gte('next_scheduled_date', ymd)
           .lt('next_scheduled_date', endExclusive)
-          .not('status_id', 'in', '(2,3,4)');
+          .not('status_id', 'in', kFollowClosedStatusIdsSql);
       final trimmedExclude = excludeId?.trim() ?? '';
       if (trimmedExclude.isNotEmpty) {
         query = query.neq('id', trimmedExclude);

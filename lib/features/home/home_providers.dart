@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -445,6 +446,7 @@ Future<List<SalesCall>> _fetchHubPeriodFollowCalls(
     case HubPeriod.day:
       return repo.fetchCallsAllPages(
         followDate: key.anchorYmd,
+        incompleteOnly: true,
         excludeSimpleInquiries: true,
         includeCallHistory: false,
       );
@@ -453,6 +455,7 @@ Future<List<SalesCall>> _fetchHubPeriodFollowCalls(
       return repo.fetchCallsAllPages(
         followRangeStart: range.$1,
         followRangeEndInclusive: range.$2,
+        incompleteOnly: true,
         excludeSimpleInquiries: true,
         includeCallHistory: false,
       );
@@ -461,6 +464,7 @@ Future<List<SalesCall>> _fetchHubPeriodFollowCalls(
       return repo.fetchCallsAllPages(
         followRangeStart: range.$1,
         followRangeEndInclusive: range.$2,
+        incompleteOnly: true,
         excludeSimpleInquiries: true,
         includeCallHistory: false,
       );
@@ -519,7 +523,7 @@ Future<int> _resolveFollowDayBaseline(
 }
 
 List<SalesCall> _followRemainingCalls(List<SalesCall> calls) =>
-    calls.where((c) => ![2, 3, 4].contains(c.statusId)).toList();
+    calls.where((c) => !isClosedForFollow(c.statusId)).toList();
 
 final hubPeriodFollowSnapshotProvider = FutureProvider.autoDispose
     .family<HubPeriodFollowSnapshot, HubPeriodKey>((ref, key) async {

@@ -40,7 +40,7 @@ String callStatusNameFromId(int? id) {
     case CallStatusIds.simpleInquiry:
       return '단순문의';
     case CallStatusIds.designInquiry:
-    case 22:
+    case kLegacyDesignInquiryStatusId:
       return '설계문의';
     case CallStatusIds.other:
       return '기타';
@@ -85,6 +85,16 @@ bool canEnterFurtherConsultation(int? statusId) {
   if (statusId == null) return true;
   return statusId == CallStatusIds.undecided;
 }
+
+/// 레거시 `call_statuses` 설계문의 id (웹 구데이터).
+const int kLegacyDesignInquiryStatusId = 22;
+
+/// 팔로우 달력·오늘 팔로우에서 제외하는 종료 상태.
+/// 미결정만 다음 상담이 남음. 수주·미수주·단순문의·설계문의·기타(+레거시 22).
+bool isClosedForFollow(int? statusId) => isTerminalConsultationStatus(statusId);
+
+/// PostgREST `status_id NOT IN (...)` — [isClosedForFollow]와 동일 집합.
+const String kFollowClosedStatusIdsSql = '(2,3,4,5,6,22)';
 
 /// 수주·미수주·단순문의·설계문의·기타 → DB `next_scheduled_date` = null
 String? resolveNextScheduledDateForSave(int statusId, String? nextScheduledDateYmd) {

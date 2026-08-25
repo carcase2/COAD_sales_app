@@ -353,18 +353,18 @@ class _SalesCallListScreenState extends ConsumerState<SalesCallListScreen> {
     switch (widget.mode) {
       case ListQueryMode.incompleteByDate:
         final followDate = widget.date ?? todayYmdSeoul();
-        if ([2, 3, 4].contains(c.statusId)) return false;
+        if (isClosedForFollow(c.statusId)) return false;
         return c.followCalendarDateKey == followDate;
       case ListQueryMode.followRange:
         final start = widget.date;
         final end = widget.dateEndInclusive;
         if (start == null || end == null) return true;
-        if ([2, 3, 4].contains(c.statusId)) return false;
+        if (isClosedForFollow(c.statusId)) return false;
         final key = c.followCalendarDateKey;
         if (key == null) return false;
         return key.compareTo(start) >= 0 && key.compareTo(end) <= 0;
       case ListQueryMode.overdueFollow:
-        if ([2, 3, 4].contains(c.statusId)) return false;
+        if (isClosedForFollow(c.statusId)) return false;
         return isFollowOverdue(c.followCalendarDateKey, todayYmdSeoul());
       default:
         return true;

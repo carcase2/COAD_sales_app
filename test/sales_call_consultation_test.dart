@@ -157,6 +157,25 @@ void main() {
       resolveNextScheduledDateForSave(CallStatusIds.simpleInquiry, '2026-06-01'),
       isNull,
     );
+    expect(
+      resolveNextScheduledDateForSave(CallStatusIds.designInquiry, '2026-06-01'),
+      isNull,
+    );
+    expect(
+      resolveNextScheduledDateForSave(CallStatusIds.other, '2026-06-01'),
+      isNull,
+    );
+  });
+
+  test('isClosedForFollow — 수주·미수주·단순문의·설계문의·기타는 팔로우 달력 제외', () {
+    expect(isClosedForFollow(CallStatusIds.undecided), isFalse);
+    expect(isClosedForFollow(null), isFalse);
+    expect(isClosedForFollow(CallStatusIds.won), isTrue);
+    expect(isClosedForFollow(CallStatusIds.lost), isTrue);
+    expect(isClosedForFollow(CallStatusIds.simpleInquiry), isTrue);
+    expect(isClosedForFollow(CallStatusIds.designInquiry), isTrue);
+    expect(isClosedForFollow(CallStatusIds.other), isTrue);
+    expect(isClosedForFollow(kLegacyDesignInquiryStatusId), isTrue);
   });
 
   test('registrationStatus', () {

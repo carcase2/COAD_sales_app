@@ -1238,7 +1238,7 @@ class _HomeFollowCalendarPanelState
       () => _calendarAssignee(c, overrides),
     );
 
-    // API `followRange` + 목록 `incompleteByDate`와 동일 조건(서버에서 이미 미종료·단순문의 제외)
+    // API `followRange` + 목록 `incompleteByDate`와 동일 조건(서버에서 이미 미종료·설계문의 등 제외)
     final Map<String, int> counts = {'전체': 0};
     final Map<String, Map<String, int>> dateAssigneeCounts = {};
     for (final c in calls) {
