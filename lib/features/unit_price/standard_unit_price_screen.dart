@@ -286,10 +286,23 @@ class _StandardUnitPriceScreenState
     setState(() => _editingWidth = width);
   }
 
+  /// 입력 중인 칸을 다시 누르면 지우고 처음부터 입력.
+  void _tapSizeAxis(bool width) {
+    HapticFeedback.selectionClick();
+    if (_editingWidth == width) {
+      if (width) {
+        _writeSize(widthMm: 0);
+      } else {
+        _writeSize(heightMm: 0);
+      }
+      return;
+    }
+    setState(() => _editingWidth = width);
+  }
+
   void _quickWidth(int mm) {
     HapticFeedback.selectionClick();
     _writeSize(widthMm: mm);
-    setState(() => _editingWidth = false);
   }
 
   void _quickHeight(int mm) {
@@ -784,6 +797,7 @@ class _StandardUnitPriceScreenState
                   onSelectCategory: _selectCategory,
                   onSelectModel: _selectModel,
                   onEditWidth: _setEditingWidth,
+                  onTapSizeAxis: _tapSizeAxis,
                   onQuickWidth: _quickWidth,
                   onQuickHeight: _quickHeight,
                   onDigit: _appendDigit,
@@ -820,6 +834,7 @@ class _LookupTab extends StatelessWidget {
     required this.onSelectCategory,
     required this.onSelectModel,
     required this.onEditWidth,
+    required this.onTapSizeAxis,
     required this.onQuickWidth,
     required this.onQuickHeight,
     required this.onDigit,
@@ -846,6 +861,7 @@ class _LookupTab extends StatelessWidget {
   final ValueChanged<String> onSelectCategory;
   final ValueChanged<String> onSelectModel;
   final ValueChanged<bool> onEditWidth;
+  final ValueChanged<bool> onTapSizeAxis;
   final ValueChanged<int> onQuickWidth;
   final ValueChanged<int> onQuickHeight;
   final ValueChanged<String> onDigit;
@@ -904,22 +920,10 @@ class _LookupTab extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: Row(
-            children: [
-              for (final cat in catalog.orderedCategories)
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: _ChoicePill(
-                      label: cat.name,
-                      selected: cat.id == categoryId,
-                      color: hexToColor(cat.color),
-                      expanded: true,
-                      onTap: () => onSelectCategory(cat.id),
-                    ),
-                  ),
-                ),
-            ],
+          child: _CategoryTabs(
+            categories: catalog.orderedCategories,
+            selectedId: categoryId,
+            onSelect: onSelectCategory,
           ),
         ),
         Padding(
@@ -953,11 +957,11 @@ class _LookupTab extends StatelessWidget {
             children: [
               Expanded(
                 child: _SizeTapCard(
-                  caption: editingWidth ? '폭 · 입력 중' : '폭 · 가로',
+                  caption: editingWidth ? '폭 · 탭하면 지움' : '폭',
                   value: widthMm > 0 ? '${won.format(widthMm)} mm' : '탭해서 입력',
                   color: const Color(0xFF1D4ED8),
                   selected: editingWidth,
-                  onTap: () => onEditWidth(true),
+                  onTap: () => onTapSizeAxis(true),
                 ),
               ),
               const Padding(
@@ -969,11 +973,11 @@ class _LookupTab extends StatelessWidget {
               ),
               Expanded(
                 child: _SizeTapCard(
-                  caption: !editingWidth ? '높이 · 입력 중' : '높이 · 세로',
+                  caption: !editingWidth ? '높이 · 탭하면 지움' : '높이',
                   value: heightMm > 0 ? '${won.format(heightMm)} mm' : '탭해서 입력',
                   color: const Color(0xFF0F766E),
                   selected: !editingWidth,
-                  onTap: () => onEditWidth(false),
+                  onTap: () => onTapSizeAxis(false),
                 ),
               ),
               IconButton(
@@ -990,33 +994,28 @@ class _LookupTab extends StatelessWidget {
             child: Column(
               children: [
                 _LabeledChipRow(
-                  label: '폭',
-                  color: const Color(0xFF1D4ED8),
+                  label: editingWidth ? '폭' : '높이',
+                  color: editingWidth
+                      ? const Color(0xFF1D4ED8)
+                      : const Color(0xFF0F766E),
                   children: [
-                    for (final mm in standardQuickWidths)
-                      _ChoicePill(
-                        label: '$mm',
-                        selected: widthMm == mm,
-                        color: const Color(0xFF1D4ED8),
-                        onTap: () => onQuickWidth(mm),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                _LabeledChipRow(
-                  label: '높이',
-                  color: const Color(0xFF0F766E),
-                  children: [
-                    for (final mm in heightChips)
+                    for (final mm
+                        in editingWidth ? standardQuickWidths : heightChips)
                       _ChoicePill(
                         label: mm == 2150
                             ? '2150 4단'
                             : mm == 2700
                                 ? '2700 5단'
                                 : '$mm',
-                        selected: heightMm == mm,
-                        color: const Color(0xFF0F766E),
-                        onTap: () => onQuickHeight(mm),
+                        selected: editingWidth
+                            ? widthMm == mm
+                            : heightMm == mm,
+                        color: editingWidth
+                            ? const Color(0xFF1D4ED8)
+                            : const Color(0xFF0F766E),
+                        onTap: () => editingWidth
+                            ? onQuickWidth(mm)
+                            : onQuickHeight(mm),
                       ),
                   ],
                 ),
@@ -1024,10 +1023,12 @@ class _LookupTab extends StatelessWidget {
                 Expanded(
                   child: _InlineKeypad(
                     editingWidth: editingWidth,
+                    canCopy: hasSize && !unavailable && price > 0,
                     onDigit: onDigit,
                     onBackspace: onBackspace,
                     onClear: onClearCurrent,
                     onToggleAxis: () => onEditWidth(!editingWidth),
+                    onCopy: onCopyPrice,
                   ),
                 ),
               ],
@@ -1125,6 +1126,25 @@ class _PriceHeaderState extends State<_PriceHeader> {
                     ),
                   ),
                 ),
+                if (canCopy)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: FilledButton(
+                      onPressed: widget.onCopyPrice,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: widget.color,
+                        minimumSize: const Size(56, 36),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      child: const Text('복사'),
+                    ),
+                  ),
                 TextButton(
                   onPressed: () => setState(() => _open = !_open),
                   style: TextButton.styleFrom(
@@ -1338,17 +1358,21 @@ class _LabeledChipRow extends StatelessWidget {
 class _InlineKeypad extends StatelessWidget {
   const _InlineKeypad({
     required this.editingWidth,
+    required this.canCopy,
     required this.onDigit,
     required this.onBackspace,
     required this.onClear,
     required this.onToggleAxis,
+    required this.onCopy,
   });
 
   final bool editingWidth;
+  final bool canCopy;
   final ValueChanged<String> onDigit;
   final VoidCallback onBackspace;
   final VoidCallback onClear;
   final VoidCallback onToggleAxis;
+  final VoidCallback onCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -1407,7 +1431,7 @@ class _InlineKeypad extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: onClear,
+                  onPressed: editingWidth || !canCopy ? onClear : onToggleAxis,
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1416,13 +1440,19 @@ class _InlineKeypad extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  child: Text(editingWidth ? '폭 지움' : '높이 지움'),
+                  child: Text(
+                    editingWidth
+                        ? '폭 지움'
+                        : (canCopy ? '폭으로' : '높이 지움'),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: FilledButton(
-                  onPressed: onToggleAxis,
+                  onPressed: editingWidth
+                      ? onToggleAxis
+                      : (canCopy ? onCopy : onToggleAxis),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1431,7 +1461,11 @@ class _InlineKeypad extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  child: Text(editingWidth ? '다음 · 높이' : '폭으로'),
+                  child: Text(
+                    editingWidth
+                        ? '다음 · 높이'
+                        : (canCopy ? '복사' : '폭으로'),
+                  ),
                 ),
               ),
             ],
@@ -1579,25 +1613,88 @@ class _ChoiceChipRow extends StatelessWidget {
   }
 }
 
+class _CategoryTabs extends StatelessWidget {
+  const _CategoryTabs({
+    required this.categories,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final List<StandardUnitPriceCategory> categories;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (categories.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          for (final cat in categories)
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  onSelect(cat.id);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: cat.id == selectedId
+                        ? hexToColor(cat.color)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    cat.name,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                      color: cat.id == selectedId
+                          ? Colors.white
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChoicePill extends StatelessWidget {
   const _ChoicePill({
     required this.label,
     required this.selected,
     required this.color,
     required this.onTap,
-    this.expanded = false,
   });
 
   final String label;
   final bool selected;
   final Color color;
   final VoidCallback onTap;
-  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
-    final pill = Material(
-      color: selected ? color : Theme.of(context).colorScheme.surfaceContainerHighest,
+    return Material(
+      color: selected
+          ? color
+          : Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: () {
@@ -1606,20 +1703,14 @@ class _ChoicePill extends StatelessWidget {
         },
         borderRadius: BorderRadius.circular(20),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight: expanded ? 44 : 36,
-            minWidth: 56,
-          ),
+          constraints: const BoxConstraints(minHeight: 36, minWidth: 56),
           child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: expanded ? 14 : 12,
-              vertical: expanded ? 8 : 6,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Center(
               child: Text(
                 label,
                 style: TextStyle(
-                  fontSize: expanded ? 15 : 13,
+                  fontSize: 13,
                   fontWeight: FontWeight.w900,
                   color: selected
                       ? Colors.white
@@ -1631,7 +1722,6 @@ class _ChoicePill extends StatelessWidget {
         ),
       ),
     );
-    return pill;
   }
 }
 
@@ -1653,10 +1743,10 @@ class _SizeTapCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? color.withValues(alpha: 0.12) : Colors.white,
+      color: selected ? color.withValues(alpha: 0.16) : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: color, width: selected ? 2 : 1.2),
+        side: BorderSide(color: color, width: selected ? 2.4 : 1),
       ),
       child: InkWell(
         onTap: onTap,
