@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/core/utils/mes_permissions.dart';
 import 'package:coad_customer_calls/features/mes/mes_calendar_screen.dart';
+import 'package:coad_customer_calls/features/mes/mes_order_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -69,6 +70,19 @@ class _MesHomeScreenState extends ConsumerState<MesHomeScreen> {
           }),
         ],
       ),
+      floatingActionButton: canMes(user, 'mes.orders.create')
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final saved = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute<bool>(builder: (_) => const MesOrderScreen()),
+                );
+                if (saved == true) await _load();
+              },
+              icon: const Icon(Icons.add_business_outlined),
+              label: const Text('영업 등록'),
+            )
+          : null,
       body: Column(
         children: [
           if (titles.length > 1)

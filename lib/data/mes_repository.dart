@@ -48,14 +48,26 @@ class MesRepository {
     await _deps.secure.delete(key: StorageKeys.mesJwt);
   }
 
-  Future<Map<String, dynamic>> get(String path) async {
-    final res = await http.get(
-      Uri.parse('$mesApiUrl$path'),
-      headers: {
+  Map<String, String> get _headers => {
         if (_token != null) 'Authorization': 'Bearer $_token',
-      },
-    );
-    return jsonDecode(res.body) as Map<String, dynamic>;
+      };
+
+  Map<String, dynamic> _decode(http.Response res) {
+    try {
+      final raw = jsonDecode(res.body);
+      if (raw is Map<String, dynamic>) return raw;
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+      return {'data': raw};
+    } catch (_) {
+      return {'error': res.body.isEmpty ? '요청 실패' : res.body, '_status': res.statusCode};
+    }
+  }
+
+  Future<Map<String, dynamic>> get(String path) async {
+    final res = await http.get(Uri.parse('$mesApiUrl$path'), headers: _headers);
+    final map = _decode(res);
+    map['_status'] = res.statusCode;
+    return map;
   }
 
   Future<Map<String, dynamic>> post(String path, [Map<String, dynamic>? body]) async {
@@ -63,10 +75,53 @@ class MesRepository {
       Uri.parse('$mesApiUrl$path'),
       headers: {
         'Content-Type': 'application/json',
-        if (_token != null) 'Authorization': 'Bearer $_token',
+        ..._headers,
       },
       body: jsonEncode(body ?? {}),
     );
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    final map = _decode(res);
+    map['_status'] = res.statusCode;
+    return map;
+  }
+
+  Future<Map<String, dynamic>> patch(String path, [Map<String, dynamic>? body]) async {
+    final res = await http.patch(
+      Uri.parse('$mesApiUrl$path'),
+      headers: {
+        'Content-Type': 'application/json',
+        ..._headers,
+      },
+      body: jsonEncode(body ?? {}),
+    );
+    final map = _decode(res);
+    map['_status'] = res.statusCode;
+    return map;
+  }
+
+  Future<Map<String, dynamic>> uploadOrderPhoto({
+    required String filePath,
+    required String orderId,
+    required String category,
+    String? label,
+  }) async {
+    final req = http.MultipartRequest('POST', Uri.parse('$mesApiUrl/api/uploads'));
+    req.headers.addAll(_headers);
+    req.files.add(await http.MultipartFile.fromPath('file', filePath));
+    req.fields['orderId'] = orderId;
+    req.fields['entityType'] = 'order';
+    req.fields['category'] = category;
+    if (label != null && label.isNotEmpty) req.fields['label'] = label;
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
+    final map = _decode(res);
+    map['_status'] = res.statusCode;
+    return map;
+  }
+
+  Future<Map<String, dynamic>?> me() async {
+    final map = await get('/api/auth/me?platform=APP');
+    final status = map['_status'] as int? ?? 0;
+    if (status >= 400) return null;
+    return map;
   }
 }
