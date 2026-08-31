@@ -50,6 +50,10 @@ class AppTokens {
   static Color customerSupportAccent(ColorScheme scheme) =>
       Color.lerp(const Color(0xFF0D9488), scheme.primary, 0.18)!;
 
+  /// 자동문의고수 — 고객지원 틸과 구분되는 바이올렛.
+  static Color gosuAccent(ColorScheme scheme) =>
+      Color.lerp(const Color(0xFF7C3AED), scheme.primary, 0.1)!;
+
   /// 메일 발송 — COAD_home mail 탭의 로즈.
   static Color mailAccent(ColorScheme scheme) =>
       Color.lerp(const Color(0xFFE11D48), scheme.primary, 0.12)!;

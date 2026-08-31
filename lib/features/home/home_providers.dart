@@ -9,6 +9,8 @@ import 'package:coad_customer_calls/models/sales_call.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
+import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,6 +102,12 @@ final pendingConsultationLaunchProvider =
 
 /// [MainTabScreen]이 홈(탭 0)으로 이동할 때마다 증가. [HomeHubScreen]이 업무 흐름을 **일·금일**로 맞춤.
 final homeHubFlowResetTickProvider = StateProvider<int>((ref) => 0);
+
+/// 홈 흐름에서 보고 있는 부서 페이지(0 영업 · 1 고객지원 · 2 자동문의고수).
+/// 하단 접수 버튼이 이 값으로 초기 탭을 고른다.
+final homeDeptPageIndexProvider = StateProvider<int>((ref) {
+  return homeDeptPageIndexForUser(ref.read(authControllerProvider));
+});
 
 /// 홈으로 이동한 뒤 지정 구역(흐름·달력)을 연다.
 void requestHomeHubSection(
@@ -277,6 +285,18 @@ final supportHomeStatsProvider = FutureProvider.autoDispose
       return ref
           .read(supportCallLogRepositoryProvider)
           .periodStats(fromYmd: range.$1, toYmdInclusive: range.$2);
+    });
+
+final gosuHomeCountsProvider = FutureProvider.autoDispose
+    .family<GosuHomeCounts, HubPeriodKey>((ref, key) async {
+      final range = switch (key.period) {
+        HubPeriod.day => (key.anchorYmd, key.anchorYmd),
+        HubPeriod.week => seoulWeekRangeContaining(key.anchorYmd),
+        HubPeriod.month => seoulMonthRangeContaining(key.anchorYmd),
+      };
+      return ref
+          .read(gosuSalesCallsRepositoryProvider)
+          .fetchHomeCounts(fromYmd: range.$1, toYmdInclusive: range.$2);
     });
 
 HubPeriodKey hubPeriodKeyFromNav(HubNavStep step, String anchorYmd) => (

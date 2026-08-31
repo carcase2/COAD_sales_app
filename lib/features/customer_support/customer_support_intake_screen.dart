@@ -11,6 +11,7 @@ import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_detail_screen.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_fill_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
+import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/kakao_address_field.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -94,10 +95,18 @@ SupportIssueFields parseSupportIssueBody(String issue) {
 }
 
 class CustomerSupportIntakeScreen extends ConsumerStatefulWidget {
-  const CustomerSupportIntakeScreen({super.key, this.site, this.existing});
+  const CustomerSupportIntakeScreen({
+    super.key,
+    this.site,
+    this.existing,
+    this.embedded = false,
+    this.unsavedRegistry,
+  });
 
   final SupportSiteSample? site;
   final SupportCallLog? existing;
+  final bool embedded;
+  final ReceptionUnsavedRegistry? unsavedRegistry;
 
   @override
   ConsumerState<CustomerSupportIntakeScreen> createState() =>
@@ -164,10 +173,24 @@ class _CustomerSupportIntakeScreenState
       _scheduleNameLookup(_nameCtrl.text);
       _schedulePhoneLookup(_phoneCtrl.text);
     });
+    widget.unsavedRegistry?.register(
+      ReceptionKind.afterSales,
+      () => _hasUnsavedInput,
+    );
   }
+
+  bool get _hasUnsavedInput =>
+      !_isEdit &&
+      (_nameCtrl.text.trim().isNotEmpty ||
+          _phoneCtrl.text.trim().isNotEmpty ||
+          _siteCtrl.text.trim().isNotEmpty ||
+          _addressCtrl.text.trim().isNotEmpty ||
+          _issueCtrl.text.trim().isNotEmpty ||
+          _attachmentUrls.isNotEmpty);
 
   @override
   void dispose() {
+    widget.unsavedRegistry?.unregister(ReceptionKind.afterSales);
     _nameLookupDebounce?.cancel();
     _phoneLookupDebounce?.cancel();
     _nameCtrl.dispose();
@@ -611,207 +634,208 @@ class _CustomerSupportIntakeScreenState
     if (master != null) {
       _ensureDefaultProduct(master);
     }
-    return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'AS 접수 수정' : 'AS 접수 (테스트중)')),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              children: [
-                const FormSectionHeader(
-                  title: '긴급도',
-                  icon: Icons.priority_high_rounded,
-                  step: 1,
+    final body = Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            children: [
+              const FormSectionHeader(
+                title: '긴급도',
+                icon: Icons.priority_high_rounded,
+                step: 1,
+              ),
+              const SizedBox(height: 8),
+              _UrgencyRow(
+                value: _urgency,
+                onChanged: (v) => setState(() => _urgency = v),
+              ),
+              const SizedBox(height: 20),
+              const FormSectionHeader(
+                title: '제품군',
+                icon: Icons.dashboard_customize_outlined,
+                step: 2,
+              ),
+              const SizedBox(height: 8),
+              if (master == null)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: LinearProgressIndicator(),
+                )
+              else
+                _ProductChipGroup(
+                  items: master.productCategories,
+                  selectedId: _productId,
+                  onSelected: (id) => setState(() => _productId = id),
                 ),
-                const SizedBox(height: 8),
-                _UrgencyRow(
-                  value: _urgency,
-                  onChanged: (v) => setState(() => _urgency = v),
-                ),
-                const SizedBox(height: 20),
-                const FormSectionHeader(
-                  title: '제품군',
-                  icon: Icons.dashboard_customize_outlined,
-                  step: 2,
-                ),
-                const SizedBox(height: 8),
-                if (master == null)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: LinearProgressIndicator(),
-                  )
-                else
-                  _ProductChipGroup(
-                    items: master.productCategories,
-                    selectedId: _productId,
-                    onSelected: (id) => setState(() => _productId = id),
-                  ),
-                const SizedBox(height: 20),
-                const FormSectionHeader(
-                  title: '현장 · 고객',
-                  icon: Icons.person_outline_rounded,
-                  step: 3,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _siteCtrl,
-                  decoration: const InputDecoration(labelText: '현장명'),
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 8),
-                KakaoAddressField(
-                  controller: _addressCtrl,
-                  onSelected: (hit) {
-                    _addressLat = hit.lat;
-                    _addressLng = hit.lng;
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _nameCtrl,
-                  decoration: InputDecoration(
-                    labelText: '이름',
-                    hintText: '이름 넣으면 명함에서 전화·주소를 채웁니다',
-                    suffixIcon: _nameLookupBusy
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : _matchedCard == null
-                        ? null
-                        : Icon(
-                            Icons.contact_page_rounded,
-                            color: AppTokens.customerSupportAccent(scheme),
+              const SizedBox(height: 20),
+              const FormSectionHeader(
+                title: '현장 · 고객',
+                icon: Icons.person_outline_rounded,
+                step: 3,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _siteCtrl,
+                decoration: const InputDecoration(labelText: '현장명'),
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: 8),
+              KakaoAddressField(
+                controller: _addressCtrl,
+                onSelected: (hit) {
+                  _addressLat = hit.lat;
+                  _addressLng = hit.lng;
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _nameCtrl,
+                decoration: InputDecoration(
+                  labelText: '이름',
+                  hintText: '이름 넣으면 명함에서 전화·주소를 채웁니다',
+                  suffixIcon: _nameLookupBusy
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
-                  ),
-                  textInputAction: TextInputAction.next,
-                  onChanged: _onNameChanged,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: '전화번호',
-                    hintText: '010-1234-5678',
-                    helperText: _phoneFromCard
-                        ? '명함에서 자동 입력됨'
-                        : _matchedByPhone != null
-                        ? '명함에서 찾음'
-                        : null,
-                    suffixIcon: _phoneLookupBusy
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : _matchedByPhone == null
-                        ? null
-                        : Icon(
-                            Icons.contact_page_rounded,
-                            color: AppTokens.customerSupportAccent(scheme),
-                          ),
-                  ),
-                  textInputAction: TextInputAction.next,
-                  onChanged: _onPhoneChanged,
-                ),
-                if (_matchedCard != null) ...[
-                  const SizedBox(height: 8),
-                  _MatchedCardBanner(
-                    card: _matchedCard!,
-                    phoneFilled: _phoneFromCard,
-                    nameFilled: _nameFromCard,
-                    canChangePhone: _nameFillChoices.length > 1,
-                    onChangePhone: _repickFromNameMatches,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => BusinessCardDetailScreen(
-                          cardId: _matchedCard!.id,
-                          initial: _matchedCard,
+                        )
+                      : _matchedCard == null
+                      ? null
+                      : Icon(
+                          Icons.contact_page_rounded,
+                          color: AppTokens.customerSupportAccent(scheme),
                         ),
+                ),
+                textInputAction: TextInputAction.next,
+                onChanged: _onNameChanged,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: '전화번호',
+                  hintText: '010-1234-5678',
+                  helperText: _phoneFromCard
+                      ? '명함에서 자동 입력됨'
+                      : _matchedByPhone != null
+                      ? '명함에서 찾음'
+                      : null,
+                  suffixIcon: _phoneLookupBusy
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : _matchedByPhone == null
+                      ? null
+                      : Icon(
+                          Icons.contact_page_rounded,
+                          color: AppTokens.customerSupportAccent(scheme),
+                        ),
+                ),
+                textInputAction: TextInputAction.next,
+                onChanged: _onPhoneChanged,
+              ),
+              if (_matchedCard != null) ...[
+                const SizedBox(height: 8),
+                _MatchedCardBanner(
+                  card: _matchedCard!,
+                  phoneFilled: _phoneFromCard,
+                  nameFilled: _nameFromCard,
+                  canChangePhone: _nameFillChoices.length > 1,
+                  onChangePhone: _repickFromNameMatches,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => BusinessCardDetailScreen(
+                        cardId: _matchedCard!.id,
+                        initial: _matchedCard,
                       ),
                     ),
                   ),
-                ],
-                const SizedBox(height: 20),
-                const FormSectionHeader(
-                  title: '문의 내용',
-                  icon: Icons.notes_rounded,
-                  step: 4,
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _issueCtrl,
-                  minLines: 3,
-                  maxLines: 5,
-                  decoration: const InputDecoration(hintText: '증상을 짧게 적어 주세요'),
-                ),
-                const SizedBox(height: 12),
-                SalesCallAttachmentsStrip(
-                  urls: _attachmentUrls,
-                  editable: true,
-                  uploadBusy: _uploadBusy,
-                  progressLabel: _uploadTotal > 0
-                      ? '전송 중 ($_uploadCurrent/$_uploadTotal)'
-                      : null,
-                  onAdd: _pickAndUpload,
-                  onAddCamera: () async {
-                    final shot = await ImagePicker().pickImage(
-                      source: ImageSource.camera,
-                      imageQuality: 85,
-                    );
-                    if (shot == null) return;
-                    await _uploadPaths([shot.path]);
-                  },
-                  onRemoveAt: (i) =>
-                      setState(() => _attachmentUrls.removeAt(i)),
-                ),
-                const SizedBox(height: 16),
-                _AuthorBar(name: user?.name),
               ],
-            ),
+              const SizedBox(height: 20),
+              const FormSectionHeader(
+                title: '문의 내용',
+                icon: Icons.notes_rounded,
+                step: 4,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _issueCtrl,
+                minLines: 3,
+                maxLines: 5,
+                decoration: const InputDecoration(hintText: '증상을 짧게 적어 주세요'),
+              ),
+              const SizedBox(height: 12),
+              SalesCallAttachmentsStrip(
+                urls: _attachmentUrls,
+                editable: true,
+                uploadBusy: _uploadBusy,
+                progressLabel: _uploadTotal > 0
+                    ? '전송 중 ($_uploadCurrent/$_uploadTotal)'
+                    : null,
+                onAdd: _pickAndUpload,
+                onAddCamera: () async {
+                  final shot = await ImagePicker().pickImage(
+                    source: ImageSource.camera,
+                    imageQuality: 85,
+                  );
+                  if (shot == null) return;
+                  await _uploadPaths([shot.path]);
+                },
+                onRemoveAt: (i) => setState(() => _attachmentUrls.removeAt(i)),
+              ),
+              const SizedBox(height: 16),
+              _AuthorBar(name: user?.name),
+            ],
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    minimumSize: const Size(96, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: _urgencyFill(scheme, _urgency),
-                    foregroundColor: _urgencyOnFill(scheme, _urgency),
-                  ),
-                  onPressed: _submitting || _uploadBusy
-                      ? null
-                      : () {
-                          HapticFeedback.selectionClick();
-                          unawaited(_submit());
-                        },
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(_isEdit ? '수정 저장' : '저장'),
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  minimumSize: const Size(96, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  backgroundColor: _urgencyFill(scheme, _urgency),
+                  foregroundColor: _urgencyOnFill(scheme, _urgency),
                 ),
+                onPressed: _submitting || _uploadBusy
+                    ? null
+                    : () {
+                        HapticFeedback.selectionClick();
+                        unawaited(_submit());
+                      },
+                child: _submitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(_isEdit ? '수정 저장' : '저장'),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+    if (widget.embedded) return body;
+    return Scaffold(
+      appBar: AppBar(title: Text(_isEdit ? 'AS 접수 수정' : 'AS 접수 (테스트중)')),
+      body: body,
     );
   }
 }

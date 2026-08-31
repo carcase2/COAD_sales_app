@@ -392,7 +392,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 8),
           _buildNotifyToggle(
             title: '새 접수 알림',
-            subtitle: '새 통화 접수가 등록되면 알림을 받습니다.',
+            subtitle: '새 통화·자동문의고수 접수가 등록되면 알림을 받습니다.',
             value: _notifyNewCall,
             onChanged: (v) {
               setState(() => _notifyNewCall = v);

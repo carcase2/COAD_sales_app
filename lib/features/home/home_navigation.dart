@@ -23,6 +23,7 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(tempManagerOverridesProvider);
   invalidate(hubPendingUncalledSummaryProvider);
   invalidate(hubOverdueFollowCallsProvider);
+  invalidate(gosuHomeCountsProvider);
 }
 
 /// 다른 화면에서 메인 탭 **홈**으로 돌아가며 [흐름|달력] 구역을 연다.

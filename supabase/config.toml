@@ -324,6 +324,9 @@ verify_jwt = false
 [functions.notify-as-reception]
 verify_jwt = false
 
+[functions.notify-gosu-reception]
+verify_jwt = false
+
 [functions.notify-as-due-schedule]
 verify_jwt = false
 

@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/data/b2_upload_repository.dart';
 import 'package:coad_customer_calls/data/estimate_document_repository.dart';
 import 'package:coad_customer_calls/data/general_schedule_repository.dart';
+import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/usage_repository.dart';
 import 'package:coad_customer_calls/data/ai_extractor_service.dart';
@@ -25,6 +26,12 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 final salesCallsRepositoryProvider = Provider<SalesCallsRepository>((ref) {
   return SalesCallsRepository(ref.watch(appDependenciesProvider));
+});
+
+final gosuSalesCallsRepositoryProvider = Provider<GosuSalesCallsRepository>((
+  ref,
+) {
+  return GosuSalesCallsRepository();
 });
 
 final usageRepositoryProvider = Provider<UsageRepository>((ref) {

@@ -13,6 +13,7 @@ import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -111,6 +112,7 @@ class NotificationService {
   /// 통화 상세 이동 요청의 최신성 보장을 위한 시퀀스.
   static int _callNavigationRequestSeq = 0;
   static int _asNavigationRequestSeq = 0;
+  static int _gosuNavigationRequestSeq = 0;
   static int _issuanceNavigationRequestSeq = 0;
   static String? _lastOpenedIssuanceDetailKey;
   static DateTime? _lastOpenedIssuanceDetailAt;
@@ -141,7 +143,8 @@ class NotificationService {
       key = prefKeyNotifyGeneralSchedule;
     } else if (_isAsDueScheduleNotification(data)) {
       key = prefKeyNotifyAsDue;
-    } else if (_extractCallIdFromData(data) != null) {
+    } else if (_isGosuReceptionNotification(data) ||
+        _extractCallIdFromData(data) != null) {
       key = prefKeyNotifyNewCall;
     }
     if (key == null) return true;
@@ -154,7 +157,8 @@ class NotificationService {
   }
 
   static String _androidChannelIdForData(Map<String, dynamic> data) {
-    if (_isAsReceptionNotification(data)) {
+    if (_isAsReceptionNotification(data) ||
+        _isGosuReceptionNotification(data)) {
       return _androidChannelCallId;
     }
     if (_isAsDueScheduleNotification(data)) {
@@ -224,7 +228,9 @@ class NotificationService {
     if (nav == null) return false;
     var onCreate = false;
     nav.popUntil((route) {
-      if (route.settings.name == kSalesCallCreateRouteName) {
+      if (route.settings.name == kSalesCallCreateRouteName ||
+          route.settings.name == kGosuCallCreateRouteName ||
+          route.settings.name == kReceptionCreateRouteName) {
         onCreate = true;
       }
       return true;
@@ -542,6 +548,9 @@ class NotificationService {
       } else if (_isAsReceptionNotification(data)) {
         title = '새 A/S 접수';
         body = '알림을 탭하면 접수 상세로 이동합니다.';
+      } else if (_isGosuReceptionNotification(data)) {
+        title = '새 자동문의고수 접수';
+        body = '알림을 탭하면 접수 상세로 이동합니다.';
       } else if (_isAsDueScheduleNotification(data)) {
         title = '[A/S] 방문·발송 예정';
         body = '오늘·지난 방문/발송 일정을 확인하세요.';
@@ -592,6 +601,7 @@ class NotificationService {
 
     final callId = _extractCallIdFromData(data);
     final asId = _extractAsReceptionId(data);
+    final gosuId = _extractGosuReceptionId(data);
     final notificationId = _isAsDueScheduleNotification(data)
         ? _asDueNotificationIdFromData(data)
         : _isDaeguScheduleNotification(data)
@@ -600,6 +610,8 @@ class NotificationService {
         ? ('general_schedule:${data['action'] ?? 'open'}').hashCode & 0x7fffffff
         : asId != null
         ? asId.hashCode & 0x7fffffff
+        : gosuId != null
+        ? gosuId.hashCode & 0x7fffffff
         : _notificationIdFor(callId, message);
     final tag = _isAsDueScheduleNotification(data)
         ? 'as_due_schedule'
@@ -607,7 +619,7 @@ class NotificationService {
         ? 'daegu_schedule'
         : _isGeneralScheduleNotification(data)
         ? 'general_schedule'
-        : asId ?? callId;
+        : asId ?? gosuId ?? callId;
     _log(
       'showRemoteMessageNotification callId=$callId titleLen=${title.length} bodyLen=${body.length}',
     );
@@ -657,6 +669,11 @@ class NotificationService {
       final asId = _extractAsReceptionId(data);
       if (asId == null) return null;
       return jsonEncode({'type': 'as_reception', 'as_id': asId});
+    }
+    if (_isGosuReceptionNotification(data)) {
+      final gosuId = _extractGosuReceptionId(data);
+      if (gosuId == null) return null;
+      return jsonEncode({'type': 'gosu_reception', 'gosu_id': gosuId});
     }
     if (_isAsDueScheduleNotification(data)) {
       return jsonEncode({
@@ -797,6 +814,15 @@ class NotificationService {
       _navigateToAsReceptionDetail(asId);
       return;
     }
+    if (_isGosuReceptionNotification(data)) {
+      final gosuId = _extractGosuReceptionId(data);
+      if (gosuId == null) {
+        _log('tap ignored: gosu_reception without gosu_id data=$data');
+        return;
+      }
+      _navigateToGosuReceptionDetail(gosuId);
+      return;
+    }
     if (_isAsDueScheduleNotification(data)) {
       _navigateToAsDueCalendar();
       return;
@@ -857,6 +883,28 @@ class NotificationService {
 
   static String? _extractAsReceptionId(Map<String, dynamic> data) {
     const keys = ['as_id', 'asId', 'call_log_id', 'callLogId'];
+    for (final k in keys) {
+      if (!data.containsKey(k)) continue;
+      final n = _normalizeCallId(data[k]);
+      if (n != null) return n;
+    }
+    return null;
+  }
+
+  static bool _isGosuReceptionNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'gosu_reception' ||
+        type == 'gosu-reception' ||
+        type == 'gosu_call' ||
+        action == 'open_gosu_reception';
+  }
+
+  static String? _extractGosuReceptionId(Map<String, dynamic> data) {
+    const keys = ['gosu_id', 'gosuId', 'gosu_sales_call_id', 'gosuSalesCallId'];
     for (final k in keys) {
       if (!data.containsKey(k)) continue;
       final n = _normalizeCallId(data[k]);
@@ -1304,6 +1352,72 @@ class NotificationService {
       Future<void>.delayed(
         Duration(milliseconds: 50 + attempt * 40),
         () => _pushAsReceptionDetailRoute(
+          id,
+          attempt: attempt + 1,
+          requestSeq: requestSeq,
+        ),
+      );
+    }
+  }
+
+  static void _navigateToGosuReceptionDetail(String id) {
+    _gosuNavigationRequestSeq += 1;
+    final requestSeq = _gosuNavigationRequestSeq;
+    _queuePendingData({'type': 'gosu_reception', 'gosu_id': id});
+    _pushGosuReceptionDetailRoute(id, requestSeq: requestSeq);
+  }
+
+  static void _pushGosuReceptionDetailRoute(
+    String id, {
+    int attempt = 0,
+    required int requestSeq,
+  }) {
+    if (requestSeq != _gosuNavigationRequestSeq) return;
+    final nav = navigatorKey.currentState;
+    if (nav != null) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx != null) {
+        try {
+          final user = ProviderScope.containerOf(
+            ctx,
+          ).read(authControllerProvider);
+          if (user == null) {
+            if (attempt < 20) {
+              Future<void>.delayed(
+                Duration(milliseconds: 200 + attempt * 100),
+                () {
+                  _pushGosuReceptionDetailRoute(
+                    id,
+                    attempt: attempt + 1,
+                    requestSeq: requestSeq,
+                  );
+                },
+              );
+            }
+            return;
+          }
+        } catch (_) {}
+      }
+      _pendingMessageData = null;
+      final routeName = 'GosuCallDetail/$id';
+      final detailRoute = MaterialPageRoute<void>(
+        builder: (_) => GosuCallDetailScreen(id: id),
+        settings: RouteSettings(name: routeName),
+      );
+      final topName = _topRouteName(nav);
+      if (topName == routeName) return;
+      if (topName != null && topName.startsWith('GosuCallDetail/')) {
+        nav.pushReplacement(detailRoute);
+      } else {
+        nav.push(detailRoute);
+      }
+      _invalidateHomeSalesCaches();
+      return;
+    }
+    if (attempt < 60) {
+      Future<void>.delayed(
+        Duration(milliseconds: 50 + attempt * 40),
+        () => _pushGosuReceptionDetailRoute(
           id,
           attempt: attempt + 1,
           requestSeq: requestSeq,
@@ -1995,6 +2109,50 @@ class NotificationService {
         ),
       ),
     );
+  }
+
+  /// 자동문의고수 접수 후 관리자·자동문의고수 부서 FCM. 탭하면 접수 상세.
+  static Future<void> invokeGosuReceptionPush({
+    required String gosuId,
+    required String customerName,
+    required String phone,
+    String? inquiryContent,
+    String? assignedTo,
+    String? createdBy,
+    String? regionSido,
+    String? regionName,
+  }) async {
+    try {
+      final res = await Supabase.instance.client.functions.invoke(
+        'notify-gosu-reception',
+        body: {
+          'record': {
+            'id': gosuId,
+            'customer_name': customerName,
+            'customer_phone': phone,
+            if ((inquiryContent ?? '').trim().isNotEmpty)
+              'inquiry_content': inquiryContent!.trim(),
+            if ((assignedTo ?? '').trim().isNotEmpty)
+              'assigned_to': assignedTo!.trim(),
+            if ((createdBy ?? '').trim().isNotEmpty)
+              'created_by': createdBy!.trim(),
+            if ((regionSido ?? '').trim().isNotEmpty)
+              'region_sido': regionSido!.trim(),
+            if ((regionName ?? '').trim().isNotEmpty)
+              'region_name': regionName!.trim(),
+          },
+        },
+      );
+      _log('notify-gosu-reception status=${res.status} data=${res.data}');
+      if (res.status >= 400) {
+        _log('notify-gosu-reception push invoke returned error status');
+      }
+    } catch (e, st) {
+      _log('notify-gosu-reception invoke failed: $e');
+      if (kDebugMode) {
+        print(st);
+      }
+    }
   }
 
   /// A/S 접수 후 관리자만 FCM. 탭하면 접수 상세.

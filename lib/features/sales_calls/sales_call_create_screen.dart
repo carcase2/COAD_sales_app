@@ -8,6 +8,7 @@ import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
+import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/data/sales_call_consultation.dart';
@@ -37,7 +38,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // We keep them in the state class
 
 class SalesCallCreateScreen extends ConsumerStatefulWidget {
-  const SalesCallCreateScreen({super.key});
+  const SalesCallCreateScreen({
+    super.key,
+    this.embedded = false,
+    this.unsavedRegistry,
+  });
+
+  /// 유형 탭 호스트 안에 넣을 때 AppBar·이탈 확인을 호스트가 맡는다.
+  final bool embedded;
+  final ReceptionUnsavedRegistry? unsavedRegistry;
 
   @override
   ConsumerState<SalesCallCreateScreen> createState() =>
@@ -123,9 +132,9 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     final digits = await LauncherUtils.clipboardPhoneDigits();
     if (!mounted) return;
     if (digits == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('클립보드에서 전화번호를 찾지 못했습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('클립보드에서 전화번호를 찾지 못했습니다.')));
       return;
     }
     _onPhoneChanged(formatKoreanPhoneHyphenated(digits));
@@ -167,7 +176,17 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    widget.unsavedRegistry?.register(
+      ReceptionKind.sales,
+      () => _hasUnsavedInput,
+    );
+  }
+
+  @override
   void dispose() {
+    widget.unsavedRegistry?.unregister(ReceptionKind.sales);
     _phoneLookupDebounce?.cancel();
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
@@ -301,24 +320,22 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       }
 
       if (!mounted) return;
-      ref.read(salesCallsRepositoryProvider).invalidateTempManagerCache(
-            forceRevertOnNextFetch: true,
-          );
+      ref
+          .read(salesCallsRepositoryProvider)
+          .invalidateTempManagerCache(forceRevertOnNextFetch: true);
       invalidateHomeSalesCaches(ref.invalidate);
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => SalesCallDetailScreen(
-            id: created.id,
-            initial: created,
-          ),
+          builder: (_) =>
+              SalesCallDetailScreen(id: created.id, initial: created),
         ),
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final ctx = NotificationService.navigatorKey.currentContext;
         if (ctx == null) return;
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('접수가 완료되었습니다.')),
-        );
+        ScaffoldMessenger.of(
+          ctx,
+        ).showSnackBar(const SnackBar(content: Text('접수가 완료되었습니다.')));
       });
     } on OfflineException catch (e) {
       if (!mounted) return;
@@ -461,10 +478,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   }
 
   Future<void> _scanBusinessCard(MasterDataBundle master) async {
-    final source = await showSalesCallImageSourceSheet(
-      context,
-      title: '명함 인식',
-    );
+    final source = await showSalesCallImageSourceSheet(context, title: '명함 인식');
     if (source == null) return;
     String? path;
     if (source == SalesCallImageSource.camera) {
@@ -587,6 +601,29 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
     final masterAsync = ref.watch(salesCallCreateMasterDataProvider);
     final user = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
+    final body = SafeArea(
+      top: !widget.embedded,
+      child: Column(
+        children: [
+          Expanded(
+            child: masterAsync.when(
+              data: (master) => _buildUnifiedForm(master, user?.name ?? '작성자'),
+              loading: () => const AppLoading(message: '분류·지역 정보를 불러오는 중…'),
+              error: (e, _) => AppErrorState(
+                message: koreanErrorMessage(e),
+                onRetry: () =>
+                    ref.invalidate(salesCallCreateMasterDataProvider),
+              ),
+            ),
+          ),
+          masterAsync.maybeWhen(
+            data: (master) => _buildFixedFooter(master),
+            orElse: () => const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+    if (widget.embedded) return body;
     return PopScope(
       // 컨트롤러 입력은 rebuild를 트리거하지 않으므로 항상 수동 pop 경로로 처리.
       canPop: false,
@@ -636,28 +673,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             ),
           ],
         ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: masterAsync.when(
-                  data: (master) =>
-                      _buildUnifiedForm(master, user?.name ?? '작성자'),
-                  loading: () => const AppLoading(message: '분류·지역 정보를 불러오는 중…'),
-                  error: (e, _) => AppErrorState(
-                    message: koreanErrorMessage(e),
-                    onRetry: () =>
-                        ref.invalidate(salesCallCreateMasterDataProvider),
-                  ),
-                ),
-              ),
-              masterAsync.maybeWhen(
-                data: (master) => _buildFixedFooter(master),
-                orElse: () => const SizedBox.shrink(),
-              ),
-            ],
-          ),
-        ),
+        body: body,
       ),
     );
   }
@@ -706,7 +722,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
             step: 2,
             title: '고객 · 지역',
             icon: Icons.contact_mail_outlined,
-            subtitle: '연락처 · 배정',
+            subtitle: '고객명 · 연락처 · 배정',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -714,7 +730,7 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   children: [
                     const Expanded(
                       child: Text(
-                        '연락처 · 고객명',
+                        '고객명 · 연락처',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
@@ -737,6 +753,12 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                _buildTextField(
+                  label: '고객명/상호명',
+                  controller: _nameCtrl,
+                  hint: '고객성함 또는 회사명',
+                ),
+                const SizedBox(height: 12),
                 _buildTextField(
                   label: '연락처 *',
                   controller: _phoneCtrl,
@@ -793,12 +815,15 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                             ),
                             subtitle: Text(
                               [
-                                formatYmdFlowLabelKo(
-                                  salesCallReceptionYmd(c),
-                                ),
-                                c.regionName,
-                                if (last != null) last,
-                              ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                                    formatYmdFlowLabelKo(
+                                      salesCallReceptionYmd(c),
+                                    ),
+                                    c.regionName,
+                                    if (last != null) last,
+                                  ]
+                                  .whereType<String>()
+                                  .where((s) => s.isNotEmpty)
+                                  .join(' · '),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -819,12 +844,6 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                _buildTextField(
-                  label: '고객명/상호명',
-                  controller: _nameCtrl,
-                  hint: '고객성함 또는 회사명',
-                ),
                 const SizedBox(height: 14),
                 const Text(
                   '지역 배정 *',

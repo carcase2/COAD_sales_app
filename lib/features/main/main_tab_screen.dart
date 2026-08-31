@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/core/utils/mail_permissions.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
+import 'package:coad_customer_calls/core/utils/gosu_permissions.dart';
 import 'package:coad_customer_calls/core/utils/mes_permissions.dart';
 import 'package:coad_customer_calls/data/mes_repository.dart';
 import 'package:coad_customer_calls/features/mes/mes_home_screen.dart';
@@ -30,19 +30,18 @@ import 'package:coad_customer_calls/features/quoter/quoter_hub_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_hub_screen.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/reception_create_host_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
-import 'package:coad_customer_calls/theme/app_motion.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
 import 'package:coad_customer_calls/navigation/app_menu_drawer.dart';
@@ -608,25 +607,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   Future<void> _openReceptionCreate() async {
-    final kind = await showReceptionKindSheet(context);
-    if (!mounted || kind == null) return;
-    await _openReceptionForKind(kind);
-  }
-
-  Future<void> _openReceptionForKind(ReceptionKind kind) async {
-    final user = ref.read(authControllerProvider);
-    switch (kind) {
-      case ReceptionKind.afterSales:
-        _trackTab(user, 'customer_support');
-        await openSupportIntakeThenDetail(context);
-      case ReceptionKind.sales:
-        await Navigator.of(context).push(
-          AppMotion.fadeSlideRoute<void>(
-            settings: const RouteSettings(name: kSalesCallCreateRouteName),
-            builder: (_) => const SalesCallCreateScreen(),
-          ),
-        );
-    }
+    await openReceptionCreateHost(context);
   }
 
   /// 접수 롱프레스 — 목록 바로가기(탭은 등록으로 직행).
@@ -636,6 +617,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     final selected = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       // 기본 half-sheet 제약이 타이트해 Column overflow가 나기 쉬움 →
       // 콘텐츠 높이만큼만 쓰고, 넘치면 스크롤.
       builder: (context) {
@@ -656,7 +638,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '탭: A/S·영업 선택 · 길게: 이 메뉴',
+                  '탭: 지금 홈 부서로 접수 · 접수창에서 유형 전환 · 길게: 이 메뉴',
                   style: TextStyle(
                     fontSize: 12,
                     color: scheme.onSurfaceVariant,
@@ -683,6 +665,21 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                     minimumSize: const Size.fromHeight(
                       AppTokens.primaryCtaHeight,
                     ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () => Navigator.of(context).pop('gosu'),
+                  icon: const Icon(Icons.support_agent_outlined),
+                  label: const Text('자동문의고수 접수'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(
+                      AppTokens.primaryCtaHeight,
+                    ),
+                    backgroundColor: AppTokens.gosuAccent(
+                      scheme,
+                    ).withValues(alpha: 0.16),
+                    foregroundColor: AppTokens.gosuAccent(scheme),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -728,9 +725,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     if (!mounted || selected == null) return;
     switch (selected) {
       case 'as':
-        unawaited(_openReceptionForKind(ReceptionKind.afterSales));
+        unawaited(
+          openReceptionCreateHost(
+            context,
+            initialKind: ReceptionKind.afterSales,
+          ),
+        );
       case 'sales':
-        unawaited(_openReceptionForKind(ReceptionKind.sales));
+        unawaited(
+          openReceptionCreateHost(context, initialKind: ReceptionKind.sales),
+        );
+      case 'gosu':
+        unawaited(
+          openReceptionCreateHost(context, initialKind: ReceptionKind.gosu),
+        );
       case 'today':
         await _openTodayReceptionList();
       case 'incomplete':
@@ -1125,6 +1133,23 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               );
             }),
           ),
+        if (canAccessGosuCalls(user))
+          AppMenuEntry(
+            id: 'gosu_calls',
+            sectionId: 'tools',
+            icon: Icons.headset_mic_rounded,
+            title: '자동문의고수',
+            subtitle: '고수 문의 접수 · 팔로업',
+            quickAccess: true,
+            quickLabel: '고수',
+            keywords: const ['자동문의고수', '고수', 'gosu', '팔로업'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'gosu_calls');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(builder: (_) => const GosuHubScreen()),
+              );
+            }),
+          ),
         if (canAccessMail(user))
           AppMenuEntry(
             id: 'mail',
@@ -1227,7 +1252,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             keywords: const ['MES', '달력', '제조', '시공'],
             onTap: () => closeDrawerThen(() {
               Navigator.of(hostContext).push(
-                MaterialPageRoute<void>(builder: (_) => const MesCalendarScreen()),
+                MaterialPageRoute<void>(
+                  builder: (_) => const MesCalendarScreen(),
+                ),
               );
             }),
           ),
@@ -1240,7 +1267,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             keywords: const ['시공', '완료', 'MES'],
             onTap: () => closeDrawerThen(() {
               Navigator.of(hostContext).push(
-                MaterialPageRoute<void>(builder: (_) => const MesInstallScreen()),
+                MaterialPageRoute<void>(
+                  builder: (_) => const MesInstallScreen(),
+                ),
               );
             }),
           ),
@@ -1253,7 +1282,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             keywords: const ['수금', '입금', '연체', 'MES'],
             onTap: () => closeDrawerThen(() {
               Navigator.of(hostContext).push(
-                MaterialPageRoute<void>(builder: (_) => const MesPaymentsScreen()),
+                MaterialPageRoute<void>(
+                  builder: (_) => const MesPaymentsScreen(),
+                ),
               );
             }),
           ),

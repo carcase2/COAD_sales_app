@@ -7,8 +7,10 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_r
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_branch_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
+import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
 import 'package:coad_customer_calls/features/home/home_flow_stats.dart';
@@ -43,7 +45,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   late PageController _sectionPageController;
   late PageController _deptPageController;
-  int _deptPageIndex = 0;
+  late int _deptPageIndex;
   late String _hubFlowAnchorYmd;
   HubNavStep _hubNavStep = HubNavStep.day;
   HomeHubSection _section = HomeHubSection.flow;
@@ -1767,17 +1769,23 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     await prefs.setBool(_longPressHintHiddenPrefKey, true);
   }
 
+  int _homeDeptPageForCurrentUser() =>
+      homeDeptPageIndexForUser(ref.read(authControllerProvider));
+
   @override
   void initState() {
     super.initState();
     _hubFlowAnchorYmd = todayYmdSeoul();
     _sectionPageController = PageController(initialPage: 0);
-    _deptPageController = PageController(initialPage: 0);
+    _deptPageIndex = _homeDeptPageForCurrentUser();
+    _deptPageController = PageController(initialPage: _deptPageIndex);
+    _deptPageController.addListener(_onDeptPageControllerTick);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _publishHubPeriod();
       _checkAndSyncPending();
       _consumePendingLaunch();
       _loadHomeFlowPrefs();
+      _syncHomeDeptProvider(_deptPageIndex);
     });
     _homeFlowResetSub = ref.listenManual<int>(homeHubFlowResetTickProvider, (
       previous,
@@ -1793,10 +1801,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _jumpSectionPage(0);
+        final homeDept = _homeDeptPageForCurrentUser();
         if (_deptPageController.hasClients) {
-          _deptPageController.jumpToPage(0);
+          _deptPageController.jumpToPage(homeDept);
         }
-        setState(() => _deptPageIndex = 0);
+        setState(() => _deptPageIndex = homeDept);
+        _syncHomeDeptProvider(homeDept);
       });
     });
     _pendingLaunchSub = ref.listenManual(
@@ -1822,6 +1832,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _hubAnchorSub?.close();
     _pendingLaunchSub?.close();
     _homeFlowResetSub?.close();
+    _deptPageController.removeListener(_onDeptPageControllerTick);
     _sectionPageController.dispose();
     _deptPageController.dispose();
     super.dispose();
@@ -1858,6 +1869,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     ref.invalidate(tempManagerOverridesProvider);
     ref.invalidate(hubPendingUncalledSummaryProvider);
     invalidateSupportWorkCaches(ref);
+    ref.invalidate(gosuHomeCountsProvider);
   }
 
   Future<void> _onRefresh() async {
@@ -2506,9 +2518,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
+  Color _deptAccent(ColorScheme scheme, int index) => switch (index) {
+    0 => scheme.primary,
+    1 => AppTokens.customerSupportAccent(scheme),
+    _ => AppTokens.gosuAccent(scheme),
+  };
+
   Widget _deptTabBar(ColorScheme scheme) {
-    const tabs = ['영업부', '고객지원팀'];
-    final supportAccent = AppTokens.customerSupportAccent(scheme);
+    const tabs = ['영업부', '고객지원팀', '자동문의고수'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
       child: Container(
@@ -2531,15 +2548,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: _deptPageIndex == i
-                          ? (i == 0 ? scheme.primary : supportAccent)
+                          ? _deptAccent(scheme, i)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(9),
                     ),
                     child: Text(
                       tabs[i],
                       textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w900,
                         height: 1.1,
                         color: _deptPageIndex == i
@@ -2573,16 +2592,46 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     );
   }
 
-  void _goDeptPage(int index) {
-    if (!_deptPageController.hasClients) {
-      setState(() => _deptPageIndex = index);
+  void _alignDeptPageView() {
+    if (!mounted || !_deptPageController.hasClients) {
+      _syncHomeDeptProvider(_deptPageIndex);
       return;
     }
+    final page = _deptPageController.page;
+    if (page != null && (page - _deptPageIndex).abs() > 0.5) {
+      _deptPageController.jumpToPage(_deptPageIndex);
+    }
+    _syncHomeDeptProvider(_deptPageIndex);
+  }
+
+  void _goDeptPage(int index) {
+    if (_deptPageIndex != index) {
+      setState(() => _deptPageIndex = index);
+    }
+    _syncHomeDeptProvider(index);
+    if (!_deptPageController.hasClients) return;
     _deptPageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void _onDeptPageControllerTick() {
+    if (!mounted || !_deptPageController.hasClients) return;
+    final page = _deptPageController.page;
+    if (page == null) return;
+    final index = page.round().clamp(0, 2);
+    _syncHomeDeptProvider(index);
+    if (_deptPageIndex != index && (page - index).abs() < 0.08) {
+      setState(() => _deptPageIndex = index);
+    }
+  }
+
+  void _syncHomeDeptProvider(int index) {
+    final clamped = index.clamp(0, 2);
+    final notifier = ref.read(homeDeptPageIndexProvider.notifier);
+    if (notifier.state != clamped) notifier.state = clamped;
   }
 
   Widget _buildPeriodFlowBlock({
@@ -2610,6 +2659,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     final scope = periodKey.period;
 
     return statsAsync.when(
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
       data: (s) {
         final reception = s.todayCount ?? 0;
         final incomplete = s.incompleteCount ?? 0;
@@ -2691,14 +2742,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           onTapUpdated: () => _openUpdatedPicker(scope),
           onLongPressUpdated: () =>
               _openUpdatedPicker(scope, forcePicker: true),
-          onTapUncalledRate: () => _openQualityPicker(
-            forUncalledRate: true,
-            scope: scope,
-          ),
-          onTapFirstResponse: () => _openQualityPicker(
-            forUncalledRate: false,
-            scope: scope,
-          ),
+          onTapUncalledRate: () =>
+              _openQualityPicker(forUncalledRate: true, scope: scope),
+          onTapFirstResponse: () =>
+              _openQualityPicker(forUncalledRate: false, scope: scope),
         );
 
         final salesExtras = Column(
@@ -2716,11 +2763,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                   );
                   if (mounted) await _loadHomeFlowPrefs();
                 },
-                icon: Icon(
-                  Icons.tune_rounded,
-                  size: 14,
-                  color: scheme.primary,
-                ),
+                icon: Icon(Icons.tune_rounded, size: 14, color: scheme.primary),
                 label: Text(
                   '미통화 안내 설정',
                   style: TextStyle(
@@ -2787,6 +2830,21 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           ],
         );
 
+        final gosuReceptionLabel = switch (_hubNavStep) {
+          HubNavStep.day => '금일 접수',
+          HubNavStep.week => '금주 접수',
+          HubNavStep.month => '금월 접수',
+        };
+        final gosuUpdatedLabel = switch (_hubNavStep) {
+          HubNavStep.day => '금일 업데이트',
+          HubNavStep.week => '금주 업데이트',
+          HubNavStep.month => '금월 업데이트',
+        };
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _alignDeptPageView();
+        });
+
         return Column(
           children: [
             _deptTabBar(scheme),
@@ -2797,50 +2855,65 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     controller: _deptPageController,
                     onPageChanged: (index) {
                       HapticFeedback.selectionClick();
-                      setState(() => _deptPageIndex = index);
+                      if (_deptPageIndex != index) {
+                        setState(() => _deptPageIndex = index);
+                      }
+                      _syncHomeDeptProvider(index);
                     },
                     children: [
                       _flowDeptPage(body: salesExtras),
                       _flowDeptPage(
                         body: _buildSupportPeriodStats(periodKey: periodKey),
                       ),
+                      _flowDeptPage(
+                        body: GosuHomePanel(
+                          embedded: true,
+                          periodKey: periodKey,
+                          receptionLabel: gosuReceptionLabel,
+                          updatedLabel: gosuUpdatedLabel,
+                        ),
+                      ),
                     ],
                   ),
-                  if (_deptPageIndex == 0)
+                  if (_deptPageIndex < 2)
                     Positioned(
                       right: 0,
                       top: 0,
                       bottom: 0,
                       child: Center(
                         child: IconButton(
-                          tooltip: '고객지원팀',
-                          onPressed: () => _goDeptPage(1),
+                          tooltip: _deptPageIndex == 0 ? '고객지원팀' : '자동문의고수',
+                          onPressed: () => _goDeptPage(_deptPageIndex + 1),
                           style: IconButton.styleFrom(
                             backgroundColor: scheme.surface.withValues(
                               alpha: 0.72,
                             ),
-                            foregroundColor: AppTokens.customerSupportAccent(
+                            foregroundColor: _deptAccent(
                               scheme,
+                              _deptPageIndex + 1,
                             ),
                           ),
                           icon: const Icon(Icons.chevron_right_rounded),
                         ),
                       ),
                     ),
-                  if (_deptPageIndex == 1)
+                  if (_deptPageIndex > 0)
                     Positioned(
                       left: 0,
                       top: 0,
                       bottom: 0,
                       child: Center(
                         child: IconButton(
-                          tooltip: '영업부',
-                          onPressed: () => _goDeptPage(0),
+                          tooltip: _deptPageIndex == 1 ? '영업부' : '고객지원팀',
+                          onPressed: () => _goDeptPage(_deptPageIndex - 1),
                           style: IconButton.styleFrom(
                             backgroundColor: scheme.surface.withValues(
                               alpha: 0.72,
                             ),
-                            foregroundColor: scheme.primary,
+                            foregroundColor: _deptAccent(
+                              scheme,
+                              _deptPageIndex - 1,
+                            ),
                           ),
                           icon: const Icon(Icons.chevron_left_rounded),
                         ),
@@ -2853,7 +2926,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        for (var i = 0; i < 2; i++)
+                        for (var i = 0; i < 3; i++)
                           Container(
                             width: _deptPageIndex == i ? 16 : 6,
                             height: 6,
@@ -2861,11 +2934,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(99),
                               color: _deptPageIndex == i
-                                  ? (i == 0
-                                        ? scheme.primary
-                                        : AppTokens.customerSupportAccent(
-                                            scheme,
-                                          ))
+                                  ? _deptAccent(scheme, i)
                                   : scheme.outlineVariant,
                             ),
                           ),
@@ -2936,10 +3005,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 onPageChanged: _onSectionPageChanged,
                 children: [
-                  _lazySectionPage(
-                    HomeHubSection.flow,
-                    _buildFlowBody(scheme),
-                  ),
+                  _lazySectionPage(HomeHubSection.flow, _buildFlowBody(scheme)),
                   _lazySectionPage(
                     HomeHubSection.calendar,
                     _buildCalendarBody(),
@@ -2996,11 +3062,7 @@ class _HomeOneLineAlert extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 18,
-                  color: color,
-                ),
+                Icon(icon, size: 18, color: color),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Align(

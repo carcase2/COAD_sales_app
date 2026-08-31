@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
@@ -14,12 +13,13 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_r
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_site_search_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
+import 'package:coad_customer_calls/features/customer_support/reception_create_host_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_branch_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_sites_map_screen.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
-import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -458,6 +458,15 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             onTap: () =>
                 openThenRefresh(() => _openStep(context, SupportFlowStep.tax)),
           ),
+          const SizedBox(height: 8),
+          SupportSectionCard(
+            title: '자동문의고수',
+            subtitle: '고수 문의 접수 · 팔로업',
+            icon: Icons.headset_mic_rounded,
+            onTap: () => openThenRefresh(
+              () => _openStepFuture(context, const GosuHubScreen()),
+            ),
+          ),
           const SizedBox(height: 16),
           Text(
             '그 외',
@@ -505,19 +514,10 @@ class CustomerSupportHubScreen extends ConsumerWidget {
   }
 
   Future<void> _openIntake(BuildContext context) async {
-    final kind = await showReceptionKindSheet(context);
-    if (kind == null || !context.mounted) return;
-    switch (kind) {
-      case ReceptionKind.afterSales:
-        await openSupportIntakeThenDetail(context);
-      case ReceptionKind.sales:
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            settings: const RouteSettings(name: kSalesCallCreateRouteName),
-            builder: (_) => const SalesCallCreateScreen(),
-          ),
-        );
-    }
+    await openReceptionCreateHost(
+      context,
+      initialKind: ReceptionKind.afterSales,
+    );
   }
 
   Future<void> _openStep(BuildContext context, SupportFlowStep step) {
