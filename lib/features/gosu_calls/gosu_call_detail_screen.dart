@@ -36,6 +36,9 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
   String? _assignedTo;
   List<String> _assignees = [];
 
+  List<String> get _assigneeChoices =>
+      gosuAssigneeChoices(departmentNames: _assignees);
+
   @override
   void initState() {
     super.initState();
@@ -319,25 +322,25 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                       ),
                   ],
                 ),
-                if (_assignees.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Text(
-                    '담당자',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final name in _assignees)
-                        FilterChip(
-                          label: Text(name),
-                          selected: _assignedTo == name,
-                          onSelected: (_) =>
-                              setState(() => _assignedTo = name),
+                const SizedBox(height: 8),
+                const Text(
+                  '담당자',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final name in _assigneeChoices)
+                      FilterChip(
+                        label: Text(name),
+                        selected: _assignedTo == name,
+                        onSelected: (selected) => setState(
+                          () => _assignedTo = selected ? name : null,
                         ),
-                    ],
-                  ),
-                ],
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _inquiryCtrl,

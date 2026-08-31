@@ -267,29 +267,6 @@ class GosuSalesCallsRepository {
         final name = (u['name'] ?? '').toString().trim();
         if (name.isNotEmpty) names.add(name);
       }
-
-      final memberships = await _client
-          .from('user_groups')
-          .select('user_id')
-          .inFilter('group_id', groupIds);
-      final memberIds = memberships
-          .whereType<Map>()
-          .map((e) => e['user_id']?.toString())
-          .whereType<String>()
-          .where((id) => id.isNotEmpty)
-          .toSet()
-          .toList();
-      if (memberIds.isNotEmpty) {
-        final byJoin = await _client
-            .from('users')
-            .select('name, is_active')
-            .inFilter('id', memberIds);
-        for (final u in byJoin.whereType<Map>()) {
-          if (u['is_active'] == false) continue;
-          final name = (u['name'] ?? '').toString().trim();
-          if (name.isNotEmpty) names.add(name);
-        }
-      }
       final list = names.toList()..sort((a, b) => a.compareTo(b));
       return list;
     } catch (_) {

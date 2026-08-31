@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:coad_customer_calls/core/constants/gosu_appsheet.dart';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
+import 'package:coad_customer_calls/core/utils/gosu_calls_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
@@ -77,16 +78,15 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
     });
   }
 
+  List<String> get _assigneeChoices =>
+      gosuAssigneeChoices(departmentNames: _assignees);
+
   Future<void> _loadAssignees() async {
     final names = await ref
         .read(gosuSalesCallsRepositoryProvider)
         .fetchAssignees();
     if (!mounted) return;
-    setState(() {
-      _assignees = names;
-      final me = ref.read(authControllerProvider)?.name.trim();
-      if (me != null && me.isNotEmpty) _assignedTo ??= me;
-    });
+    setState(() => _assignees = names);
   }
 
   @override
@@ -335,7 +335,7 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
             regionLabel: regionRow == null
                 ? null
                 : '${sido ?? ''}: ${regionName ?? ''}',
-            assignedTo: _assignedTo ?? user?.name,
+            assignedTo: _assignedTo,
             createdBy: user?.name ?? '시스템',
             images: _uploadedImageUrls,
             closeImmediately: _closeImmediately,
@@ -488,23 +488,34 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
               decoration: const InputDecoration(labelText: '지역 검색 · 선택'),
               onChanged: (v) => setState(() => _regionId = v),
             ),
-            if (_assignees.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text('담당자', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            const Text('담당자', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              '선택 사항',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            if (_assigneeChoices.isEmpty)
+              Text(
+                '자동문의고수 부서 담당자가 없습니다',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              )
+            else
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final name in _assignees)
+                  for (final name in _assigneeChoices)
                     FilterChip(
                       label: Text(name),
                       selected: _assignedTo == name,
-                      onSelected: (_) => setState(() => _assignedTo = name),
+                      onSelected: (selected) => setState(
+                        () => _assignedTo = selected ? name : null,
+                      ),
                     ),
                 ],
               ),
-            ],
             const SizedBox(height: 16),
             FormSectionHeader(
               step: 3,

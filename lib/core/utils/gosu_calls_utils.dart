@@ -52,6 +52,19 @@ bool isGosuCalendarScheduled(GosuSalesCall row) {
   return true;
 }
 
+/// 고수 접수 담당자 칩. 인트라넷과 같이 자동문의고수 부서만. 비워도 됨.
+List<String> gosuAssigneeChoices({
+  required Iterable<String> departmentNames,
+}) {
+  final names = <String>{};
+  for (final raw in departmentNames) {
+    final n = raw.trim();
+    if (n.isNotEmpty) names.add(n);
+  }
+  final list = names.toList()..sort((a, b) => a.compareTo(b));
+  return list;
+}
+
 String? validateGosuFollowUpForm({
   required String consultationContent,
   required String nextScheduledDate,

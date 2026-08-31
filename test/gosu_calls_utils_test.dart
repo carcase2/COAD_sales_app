@@ -72,6 +72,14 @@ void main() {
     expect(gosuWorkflowStatusLabel(row), kGosuProgressClosed);
   });
 
+  test('담당자 칩은 자동문의고수 부서만 두고 빈 값은 뺀다', () {
+    expect(
+      gosuAssigneeChoices(departmentNames: const ['정은실', '운영팀', '', '김민주']),
+      ['김민주', '운영팀', '정은실'],
+    );
+    expect(gosuAssigneeChoices(departmentNames: const ['  ']), isEmpty);
+  });
+
   test('다음 팔로업 차수', () {
     expect(getNextGosuFollowUpStage(0, 0), 1);
     expect(getNextGosuFollowUpStage(1, 1), 2);
