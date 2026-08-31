@@ -2126,6 +2126,7 @@ class NotificationService {
       final res = await Supabase.instance.client.functions.invoke(
         'notify-gosu-reception',
         body: {
+          'type': 'INSERT',
           'record': {
             'id': gosuId,
             'customer_name': customerName,

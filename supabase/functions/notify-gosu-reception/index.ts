@@ -3,6 +3,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
 
 const GOSU_GROUP = '자동문의고수'
+const ADMIN_GROUP = '관리자'
+
+type GroupEmbed = { name?: string | null; permissions?: unknown } | GroupEmbed[] | null
 
 type PushUser = {
   id: string
@@ -11,31 +14,78 @@ type PushUser = {
   fcm_token?: string | null
   is_active?: boolean | null
   group_id?: string | null
-  groups?: { name?: string | null } | null
+  permissions?: unknown
+  groups?: GroupEmbed
 }
 
-function isAdminUser(u: PushUser): boolean {
+function groupNameOf(u: PushUser): string {
+  const g = u.groups
+  if (Array.isArray(g) && g[0] && typeof g[0] === 'object') {
+    return (g[0].name ?? '').toString().trim()
+  }
+  if (g && typeof g === 'object') {
+    return ((g as { name?: string | null }).name ?? '').toString().trim()
+  }
+  return ''
+}
+
+function permissionList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((p) => p.toString().trim().toLowerCase()).filter((p) => p.length > 0)
+}
+
+function isAdminUser(
+  u: PushUser,
+  adminGroupIds: Set<string>,
+  adminMemberIds: Set<string>,
+): boolean {
+  const id = (u.id ?? '').toString().trim()
   const role = (u.role ?? '').toString().trim().toLowerCase()
-  const groupName = (u.groups?.name ?? '').toString().trim()
-  return role === 'admin' || groupName === '관리자'
-}
-
-function isGosuDeptUser(u: PushUser, gosuGroupIds: Set<string>): boolean {
-  const groupName = (u.groups?.name ?? '').toString().trim()
-  if (groupName === GOSU_GROUP) return true
+  const groupName = groupNameOf(u)
   const gid = (u.group_id ?? '').toString().trim()
-  return gid.length > 0 && gosuGroupIds.has(gid)
+  const perms = [
+    ...permissionList(u.permissions),
+    ...permissionList(
+      Array.isArray(u.groups)
+        ? u.groups[0]?.permissions
+        : u.groups && typeof u.groups === 'object'
+          ? (u.groups as { permissions?: unknown }).permissions
+          : [],
+    ),
+  ]
+  return (
+    role === 'admin' ||
+    groupName === ADMIN_GROUP ||
+    (gid.length > 0 && adminGroupIds.has(gid)) ||
+    adminMemberIds.has(id) ||
+    perms.includes('all') ||
+    perms.includes('admin')
+  )
 }
 
-async function loadGosuGroupIds(
+function isGosuDeptUser(
+  u: PushUser,
+  gosuGroupIds: Set<string>,
+  gosuMemberIds: Set<string>,
+): boolean {
+  const id = (u.id ?? '').toString().trim()
+  if (groupNameOf(u) === GOSU_GROUP) return true
+  const gid = (u.group_id ?? '').toString().trim()
+  return (
+    (gid.length > 0 && gosuGroupIds.has(gid)) || gosuMemberIds.has(id)
+  )
+}
+
+async function loadGroupIdsByName(
   supabaseAdmin: ReturnType<typeof createClient>,
+  name: string,
 ): Promise<Set<string>> {
   const { data, error } = await supabaseAdmin
     .from('groups')
     .select('id')
-    .eq('name', GOSU_GROUP)
+    .eq('name', name)
   if (error) {
-    console.error('Error loading gosu groups:', error)
+    console.error(`Error loading group ${name}:`, error)
     return new Set()
   }
   return new Set(
@@ -45,40 +95,71 @@ async function loadGosuGroupIds(
   )
 }
 
-async function loadGosuMemberUserIds(
+async function loadMemberUserIdsForGroupIds(
   supabaseAdmin: ReturnType<typeof createClient>,
-  gosuGroupIds: Set<string>,
+  groupIds: Set<string>,
 ): Promise<Set<string>> {
-  if (gosuGroupIds.size === 0) return new Set()
+  if (groupIds.size === 0) return new Set()
+  const ids = new Set<string>()
+  const groupIdList = Array.from(groupIds)
+
   try {
-    const { data, error } = await supabaseAdmin
+    const { data: memberships, error } = await supabaseAdmin
       .from('user_groups')
       .select('user_id')
-      .in('group_id', Array.from(gosuGroupIds))
+      .in('group_id', groupIdList)
     if (error) {
-      console.error('Error loading gosu user_groups:', error)
-      return new Set()
+      console.error('Error loading user_groups:', error)
+    } else {
+      for (const row of memberships ?? []) {
+        const userId = (row?.user_id ?? '').toString().trim()
+        if (userId) ids.add(userId)
+      }
     }
-    return new Set(
-      (data ?? [])
-        .map((r) => (r?.user_id ?? '').toString().trim())
-        .filter((id) => id.length > 0),
-    )
   } catch (e) {
     console.error('user_groups lookup failed:', e)
-    return new Set()
   }
+
+  try {
+    const { data: byPrimaryGroup, error } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .in('group_id', groupIdList)
+      .eq('is_active', true)
+    if (error) {
+      console.error('Error loading users by group_id:', error)
+    } else {
+      for (const row of byPrimaryGroup ?? []) {
+        const userId = (row?.id ?? '').toString().trim()
+        if (userId) ids.add(userId)
+      }
+    }
+  } catch (e) {
+    console.error('users group_id lookup failed:', e)
+  }
+
+  return ids
 }
 
 async function resolveGosuReceptionUsers(
   supabaseAdmin: ReturnType<typeof createClient>,
 ): Promise<PushUser[]> {
-  const gosuGroupIds = await loadGosuGroupIds(supabaseAdmin)
-  const memberIds = await loadGosuMemberUserIds(supabaseAdmin, gosuGroupIds)
+  const adminGroupIds = await loadGroupIdsByName(supabaseAdmin, ADMIN_GROUP)
+  const gosuGroupIds = await loadGroupIdsByName(supabaseAdmin, GOSU_GROUP)
+  const adminMemberIds = await loadMemberUserIdsForGroupIds(
+    supabaseAdmin,
+    adminGroupIds,
+  )
+  const gosuMemberIds = await loadMemberUserIdsForGroupIds(
+    supabaseAdmin,
+    gosuGroupIds,
+  )
 
   const { data: users, error } = await supabaseAdmin
     .from('users')
-    .select('id, name, role, fcm_token, is_active, group_id, groups(name)')
+    .select(
+      'id, name, role, permissions, fcm_token, is_active, group_id, groups(name, permissions)',
+    )
 
   if (error) throw error
 
@@ -89,7 +170,8 @@ async function resolveGosuReceptionUsers(
     if (!id) continue
     if (u.is_active === false) continue
     const allowed =
-      isAdminUser(u) || isGosuDeptUser(u, gosuGroupIds) || memberIds.has(id)
+      isAdminUser(u, adminGroupIds, adminMemberIds) ||
+      isGosuDeptUser(u, gosuGroupIds, gosuMemberIds)
     if (!allowed) continue
     byId.set(id, u)
   }
@@ -140,22 +222,51 @@ async function deactivateInvalidToken(
   }
 }
 
+async function releaseGosuPushDedup(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  gosuId: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin.from('gosu_reception_push_dedup').delete().eq('id', gosuId)
+  } catch (e) {
+    console.error('Failed to release gosu push dedup:', e)
+  }
+}
+
 serve(async (req) => {
+  let supabaseAdmin: ReturnType<typeof createClient> | null = null
+  let gosuId = ''
   try {
     const payload = await req.json()
+    const eventType = (payload?.type ?? 'INSERT').toString()
+    if (eventType !== 'INSERT') {
+      return new Response(JSON.stringify({ message: 'Only INSERT events are notified' }), {
+        status: 200,
+      })
+    }
     const record = (payload?.record ?? payload ?? {}) as Record<string, unknown>
-    const gosuId = (record.id ?? record.gosu_id ?? '').toString().trim()
+    gosuId = (record.id ?? record.gosu_id ?? '').toString().trim()
     if (!gosuId) {
       return new Response(JSON.stringify({ error: 'Missing gosu call id' }), { status: 400 })
     }
 
-    const supabaseAdmin = createClient(
+    supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
+    const { error: dedupError } = await supabaseAdmin
+      .from('gosu_reception_push_dedup')
+      .insert({ id: gosuId })
+    if (dedupError && (dedupError as { code?: string }).code === '23505') {
+      return new Response(JSON.stringify({ message: 'Already notified', id: gosuId }), {
+        status: 200,
+      })
+    }
+
     const users = await resolveGosuReceptionUsers(supabaseAdmin)
     if (users.length === 0) {
+      await releaseGosuPushDedup(supabaseAdmin, gosuId)
       return new Response(JSON.stringify({ message: 'No gosu/admin users found' }), {
         status: 200,
       })
@@ -163,6 +274,7 @@ serve(async (req) => {
 
     const tokens = await resolvePushTokens(supabaseAdmin, users)
     if (tokens.length === 0) {
+      await releaseGosuPushDedup(supabaseAdmin, gosuId)
       return new Response(
         JSON.stringify({
           message: 'No FCM tokens for gosu/admin recipients',
@@ -248,7 +360,7 @@ serve(async (req) => {
           const resText = await res.text()
           console.log(`FCM Response (Status: ${res.status}):`, resText)
           if (res.status === 404 && resText.includes('UNREGISTERED')) {
-            await deactivateInvalidToken(supabaseAdmin, token)
+            await deactivateInvalidToken(supabaseAdmin!, token)
           }
           return { status: res.status, body: resText }
         } catch (e: unknown) {
@@ -258,16 +370,25 @@ serve(async (req) => {
       }),
     )
 
+    const successCount = results.filter((r) => r.status === 200).length
+    if (successCount === 0) {
+      await releaseGosuPushDedup(supabaseAdmin, gosuId)
+    }
+
     return new Response(
       JSON.stringify({
-        success: true,
+        success: successCount > 0,
         recipientCount: tokens.length,
+        successCount,
         recipientUsers: users.map((u) => u.name),
         results,
       }),
       { headers: { 'Content-Type': 'application/json' }, status: 200 },
     )
   } catch (error: unknown) {
+    if (supabaseAdmin && gosuId) {
+      await releaseGosuPushDedup(supabaseAdmin, gosuId)
+    }
     const msg = error instanceof Error ? error.message : String(error)
     console.error('Error:', msg)
     return new Response(JSON.stringify({ error: msg }), {
