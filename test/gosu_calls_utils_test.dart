@@ -37,11 +37,18 @@ AppUser _user({
 );
 
 void main() {
-  test('접수만 된 건은 팔로업중', () {
+  test('접수만 된 건도 종료 전이면 팔로업중', () {
     final row = _call();
+    expect(isGosuFollowUpOpen(row), isTrue);
     expect(isGosuAwaitingFirstFollowUp(row), isTrue);
     expect(isGosuActiveFollowUp(row), isFalse);
     expect(gosuWorkflowStatusLabel(row), kGosuStatusReceived);
+  });
+
+  test('1차 이후 미종료도 팔로업중(종료 전)이다', () {
+    final row = _call(callStage: 1);
+    expect(isGosuFollowUpOpen(row), isTrue);
+    expect(isGosuActiveFollowUp(row), isTrue);
   });
 
   test('1차 이후 미종료는 기존진행중', () {
@@ -68,6 +75,7 @@ void main() {
       nextScheduledDate: '2026-08-31',
     );
     expect(isGosuClosed(row), isTrue);
+    expect(isGosuFollowUpOpen(row), isFalse);
     expect(isGosuCalendarScheduled(row), isFalse);
     expect(gosuWorkflowStatusLabel(row), kGosuProgressClosed);
   });

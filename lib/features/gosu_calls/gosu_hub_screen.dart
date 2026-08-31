@@ -126,7 +126,7 @@ class GosuHomePanel extends ConsumerWidget {
             Expanded(
               child: SupportHubTile(
                 title: '팔로업중',
-                subtitle: '1차 상담 전',
+                subtitle: '종료 전',
                 icon: Icons.phone_callback_rounded,
                 count: counts.awaitingFollowUp,
                 alert: counts.awaitingFollowUp > 0,

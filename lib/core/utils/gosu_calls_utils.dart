@@ -31,9 +31,12 @@ String gosuWorkflowStatusLabel(GosuSalesCall row) {
 bool isGosuActiveFollowUp(GosuSalesCall row) =>
     isGosuOpen(row) && isGosuFollowUpStarted(row);
 
-/// 접수만 되고 1차 팔로업 전 — 팔로업중.
+/// 접수만 되고 1차 팔로업 전 — 목록 필터 '접수'.
 bool isGosuAwaitingFirstFollowUp(GosuSalesCall row) =>
     isGosuOpen(row) && !isGosuFollowUpStarted(row);
+
+/// 종료 전 전체 — 홈 카드 '팔로업중'.
+bool isGosuFollowUpOpen(GosuSalesCall row) => isGosuOpen(row);
 
 int getNextGosuFollowUpStage(int historyLength, int? currentStage) {
   final stage = currentStage ?? 0;

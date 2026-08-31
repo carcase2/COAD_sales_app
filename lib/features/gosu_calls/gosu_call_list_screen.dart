@@ -59,12 +59,21 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
     _ => false,
   };
 
-  bool get _showClosedFilter => switch (widget.mode) {
+  bool get _showInProgressFilter => switch (widget.mode) {
     GosuListMode.todayReception ||
     GosuListMode.dateRange ||
     GosuListMode.todayUpdated ||
     GosuListMode.updatedRange ||
+    GosuListMode.awaitingFollowUp ||
     GosuListMode.activeFollowUp => true,
+    _ => false,
+  };
+
+  bool get _showClosedFilter => switch (widget.mode) {
+    GosuListMode.todayReception ||
+    GosuListMode.dateRange ||
+    GosuListMode.todayUpdated ||
+    GosuListMode.updatedRange => true,
     _ => false,
   };
 
@@ -73,6 +82,7 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
     super.initState();
     _workflowFilter = switch (widget.mode) {
       GosuListMode.activeFollowUp => GosuWorkflowFilter.inProgress,
+      GosuListMode.awaitingFollowUp => GosuWorkflowFilter.all,
       _ when _hasWorkflowFilters => GosuWorkflowFilter.received,
       _ => GosuWorkflowFilter.all,
     };
@@ -307,13 +317,15 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
         const Color(0xFF0284C7),
       ),
     ];
-    if (_showClosedFilter) {
+    if (_showInProgressFilter) {
       chips.add((
         GosuWorkflowFilter.inProgress,
         '진행중',
         _activeRows.length,
         const Color(0xFFD97706),
       ));
+    }
+    if (_showClosedFilter) {
       chips.add((
         GosuWorkflowFilter.closed,
         '종료',

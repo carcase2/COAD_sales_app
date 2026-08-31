@@ -67,7 +67,7 @@ class GosuSalesCallsRepository {
     return q.or('follow_up.is.null,follow_up.neq.$kGosuProgressClosed');
   }
 
-  /// coad_home과 동일: 미종료 건을 가져와 팔로업 시작 여부로 나눈다.
+  /// 미종료 건. 팔로업중 = 종료 전 전체, 기존진행중 = 1차 이후.
   Future<List<GosuSalesCall>> _fetchOpenCalls({int limit = 4000}) async {
     final res = await _client
         .from('gosu_sales_calls')
@@ -103,7 +103,7 @@ class GosuSalesCallsRepository {
       return GosuHomeCounts(
         periodReception: reception,
         periodUpdated: updated,
-        awaitingFollowUp: open.where(isGosuAwaitingFirstFollowUp).length,
+        awaitingFollowUp: open.where(isGosuFollowUpOpen).length,
         activeFollowUp: open.where(isGosuActiveFollowUp).length,
         scheduled: open.where(isGosuCalendarScheduled).length,
       );
@@ -147,7 +147,7 @@ class GosuSalesCallsRepository {
         case GosuListMode.activeFollowUp:
           final open = await _fetchOpenCalls();
           final all = mode == GosuListMode.awaitingFollowUp
-              ? open.where(isGosuAwaitingFirstFollowUp).toList()
+              ? open.where(isGosuFollowUpOpen).toList()
               : open.where(isGosuActiveFollowUp).toList();
           final slice = all.skip(offset).take(pageSize).toList();
           return GosuListPage(
