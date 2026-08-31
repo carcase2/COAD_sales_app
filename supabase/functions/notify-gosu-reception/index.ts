@@ -14,8 +14,28 @@ type PushUser = {
   fcm_token?: string | null
   is_active?: boolean | null
   group_id?: string | null
-  permissions?: unknown
   groups?: GroupEmbed
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object') {
+    const o = error as {
+      message?: unknown
+      code?: unknown
+      details?: unknown
+      hint?: unknown
+    }
+    const parts = [o.code, o.message, o.details, o.hint]
+      .map((v) => (v == null ? '' : v.toString().trim()))
+      .filter((s) => s.length > 0)
+    if (parts.length > 0) return parts.join(' ')
+  }
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
 }
 
 function groupNameOf(u: PushUser): string {
@@ -34,46 +54,30 @@ function permissionList(raw: unknown): string[] {
   return raw.map((p) => p.toString().trim().toLowerCase()).filter((p) => p.length > 0)
 }
 
-function isAdminUser(
-  u: PushUser,
-  adminGroupIds: Set<string>,
-  adminMemberIds: Set<string>,
-): boolean {
-  const id = (u.id ?? '').toString().trim()
+function isAdminUser(u: PushUser, adminGroupIds: Set<string>): boolean {
   const role = (u.role ?? '').toString().trim().toLowerCase()
   const groupName = groupNameOf(u)
   const gid = (u.group_id ?? '').toString().trim()
-  const perms = [
-    ...permissionList(u.permissions),
-    ...permissionList(
-      Array.isArray(u.groups)
-        ? u.groups[0]?.permissions
-        : u.groups && typeof u.groups === 'object'
-          ? (u.groups as { permissions?: unknown }).permissions
-          : [],
-    ),
-  ]
+  const perms = permissionList(
+    Array.isArray(u.groups)
+      ? u.groups[0]?.permissions
+      : u.groups && typeof u.groups === 'object'
+        ? (u.groups as { permissions?: unknown }).permissions
+        : [],
+  )
   return (
     role === 'admin' ||
     groupName === ADMIN_GROUP ||
     (gid.length > 0 && adminGroupIds.has(gid)) ||
-    adminMemberIds.has(id) ||
     perms.includes('all') ||
     perms.includes('admin')
   )
 }
 
-function isGosuDeptUser(
-  u: PushUser,
-  gosuGroupIds: Set<string>,
-  gosuMemberIds: Set<string>,
-): boolean {
-  const id = (u.id ?? '').toString().trim()
+function isGosuDeptUser(u: PushUser, gosuGroupIds: Set<string>): boolean {
   if (groupNameOf(u) === GOSU_GROUP) return true
   const gid = (u.group_id ?? '').toString().trim()
-  return (
-    (gid.length > 0 && gosuGroupIds.has(gid)) || gosuMemberIds.has(id)
-  )
+  return gid.length > 0 && gosuGroupIds.has(gid)
 }
 
 async function loadGroupIdsByName(
@@ -95,73 +99,20 @@ async function loadGroupIdsByName(
   )
 }
 
-async function loadMemberUserIdsForGroupIds(
-  supabaseAdmin: ReturnType<typeof createClient>,
-  groupIds: Set<string>,
-): Promise<Set<string>> {
-  if (groupIds.size === 0) return new Set()
-  const ids = new Set<string>()
-  const groupIdList = Array.from(groupIds)
-
-  try {
-    const { data: memberships, error } = await supabaseAdmin
-      .from('user_groups')
-      .select('user_id')
-      .in('group_id', groupIdList)
-    if (error) {
-      console.error('Error loading user_groups:', error)
-    } else {
-      for (const row of memberships ?? []) {
-        const userId = (row?.user_id ?? '').toString().trim()
-        if (userId) ids.add(userId)
-      }
-    }
-  } catch (e) {
-    console.error('user_groups lookup failed:', e)
-  }
-
-  try {
-    const { data: byPrimaryGroup, error } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .in('group_id', groupIdList)
-      .eq('is_active', true)
-    if (error) {
-      console.error('Error loading users by group_id:', error)
-    } else {
-      for (const row of byPrimaryGroup ?? []) {
-        const userId = (row?.id ?? '').toString().trim()
-        if (userId) ids.add(userId)
-      }
-    }
-  } catch (e) {
-    console.error('users group_id lookup failed:', e)
-  }
-
-  return ids
-}
-
 async function resolveGosuReceptionUsers(
   supabaseAdmin: ReturnType<typeof createClient>,
 ): Promise<PushUser[]> {
   const adminGroupIds = await loadGroupIdsByName(supabaseAdmin, ADMIN_GROUP)
   const gosuGroupIds = await loadGroupIdsByName(supabaseAdmin, GOSU_GROUP)
-  const adminMemberIds = await loadMemberUserIdsForGroupIds(
-    supabaseAdmin,
-    adminGroupIds,
-  )
-  const gosuMemberIds = await loadMemberUserIdsForGroupIds(
-    supabaseAdmin,
-    gosuGroupIds,
-  )
 
+  // users.permissions 컬럼은 없음. 권한은 groups.permissions / users.role / group_id 로 판별.
   const { data: users, error } = await supabaseAdmin
     .from('users')
     .select(
-      'id, name, role, permissions, fcm_token, is_active, group_id, groups(name, permissions)',
+      'id, name, role, fcm_token, is_active, group_id, groups(name, permissions)',
     )
 
-  if (error) throw error
+  if (error) throw new Error(`users select failed: ${errorMessage(error)}`)
 
   const byId = new Map<string, PushUser>()
   for (const raw of users ?? []) {
@@ -170,8 +121,7 @@ async function resolveGosuReceptionUsers(
     if (!id) continue
     if (u.is_active === false) continue
     const allowed =
-      isAdminUser(u, adminGroupIds, adminMemberIds) ||
-      isGosuDeptUser(u, gosuGroupIds, gosuMemberIds)
+      isAdminUser(u, adminGroupIds) || isGosuDeptUser(u, gosuGroupIds)
     if (!allowed) continue
     byId.set(id, u)
   }
@@ -389,7 +339,7 @@ serve(async (req) => {
     if (supabaseAdmin && gosuId) {
       await releaseGosuPushDedup(supabaseAdmin, gosuId)
     }
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = errorMessage(error)
     console.error('Error:', msg)
     return new Response(JSON.stringify({ error: msg }), {
       headers: { 'Content-Type': 'application/json' },
