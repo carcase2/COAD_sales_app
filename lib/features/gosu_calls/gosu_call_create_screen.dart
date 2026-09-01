@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:coad_customer_calls/core/constants/gosu_appsheet.dart';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
+import 'package:coad_customer_calls/core/utils/business_card_image.dart';
 import 'package:coad_customer_calls/core/utils/gosu_calls_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
@@ -11,7 +12,9 @@ import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
+import 'package:coad_customer_calls/features/business_cards/business_card_crop_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_choice_chip.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
@@ -26,6 +29,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class GosuCallCreateScreen extends ConsumerStatefulWidget {
@@ -57,6 +61,7 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
   bool _closeImmediately = false;
   final List<String> _uploadedImageUrls = [];
   bool _uploadBusy = false;
+  bool _aiBusy = false;
   int _uploadTotal = 0;
   int _uploadCurrent = 0;
   Timer? _phoneLookupDebounce;
@@ -191,8 +196,134 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
     return ok == true;
   }
 
+  Future<List<String>> _pathsFromPickedFiles(List<PlatformFile> files) async {
+    final temp = await getTemporaryDirectory();
+    final paths = <String>[];
+    for (final file in files) {
+      final existing = file.path;
+      if (existing != null &&
+          existing.isNotEmpty &&
+          isAllowedPickerPath(existing)) {
+        paths.add(existing);
+        continue;
+      }
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) continue;
+      final name = file.name.trim().isEmpty
+          ? 'file_${DateTime.now().millisecondsSinceEpoch}'
+          : file.name.trim();
+      if (!isAllowedPickerPath(name)) continue;
+      final out = File(
+        p.join(temp.path, '${DateTime.now().millisecondsSinceEpoch}_$name'),
+      );
+      await out.writeAsBytes(bytes, flush: true);
+      paths.add(out.path);
+    }
+    return paths;
+  }
+
+  Future<String?> _pickCardImage(SalesCallImageSource source) async {
+    if (source == SalesCallImageSource.camera) {
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 70,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+      return shot?.path;
+    }
+    if (source == SalesCallImageSource.gallery) {
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+      return shot?.path;
+    }
+    final result = await FilePicker.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return null;
+    final paths = await _pathsFromPickedFiles(result.files);
+    return paths.isEmpty ? null : paths.first;
+  }
+
+  Future<void> _scanBusinessCard() async {
+    final source = await showSalesCallImageSourceSheet(context, title: '명함 인식');
+    if (source == null) return;
+    var path = await _pickCardImage(source);
+    if (path == null || !mounted) return;
+    final cropped = await cropBusinessCardImage(context, imagePath: path);
+    if (cropped == null || !mounted) return;
+    path = cropped;
+
+    setState(() => _aiBusy = true);
+    try {
+      final prepared = await prepareBusinessCardImage(path);
+      path = prepared.path;
+      final aiResult = await ref
+          .read(aiExtractorServiceProvider)
+          .extractBusinessCard(prepared.bytes, filePath: prepared.path);
+      if (!mounted) return;
+      setState(() {
+        if (aiResult.name.isNotEmpty && aiResult.company.isNotEmpty) {
+          _nameCtrl.text = '${aiResult.name} (${aiResult.company})';
+        } else if (aiResult.company.isNotEmpty) {
+          _nameCtrl.text = aiResult.company;
+        } else if (aiResult.name.isNotEmpty) {
+          _nameCtrl.text = aiResult.name;
+        }
+        if (aiResult.phone.isNotEmpty) {
+          _onPhoneChanged(formatKoreanPhoneHyphenated(aiResult.phone));
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('명함 정보가 자동으로 입력되었습니다.')));
+      }
+      setState(() {
+        _uploadBusy = true;
+        _uploadTotal = 1;
+        _uploadCurrent = 0;
+      });
+      final url = await ref
+          .read(b2UploadRepositoryProvider)
+          .uploadGosuCallFile(
+            filePath: path,
+            customerPhone: _phoneCtrl.text,
+          );
+      if (!mounted) return;
+      setState(() {
+        _uploadedImageUrls.add(url);
+        _uploadCurrent = 1;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('명함 인식 실패: ${koreanErrorMessage(e)}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _aiBusy = false;
+          _uploadBusy = false;
+          _uploadTotal = 0;
+          _uploadCurrent = 0;
+        });
+      }
+    }
+  }
+
   Future<void> _pickAndUpload() async {
-    final source = await showSalesCallImageSourceSheet(context);
+    final source = await showSalesCallImageSourceSheet(
+      context,
+      includeFiles: true,
+    );
     if (source == null) return;
     List<String> paths = [];
     if (source == SalesCallImageSource.camera) {
@@ -202,6 +333,10 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
       );
       if (shot == null) return;
       paths = [shot.path];
+    } else if (source == SalesCallImageSource.gallery) {
+      final shots = await ImagePicker().pickMultiImage(imageQuality: 85);
+      if (shots.isEmpty) return;
+      paths = shots.map((e) => e.path).toList();
     } else {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -215,13 +350,10 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
           'pdf',
         ],
         allowMultiple: true,
+        withData: true,
       );
       if (result == null || result.files.isEmpty) return;
-      paths = result.files
-          .map((f) => f.path)
-          .whereType<String>()
-          .where((path) => isAllowedPickerPath(path))
-          .toList();
+      paths = await _pathsFromPickedFiles(result.files);
     }
     if (paths.isEmpty) return;
     if (paths.length == 1 && isImageFile(paths.first)) {
@@ -400,9 +532,10 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
               runSpacing: 8,
               children: [
                 for (final c in kGosuProductCategories)
-                  FilterChip(
-                    label: Text(c.name),
+                  GosuChoiceChip(
+                    label: c.name,
                     selected: _productId == c.id,
+                    selectedColor: gosuChipColorFromHex(c.colorHex),
                     onSelected: (_) => setState(() => _productId = c.id),
                   ),
               ],
@@ -415,8 +548,8 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
               runSpacing: 8,
               children: [
                 for (final m in kGosuInquiryMethods)
-                  FilterChip(
-                    label: Text(m.name),
+                  GosuChoiceChip(
+                    label: m.name,
                     selected: _methodId == m.id,
                     onSelected: (_) => setState(() => _methodId = m.id),
                   ),
@@ -428,7 +561,20 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
               title: '고객',
               icon: Icons.person_outline_rounded,
             ),
-            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _aiBusy || _uploadBusy ? null : _scanBusinessCard,
+                icon: _aiBusy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.contact_page_outlined, size: 18),
+                label: const Text('명함', style: TextStyle(fontSize: 13)),
+              ),
+            ),
             TextFormField(
               controller: _nameCtrl,
               decoration: const InputDecoration(labelText: '고객명/상호명'),
@@ -507,8 +653,8 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
                 runSpacing: 8,
                 children: [
                   for (final name in _assigneeChoices)
-                    FilterChip(
-                      label: Text(name),
+                    GosuChoiceChip(
+                      label: name,
                       selected: _assignedTo == name,
                       onSelected: (selected) => setState(
                         () => _assignedTo = selected ? name : null,
@@ -554,6 +700,8 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
               ),
               subtitle: const Text('단순 안내로 바로 종결'),
               value: _closeImmediately,
+              activeThumbColor: Colors.white,
+              activeTrackColor: accent,
               onChanged: (v) => setState(() => _closeImmediately = v),
             ),
             if (_closeImmediately)

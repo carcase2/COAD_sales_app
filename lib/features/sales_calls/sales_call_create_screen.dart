@@ -490,11 +490,13 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
       );
       path = shot?.path;
     } else {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
+      final shot = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 1600,
+        maxHeight: 1600,
       );
-      path = result?.files.first.path;
+      path = shot?.path;
     }
     if (path == null || !mounted) return;
     final cropped = await cropBusinessCardImage(context, imagePath: path);

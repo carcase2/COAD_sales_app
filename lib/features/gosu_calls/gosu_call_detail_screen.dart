@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/core/utils/gosu_calls_utils.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_choice_chip.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_follow_up_sheet.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -298,9 +299,10 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                   spacing: 8,
                   children: [
                     for (final c in kGosuProductCategories)
-                      FilterChip(
-                        label: Text(c.name),
+                      GosuChoiceChip(
+                        label: c.name,
                         selected: _categoryName == c.name,
+                        selectedColor: gosuChipColorFromHex(c.colorHex),
                         onSelected: (_) =>
                             setState(() => _categoryName = c.name),
                       ),
@@ -315,8 +317,8 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                   spacing: 8,
                   children: [
                     for (final m in kGosuInquiryMethods)
-                      FilterChip(
-                        label: Text(m.name),
+                      GosuChoiceChip(
+                        label: m.name,
                         selected: _methodName == m.name,
                         onSelected: (_) => setState(() => _methodName = m.name),
                       ),
@@ -332,8 +334,8 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                   spacing: 8,
                   children: [
                     for (final name in _assigneeChoices)
-                      FilterChip(
-                        label: Text(name),
+                      GosuChoiceChip(
+                        label: name,
                         selected: _assignedTo == name,
                         onSelected: (selected) => setState(
                           () => _assignedTo = selected ? name : null,
