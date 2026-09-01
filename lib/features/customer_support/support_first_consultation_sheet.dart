@@ -4,6 +4,8 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_date_picker.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -176,6 +178,20 @@ class _SupportFirstConsultationSheetState
                   ? '${widget.log.customerName} · 다시 전화 왔으면 방문일을 잡고, 그날 방문합니다'
                   : '${widget.log.customerName} · 답이 왔으면 마무리·정식 견적서·방문을 고릅니다',
               style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            SupportUnitPriceOpenTile(
+              subtitle: '상담 중 품명 · 금액 검색. 고르면 상담 내용에 넣습니다',
+              insertLabel: '상담에 넣기',
+              onInsert: (item) {
+                final line = supportUnitPriceInsertLine(item);
+                final cur = _ctrl.text.trim();
+                _ctrl.text = cur.isEmpty ? line : '$cur\n$line';
+                _ctrl.selection = TextSelection.collapsed(
+                  offset: _ctrl.text.length,
+                );
+                setState(() {});
+              },
             ),
             const SizedBox(height: 12),
             Text(

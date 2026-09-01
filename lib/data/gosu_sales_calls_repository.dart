@@ -16,6 +16,7 @@ enum GosuListMode {
   dateRange,
   updatedRange,
   followRange,
+  all,
 }
 
 class GosuHomeCounts {
@@ -24,6 +25,8 @@ class GosuHomeCounts {
     required this.periodUpdated,
     required this.awaitingFollowUp,
     required this.activeFollowUp,
+    required this.periodFollow,
+    required this.closedCount,
     required this.scheduled,
   });
 
@@ -31,13 +34,19 @@ class GosuHomeCounts {
   final int periodUpdated;
   final int awaitingFollowUp;
   final int activeFollowUp;
+  final int periodFollow;
+  final int closedCount;
   final int scheduled;
+
+  int get allCount => awaitingFollowUp + closedCount;
 
   static const empty = GosuHomeCounts(
     periodReception: 0,
     periodUpdated: 0,
     awaitingFollowUp: 0,
     activeFollowUp: 0,
+    periodFollow: 0,
+    closedCount: 0,
     scheduled: 0,
   );
 }
@@ -100,11 +109,22 @@ class GosuSalesCallsRepository {
           .gte('updated_at', startIso)
           .lt('updated_at', endExclusiveIso);
       final open = await _fetchOpenCalls();
+      final closed = await _countQuery().eq('follow_up', kGosuProgressClosed);
       return GosuHomeCounts(
         periodReception: reception,
         periodUpdated: updated,
         awaitingFollowUp: open.where(isGosuFollowUpOpen).length,
         activeFollowUp: open.where(isGosuActiveFollowUp).length,
+        periodFollow: open
+            .where(
+              (r) => isGosuFollowDueInRange(
+                r,
+                fromYmd: fromYmd,
+                toYmdInclusive: toYmdInclusive,
+              ),
+            )
+            .length,
+        closedCount: closed,
         scheduled: open.where(isGosuCalendarScheduled).length,
       );
     } catch (e) {
@@ -125,7 +145,8 @@ class GosuSalesCallsRepository {
           GosuListMode.todayReception ||
           GosuListMode.dateRange ||
           GosuListMode.todayUpdated ||
-          GosuListMode.updatedRange => 1000,
+          GosuListMode.updatedRange ||
+          GosuListMode.all => 1000,
           _ => listPageSize,
         };
     try {
@@ -154,6 +175,8 @@ class GosuSalesCallsRepository {
             items: slice,
             hasMore: offset + slice.length < all.length,
           );
+        case GosuListMode.all:
+          break;
         case GosuListMode.closed:
           query = query.eq('follow_up', kGosuProgressClosed);
         case GosuListMode.scheduled:

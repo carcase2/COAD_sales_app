@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/data/business_card_repository.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_fill_sheet.dart';
 import 'package:coad_customer_calls/models/business_card.dart';
@@ -11,6 +13,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_f
 import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_export.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_photo.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -684,11 +687,18 @@ class _SupportQuoteLineSheetState
   }
 
   Future<void> _pickFromPriceList() async {
-    final prices = SupportUnitPriceStore(
-      ref.read(appDependenciesProvider).prefs,
-    ).load();
-    if (prices.isEmpty) {
+    List<SupportUnitPriceItem> prices;
+    try {
+      prices = await ref.read(supportUnitPriceRepositoryProvider).list();
+    } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+      return;
+    }
+    if (!mounted) return;
+    if (prices.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('A/S 단가표에 품목이 없습니다. 먼저 단가를 입력해 주세요.')),
       );
@@ -725,12 +735,23 @@ class _SupportQuoteLineSheetState
                       itemBuilder: (context, i) {
                         final item = rows[i];
                         return ListTile(
-                          title: Text(item.name),
-                          subtitle: Text(
-                            [
-                              if (item.spec.trim().isNotEmpty) item.spec.trim(),
+                          leading: SupportUnitPricePhoto(
+                            url: item.primaryImageUrl,
+                            width: 48,
+                            height: 48,
+                          ),
+                          title: SearchHighlightText(
+                            text: item.name,
+                            query: q,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: SearchHighlightText(
+                            text: [
+                              if (supportUnitPriceSubtitle(item).isNotEmpty)
+                                supportUnitPriceSubtitle(item),
                               if (item.price != null) '${item.price}원',
                             ].join(' · '),
+                            query: q,
                           ),
                           onTap: () => Navigator.pop(ctx, item),
                         );

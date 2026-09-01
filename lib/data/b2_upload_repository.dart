@@ -122,6 +122,22 @@ class B2UploadRepository {
     return _putPublicObject(filePath: filePath, objectPath: objectPath);
   }
 
+  /// A/S 단가표 사진. 경로: as_unit_prices/품목ID/날짜_타임스탬프_파일명
+  Future<String> uploadAsUnitPriceFile({
+    required String filePath,
+    required String itemId,
+  }) async {
+    final now = DateTime.now();
+    final dateStr = DateFormat('yyyyMMdd').format(now);
+    final fileName = p.basename(filePath);
+    final timestamp = now.millisecondsSinceEpoch;
+    final safeId = itemId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
+    final folder = safeId.isEmpty ? 'unknown' : safeId;
+    final objectPath =
+        'as_unit_prices/$folder/${dateStr}_${timestamp}_$fileName';
+    return _putPublicObject(filePath: filePath, objectPath: objectPath);
+  }
+
   /// 자동문의고수 첨부. 경로: gosu_sales_calls/연락처/날짜_타임스탬프_파일명
   Future<String> uploadGosuCallFile({
     required String filePath,

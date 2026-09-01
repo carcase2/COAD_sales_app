@@ -35,7 +35,7 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 SupportSectionCard(
                   title: 'A. 단가표',
-                  subtitle: 'A/S 견적단가 입력 · 검색 (표준단가 아님)',
+                  subtitle: '부품 · 인건비 검색',
                   icon: Icons.grid_on_rounded,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(

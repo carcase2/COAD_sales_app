@@ -5,8 +5,10 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_branch_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
@@ -2325,6 +2327,28 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       invalidateSupportWorkCaches(ref);
     }
 
+    Future<void> openFeedbackWaitBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '피드백 대기 지사 선택',
+        subtitle: '안내 후 고객 연락을 기다리는 건',
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .listByLastConsultOutcome(SupportConsultOutcome.feedbackWait),
+      );
+      if (!mounted || selected == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportReceptionListScreen(
+            title: '피드백 대기',
+            consultOutcome: SupportConsultOutcome.feedbackWait,
+            initialBranch: selected,
+          ),
+        ),
+      );
+      invalidateSupportWorkCaches(ref);
+    }
+
     Future<void> openAllIncompleteBranchPicker() async {
       HapticFeedback.selectionClick();
       final selected = await _pickSupportBranchForLogs(
@@ -2373,24 +2397,52 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       }
     }
 
-    return HomeSupportMiniStatsWidget(
-      receptionLabel: receptionLabel,
-      pendingLabel: pendingLabel,
-      visitLabel: visitLabel,
-      updatedLabel: updatedLabel,
-      reception: stats.reception,
-      pending: stats.pending,
-      visits: stats.visits,
-      updated: stats.updated,
-      onTapReception: () => unawaited(openReceptionBranchPicker()),
-      onTapPending: () => unawaited(openPendingBranchPicker()),
-      onTapVisit: () => unawaited(openVisitBranchPicker()),
-      onTapUpdated: () => unawaited(openUpdatedBranchPicker()),
-      allPending: allPending,
-      allIncomplete: desk.incomplete,
-      onTapAllPending: () => unawaited(openAllPendingBranchPicker()),
-      onTapAllIncomplete: () => unawaited(openAllIncompleteBranchPicker()),
-      headerAlert: headerAlert,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        HomeSupportMiniStatsWidget(
+          receptionLabel: receptionLabel,
+          pendingLabel: pendingLabel,
+          visitLabel: visitLabel,
+          updatedLabel: updatedLabel,
+          reception: stats.reception,
+          pending: stats.pending,
+          visits: stats.visits,
+          updated: stats.updated,
+          onTapReception: () => unawaited(openReceptionBranchPicker()),
+          onTapPending: () => unawaited(openPendingBranchPicker()),
+          onTapVisit: () => unawaited(openVisitBranchPicker()),
+          onTapUpdated: () => unawaited(openUpdatedBranchPicker()),
+          allPending: allPending,
+          allIncomplete: desk.incomplete,
+          onTapAllPending: () => unawaited(openAllPendingBranchPicker()),
+          onTapAllIncomplete: () => unawaited(openAllIncompleteBranchPicker()),
+          headerAlert: headerAlert,
+        ),
+        const SizedBox(height: 10),
+        SupportSectionCard(
+          title: '피드백 대기',
+          subtitle: '안내 후 고객 연락을 기다리는 건',
+          icon: Icons.phonelink_ring_rounded,
+          badge: desk.feedbackWait > 0 ? '${desk.feedbackWait}' : null,
+          onTap: () => unawaited(openFeedbackWaitBranchPicker()),
+        ),
+        const SizedBox(height: 8),
+        SupportSectionCard(
+          title: 'A/S 단가표',
+          subtitle: '부품 · 인건비 검색 · 수정 이력',
+          icon: Icons.grid_on_rounded,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SupportUnitPriceScreen(),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -2840,6 +2892,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           HubNavStep.week => '금주 업데이트',
           HubNavStep.month => '금월 업데이트',
         };
+        final gosuFollowLabel = switch (_hubNavStep) {
+          HubNavStep.day => '금일 팔로우',
+          HubNavStep.week => '금주 팔로우',
+          HubNavStep.month => '금월 팔로우',
+        };
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _alignDeptPageView();
@@ -2871,6 +2928,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                           periodKey: periodKey,
                           receptionLabel: gosuReceptionLabel,
                           updatedLabel: gosuUpdatedLabel,
+                          followLabel: gosuFollowLabel,
                         ),
                       ),
                     ],

@@ -16,7 +16,7 @@ import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum GosuWorkflowFilter { all, received, inProgress, closed }
+enum GosuWorkflowFilter { all, received, inProgress, closed, openFollow }
 
 class GosuCallListScreen extends ConsumerStatefulWidget {
   const GosuCallListScreen({
@@ -49,13 +49,16 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
   int _generation = 0;
   late GosuWorkflowFilter _workflowFilter;
 
+  bool get _isAllCatalog => widget.mode == GosuListMode.all;
+
   bool get _hasWorkflowFilters => switch (widget.mode) {
     GosuListMode.todayReception ||
     GosuListMode.dateRange ||
     GosuListMode.todayUpdated ||
     GosuListMode.updatedRange ||
     GosuListMode.awaitingFollowUp ||
-    GosuListMode.activeFollowUp => true,
+    GosuListMode.activeFollowUp ||
+    GosuListMode.all => true,
     _ => false,
   };
 
@@ -82,7 +85,8 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
     super.initState();
     _workflowFilter = switch (widget.mode) {
       GosuListMode.activeFollowUp => GosuWorkflowFilter.inProgress,
-      GosuListMode.awaitingFollowUp => GosuWorkflowFilter.all,
+      GosuListMode.awaitingFollowUp ||
+      GosuListMode.all => GosuWorkflowFilter.all,
       _ when _hasWorkflowFilters => GosuWorkflowFilter.received,
       _ => GosuWorkflowFilter.all,
     };
@@ -171,6 +175,7 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
       GosuListMode.activeFollowUp => '기존진행중',
       GosuListMode.closed => '종료',
       GosuListMode.scheduled || GosuListMode.followRange => '팔로업 예정',
+      GosuListMode.all => '전체',
     };
   }
 
@@ -196,12 +201,15 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
   List<GosuSalesCall> get _activeRows =>
       _filtered.where(isGosuActiveFollowUp).toList();
   List<GosuSalesCall> get _closedRows => _filtered.where(isGosuClosed).toList();
+  List<GosuSalesCall> get _openFollowRows =>
+      _filtered.where(isGosuFollowUpOpen).toList();
 
   List<GosuSalesCall> get _shownRows => switch (_workflowFilter) {
     GosuWorkflowFilter.all => _filtered,
     GosuWorkflowFilter.received => _receivedRows,
     GosuWorkflowFilter.inProgress => _activeRows,
     GosuWorkflowFilter.closed => _closedRows,
+    GosuWorkflowFilter.openFollow => _openFollowRows,
   };
 
   bool get _splitView =>
@@ -310,28 +318,43 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
   Widget _buildWorkflowFilters(ColorScheme scheme) {
     final chips = <(GosuWorkflowFilter, String, int, Color)>[
       (GosuWorkflowFilter.all, '전체', _filtered.length, scheme.primary),
-      (
-        GosuWorkflowFilter.received,
-        '접수',
-        _receivedRows.length,
-        const Color(0xFF0284C7),
-      ),
     ];
-    if (_showInProgressFilter) {
+    if (_isAllCatalog) {
       chips.add((
-        GosuWorkflowFilter.inProgress,
-        '진행중',
-        _activeRows.length,
-        const Color(0xFFD97706),
+        GosuWorkflowFilter.openFollow,
+        '팔로업중',
+        _openFollowRows.length,
+        const Color(0xFF7C3AED),
       ));
-    }
-    if (_showClosedFilter) {
       chips.add((
         GosuWorkflowFilter.closed,
         '종료',
         _closedRows.length,
         scheme.onSurfaceVariant,
       ));
+    } else {
+      chips.add((
+        GosuWorkflowFilter.received,
+        '접수',
+        _receivedRows.length,
+        const Color(0xFF0284C7),
+      ));
+      if (_showInProgressFilter) {
+        chips.add((
+          GosuWorkflowFilter.inProgress,
+          '진행중',
+          _activeRows.length,
+          const Color(0xFFD97706),
+        ));
+      }
+      if (_showClosedFilter) {
+        chips.add((
+          GosuWorkflowFilter.closed,
+          '종료',
+          _closedRows.length,
+          scheme.onSurfaceVariant,
+        ));
+      }
     }
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -386,9 +409,14 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
 
   Widget _buildSplitList() {
     final sections = <(String, Color, List<GosuSalesCall>)>[
-      ('접수', const Color(0xFF0369A1), _receivedRows),
-      ('진행중', const Color(0xFFB45309), _activeRows),
-      if (_showClosedFilter) ('종료', const Color(0xFF475569), _closedRows),
+      if (_isAllCatalog) ...[
+        ('팔로업중', const Color(0xFF7C3AED), _openFollowRows),
+        ('종료', const Color(0xFF475569), _closedRows),
+      ] else ...[
+        ('접수', const Color(0xFF0369A1), _receivedRows),
+        ('진행중', const Color(0xFFB45309), _activeRows),
+        if (_showClosedFilter) ('종료', const Color(0xFF475569), _closedRows),
+      ],
     ];
     return ListView(
       controller: _listController,

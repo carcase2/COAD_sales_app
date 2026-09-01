@@ -196,6 +196,48 @@ class SupportCallLogRepository {
     }
   }
 
+  /// 답 대기(상태 2) 중 마지막 상담 결과가 [outcome]인 건.
+  Future<List<SupportCallLog>> listByLastConsultOutcome(
+    SupportConsultOutcome outcome, {
+    int limit = 200,
+  }) async {
+    final logs = await list(
+      statusId: kSupportStatusInProgress,
+      limit: limit,
+    );
+    return filterLogsByLastConsultOutcome(logs, outcome);
+  }
+
+  Future<List<SupportCallLog>> filterLogsByLastConsultOutcome(
+    List<SupportCallLog> logs,
+    SupportConsultOutcome outcome,
+  ) async {
+    if (logs.isEmpty) return const [];
+    try {
+      final rows = await supportSupabaseClient()
+          .from('service_requests')
+          .select('call_log_id, description, created_at')
+          .inFilter('call_log_id', logs.map((e) => e.id).toList())
+          .order('created_at');
+      final byLog = <String, List<String>>{};
+      for (final row in List<Map<String, dynamic>>.from(rows)) {
+        final id = (row['call_log_id'] ?? '').toString();
+        final desc = (row['description'] ?? '').toString();
+        if (id.isEmpty || isSupportVisitReportText(desc)) continue;
+        byLog.putIfAbsent(id, () => []).add(desc);
+      }
+      return logs
+          .where(
+            (log) =>
+                lastSupportConsultOutcome(byLog[log.id] ?? const []) ==
+                outcome,
+          )
+          .toList();
+    } catch (e) {
+      throw ApiException('상담 결과 목록을 불러오지 못했습니다. $e');
+    }
+  }
+
   /// 지도용. 완료가 아닌 접수(주소 있는 것).
   Future<List<SupportCallLog>> listForMap({int limit = 400}) async {
     try {

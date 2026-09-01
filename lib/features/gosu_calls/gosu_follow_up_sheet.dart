@@ -97,7 +97,9 @@ class _GosuFollowUpSheetState extends ConsumerState<_GosuFollowUpSheet> {
     });
     try {
       final user = ref.read(authControllerProvider);
-      final saved = await ref.read(gosuSalesCallsRepositoryProvider).saveFollowUp(
+      final saved = await ref
+          .read(gosuSalesCallsRepositoryProvider)
+          .saveFollowUp(
             callId: _row.id,
             consultationContent: _contentCtrl.text,
             followResult: _followResult,
@@ -222,10 +224,7 @@ class _GosuFollowUpSheetState extends ConsumerState<_GosuFollowUpSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '처리 결과',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
+            const Text('처리 결과', style: TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             Row(
               children: [

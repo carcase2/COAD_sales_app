@@ -1,11 +1,9 @@
-import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/gosu_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_calendar_screen.dart';
-import 'package:coad_customer_calls/features/gosu_calls/gosu_call_create_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_list_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -41,12 +39,14 @@ class GosuHomePanel extends ConsumerWidget {
     this.periodKey,
     this.receptionLabel = '금일 접수',
     this.updatedLabel = '금일 업데이트',
+    this.followLabel = '금일 팔로우',
   });
 
   final bool embedded;
   final HubPeriodKey? periodKey;
   final String receptionLabel;
   final String updatedLabel;
+  final String followLabel;
 
   HubPeriodKey get _key =>
       periodKey ?? (period: HubPeriod.day, anchorYmd: todayYmdSeoul());
@@ -140,14 +140,17 @@ class GosuHomePanel extends ConsumerWidget {
             const SizedBox(width: 10),
             Expanded(
               child: SupportHubTile(
-                title: '기존진행중',
-                subtitle: '1차 이후 미종료',
-                icon: Icons.timelapse_rounded,
-                count: counts.activeFollowUp,
+                title: followLabel,
+                subtitle: '예정일 기준',
+                icon: Icons.event_available_rounded,
+                count: counts.periodFollow,
+                alert: counts.periodFollow > 0,
                 onTap: () => _openList(
                   context,
-                  mode: GosuListMode.activeFollowUp,
-                  title: '기존진행중',
+                  mode: GosuListMode.followRange,
+                  title: followLabel,
+                  fromYmd: range.$1,
+                  toYmdInclusive: range.$2,
                 ),
               ),
             ),
@@ -155,14 +158,22 @@ class GosuHomePanel extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         SupportSectionCard(
-          title: '새 접수',
-          subtitle: '자동문의고수 전화 등록',
-          icon: Icons.add_ic_call_rounded,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              settings: const RouteSettings(name: kGosuCallCreateRouteName),
-              builder: (_) => const GosuCallCreateScreen(),
-            ),
+          title: '전체',
+          subtitle:
+              '팔로업중 ${counts.awaitingFollowUp} · 종료 ${counts.closedCount}',
+          icon: Icons.list_alt_rounded,
+          badge: '${counts.allCount}',
+          onTap: () => _openList(context, mode: GosuListMode.all, title: '전체'),
+        ),
+        const SizedBox(height: 8),
+        SupportSectionCard(
+          title: '기존진행중',
+          subtitle: '1차 이후 미종료 ${counts.activeFollowUp}건',
+          icon: Icons.timelapse_rounded,
+          onTap: () => _openList(
+            context,
+            mode: GosuListMode.activeFollowUp,
+            title: '기존진행중',
           ),
         ),
         const SizedBox(height: 8),
@@ -173,14 +184,6 @@ class GosuHomePanel extends ConsumerWidget {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const GosuCalendarScreen()),
           ),
-        ),
-        const SizedBox(height: 8),
-        SupportSectionCard(
-          title: '종료 목록',
-          subtitle: '종결된 접수 조회',
-          icon: Icons.check_circle_outline_rounded,
-          onTap: () =>
-              _openList(context, mode: GosuListMode.closed, title: '종료'),
         ),
       ],
     );

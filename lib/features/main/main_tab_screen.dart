@@ -1120,10 +1120,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             sectionId: 'tools',
             icon: Icons.support_agent_rounded,
             title: '고객지원팀',
-            subtitle: 'AS 현장검색 · 접수 · 수금 · 견적',
+            subtitle: 'AS 접수 · 단가표 · 수금 · 견적',
             quickAccess: true,
             quickLabel: '고객지원',
-            keywords: const ['고객지원', '지원팀', 'AS', 'A/S', '현장검색', '수금', 'FAQ'],
+            keywords: const [
+              '고객지원',
+              '지원팀',
+              'AS',
+              'A/S',
+              '단가표',
+              '현장검색',
+              '수금',
+              'FAQ',
+            ],
             onTap: () => closeDrawerThen(() {
               _trackTab(user, 'customer_support');
               Navigator.of(hostContext).push(

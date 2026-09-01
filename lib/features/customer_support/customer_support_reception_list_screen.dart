@@ -17,6 +17,7 @@ import 'package:coad_customer_calls/features/customer_support/support_due_schedu
 import 'package:coad_customer_calls/features/customer_support/support_first_consultation_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_sites_map_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/models/region.dart';
@@ -54,6 +55,7 @@ class CustomerSupportReceptionListScreen extends ConsumerStatefulWidget {
     this.visitOnly = false,
     this.incompleteOnly = false,
     this.statusId,
+    this.consultOutcome,
     this.initialStatusTab,
     this.initialBranch,
   });
@@ -65,6 +67,7 @@ class CustomerSupportReceptionListScreen extends ConsumerStatefulWidget {
   final bool visitOnly;
   final bool incompleteOnly;
   final int? statusId;
+  final SupportConsultOutcome? consultOutcome;
   final String? initialStatusTab;
   final String? initialBranch;
 
@@ -156,17 +159,21 @@ class _CustomerSupportReceptionListScreenState
       _error = null;
     });
     try {
-      final rows = await ref
-          .read(supportCallLogRepositoryProvider)
-          .list(
-            fromYmd: widget.fromYmd,
-            toYmdInclusive: widget.toYmdInclusive,
-            pendingOnly: widget.pendingOnly,
-            visitOnly: widget.visitOnly,
-            incompleteOnly: widget.incompleteOnly,
-            statusId: widget.statusId,
-            limit: widget.incompleteOnly ? 400 : 150,
-          );
+      final repo = ref.read(supportCallLogRepositoryProvider);
+      final rows = widget.consultOutcome != null
+          ? await repo.listByLastConsultOutcome(
+              widget.consultOutcome!,
+              limit: 200,
+            )
+          : await repo.list(
+              fromYmd: widget.fromYmd,
+              toYmdInclusive: widget.toYmdInclusive,
+              pendingOnly: widget.pendingOnly,
+              visitOnly: widget.visitOnly,
+              incompleteOnly: widget.incompleteOnly,
+              statusId: widget.statusId,
+              limit: widget.incompleteOnly ? 400 : 150,
+            );
       if (!mounted) return;
       setState(() {
         _items = rows;
@@ -223,6 +230,11 @@ class _CustomerSupportReceptionListScreenState
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          IconButton(
+            tooltip: 'A/S 단가표',
+            onPressed: () => openSupportUnitPriceLookup(context),
+            icon: const Icon(Icons.grid_on_rounded),
+          ),
           IconButton(
             tooltip: '현장 지도',
             onPressed: () {
@@ -912,6 +924,11 @@ class _CustomerSupportReceptionDetailScreenState
                 ),
               )
             else if (_log != null) ...[
+              IconButton(
+                tooltip: 'A/S 단가표',
+                onPressed: () => openSupportUnitPriceLookup(context),
+                icon: const Icon(Icons.grid_on_rounded),
+              ),
               TextButton(
                 onPressed: _edit,
                 style: TextButton.styleFrom(foregroundColor: Colors.white),
@@ -1029,6 +1046,10 @@ class _CustomerSupportReceptionDetailScreenState
                     ),
                     const SizedBox(height: 10),
                   ],
+                  const SupportUnitPriceOpenTile(
+                    subtitle: '접수·상담 중 품명 · 금액 검색',
+                  ),
+                  const SizedBox(height: 10),
                   _UrgencyBanner(
                     color: urgency,
                     label: _urgencyLabel,

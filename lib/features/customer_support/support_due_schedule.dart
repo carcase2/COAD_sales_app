@@ -111,6 +111,7 @@ class SupportDeskCounts {
     required this.pending,
     required this.incomplete,
     required this.inProgress,
+    required this.feedbackWait,
     required this.todayVisit,
     required this.overdueVisit,
     required this.todayDeposit,
@@ -121,6 +122,7 @@ class SupportDeskCounts {
   final int pending;
   final int incomplete;
   final int inProgress;
+  final int feedbackWait;
   final int todayVisit;
   final int overdueVisit;
   final int todayDeposit;
@@ -131,6 +133,7 @@ class SupportDeskCounts {
     pending: 0,
     incomplete: 0,
     inProgress: 0,
+    feedbackWait: 0,
     todayVisit: 0,
     overdueVisit: 0,
     todayDeposit: 0,
@@ -165,12 +168,17 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
     statusId: kSupportStatusInProgress,
     limit: 200,
   );
+  final feedbackWait = await repo.filterLogsByLastConsultOutcome(
+    progress,
+    SupportConsultOutcome.feedbackWait,
+  );
   final incomplete = await repo.list(incompleteOnly: true, limit: 400);
   return SupportDeskCounts(
     todayPending: todayPending.length,
     pending: pending.length,
     incomplete: incomplete.length,
     inProgress: progress.length,
+    feedbackWait: feedbackWait.length,
     todayVisit: due.todayVisit,
     overdueVisit: due.overdueVisit,
     todayDeposit: due.todayDeposit,

@@ -121,25 +121,24 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
           break;
         }
       }
-      final updated = await ref.read(gosuSalesCallsRepositoryProvider).updateCall(
-            row.id,
-            {
-              'customer_name': _nameCtrl.text.trim().isEmpty
-                  ? '상호없음'
-                  : _nameCtrl.text.trim(),
-              'customer_phone': _phoneCtrl.text.trim(),
-              'inquiry_content': _inquiryCtrl.text,
-              'product_category_name': _categoryName,
-              'product_category_id': null,
-              'inquiry_method_name': _methodName,
-              'inquiry_method_id': method == null
-                  ? null
-                  : gosuInquiryMethodIdForStorage(method.id),
-              'assigned_to': _assignedTo,
-              'follow_up': row.followUp ?? kGosuProgressOpen,
-              'follow_up_content': row.followUpContent,
-            },
-          );
+      final updated = await ref
+          .read(gosuSalesCallsRepositoryProvider)
+          .updateCall(row.id, {
+            'customer_name': _nameCtrl.text.trim().isEmpty
+                ? '상호없음'
+                : _nameCtrl.text.trim(),
+            'customer_phone': _phoneCtrl.text.trim(),
+            'inquiry_content': _inquiryCtrl.text,
+            'product_category_name': _categoryName,
+            'product_category_id': null,
+            'inquiry_method_name': _methodName,
+            'inquiry_method_id': method == null
+                ? null
+                : gosuInquiryMethodIdForStorage(method.id),
+            'assigned_to': _assignedTo,
+            'follow_up': row.followUp ?? kGosuProgressOpen,
+            'follow_up_content': row.followUpContent,
+          });
       if (!mounted) return;
       setState(() => _row = updated);
       invalidateHomeSalesCaches(ref.invalidate);
@@ -225,10 +224,7 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
       body: _loading
           ? const AppLoading(message: '상세를 불러오는 중…')
           : _error != null && row == null
-          ? AppErrorState(
-              message: koreanErrorMessage(_error!),
-              onRetry: _load,
-            )
+          ? AppErrorState(message: koreanErrorMessage(_error!), onRetry: _load)
           : row == null
           ? const AppEmpty(message: '접수를 찾을 수 없습니다.')
           : ListView(
@@ -352,10 +348,7 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                 ),
                 if (row.images.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  SalesCallAttachmentsStrip(
-                    urls: row.images,
-                    editable: false,
-                  ),
+                  SalesCallAttachmentsStrip(urls: row.images, editable: false),
                 ],
                 if (_dirty) ...[
                   const SizedBox(height: 12),

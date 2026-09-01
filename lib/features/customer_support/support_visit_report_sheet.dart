@@ -5,6 +5,8 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_date_picker.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/sales_call_attachments.dart';
@@ -373,6 +375,27 @@ class _SupportVisitReportSheetState
               ),
             ],
             const SizedBox(height: 8),
+            SupportUnitPriceOpenTile(
+              subtitle: '방문 중 품명 · 금액 검색. 고르면 부품·내용에 넣습니다',
+              insertLabel: '기록에 넣기',
+              onInsert: (item) {
+                final name = item.name.trim();
+                if (name.isNotEmpty && !_parts.contains(name)) {
+                  _parts.add(name);
+                }
+                if (_completed &&
+                    _paid &&
+                    item.price != null &&
+                    _amountCtrl.text.trim().isEmpty) {
+                  _amountCtrl.text = '${item.price}';
+                }
+                final line = supportUnitPriceInsertLine(item);
+                final cur = _notesCtrl.text.trim();
+                _notesCtrl.text = cur.isEmpty ? line : '$cur\n$line';
+                setState(() {});
+              },
+            ),
+            const SizedBox(height: 12),
             Text(
               '추가 부품',
               style: TextStyle(

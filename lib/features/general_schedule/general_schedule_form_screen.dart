@@ -251,7 +251,9 @@ class _GeneralScheduleFormScreenState
     );
     if (!confirmed || !mounted) return;
 
-    final grid = ref.read(scheduleGridProvider(_branch));
+    final records = await ref.refresh(scheduleRecordsProvider(_branch).future);
+    if (!mounted) return;
+    final grid = buildGeneralScheduleGrid(records);
     final editingId = widget.editing?.id;
 
     final SlotAssignmentResult assignment;
@@ -267,36 +269,24 @@ class _GeneralScheduleFormScreenState
             ? null
             : _existingSlotsByDate(widget.editing!),
       );
-    } else if (_teamCount == 1 &&
-        (widget.initialSlotIndex != null || startYmd != endYmd)) {
-      if (widget.initialSlotIndex != null) {
-        assignment = assignFixedSlotRow(
-          grid: grid,
-          startYmd: startYmd,
-          endYmd: endYmd,
-          slotIndex: widget.initialSlotIndex!,
-          editingScheduleId: editingId,
-        );
-      } else {
-        assignment = assignSingleTeamSlots(
-          grid: grid,
-          startYmd: startYmd,
-          endYmd: endYmd,
-          editingScheduleId: editingId,
-        );
-      }
     } else {
       assignment = assignSingleTeamSlots(
         grid: grid,
         startYmd: startYmd,
         endYmd: endYmd,
         editingScheduleId: editingId,
+        preferredSlot: widget.initialSlotIndex,
       );
     }
 
     if (!assignment.ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(assignment.errorMessage ?? '칸 배치에 실패했습니다.')),
+        SnackBar(
+          content: Text(
+            assignment.errorMessage ??
+                '칸 배치에 실패했습니다. 하루는 8칸이며, 빈 칸이 있는 날에만 들어갑니다.',
+          ),
+        ),
       );
       return;
     }

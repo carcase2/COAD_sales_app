@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_create_screen.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -138,6 +139,12 @@ class _ReceptionCreateHostScreenState
             },
           ),
           actions: [
+            if (_kind == ReceptionKind.afterSales)
+              IconButton(
+                tooltip: 'A/S 단가표',
+                onPressed: () => openSupportUnitPriceLookup(context),
+                icon: const Icon(Icons.grid_on_rounded),
+              ),
             IconButton(
               icon: const Icon(Icons.home_rounded),
               tooltip: '홈으로 이동',

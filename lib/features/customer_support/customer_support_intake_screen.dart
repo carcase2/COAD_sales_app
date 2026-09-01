@@ -13,6 +13,8 @@ import 'package:coad_customer_calls/features/business_cards/business_card_fill_s
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/kakao_address_field.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_editor_screen.dart';
@@ -763,6 +765,20 @@ class _CustomerSupportIntakeScreenState
                 ),
               ],
               const SizedBox(height: 20),
+              SupportUnitPriceOpenTile(
+                subtitle: 'A/S 접수 중 품명 · 금액 검색',
+                insertLabel: '문의 내용에 넣기',
+                onInsert: (item) {
+                  final line = supportUnitPriceInsertLine(item);
+                  final cur = _issueCtrl.text.trim();
+                  _issueCtrl.text = cur.isEmpty ? line : '$cur\n$line';
+                  _issueCtrl.selection = TextSelection.collapsed(
+                    offset: _issueCtrl.text.length,
+                  );
+                  setState(() {});
+                },
+              ),
+              const SizedBox(height: 16),
               const FormSectionHeader(
                 title: '문의 내용',
                 icon: Icons.notes_rounded,
@@ -834,7 +850,28 @@ class _CustomerSupportIntakeScreenState
     );
     if (widget.embedded) return body;
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'AS 접수 수정' : 'AS 접수 (테스트중)')),
+      appBar: AppBar(
+        title: Text(_isEdit ? 'AS 접수 수정' : 'AS 접수 (테스트중)'),
+        actions: [
+          IconButton(
+            tooltip: 'A/S 단가표',
+            onPressed: () => openSupportUnitPriceLookup(
+              context,
+              insertLabel: '문의 내용에 넣기',
+              onInsert: (item) {
+                final line = supportUnitPriceInsertLine(item);
+                final cur = _issueCtrl.text.trim();
+                _issueCtrl.text = cur.isEmpty ? line : '$cur\n$line';
+                _issueCtrl.selection = TextSelection.collapsed(
+                  offset: _issueCtrl.text.length,
+                );
+                setState(() {});
+              },
+            ),
+            icon: const Icon(Icons.grid_on_rounded),
+          ),
+        ],
+      ),
       body: body,
     );
   }

@@ -213,136 +213,134 @@ class IssuanceRequestCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (isOwn) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  color: accent,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.person_rounded,
-                                      size: 12,
-                                      color: Colors.white,
+                            Expanded(
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  if (isOwn)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: accent,
+                                        borderRadius: BorderRadius.circular(
+                                          20,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.person_rounded,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            '내 요청',
+                                            style: TextStyle(
+                                              fontSize: chipSize,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '내 요청',
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: accent.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      isTax ? '세금' : '이행',
                                       style: TextStyle(
                                         fontSize: chipSize,
                                         fontWeight: FontWeight.w800,
-                                        color: Colors.white,
+                                        color: accent,
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                color: accent.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                isTax ? '세금' : '이행',
-                                style: TextStyle(
-                                  fontSize: chipSize,
-                                  fontWeight: FontWeight.w800,
-                                  color: accent,
-                                ),
-                              ),
-                            ),
-                            if (bondTypeChip != null) ...[
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: large ? 10 : 8,
-                                  vertical: large ? 4 : 3,
-                                ),
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  color: bondTypeChip.background,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: bondTypeChip.foreground.withValues(
-                                      alpha: 0.35,
+                                  ),
+                                  if (bondTypeChip != null)
+                                    Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: large ? 10 : 8,
+                                        vertical: large ? 4 : 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: bondTypeChip.background,
+                                        borderRadius: BorderRadius.circular(
+                                          10,
+                                        ),
+                                        border: Border.all(
+                                          color: bondTypeChip.foreground
+                                              .withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        bondType,
+                                        style: TextStyle(
+                                          fontSize: large ? 12 : chipSize,
+                                          fontWeight: FontWeight.w900,
+                                          color: bondTypeChip.foreground,
+                                          letterSpacing: -0.2,
+                                        ),
+                                      ),
+                                    ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: statusAccent.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      status,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: statusAccent,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                child: Text(
-                                  bondType,
-                                  style: TextStyle(
-                                    fontSize: large ? 12 : chipSize,
-                                    fontWeight: FontWeight.w900,
-                                    color: bondTypeChip.foreground,
-                                    letterSpacing: -0.2,
-                                  ),
-                                ),
+                                  if (isUrgent)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.shade600,
+                                        borderRadius: BorderRadius.circular(
+                                          20,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '긴급',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.red.shade50,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                            ],
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: statusAccent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      status,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: statusAccent,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: titleSize,
-                        fontWeight: FontWeight.w800,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  if (isUrgent)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      margin: const EdgeInsets.only(right: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade600,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '긴급',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.red.shade50,
-                        ),
-                      ),
-                    ),
+                            ),
                             Icon(
                               Icons.chevron_right_rounded,
                               size: 18,
@@ -350,11 +348,24 @@ class IssuanceRequestCard extends StatelessWidget {
                             ),
                           ],
                         ),
+                        SizedBox(height: large ? 8 : 6),
+                        Text(
+                          displayTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.onSurface,
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Text(
                           row.kind == IssuanceRowKind.cancelled
                               ? '취소담당: $assigneeText'
                               : '담당: $assigneeText',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: scheme.onSurfaceVariant,
                             fontSize: bodySize,

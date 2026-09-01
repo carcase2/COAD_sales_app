@@ -55,6 +55,18 @@ bool isGosuCalendarScheduled(GosuSalesCall row) {
   return true;
 }
 
+bool isGosuFollowDueInRange(
+  GosuSalesCall row, {
+  required String fromYmd,
+  required String toYmdInclusive,
+}) {
+  if (!isGosuCalendarScheduled(row)) return false;
+  final raw = (row.nextScheduledDate ?? '').trim();
+  final ymd = raw.length >= 10 ? raw.substring(0, 10) : raw;
+  if (ymd.isEmpty) return false;
+  return ymd.compareTo(fromYmd) >= 0 && ymd.compareTo(toYmdInclusive) <= 0;
+}
+
 /// 고수 접수 담당자 칩. 인트라넷과 같이 자동문의고수 부서만. 비워도 됨.
 List<String> gosuAssigneeChoices({
   required Iterable<String> departmentNames,

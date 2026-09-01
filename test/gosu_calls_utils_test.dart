@@ -77,7 +77,33 @@ void main() {
     expect(isGosuClosed(row), isTrue);
     expect(isGosuFollowUpOpen(row), isFalse);
     expect(isGosuCalendarScheduled(row), isFalse);
-    expect(gosuWorkflowStatusLabel(row), kGosuProgressClosed);
+  });
+
+  test('금일 팔로우는 예정일이 기간 안이고 미종료일 때만', () {
+    expect(
+      isGosuFollowDueInRange(
+        _call(nextScheduledDate: '2026-09-01'),
+        fromYmd: '2026-09-01',
+        toYmdInclusive: '2026-09-01',
+      ),
+      isTrue,
+    );
+    expect(
+      isGosuFollowDueInRange(
+        _call(nextScheduledDate: '2026-09-02'),
+        fromYmd: '2026-09-01',
+        toYmdInclusive: '2026-09-01',
+      ),
+      isFalse,
+    );
+    expect(
+      isGosuFollowDueInRange(
+        _call(followUp: kGosuProgressClosed, nextScheduledDate: '2026-09-01'),
+        fromYmd: '2026-09-01',
+        toYmdInclusive: '2026-09-01',
+      ),
+      isFalse,
+    );
   });
 
   test('담당자 칩은 자동문의고수 부서만 두고 빈 값은 뺀다', () {

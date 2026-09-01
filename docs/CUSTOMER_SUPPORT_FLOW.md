@@ -106,7 +106,11 @@ flowchart TD
 
 지금 할 일: 전체 미처리, 전체 미완료, 금일 미처리, 답 대기·견적서, 금일/지난 방문, 오늘/지난 입금.
 
-그다음: 새 접수, 접수내역, 현장 지도, 방문·발송 달력, 견적서, 수금, 세금계산서.
+그다음: 새 접수, 접수내역, 현장 지도, 방문·발송 달력, A/S 단가표, 견적서, 수금, 세금계산서.
+
+### A/S 단가표
+
+고객지원팀 허브·접수내역·접수 상세·N차 상담에서 연다. 2026.03.06 통합 단가표(WMS·SPD·OHD 부품 175종, 인건비 58종, 작성 남현우 팀장). 제품군 필터·품명/영문/금액 검색, 부품 사진·도해, 추가·수정·삭제, 누가 어떻게 바꿨는지 이력이 남는다. 사이즈 표준단가와 별개.
 
 ### 아직 골격만 있는 화면
 
@@ -131,8 +135,9 @@ flowchart TD
 | 1차·N차 상담 | `support_first_consultation_sheet.dart` |
 | 방문 기록 | `lib/data/support_visit_report.dart` |
 | 견적서 | `support_quote_writer_screen.dart` |
+| A/S 단가표 | `support_unit_price.dart`, `lib/data/support_unit_price_repository.dart` |
 | 홈 지사 선택 | `lib/features/home/home_hub_screen.dart` |
 
 ```bash
-flutter test test/support_call_log_stats_test.dart test/support_visit_report_test.dart test/support_quote_document_test.dart
+flutter test test/support_call_log_stats_test.dart test/support_visit_report_test.dart test/support_quote_document_test.dart test/support_unit_price_test.dart
 ```

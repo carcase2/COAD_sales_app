@@ -18,6 +18,7 @@ import 'package:coad_customer_calls/features/customer_support/reception_kind_she
 import 'package:coad_customer_calls/features/customer_support/support_branch_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_sites_map_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -179,6 +180,29 @@ class CustomerSupportHubScreen extends ConsumerWidget {
                 screen: (branch) => CustomerSupportReceptionListScreen(
                   title: '전체 A/S 미완료',
                   incompleteOnly: true,
+                  initialBranch: branch,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SupportHubCountBar(
+            title: '피드백 대기',
+            icon: Icons.phonelink_ring_rounded,
+            count: desk.feedbackWait,
+            alert: desk.feedbackWait > 0,
+            onTap: () => openThenRefresh(
+              () => openWithBranch(
+                pickerTitle: '피드백 대기 지사 선택',
+                pickerSubtitle: '안내 후 고객 연락을 기다리는 건',
+                addresses: () => logAddresses(
+                  () => repo.listByLastConsultOutcome(
+                    SupportConsultOutcome.feedbackWait,
+                  ),
+                ),
+                screen: (branch) => CustomerSupportReceptionListScreen(
+                  title: '피드백 대기',
+                  consultOutcome: SupportConsultOutcome.feedbackWait,
                   initialBranch: branch,
                 ),
               ),
@@ -417,6 +441,15 @@ class CustomerSupportHubScreen extends ConsumerWidget {
                   initialBranch: branch,
                 ),
               ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SupportSectionCard(
+            title: 'A/S 단가표',
+            subtitle: '접수·팔로우업 중 검색 · 추가·수정·삭제 · 이력',
+            icon: Icons.grid_on_rounded,
+            onTap: () => openThenRefresh(
+              () => _openStepFuture(context, const SupportUnitPriceScreen()),
             ),
           ),
           const SizedBox(height: 8),

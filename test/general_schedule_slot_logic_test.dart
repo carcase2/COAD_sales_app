@@ -71,7 +71,7 @@ void main() {
     );
 
     expect(result.ok, isFalse);
-    expect(result.errorMessage, contains('같은 칸'));
+    expect(result.errorMessage, contains('빈 칸'));
   });
 
   test('assignMultiTeamSlots — 같은 날 여러 팀', () {
@@ -143,8 +143,8 @@ void main() {
     expect(inclusiveDayCount('2026-06-01', '2026-06-03'), 3);
   });
 
-  test('assignSingleTeamSlots — 같은 칸 불가 시 기본은 실패(날짜별 분산 안 함)', () {
-    // 각 칸(0~7)이 기간 내 하루씩 막혀 연속 같은 칸이 없음 — 날짜별 분산만 가능.
+  test('assignSingleTeamSlots — 같은 칸 없으면 날짜별 빈 칸', () {
+    // 각 칸(0~7)이 기간 내 하루씩 막혀 연속 같은 칸이 없음 — 날짜별 빈 칸으로 넣는다.
     final grid = buildGeneralScheduleGrid([
       _record(
         id: 'block',
@@ -162,20 +162,44 @@ void main() {
       ),
     ]);
 
-    final strict = assignSingleTeamSlots(
-      grid: grid,
-      startYmd: '2026-06-01',
-      endYmd: '2026-06-03',
-    );
-    expect(strict.ok, isFalse);
-
     final loose = assignSingleTeamSlots(
       grid: grid,
       startYmd: '2026-06-01',
       endYmd: '2026-06-03',
-      allowPerDayFallback: true,
     );
     expect(loose.ok, isTrue);
+    expect(loose.slotMap['2026-06-01'], isNotNull);
+    expect(loose.slotMap['2026-06-02'], isNotNull);
+    expect(loose.slotMap['2026-06-03'], isNotNull);
+
+    final strict = assignSingleTeamSlots(
+      grid: grid,
+      startYmd: '2026-06-01',
+      endYmd: '2026-06-03',
+      allowPerDayFallback: false,
+    );
+    expect(strict.ok, isFalse);
+  });
+
+  test('assignSingleTeamSlots — 2일 이상 같은 열 막히면 빈 칸으로', () {
+    final grid = buildGeneralScheduleGrid([
+      _record(
+        id: 'busy',
+        site: '점유',
+        slots: [(date: '2026-06-02', slot: 0)],
+      ),
+    ]);
+
+    final result = assignSingleTeamSlots(
+      grid: grid,
+      startYmd: '2026-06-01',
+      endYmd: '2026-06-02',
+      preferredSlot: 0,
+    );
+    expect(result.ok, isTrue);
+    expect(result.slotMap['2026-06-01'], isNot(0));
+    expect(result.slotMap['2026-06-02'], isNot(0));
+    expect(result.slotMap['2026-06-01'], result.slotMap['2026-06-02']);
   });
 
   test('findEarliestAvailableSlot — 오늘부터 빈 칸 탐색', () {
@@ -399,5 +423,15 @@ void main() {
       slotIndex: 2,
     );
     expect(fail.ok, isFalse);
+
+    final multi = assignFixedSlotRow(
+      grid: grid,
+      startYmd: '2026-06-10',
+      endYmd: '2026-06-12',
+      slotIndex: 2,
+    );
+    expect(multi.ok, isTrue);
+    expect(multi.slotMap['2026-06-10'], isNot(2));
+    expect(multi.slotMap.length, 3);
   });
 }

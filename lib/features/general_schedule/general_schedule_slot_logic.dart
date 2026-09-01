@@ -185,6 +185,7 @@ String _addDaysYmd(String ymd, int days) =>
     _ymd(DateTime.parse(ymd).add(Duration(days: days)));
 
 /// 지정 칸(0~7)에 기간 전체 배치 — 빈 칸 탭 등록·칸 고정 시 사용.
+/// 여러 날이면 같은 열이 막힌 날은 하루 8칸 중 빈 칸을 찾아 넣는다.
 SlotAssignmentResult assignFixedSlotRow({
   required GeneralScheduleDayGrid grid,
   required String startYmd,
@@ -193,45 +194,61 @@ SlotAssignmentResult assignFixedSlotRow({
   String? editingScheduleId,
 }) {
   if (slotIndex < 0 || slotIndex >= kGeneralScheduleSlotsPerDay) {
-    return SlotAssignmentResult.failure('유효하지 않은 칸입니다.');
+    return SlotAssignmentResult.failure('유효하지 않은 칸입니다. 하루 8칸입니다.');
   }
 
-  final slotMap = <String, int>{};
-  var current = DateTime.parse(startYmd);
-  final end = DateTime.parse(endYmd);
-
-  while (!current.isAfter(end)) {
-    final dateStr = _ymd(current);
-    final day = grid[dateStr] ?? emptyDaySlots();
+  if (startYmd == endYmd) {
+    final day = grid[startYmd] ?? emptyDaySlots();
     final occupant = day[slotIndex];
     if (occupant != null &&
         (editingScheduleId == null ||
             occupant.scheduleId != editingScheduleId)) {
       return SlotAssignmentResult.failure(
-        '$dateStr · ${slotIndex + 1}칸이 이미 사용 중입니다.',
+        '${slotIndex + 1}칸이 이미 사용 중입니다. 하루 8칸 중 다른 빈 칸을 선택해 주세요.',
       );
     }
-    slotMap[dateStr] = slotIndex;
-    current = current.add(const Duration(days: 1));
+    return SlotAssignmentResult.success({startYmd: slotIndex});
   }
-  return SlotAssignmentResult.success(slotMap);
+
+  return assignSingleTeamSlots(
+    grid: grid,
+    startYmd: startYmd,
+    endYmd: endYmd,
+    editingScheduleId: editingScheduleId,
+    preferredSlot: slotIndex,
+  );
 }
 
-/// 단일 팀 일정 slot 배치 — 기간 전체 **같은 칸** 우선 (COAD_home 웹과 동일).
+/// 단일 팀 일정 slot 배치 — 기간 전체 **같은 칸** 우선.
+/// 같은 열이 없으면 날짜마다 빈 칸을 찾아 넣는다.
 ///
-/// [allowPerDayFallback]이 false(기본)이면 날짜마다 다른 칸으로 쪼개지 않고 실패한다.
+/// [allowPerDayFallback]이 false이면 날짜마다 다른 칸으로 쪼개지 않고 실패한다.
 SlotAssignmentResult assignSingleTeamSlots({
   required GeneralScheduleDayGrid grid,
   required String startYmd,
   required String endYmd,
   String? editingScheduleId,
-  bool allowPerDayFallback = false,
+  int? preferredSlot,
+  bool allowPerDayFallback = true,
 }) {
   final slotMap = <String, int>{};
   final start = DateTime.parse(startYmd);
   final end = DateTime.parse(endYmd);
+  final tryOrder = <int>[
+    if (preferredSlot != null &&
+        preferredSlot >= 0 &&
+        preferredSlot < kGeneralScheduleSlotsPerDay)
+      preferredSlot,
+    ...kGeneralScheduleSlotIndices.where((s) => s != preferredSlot),
+  ];
 
-  for (final slot in kGeneralScheduleSlotIndices) {
+  bool slotFree(List<GeneralScheduleCell?> day, int slot) {
+    final occupant = day[slot];
+    return occupant == null ||
+        (editingScheduleId != null && occupant.scheduleId == editingScheduleId);
+  }
+
+  for (final slot in tryOrder) {
     var canUse = true;
     var current = start;
     while (!current.isAfter(end)) {
@@ -239,9 +256,7 @@ SlotAssignmentResult assignSingleTeamSlots({
       final day = List<GeneralScheduleCell?>.from(
         grid[dateStr] ?? emptyDaySlots(),
       );
-      final occupant = day[slot];
-      if (occupant != null &&
-          (editingScheduleId == null || occupant.scheduleId != editingScheduleId)) {
+      if (!slotFree(day, slot)) {
         canUse = false;
         break;
       }
@@ -272,11 +287,8 @@ SlotAssignmentResult assignSingleTeamSlots({
       grid[dateStr] ?? emptyDaySlots(),
     );
     int? picked;
-    for (final slot in kGeneralScheduleSlotIndices) {
-      final occupant = day[slot];
-      if (occupant == null ||
-          (editingScheduleId != null &&
-              occupant.scheduleId == editingScheduleId)) {
+    for (final slot in tryOrder) {
+      if (slotFree(day, slot)) {
         picked = slot;
         break;
       }
