@@ -8,7 +8,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_c
 import 'package:coad_customer_calls/features/customer_support/customer_support_faq_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_site_search_screen.dart';
@@ -144,6 +144,19 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 8),
+          SupportHubTile(
+            title: '전체',
+            subtitle: '완료 포함 · 현장·전화·주소 검색',
+            icon: Icons.list_alt_rounded,
+            count: desk.all,
+            onTap: () => openThenRefresh(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportSiteSearchScreen(title: '전체'),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           SupportHubCountBar(
             title: '전체 미처리',
             icon: Icons.phone_callback_rounded,
@@ -203,6 +216,29 @@ class CustomerSupportHubScreen extends ConsumerWidget {
                 screen: (branch) => CustomerSupportReceptionListScreen(
                   title: '피드백 대기',
                   consultOutcome: SupportConsultOutcome.feedbackWait,
+                  initialBranch: branch,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SupportHubCountBar(
+            title: '답 대기·견적서',
+            icon: Icons.timelapse_rounded,
+            count: desk.inProgress,
+            alert: desk.inProgress > 0,
+            onTap: () => openThenRefresh(
+              () => openWithBranch(
+                pickerTitle: '답 대기 지사 선택',
+                pickerSubtitle: '안내 후 피드백 · 구두 견적 · 정식 견적서',
+                addresses: () => logAddresses(
+                  () =>
+                      repo.list(statusId: kSupportStatusInProgress, limit: 200),
+                ),
+                screen: (branch) => CustomerSupportReceptionListScreen(
+                  title: '답 대기·견적서',
+                  statusId: kSupportStatusInProgress,
+                  initialStatusTab: '답 대기·견적서',
                   initialBranch: branch,
                 ),
               ),
@@ -512,10 +548,13 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           SupportSectionCard(
             title: '현장검색',
-            subtitle: '주소 · 담당자 · 전화',
+            subtitle: '전체 현장 · 완료 포함 · 검색',
             icon: Icons.location_searching_rounded,
             onTap: () => openThenRefresh(
-              () => _openStep(context, SupportFlowStep.siteSearch),
+              () => _openStepFuture(
+                context,
+                const CustomerSupportSiteSearchScreen(title: '현장검색'),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -564,7 +603,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
         const CustomerSupportReceptionListScreen(),
       SupportFlowStep.scheduleCalendar =>
         const CustomerSupportScheduleCalendarScreen(),
-      SupportFlowStep.quote => const CustomerSupportQuoteScreen(),
+      SupportFlowStep.quote => const SupportQuoteWriterScreen(),
       SupportFlowStep.completion => const CustomerSupportCompletionScreen(),
       SupportFlowStep.collection => const CustomerSupportCollectionScreen(),
       SupportFlowStep.tax => const SupportIssuancePage(),

@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/data/support_supabase.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/models/region.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupportCallLog {
   const SupportCallLog({
@@ -96,6 +97,16 @@ class SupportCallLog {
       longitude: double.tryParse('${json['longitude'] ?? ''}'),
     );
   }
+}
+
+class SupportFeedbackWaitItem {
+  const SupportFeedbackWaitItem({
+    required this.log,
+    required this.lastConsultAt,
+  });
+
+  final SupportCallLog log;
+  final DateTime lastConsultAt;
 }
 
 class SupportHomePeriodStats {
@@ -196,15 +207,22 @@ class SupportCallLogRepository {
     }
   }
 
+  Future<int> countAll() async {
+    try {
+      return await supportSupabaseClient()
+          .from('call_logs')
+          .count(CountOption.exact);
+    } catch (e) {
+      throw ApiException('A/S 전체 건수를 불러오지 못했습니다. $e');
+    }
+  }
+
   /// 답 대기(상태 2) 중 마지막 상담 결과가 [outcome]인 건.
   Future<List<SupportCallLog>> listByLastConsultOutcome(
     SupportConsultOutcome outcome, {
     int limit = 200,
   }) async {
-    final logs = await list(
-      statusId: kSupportStatusInProgress,
-      limit: limit,
-    );
+    final logs = await list(statusId: kSupportStatusInProgress, limit: limit);
     return filterLogsByLastConsultOutcome(logs, outcome);
   }
 
@@ -229,12 +247,56 @@ class SupportCallLogRepository {
       return logs
           .where(
             (log) =>
-                lastSupportConsultOutcome(byLog[log.id] ?? const []) ==
-                outcome,
+                lastSupportConsultOutcome(byLog[log.id] ?? const []) == outcome,
           )
           .toList();
     } catch (e) {
       throw ApiException('상담 결과 목록을 불러오지 못했습니다. $e');
+    }
+  }
+
+  /// 마지막 상담이 피드백 대기인 접수 + 그 상담 시각(UTC).
+  Future<List<SupportFeedbackWaitItem>> listFeedbackWaitItems({
+    int limit = 200,
+  }) async {
+    final logs = await list(statusId: kSupportStatusInProgress, limit: limit);
+    if (logs.isEmpty) return const [];
+    try {
+      final rows = await supportSupabaseClient()
+          .from('service_requests')
+          .select('call_log_id, description, created_at')
+          .inFilter('call_log_id', logs.map((e) => e.id).toList())
+          .order('created_at');
+      final lastByLog =
+          <String, ({SupportConsultOutcome? outcome, DateTime? at})>{};
+      for (final row in List<Map<String, dynamic>>.from(rows)) {
+        final id = (row['call_log_id'] ?? '').toString();
+        final desc = (row['description'] ?? '').toString();
+        if (id.isEmpty || isSupportVisitReportText(desc)) continue;
+        final outcome = parseSupportConsultation(desc).outcome;
+        if (outcome == null) continue;
+        lastByLog[id] = (
+          outcome: outcome,
+          at: parseSupabaseTimestampUtc(row['created_at']),
+        );
+      }
+      final items = <SupportFeedbackWaitItem>[];
+      for (final log in logs) {
+        final last = lastByLog[log.id];
+        if (last == null ||
+            last.outcome != SupportConsultOutcome.feedbackWait) {
+          continue;
+        }
+        items.add(
+          SupportFeedbackWaitItem(
+            log: log,
+            lastConsultAt: last.at ?? log.createdAt ?? DateTime.now().toUtc(),
+          ),
+        );
+      }
+      return items;
+    } catch (e) {
+      throw ApiException('피드백 대기 목록을 불러오지 못했습니다. $e');
     }
   }
 

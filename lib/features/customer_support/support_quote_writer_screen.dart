@@ -13,6 +13,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_f
 import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_export.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price_lookup_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price_photo.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -23,9 +24,18 @@ import 'package:intl/intl.dart';
 
 /// 고객지원팀 전용 견적서. 영업 셔터 견적서 작성과 별개.
 class SupportQuoteWriterScreen extends ConsumerStatefulWidget {
-  const SupportQuoteWriterScreen({super.key, this.site});
+  const SupportQuoteWriterScreen({
+    super.key,
+    this.site,
+    this.callLogId,
+    this.startNew = false,
+    this.openDoc,
+  });
 
   final SupportSiteSample? site;
+  final String? callLogId;
+  final bool startNew;
+  final SupportQuoteDocument? openDoc;
 
   @override
   ConsumerState<SupportQuoteWriterScreen> createState() =>
@@ -45,11 +55,23 @@ class _SupportQuoteWriterScreenState
     super.initState();
     _store = SupportQuoteStore(ref.read(appDependenciesProvider).prefs);
     _items = _store.load();
-    if (widget.site != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_edit());
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_reload());
+      if (widget.openDoc != null) {
+        unawaited(_edit(existing: widget.openDoc));
+      } else if (widget.startNew) {
+        unawaited(_edit());
+      }
+    });
+  }
+
+  Future<void> _reload() async {
+    try {
+      final remote = await ref.read(supportAsQuoteRepositoryProvider).list();
+      if (!mounted) return;
+      await _persist(remote, remoteOnly: true);
+    } catch (_) {}
   }
 
   @override
@@ -58,32 +80,65 @@ class _SupportQuoteWriterScreenState
     super.dispose();
   }
 
-  List<SupportQuoteDocument> get _visible =>
-      _items.where((e) => supportQuoteMatches(e, _query)).toList();
+  List<SupportQuoteDocument> get _visible {
+    var rows = _items.where((e) => supportQuoteMatches(e, _query));
+    final site = widget.site;
+    if (site != null) {
+      rows = rows.where((e) => supportQuoteBelongsToSample(e, site));
+    }
+    return rows.toList();
+  }
 
-  Future<void> _persist(List<SupportQuoteDocument> next) async {
+  Future<void> _persist(
+    List<SupportQuoteDocument> next, {
+    bool remoteOnly = false,
+  }) async {
     setState(() => _items = next);
     await _store.save(next);
+    if (remoteOnly) return;
   }
 
   Future<void> _edit({SupportQuoteDocument? existing}) async {
     final saved = await Navigator.of(context).push<SupportQuoteDocument>(
       MaterialPageRoute(
-        builder: (_) =>
-            _SupportQuoteEditorPage(existing: existing, site: widget.site),
+        builder: (_) => _SupportQuoteEditorPage(
+          existing: existing,
+          site: widget.site,
+          callLogId: widget.callLogId,
+        ),
       ),
     );
     if (saved == null || !mounted) return;
+    SupportQuoteDocument stored = saved;
+    try {
+      stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(saved);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+      }
+    }
     final next = [..._items];
-    final i = next.indexWhere((e) => e.id == saved.id);
+    final i = next.indexWhere((e) => e.id == stored.id);
     if (i >= 0) {
-      next[i] = saved;
+      next[i] = stored;
     } else {
-      next.insert(0, saved);
+      next.insert(0, stored);
     }
     await _persist(next);
     if (!mounted) return;
-    await showSupportQuoteExportSheet(context, doc: saved);
+    final sent = await showSupportQuoteExportSheet(context, doc: stored);
+    if (sent == true && mounted) {
+      final marked = stored.copyWith(sentYmd: todayYmdSeoul());
+      try {
+        await ref.read(supportAsQuoteRepositoryProvider).upsert(marked);
+      } catch (_) {}
+      final markedList = [..._items];
+      final mi = markedList.indexWhere((e) => e.id == marked.id);
+      if (mi >= 0) markedList[mi] = marked;
+      await _persist(markedList);
+    }
   }
 
   Future<void> _delete(SupportQuoteDocument doc) async {
@@ -105,16 +160,34 @@ class _SupportQuoteWriterScreenState
       ),
     );
     if (ok != true || !mounted) return;
+    try {
+      await ref.read(supportAsQuoteRepositoryProvider).delete(doc.id);
+    } catch (_) {}
     await _persist(_items.where((e) => e.id != doc.id).toList());
+  }
+
+  Future<void> _openSite(SupportQuoteSiteGroup group) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SupportQuoteWriterScreen(
+          site: group.toSiteSample(),
+          callLogId: widget.callLogId,
+        ),
+      ),
+    );
+    if (mounted) unawaited(_reload());
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final accent = AppTokens.customerSupportAccent(scheme);
+    final site = widget.site;
     final rows = _visible;
+    final groups = site == null ? supportQuoteSiteGroups(rows) : const <SupportQuoteSiteGroup>[];
+    final title = site == null ? 'A/S 견적서' : '${site.name} 견적서';
     return Scaffold(
-      appBar: AppBar(title: const Text('A/S 견적서')),
+      appBar: AppBar(title: Text(title)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(),
         icon: const Icon(Icons.edit_document),
@@ -126,7 +199,9 @@ class _SupportQuoteWriterScreenState
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: SearchBar(
               controller: _queryCtrl,
-              hintText: '고객 · 현장 · 품목 검색',
+              hintText: site == null
+                  ? '현장 · 고객 · 전화 · 품목 검색'
+                  : '이 현장 견적 검색',
               leading: const Icon(Icons.search_rounded, size: 20),
               onChanged: (v) => setState(() => _query = v),
               padding: const WidgetStatePropertyAll(
@@ -138,18 +213,77 @@ class _SupportQuoteWriterScreenState
               ),
             ),
           ),
+          if (site != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '이 현장 견적 ${rows.length}건',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: rows.isEmpty
                 ? AppEmpty(
                     icon: Icons.request_quote_outlined,
                     message: _query.trim().isEmpty
-                        ? '작성한 A/S 견적서가 없습니다.'
+                        ? (site == null
+                              ? '작성한 A/S 견적서가 없습니다.'
+                              : '이 현장 견적서가 없습니다.')
                         : '검색 결과가 없습니다.',
                     detail: _query.trim().isEmpty
-                        ? '저장하면 이미지·PDF로 만들고 바로 이메일을 보낼 수 있습니다.'
+                        ? '저장하면 이 현장 목록에서 다시 열어 확인할 수 있습니다.'
                         : null,
                     actionLabel: _query.trim().isEmpty ? '견적서 작성' : null,
                     onAction: _query.trim().isEmpty ? () => _edit() : null,
+                  )
+                : site == null
+                ? ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
+                    itemCount: groups.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) {
+                      final group = groups[i];
+                      final latest = group.quotes.first;
+                      return Material(
+                        color: scheme.surfaceContainerHighest.withValues(
+                          alpha: 0.42,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        child: ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          title: Text(
+                            group.title,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            [
+                              '${group.quotes.length}건',
+                              if (latest.ymd.trim().isNotEmpty)
+                                '최근 ${latest.ymd}',
+                              if (group.phone.trim().isNotEmpty) group.phone,
+                            ].join(' · '),
+                          ),
+                          trailing: Text(
+                            group.total <= 0
+                                ? '-'
+                                : '${_won.format(group.total)}원',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: accent,
+                            ),
+                          ),
+                          onTap: () => _openSite(group),
+                        ),
+                      );
+                    },
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
@@ -167,29 +301,29 @@ class _SupportQuoteWriterScreenState
                             borderRadius: BorderRadius.circular(14),
                           ),
                           title: Text(
-                            doc.customerName.isEmpty
-                                ? '(고객 없음)'
-                                : doc.customerName,
+                            [
+                              if (doc.quoteNo.trim().isNotEmpty)
+                                doc.quoteNo.trim(),
+                              doc.ymd,
+                            ].join(' · '),
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
-                          subtitle: Text(
-                            [
-                              if (doc.site.trim().isNotEmpty) doc.site.trim(),
-                              doc.ymd,
-                              if ((doc.createdBy ?? '').trim().isNotEmpty)
-                                doc.createdBy!.trim(),
-                            ].join(' · '),
-                          ),
+                          subtitle: Text(supportQuoteHistoryLine(doc)),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                doc.total <= 0
-                                    ? '-'
-                                    : '${_won.format(doc.total)}원',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: accent,
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 96),
+                                child: Text(
+                                  doc.total <= 0
+                                      ? '-'
+                                      : '${_won.format(doc.total)}원',
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: accent,
+                                  ),
                                 ),
                               ),
                               IconButton(
@@ -216,10 +350,11 @@ class _SupportQuoteWriterScreenState
 }
 
 class _SupportQuoteEditorPage extends ConsumerStatefulWidget {
-  const _SupportQuoteEditorPage({this.existing, this.site});
+  const _SupportQuoteEditorPage({this.existing, this.site, this.callLogId});
 
   final SupportQuoteDocument? existing;
   final SupportSiteSample? site;
+  final String? callLogId;
 
   @override
   ConsumerState<_SupportQuoteEditorPage> createState() =>
@@ -234,7 +369,9 @@ class _SupportQuoteEditorPageState
   late final TextEditingController _siteCtrl;
   late final TextEditingController _addressCtrl;
   late final TextEditingController _noteCtrl;
+  late final TextEditingController _workCtrl;
   late String _ymd;
+  late String _quoteNo;
   List<SupportQuoteLine> _lines = [];
   final _won = NumberFormat('#,###');
   Timer? _nameLookupDebounce;
@@ -260,10 +397,15 @@ class _SupportQuoteEditorPageState
       text: e?.address ?? site?.address ?? '',
     );
     _noteCtrl = TextEditingController(text: e?.note ?? '');
+    _workCtrl = TextEditingController(
+      text: e?.workName ?? (site == null ? '' : 'A/S 공사'),
+    );
     _ymd = (e?.ymd ?? '').trim().isNotEmpty ? e!.ymd : todayYmdSeoul();
+    _quoteNo = e?.quoteNo ?? '';
     _lines = List.of(e?.lines ?? const []);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_quoteNo.trim().isEmpty) unawaited(_ensureQuoteNo());
       _scheduleNameLookup(_nameCtrl.text);
     });
   }
@@ -277,7 +419,16 @@ class _SupportQuoteEditorPageState
     _siteCtrl.dispose();
     _addressCtrl.dispose();
     _noteCtrl.dispose();
+    _workCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _ensureQuoteNo() async {
+    try {
+      final no = await ref.read(supportAsQuoteRepositoryProvider).nextQuoteNo();
+      if (!mounted || _quoteNo.trim().isNotEmpty) return;
+      setState(() => _quoteNo = no);
+    } catch (_) {}
   }
 
   int get _total => _lines.fold(0, (sum, e) => sum + e.amount);
@@ -404,6 +555,21 @@ class _SupportQuoteEditorPageState
     });
   }
 
+  Future<void> _addFromPriceList() async {
+    await showSupportUnitPriceLookupSheet(
+      context,
+      insertLabel: '넣기',
+      closeOnInsert: false,
+      quoteTotal: () => _total,
+      onInsert: (item) {
+        if (!mounted) return;
+        setState(
+          () => _lines = [..._lines, SupportQuoteLine.fromUnitPrice(item)],
+        );
+      },
+    );
+  }
+
   Future<void> _addLine() async {
     final line = await showModalBottomSheet<SupportQuoteLine>(
       context: context,
@@ -451,10 +617,13 @@ class _SupportQuoteEditorPageState
         email: _emailCtrl.text.trim(),
         site: _siteCtrl.text.trim(),
         address: _addressCtrl.text.trim(),
+        workName: _workCtrl.text.trim(),
+        quoteNo: _quoteNo.trim(),
         ymd: _ymd,
         lines: List.of(_lines),
         note: _noteCtrl.text.trim(),
         createdBy: user?.name ?? user?.id,
+        callLogId: widget.callLogId ?? widget.existing?.callLogId,
         createdAt:
             widget.existing?.createdAt ?? DateTime.now().toIso8601String(),
       ),
@@ -553,8 +722,22 @@ class _SupportQuoteEditorPageState
           ),
           const SizedBox(height: 8),
           TextField(
+            controller: _workCtrl,
+            decoration: const InputDecoration(
+              labelText: '공사명',
+              hintText: '예: 스피드도어 A/S 공사',
+              filled: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
             controller: _addressCtrl,
             decoration: const InputDecoration(labelText: '주소', filled: true),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('견적번호'),
+            subtitle: Text(_quoteNo.trim().isEmpty ? '저장 시 자동 부여' : _quoteNo),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -564,26 +747,33 @@ class _SupportQuoteEditorPageState
             onTap: _pickYmd,
           ),
           const SizedBox(height: 8),
-          Row(
+          Text(
+            '품목',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 4,
+            runSpacing: 0,
             children: [
-              Text(
-                '품목',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurfaceVariant,
-                ),
+              TextButton.icon(
+                onPressed: _addFromPriceList,
+                icon: const Icon(Icons.grid_on_rounded),
+                label: const Text('단가표에서 넣기'),
               ),
-              const Spacer(),
               TextButton.icon(
                 onPressed: _addLine,
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('단가표에서 추가'),
+                label: const Text('직접 입력'),
               ),
             ],
           ),
           if (_lines.isEmpty)
             Text(
-              'A/S 단가표에서 품목을 고르거나 직접 입력합니다.',
+              '부품·인건비는 A/S 단가표에서 고르고, 장비대는 직접 넣을 수 있습니다.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             )
           else
@@ -596,23 +786,31 @@ class _SupportQuoteEditorPageState
                 ),
                 subtitle: Text(
                   [
+                    supportQuoteKindLabel(_lines[i].kind),
                     if (_lines[i].spec.trim().isNotEmpty) _lines[i].spec.trim(),
+                    if (_lines[i].unit.trim().isNotEmpty) _lines[i].unit.trim(),
                     '수량 ${_lines[i].qty}',
                   ].join(' · '),
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      _lines[i].amount <= 0
-                          ? '-'
-                          : '${_won.format(_lines[i].amount)}원',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: accent,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 96),
+                      child: Text(
+                        _lines[i].amount <= 0
+                            ? '-'
+                            : '${_won.format(_lines[i].amount)}원',
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: accent,
+                        ),
                       ),
                     ),
                     IconButton(
+                      visualDensity: VisualDensity.compact,
                       onPressed: () => setState(() {
                         final next = [..._lines]..removeAt(i);
                         _lines = next;
@@ -662,8 +860,10 @@ class _SupportQuoteLineSheetState
     extends ConsumerState<_SupportQuoteLineSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _specCtrl;
+  late final TextEditingController _unitCtrl;
   late final TextEditingController _qtyCtrl;
   late final TextEditingController _priceCtrl;
+  late String _kind;
 
   @override
   void initState() {
@@ -671,16 +871,19 @@ class _SupportQuoteLineSheetState
     final e = widget.existing;
     _nameCtrl = TextEditingController(text: e?.name ?? '');
     _specCtrl = TextEditingController(text: e?.spec ?? '');
+    _unitCtrl = TextEditingController(text: e?.unit ?? '');
     _qtyCtrl = TextEditingController(text: '${e?.qty ?? 1}');
     _priceCtrl = TextEditingController(
       text: e?.unitPrice == null ? '' : '${e!.unitPrice}',
     );
+    _kind = e?.kind ?? kSupportQuoteKindPart;
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _specCtrl.dispose();
+    _unitCtrl.dispose();
     _qtyCtrl.dispose();
     _priceCtrl.dispose();
     super.dispose();
@@ -766,10 +969,13 @@ class _SupportQuoteLineSheetState
       },
     );
     if (picked == null || !mounted) return;
+    final line = SupportQuoteLine.fromUnitPrice(picked);
     setState(() {
-      _nameCtrl.text = picked.name;
-      if (picked.spec.trim().isNotEmpty) _specCtrl.text = picked.spec;
-      if (picked.price != null) _priceCtrl.text = '${picked.price}';
+      _nameCtrl.text = line.name;
+      if (line.spec.trim().isNotEmpty) _specCtrl.text = line.spec;
+      if (line.unit.trim().isNotEmpty) _unitCtrl.text = line.unit;
+      if (line.unitPrice != null) _priceCtrl.text = '${line.unitPrice}';
+      _kind = line.kind;
     });
   }
 
@@ -788,8 +994,10 @@ class _SupportQuoteLineSheetState
       SupportQuoteLine(
         name: name,
         spec: _specCtrl.text.trim(),
+        unit: _unitCtrl.text.trim(),
         qty: qty <= 0 ? 1 : qty,
         unitPrice: (price ?? 0) > 0 ? price : null,
+        kind: _kind,
       ),
     );
   }
@@ -816,6 +1024,18 @@ class _SupportQuoteLineSheetState
               label: const Text('A/S 단가표에서 고르기'),
             ),
           ),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final kind in kSupportQuoteKindOrder)
+                FilterChip(
+                  label: Text(supportQuoteKindLabel(kind)),
+                  selected: _kind == kind,
+                  onSelected: (_) => setState(() => _kind = kind),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: _nameCtrl,
             decoration: const InputDecoration(labelText: '품명', filled: true),
@@ -828,6 +1048,17 @@ class _SupportQuoteLineSheetState
           const SizedBox(height: 8),
           Row(
             children: [
+              Expanded(
+                child: TextField(
+                  controller: _unitCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '단위',
+                    hintText: 'EA / SET / 식',
+                    filled: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: _qtyCtrl,

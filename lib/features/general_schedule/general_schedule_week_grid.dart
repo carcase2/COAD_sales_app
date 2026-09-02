@@ -321,7 +321,7 @@ class _WeekTable extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: const Color(0xFF9CA3AF), width: 1.2),
           borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
         ),
         child: ClipRRect(
@@ -336,7 +336,10 @@ class _WeekTable extends StatelessWidget {
                       color: _kIntranetWeekdayStyles[i].columnBg,
                       border: Border(
                         right: i < 6
-                            ? const BorderSide(color: Color(0xFFE5E7EB))
+                            ? const BorderSide(
+                                color: Color(0xFF9CA3AF),
+                                width: 1.1,
+                              )
                             : BorderSide.none,
                       ),
                     ),
@@ -449,15 +452,19 @@ class _WeekDayColumn extends StatelessWidget {
         ),
         for (var slot = 0; slot < kGeneralScheduleSlotsPerDay; slot++)
           Expanded(
-            child: _WeekSlotBar(
-              cell: slots[slot],
-              ymd: ymd,
-              slotIndex: slot,
-              isFirst: slot == 0,
-              colorMode: colorMode,
-              searchQuery: query,
-              grid: grid,
-              onTap: () => onSlotTap(slot, ymd, slots[slot]),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                1.5,
+                slot == 0 ? 1.5 : 1,
+                1.5,
+                slot == kGeneralScheduleSlotsPerDay - 1 ? 1.5 : 0,
+              ),
+              child: _WeekSlotBar(
+                cell: slots[slot],
+                colorMode: colorMode,
+                searchQuery: query,
+                onTap: () => onSlotTap(slot, ymd, slots[slot]),
+              ),
             ),
           ),
       ],
@@ -468,36 +475,19 @@ class _WeekDayColumn extends StatelessWidget {
 class _WeekSlotBar extends StatelessWidget {
   const _WeekSlotBar({
     required this.cell,
-    required this.ymd,
-    required this.slotIndex,
-    required this.isFirst,
     required this.colorMode,
     required this.searchQuery,
-    required this.grid,
     required this.onTap,
   });
 
   final GeneralScheduleCell? cell;
-  final String ymd;
-  final int slotIndex;
-  final bool isFirst;
   final GeneralScheduleColorMode colorMode;
   final String searchQuery;
-  final GeneralScheduleDayGrid grid;
   final VoidCallback onTap;
-
-  bool _hasNeighbor(int deltaDays) {
-    if (cell == null) return false;
-    final neighborYmd = addDaysToYmd(ymd, deltaDays);
-    final neighbor = normalizeGeneralScheduleDaySlots(grid[neighborYmd]);
-    final other = neighbor[slotIndex];
-    return other != null && other.scheduleId == cell!.scheduleId;
-  }
 
   @override
   Widget build(BuildContext context) {
     final filled = cell != null;
-    final continuous = filled && (_hasNeighbor(-1) || _hasNeighbor(1));
     final mismatch = filled &&
         searchQuery.isNotEmpty &&
         !_cellMatchesQuery(cell!, searchQuery);
@@ -507,21 +497,26 @@ class _WeekSlotBar extends StatelessWidget {
             mode: colorMode,
             fallback: const Color(0xFF2563EB),
           )
-        : Colors.white;
+        : const Color(0xFFFFFFFF);
     final site = (cell?.site ?? '').trim();
+    final borderColor = filled
+        ? Color.lerp(fill, const Color(0xFF111827), 0.38)!
+        : const Color(0xFF6B7280);
+    const radius = BorderRadius.all(Radius.circular(4));
 
     return Material(
-      color: mismatch ? fill.withValues(alpha: 0.35) : fill,
+      color: mismatch ? fill.withValues(alpha: 0.38) : fill,
+      elevation: filled ? 0.6 : 0,
+      shadowColor: filled ? Colors.black26 : Colors.transparent,
+      shape: const RoundedRectangleBorder(borderRadius: radius),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        borderRadius: radius,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: const Color(0xFFD1D5DB),
-                width: isFirst ? 2 : 0.7,
-              ),
-            ),
+            borderRadius: radius,
+            border: Border.all(color: borderColor, width: filled ? 1.3 : 1.1),
           ),
           child: filled
               ? Padding(
@@ -535,16 +530,13 @@ class _WeekSlotBar extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 10,
                         height: 1.05,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white.withValues(alpha: mismatch ? 0.7 : 1),
-                        shadows: continuous
-                            ? const [
-                                Shadow(
-                                  color: Color(0x66000000),
-                                  blurRadius: 2,
-                                ),
-                              ]
-                            : null,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white.withValues(
+                          alpha: mismatch ? 0.75 : 1,
+                        ),
+                        shadows: const [
+                          Shadow(color: Color(0x66000000), blurRadius: 1.4),
+                        ],
                       ),
                     ),
                   ),

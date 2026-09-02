@@ -432,7 +432,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (canAccessCustomerSupport(user)) ...[
             _buildNotifyToggle(
               title: 'A/S 방문·발송 예정 알림',
-              subtitle: '매일 오전 9시, 오후 1시, 오후 6시에 오늘·지난 일정을 알려줍니다.',
+              subtitle: '매일 9시·13시·18시 방문·발송, 피드백 대기는 2시간 뒤(19시 이후는 다음날 9시).',
               value: _notifyAsDue,
               onChanged: (v) {
                 setState(() => _notifyAsDue = v);

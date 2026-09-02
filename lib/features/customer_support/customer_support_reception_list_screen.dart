@@ -18,6 +18,8 @@ import 'package:coad_customer_calls/features/customer_support/support_first_cons
 import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_sites_map_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/models/region.dart';
@@ -623,6 +625,7 @@ class _CustomerSupportReceptionDetailScreenState
   SupportCallLog? _log;
   List<SupportConsultation> _consults = const [];
   List<SupportVisitReport> _visits = const [];
+  List<SupportQuoteDocument> _quotes = const [];
   Object? _loadError;
   bool _loading = false;
   bool _changed = false;
@@ -669,11 +672,21 @@ class _CustomerSupportReceptionDetailScreenState
       try {
         visits = await repo.listVisitReports(id);
       } catch (_) {}
+      var quotes = <SupportQuoteDocument>[];
+      try {
+        quotes = await ref.read(supportAsQuoteRepositoryProvider).listForSite(
+              phone: log.customerPhone,
+              site: log.customerName,
+              customerName: log.customerName,
+              callLogId: log.id,
+            );
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _log = log;
         _consults = consults;
         _visits = visits;
+        _quotes = quotes;
         _loading = false;
       });
     } catch (e) {
@@ -1213,6 +1226,102 @@ class _CustomerSupportReceptionDetailScreenState
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _DetailCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _label(scheme, '이 현장 견적서'),
+                        if (_quotes.isEmpty)
+                          Text(
+                            '아직 작성한 견적서가 없습니다. 언제·얼마를 보냈는지 여기서 확인할 수 있습니다.',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          )
+                        else
+                          for (final q in _quotes)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(
+                                supportQuoteHistoryLine(q),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              trailing: const Icon(Icons.chevron_right_rounded),
+                              onTap: () async {
+                                await Navigator.of(context).push<void>(
+                                  MaterialPageRoute(
+                                    builder: (_) => SupportQuoteWriterScreen(
+                                      openDoc: q,
+                                      callLogId: _log?.id,
+                                      site: SupportSiteSample(
+                                        id: _log?.id ?? '',
+                                        name: (_log?.customerName ?? '').trim(),
+                                        address: _log?.address ?? '',
+                                        phone: _log?.customerPhone ?? '',
+                                        assignee: _log?.createdBy ?? '',
+                                        revisitCount: 0,
+                                        installCompletedYmd: null,
+                                        addresses: [
+                                          if ((_log?.address ?? '')
+                                              .trim()
+                                              .isNotEmpty)
+                                            _log!.address!.trim(),
+                                        ],
+                                        history: const [],
+                                        quotes: const [],
+                                        hasBusinessLicense: false,
+                                        hasChecksheet: false,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                                if (mounted) unawaited(_load());
+                              },
+                            ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () async {
+                              await Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) => SupportQuoteWriterScreen(
+                                    startNew: true,
+                                    callLogId: _log?.id,
+                                    site: SupportSiteSample(
+                                      id: _log?.id ?? '',
+                                      name: (_log?.customerName ?? '').trim(),
+                                      address: _log?.address ?? '',
+                                      phone: _log?.customerPhone ?? '',
+                                      assignee: _log?.createdBy ?? '',
+                                      revisitCount: 0,
+                                      installCompletedYmd: null,
+                                      addresses: [
+                                        if ((_log?.address ?? '')
+                                            .trim()
+                                            .isNotEmpty)
+                                          _log!.address!.trim(),
+                                      ],
+                                      history: const [],
+                                      quotes: const [],
+                                      hasBusinessLicense: false,
+                                      hasChecksheet: false,
+                                    ),
+                                  ),
+                                ),
+                              );
+                              if (mounted) unawaited(_load());
+                            },
+                            child: const Text('견적서 작성'),
                           ),
                         ),
                       ],

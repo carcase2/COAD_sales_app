@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_site_search_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_branch_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
@@ -2327,6 +2328,29 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       invalidateSupportWorkCaches(ref);
     }
 
+    Future<void> openInProgressBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '답 대기 지사 선택',
+        subtitle: '안내 후 피드백 · 구두 견적 · 정식 견적서',
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .list(statusId: kSupportStatusInProgress, limit: 200),
+      );
+      if (!mounted || selected == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportReceptionListScreen(
+            title: '답 대기·견적서',
+            statusId: kSupportStatusInProgress,
+            initialStatusTab: '답 대기·견적서',
+            initialBranch: selected,
+          ),
+        ),
+      );
+      invalidateSupportWorkCaches(ref);
+    }
+
     Future<void> openFeedbackWaitBranchPicker() async {
       HapticFeedback.selectionClick();
       final selected = await _pickSupportBranchForLogs(
@@ -2414,13 +2438,31 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           onTapPending: () => unawaited(openPendingBranchPicker()),
           onTapVisit: () => unawaited(openVisitBranchPicker()),
           onTapUpdated: () => unawaited(openUpdatedBranchPicker()),
+          allCount: desk.all,
           allPending: allPending,
           allIncomplete: desk.incomplete,
+          onTapAll: () {
+            HapticFeedback.selectionClick();
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    const CustomerSupportSiteSearchScreen(title: '전체'),
+              ),
+            );
+          },
           onTapAllPending: () => unawaited(openAllPendingBranchPicker()),
           onTapAllIncomplete: () => unawaited(openAllIncompleteBranchPicker()),
           headerAlert: headerAlert,
         ),
         const SizedBox(height: 10),
+        SupportSectionCard(
+          title: '답 대기·견적서',
+          subtitle: '안내 후 피드백 · 구두 견적 · 정식 견적서',
+          icon: Icons.timelapse_rounded,
+          badge: desk.inProgress > 0 ? '${desk.inProgress}' : null,
+          onTap: () => unawaited(openInProgressBranchPicker()),
+        ),
+        const SizedBox(height: 8),
         SupportSectionCard(
           title: '피드백 대기',
           subtitle: '안내 후 고객 연락을 기다리는 건',

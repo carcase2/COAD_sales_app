@@ -69,4 +69,39 @@ void main() {
     final value = tester.widget<Text>(find.text('5'));
     expect(value.style?.fontSize, 20);
   });
+
+  testWidgets('홈 고객지원팀 통계에 전체 카드가 보인다', (tester) async {
+    var opened = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomeSupportMiniStatsWidget(
+            compact: true,
+            receptionLabel: '금일 A/S',
+            pendingLabel: '금일 미처리',
+            visitLabel: '금일 방문',
+            updatedLabel: '금일 업데이트',
+            reception: 5,
+            pending: 1,
+            visits: 2,
+            updated: 0,
+            onTapReception: () {},
+            onTapPending: () {},
+            onTapVisit: () {},
+            onTapUpdated: () {},
+            onTapAll: () => opened = true,
+            allCount: 12,
+            onTapAllPending: () {},
+            onTapAllIncomplete: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('전체'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    await tester.tap(find.text('전체'));
+    await tester.pump();
+    expect(opened, isTrue);
+  });
 }

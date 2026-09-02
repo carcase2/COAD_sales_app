@@ -262,6 +262,8 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
     required this.onTapPending,
     required this.onTapVisit,
     required this.onTapUpdated,
+    this.onTapAll,
+    this.allCount = 0,
     this.allPending = 0,
     this.onTapAllPending,
     this.allIncomplete = 0,
@@ -282,6 +284,8 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
   final VoidCallback onTapPending;
   final VoidCallback onTapVisit;
   final VoidCallback onTapUpdated;
+  final VoidCallback? onTapAll;
+  final int allCount;
   final int allPending;
   final VoidCallback? onTapAllPending;
   final int allIncomplete;
@@ -358,6 +362,18 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
               ],
             ),
           ),
+          if (onTapAll != null) ...[
+            SizedBox(height: gap),
+            _FlowStatTile(
+              icon: Icons.list_alt_rounded,
+              label: '전체',
+              value: allCount.toString(),
+              color: accent,
+              onTap: onTapAll!,
+              compact: compact,
+              semanticsLabel: '전체 $allCount건. 완료 포함, 검색',
+            ),
+          ],
           if (onTapAllPending != null || onTapAllIncomplete != null) ...[
             SizedBox(height: gap),
             Row(
@@ -644,11 +660,7 @@ class _StatItem extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 18,
-          color: color.withValues(alpha: 0.85),
-        ),
+        Icon(icon, size: 18, color: color.withValues(alpha: 0.85)),
         const SizedBox(width: 8),
         Expanded(
           child: Align(

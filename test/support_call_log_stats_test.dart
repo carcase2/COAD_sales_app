@@ -338,4 +338,48 @@ void main() {
     );
     expect(SupportDueScheduleSummary.empty.body, isEmpty);
   });
+
+  test('피드백 대기는 2시간 뒤, 19시를 넘기면 다음날 9시', () {
+    DateTime t(int h, [int m = 0]) => DateTime(2026, 9, 2, h, m);
+    expect(nextSupportFeedbackWaitAt(t(15)), t(17));
+    expect(nextSupportFeedbackWaitAt(t(16, 59)), t(18, 59));
+    expect(nextSupportFeedbackWaitAt(t(17)), t(19));
+    expect(nextSupportFeedbackWaitAt(t(17, 1)), DateTime(2026, 9, 3, 9));
+    expect(nextSupportFeedbackWaitAt(t(18)), DateTime(2026, 9, 3, 9));
+    expect(nextSupportFeedbackWaitAt(t(19)), DateTime(2026, 9, 3, 9));
+    expect(nextSupportFeedbackWaitAt(t(22, 30)), DateTime(2026, 9, 3, 9));
+    expect(
+      supportFeedbackWaitNoticeTitle(
+        const SupportCallLog(
+          id: '1',
+          customerName: '김현장',
+          customerPhone: '010-0000-0000',
+          issue: '모터',
+        ),
+      ),
+      '[중] 피드백 대기',
+    );
+    expect(
+      supportFeedbackWaitNoticeBody(
+        const SupportCallLog(
+          id: '1',
+          customerName: '김현장',
+          customerPhone: '010-0000-0000',
+          issue: '모터',
+        ),
+      ),
+      '[중] · 김현장 · 010-0000-0000 · 다시 확인해 주세요',
+    );
+    expect(
+      supportFeedbackWaitNoticeTitle(
+        const SupportCallLog(
+          id: '2',
+          customerName: '김현장',
+          customerPhone: '010-0000-0000',
+          issue: '[긴급도 상] 오버헤드도어\n현장: 한빛',
+        ),
+      ),
+      '[상] 피드백 대기',
+    );
+  });
 }

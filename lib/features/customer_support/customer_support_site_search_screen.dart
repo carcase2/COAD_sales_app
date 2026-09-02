@@ -1,28 +1,54 @@
+import 'dart:async';
+
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
+import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
+import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_completion_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_site_index.dart';
+import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
+import 'package:coad_customer_calls/models/region.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class CustomerSupportSiteSearchScreen extends StatefulWidget {
-  const CustomerSupportSiteSearchScreen({super.key});
+class CustomerSupportSiteSearchScreen extends ConsumerStatefulWidget {
+  const CustomerSupportSiteSearchScreen({super.key, this.title = '현장검색'});
+
+  final String title;
 
   @override
-  State<CustomerSupportSiteSearchScreen> createState() =>
+  ConsumerState<CustomerSupportSiteSearchScreen> createState() =>
       _CustomerSupportSiteSearchScreenState();
 }
 
 class _CustomerSupportSiteSearchScreenState
-    extends State<CustomerSupportSiteSearchScreen> {
+    extends ConsumerState<CustomerSupportSiteSearchScreen> {
   final _queryCtrl = TextEditingController();
   String _query = '';
+  String _branchTab = '전체';
+  String _statusTab = '전체';
+  List<SupportIndexedSite> _sites = const [];
+  bool _loading = true;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_reload());
+    });
+  }
 
   @override
   void dispose() {
@@ -30,21 +56,52 @@ class _CustomerSupportSiteSearchScreenState
     super.dispose();
   }
 
-  List<SupportSiteSample> get _filtered {
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return kSupportSampleSites;
-    return kSupportSampleSites
-        .where((s) {
-          final blob = [
-            s.name,
-            s.address,
-            s.phone,
-            s.assignee,
-            ...s.addresses,
-            ...s.quotes,
-          ].join(' ').toLowerCase();
-          return blob.contains(q);
-        })
+  Future<void> _reload() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final logs = await ref
+          .read(supportCallLogRepositoryProvider)
+          .list(limit: 1000);
+      var quotes = <SupportQuoteDocument>[];
+      try {
+        quotes = await ref.read(supportAsQuoteRepositoryProvider).list();
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _sites = buildSupportIndexedSites(logs: logs, quotes: quotes);
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
+  }
+
+  List<Region> get _regions =>
+      ref.watch(regionsRawProvider).valueOrNull ?? const [];
+
+  List<SupportIndexedSite> get _branchSource {
+    if (_branchTab == '전체') return _sites;
+    return _sites
+        .where((s) => supportIndexedSiteBranch(s, _regions) == _branchTab)
+        .toList(growable: false);
+  }
+
+  List<SupportIndexedSite> get _filtered {
+    var source = _branchSource;
+    if (_statusTab != '전체') {
+      source = source
+          .where((s) => supportIndexedSiteMatchesStatus(s, _statusTab))
+          .toList(growable: false);
+    }
+    return source
+        .where((s) => supportIndexedSiteMatches(s, _query))
         .toList(growable: false);
   }
 
@@ -54,16 +111,32 @@ class _CustomerSupportSiteSearchScreenState
     final items = _filtered;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('현장검색'),
-        actions: const [SupportExcelButton()],
+        title: Text(widget.title),
+        actions: [
+          IconButton(
+            tooltip: '새로고침',
+            onPressed: _loading ? null : () => unawaited(_reload()),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [
+          SupportBranchFilterBar(
+            selected: _branchTab,
+            counts: supportIndexedSiteBranchCounts(_sites, _regions),
+            onSelected: (tab) => setState(() => _branchTab = tab),
+          ),
+          SupportStatusFilterBar(
+            selected: _statusTab,
+            counts: supportIndexedSiteStatusCounts(_branchSource),
+            onSelected: (tab) => setState(() => _statusTab = tab),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: SearchBar(
               controller: _queryCtrl,
-              hintText: '주소 · 담당자 · 전화 · 현장명 · 견적',
+              hintText: '현장 · 주소 · 전화 · 담당자 · 견적',
               leading: const Icon(Icons.search_rounded, size: 20),
               trailing: _query.isEmpty
                   ? null
@@ -88,12 +161,39 @@ class _CustomerSupportSiteSearchScreenState
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: SupportComingSoonBanner(
-              message: '샘플 현장입니다. 체크시트·견적서는 기존 화면으로 연결됩니다.',
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _loading
+                    ? '현장을 불러오는 중…'
+                    : [
+                        if (_branchTab != '전체') _branchTab,
+                        if (_statusTab != '전체') _statusTab,
+                        '${items.length}곳',
+                        if (_query.trim().isEmpty &&
+                            _branchTab == '전체' &&
+                            _statusTab == '전체')
+                          '완료 포함',
+                      ].join(' · '),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
             ),
           ),
           Expanded(
-            child: items.isEmpty
+            child: _loading
+                ? const AppLoading(message: '전체 현장을 불러오는 중…')
+                : _error != null
+                ? AppEmpty(
+                    icon: Icons.cloud_off_outlined,
+                    message: '현장을 불러오지 못했습니다.',
+                    detail: koreanErrorMessage(_error!),
+                    actionLabel: '다시 시도',
+                    onAction: () => unawaited(_reload()),
+                  )
+                : items.isEmpty
                 ? const AppEmpty(
                     icon: Icons.location_off_outlined,
                     message: '검색 결과가 없습니다.',
@@ -104,15 +204,17 @@ class _CustomerSupportSiteSearchScreenState
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
                       final site = items[i];
-                      return _SiteResultTile(
+                      return _IndexedSiteTile(
                         site: site,
                         query: _query,
                         onTap: () {
                           HapticFeedback.selectionClick();
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  CustomerSupportSiteDetailScreen(site: site),
+                              builder: (_) => CustomerSupportSiteDetailScreen(
+                                site: site.toSiteSample(),
+                                receptions: site.logs,
+                              ),
                             ),
                           );
                         },
@@ -126,14 +228,14 @@ class _CustomerSupportSiteSearchScreenState
   }
 }
 
-class _SiteResultTile extends StatelessWidget {
-  const _SiteResultTile({
+class _IndexedSiteTile extends StatelessWidget {
+  const _IndexedSiteTile({
     required this.site,
     required this.query,
     required this.onTap,
   });
 
-  final SupportSiteSample site;
+  final SupportIndexedSite site;
   final String query;
   final VoidCallback onTap;
 
@@ -156,7 +258,7 @@ class _SiteResultTile extends StatelessWidget {
                 children: [
                   Expanded(
                     child: SearchHighlightText(
-                      text: site.name,
+                      text: site.title,
                       query: query,
                       style: TextStyle(
                         fontSize: 16,
@@ -175,7 +277,9 @@ class _SiteResultTile extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      '재방문 ${site.revisitCount}회',
+                      site.statusLabel.isEmpty
+                          ? '접수 ${site.receptionCount}건'
+                          : '${site.statusLabel} · ${site.receptionCount}건',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -186,14 +290,23 @@ class _SiteResultTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(
-                site.address,
-                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-              ),
+              if (site.address.trim().isNotEmpty)
+                SearchHighlightText(
+                  text: site.address,
+                  query: query,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               const SizedBox(height: 4),
-              Text(
-                '${site.assignee} · ${site.phone}'
-                '${site.installCompletedYmd == null ? ' · 설치미완료' : ' · 설치 ${site.installCompletedYmd}'}',
+              SearchHighlightText(
+                text: [
+                  if (site.assignee.trim().isNotEmpty) site.assignee,
+                  if (site.phone.trim().isNotEmpty) site.phone,
+                  if (site.quotes.isNotEmpty) '견적 ${site.quotes.length}건',
+                ].join(' · '),
+                query: query,
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ],
@@ -204,10 +317,62 @@ class _SiteResultTile extends StatelessWidget {
   }
 }
 
-class CustomerSupportSiteDetailScreen extends StatelessWidget {
-  const CustomerSupportSiteDetailScreen({super.key, required this.site});
+class CustomerSupportSiteDetailScreen extends ConsumerStatefulWidget {
+  const CustomerSupportSiteDetailScreen({
+    super.key,
+    required this.site,
+    this.receptions = const [],
+  });
 
   final SupportSiteSample site;
+  final List<SupportCallLog> receptions;
+
+  @override
+  ConsumerState<CustomerSupportSiteDetailScreen> createState() =>
+      _CustomerSupportSiteDetailScreenState();
+}
+
+class _CustomerSupportSiteDetailScreenState
+    extends ConsumerState<CustomerSupportSiteDetailScreen> {
+  List<SupportQuoteDocument> _quotes = const [];
+
+  SupportSiteSample get site => widget.site;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadQuotes();
+    });
+  }
+
+  Future<void> _loadQuotes() async {
+    try {
+      final rows = await ref
+          .read(supportAsQuoteRepositoryProvider)
+          .listForSite(
+            phone: site.phone,
+            site: site.name,
+            customerName: site.name,
+          );
+      if (!mounted) return;
+      setState(() => _quotes = rows);
+    } catch (_) {}
+  }
+
+  List<SupportCallLog> get _receptions => widget.receptions;
+
+  List<String> get _historyLines => [
+    ...site.history,
+    ..._quotes.map(supportQuoteHistoryLine),
+  ];
+
+  List<String> get _quoteLines {
+    if (_quotes.isNotEmpty) {
+      return _quotes.map(supportQuoteHistoryLine).toList();
+    }
+    return site.quotes;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -229,10 +394,10 @@ class CustomerSupportSiteDetailScreen extends StatelessWidget {
           const SizedBox(height: 8),
           SupportSectionCard(
             title: 'B. 히스토리',
-            subtitle: site.history.isEmpty ? '이력 없음' : site.history.first,
+            subtitle: _historyLines.isEmpty ? '이력 없음' : _historyLines.first,
             icon: Icons.history_rounded,
-            badge: '${site.history.length}',
-            onTap: () => _showLines(context, 'A/S 히스토리', site.history),
+            badge: '${_historyLines.length}',
+            onTap: () => _showHistory(context),
           ),
           const SizedBox(height: 8),
           SupportSectionCard(
@@ -265,16 +430,19 @@ class CustomerSupportSiteDetailScreen extends StatelessWidget {
           const SizedBox(height: 8),
           SupportSectionCard(
             title: 'F. 기존 견적서',
-            subtitle: site.quotes.isEmpty
+            subtitle: _quoteLines.isEmpty
                 ? '보낸 견적 없음 · 견적 화면으로 이동'
-                : site.quotes.first,
+                : _quoteLines.first,
             icon: Icons.request_quote_outlined,
-            badge: site.quotes.isEmpty ? null : '${site.quotes.length}',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SupportQuoteWriterScreen(site: site),
-              ),
-            ),
+            badge: _quoteLines.isEmpty ? null : '${_quoteLines.length}',
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SupportQuoteWriterScreen(site: site),
+                ),
+              );
+              if (mounted) await _loadQuotes();
+            },
           ),
           const SizedBox(height: 8),
           SupportSectionCard(
@@ -310,6 +478,96 @@ class CustomerSupportSiteDetailScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showHistory(BuildContext context) {
+    final logs = _receptions;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            children: [
+              const Text(
+                'A/S 히스토리',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 12),
+              if (logs.isNotEmpty) ...[
+                for (final log in logs)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.circle, size: 8),
+                    title: Text(
+                      supportCallLogProgressLabel(log.serviceStatusId),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      [
+                        log.customerName,
+                        if ((log.createdAt ?? log.callDate) != null)
+                          ymdSeoulFromDateTime(log.createdAt ?? log.callDate!),
+                        if (log.issue.trim().isNotEmpty)
+                          log.issue.trim().replaceAll('\n', ' '),
+                      ].join(' · '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              CustomerSupportReceptionDetailScreen(log: log),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+              if (_quotes.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  '견적서',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                for (final q in _quotes)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.request_quote_outlined, size: 18),
+                    title: Text(supportQuoteHistoryLine(q)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              SupportQuoteWriterScreen(site: site, openDoc: q),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+              if (logs.isEmpty && _quotes.isEmpty && _historyLines.isNotEmpty)
+                for (final line in _historyLines)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.circle, size: 8),
+                    title: Text(line),
+                  ),
+              if (logs.isEmpty && _quotes.isEmpty && _historyLines.isEmpty)
+                const Text('이력이 없습니다.'),
+            ],
+          ),
+        );
+      },
     );
   }
 

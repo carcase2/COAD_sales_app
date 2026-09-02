@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 /// 오늘·지난 방문/발송 예정 건수. 완료(status 1)는 빼다.
 class SupportDueScheduleSummary {
@@ -107,6 +108,7 @@ class SupportDueScheduleSummary {
 
 class SupportDeskCounts {
   const SupportDeskCounts({
+    required this.all,
     required this.todayPending,
     required this.pending,
     required this.incomplete,
@@ -118,6 +120,7 @@ class SupportDeskCounts {
     required this.overdueDeposit,
   });
 
+  final int all;
   final int todayPending;
   final int pending;
   final int incomplete;
@@ -129,6 +132,7 @@ class SupportDeskCounts {
   final int overdueDeposit;
 
   static const empty = SupportDeskCounts(
+    all: 0,
     todayPending: 0,
     pending: 0,
     incomplete: 0,
@@ -173,7 +177,14 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
     SupportConsultOutcome.feedbackWait,
   );
   final incomplete = await repo.list(incompleteOnly: true, limit: 400);
+  var all = 0;
+  try {
+    all = await repo.countAll();
+  } catch (_) {
+    all = incomplete.length;
+  }
   return SupportDeskCounts(
+    all: all,
     todayPending: todayPending.length,
     pending: pending.length,
     incomplete: incomplete.length,
@@ -186,11 +197,67 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
   );
 });
 
-/// 로그인·재개·상담 저장 후 9/13/18 로컬 예약을 맞춘다.
+/// 피드백 대기 재알림. [now]는 서울 벽시계. 2시간 뒤, 그날 19:00을 넘기면 다음날 09:00.
+DateTime nextSupportFeedbackWaitAt(DateTime now) {
+  final plus2 = now.add(const Duration(hours: 2));
+  final workEnd = DateTime(now.year, now.month, now.day, 19);
+  if (plus2.isAfter(workEnd)) {
+    return DateTime(
+      now.year,
+      now.month,
+      now.day,
+      9,
+    ).add(const Duration(days: 1));
+  }
+  return plus2;
+}
+
+DateTime supportFeedbackWaitSeoulWall(DateTime utcOrLocal) {
+  final utc = utcOrLocal.isUtc ? utcOrLocal : utcOrLocal.toUtc();
+  final seoul = utc.add(const Duration(hours: 9));
+  return DateTime(
+    seoul.year,
+    seoul.month,
+    seoul.day,
+    seoul.hour,
+    seoul.minute,
+    seoul.second,
+  );
+}
+
+DateTime supportFeedbackWaitSeoulNow() {
+  try {
+    final n = tz.TZDateTime.now(tz.local);
+    return DateTime(n.year, n.month, n.day, n.hour, n.minute, n.second);
+  } catch (_) {
+    return DateTime.now();
+  }
+}
+
+String supportFeedbackWaitUrgencyLabel(String issue) {
+  final match = RegExp(r'\[긴급도\s*(상|중|하)\]').firstMatch(issue);
+  return match?.group(1) ?? '중';
+}
+
+String supportFeedbackWaitNoticeTitle(SupportCallLog log) {
+  return '[${supportFeedbackWaitUrgencyLabel(log.issue)}] 피드백 대기';
+}
+
+String supportFeedbackWaitNoticeBody(SupportCallLog log) {
+  return [
+    '[${supportFeedbackWaitUrgencyLabel(log.issue)}]',
+    log.customerName.trim(),
+    if (log.customerPhone.trim().isNotEmpty) log.customerPhone.trim(),
+    '다시 확인해 주세요',
+  ].where((e) => e.isNotEmpty).join(' · ');
+}
+
+/// 로그인·재개·상담 저장 후 9/13/18 로컬 예약과 피드백 대기 2시간 알림을 맞춘다.
 Future<void> refreshSupportDueReminders(WidgetRef ref) async {
   final user = ref.read(authControllerProvider);
   if (!canAccessCustomerSupport(user)) {
     await NotificationService.cancelAsDueReminders();
+    await NotificationService.cancelFeedbackWaitReminders();
     return;
   }
   final enabled =
@@ -201,6 +268,7 @@ Future<void> refreshSupportDueReminders(WidgetRef ref) async {
       true;
   if (!enabled) {
     await NotificationService.cancelAsDueReminders();
+    await NotificationService.cancelFeedbackWaitReminders();
     return;
   }
   try {
@@ -217,4 +285,35 @@ Future<void> refreshSupportDueReminders(WidgetRef ref) async {
   } catch (e) {
     debugPrint('[as-due] reminder refresh failed: $e');
   }
+  try {
+    await _syncFeedbackWaitReminders(ref);
+  } catch (e) {
+    debugPrint('[as-feedback] reminder refresh failed: $e');
+  }
+}
+
+Future<void> _syncFeedbackWaitReminders(WidgetRef ref) async {
+  final items = await ref
+      .read(supportCallLogRepositoryProvider)
+      .listFeedbackWaitItems();
+  final now = supportFeedbackWaitSeoulNow();
+  final notices = <SupportFeedbackWaitNotice>[];
+  for (final item in items.take(50)) {
+    var when = nextSupportFeedbackWaitAt(
+      supportFeedbackWaitSeoulWall(item.lastConsultAt),
+    );
+    if (!when.isAfter(now)) {
+      when = nextSupportFeedbackWaitAt(now);
+    }
+    if (!when.isAfter(now)) continue;
+    notices.add(
+      SupportFeedbackWaitNotice(
+        id: item.log.id,
+        title: supportFeedbackWaitNoticeTitle(item.log),
+        body: supportFeedbackWaitNoticeBody(item.log),
+        when: when,
+      ),
+    );
+  }
+  await NotificationService.syncFeedbackWaitReminders(notices);
 }

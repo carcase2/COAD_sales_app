@@ -23,7 +23,7 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               children: [
                 const SupportComingSoonBanner(
-                  message: 'A/S 견적서를 작성하면 이미지·PDF 저장과 이메일 발송이 됩니다.',
+                  message: 'A/S 견적서는 단가표 값으로 채우고, 이미지·PDF로 저장합니다. 현장 히스토리에서 언제·얼마를 보냈는지 볼 수 있습니다.',
                 ),
                 if (site != null) ...[
                   const SizedBox(height: 8),
@@ -57,7 +57,7 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 SupportSectionCard(
                   title: '견적서 작성 · 발송',
-                  subtitle: 'A/S 양식 작성 → 이미지/PDF 저장 → 이메일',
+                  subtitle: '부품·인건비·장비대 · 단가표 채움 · 이미지/PDF',
                   icon: Icons.edit_document,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
@@ -70,7 +70,11 @@ class CustomerSupportQuoteScreen extends StatelessWidget {
                   title: 'D. 검색 · 일정',
                   subtitle: '기존 보낸 견적·방문 일정',
                   icon: Icons.event_note_outlined,
-                  onTap: () => showSupportSkeletonSnack(context, '견적 일정'),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SupportQuoteWriterScreen(site: site),
+                    ),
+                  ),
                 ),
               ],
             ),

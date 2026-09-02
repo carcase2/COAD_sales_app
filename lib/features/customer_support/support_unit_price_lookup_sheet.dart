@@ -16,6 +16,8 @@ Future<SupportUnitPriceItem?> showSupportUnitPriceLookupSheet(
   BuildContext context, {
   ValueChanged<SupportUnitPriceItem>? onInsert,
   String insertLabel = '넣기',
+  bool closeOnInsert = true,
+  int Function()? quoteTotal,
   VoidCallback? onOpenManage,
 }) {
   return showModalBottomSheet<SupportUnitPriceItem>(
@@ -26,6 +28,8 @@ Future<SupportUnitPriceItem?> showSupportUnitPriceLookupSheet(
     builder: (_) => _SupportUnitPriceLookupSheet(
       onInsert: onInsert,
       insertLabel: insertLabel,
+      closeOnInsert: closeOnInsert,
+      quoteTotal: quoteTotal,
       onOpenManage: onOpenManage,
     ),
   );
@@ -35,11 +39,15 @@ class _SupportUnitPriceLookupSheet extends ConsumerStatefulWidget {
   const _SupportUnitPriceLookupSheet({
     this.onInsert,
     this.insertLabel = '넣기',
+    this.closeOnInsert = true,
+    this.quoteTotal,
     this.onOpenManage,
   });
 
   final ValueChanged<SupportUnitPriceItem>? onInsert;
   final String insertLabel;
+  final bool closeOnInsert;
+  final int Function()? quoteTotal;
   final VoidCallback? onOpenManage;
 
   @override
@@ -56,6 +64,8 @@ class _SupportUnitPriceLookupSheetState
   bool _loading = true;
   Object? _error;
   final _won = NumberFormat('#,###');
+  final List<String> _addedNames = [];
+  int _addedAmount = 0;
 
   @override
   void initState() {
@@ -97,6 +107,41 @@ class _SupportUnitPriceLookupSheetState
         _loading = false;
       });
     }
+  }
+
+  bool get _canInsert => widget.onInsert != null;
+
+  Future<void> _insert(SupportUnitPriceItem item) async {
+    widget.onInsert?.call(item);
+    if (widget.closeOnInsert) {
+      Navigator.pop(context, item);
+      return;
+    }
+    if (!mounted) return;
+    final lineAmount = item.price ?? 0;
+    setState(() {
+      _addedNames.add(item.name);
+      _addedAmount += lineAmount;
+    });
+    final price = lineAmount <= 0 ? '-' : '${_won.format(lineAmount)}원';
+    final total = widget.quoteTotal?.call() ?? _addedAmount;
+    final totalLabel = total <= 0 ? '-' : '${_won.format(total)}원';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.check_circle_rounded, color: Color(0xFF15803D)),
+        title: const Text('견적에 넣었습니다'),
+        content: Text(
+          '${item.name}\n$price\n\n이번에 ${_addedNames.length}건\n합계 $totalLabel',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showItem(SupportUnitPriceItem item) {
@@ -188,15 +233,15 @@ class _SupportUnitPriceLookupSheetState
                   const SizedBox(height: 8),
                   Text(item.displayNote),
                 ],
-                if (widget.onInsert != null) ...[
+                if (_canInsert) ...[
                   const SizedBox(height: 16),
-                  FilledButton(
+                  FilledButton.icon(
                     onPressed: () {
-                      widget.onInsert!(item);
                       Navigator.pop(ctx);
-                      Navigator.pop(context, item);
+                      _insert(item);
                     },
-                    child: Text(widget.insertLabel),
+                    icon: const Icon(Icons.add_rounded),
+                    label: Text(widget.insertLabel),
                   ),
                 ],
               ],
@@ -250,6 +295,37 @@ class _SupportUnitPriceLookupSheetState
                 ],
               ),
             ),
+            if (_canInsert)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Text(
+                  '오른쪽 「${widget.insertLabel}」를 누르면 견적에 들어갑니다. 여러 개를 이어서 넣을 수 있습니다.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            if (_addedNames.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Material(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    child: Text(
+                      '견적에 ${_addedNames.length}건 넣음 · 합계 ${_won.format(widget.quoteTotal?.call() ?? _addedAmount)}원 · 방금 ${_addedNames.last}',
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF166534),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
               child: TextField(
@@ -381,24 +457,40 @@ class _SupportUnitPriceLookupSheetState
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              subtitle: subtitle.isEmpty
-                                  ? null
-                                  : SearchHighlightText(
-                                      text: subtitle,
-                                      query: _query,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                              trailing: SearchHighlightText(
-                                text: item.price == null
-                                    ? '-'
-                                    : '${_won.format(item.price)}원',
+                              subtitle: SearchHighlightText(
+                                text: [
+                                  if (item.price != null)
+                                    '${_won.format(item.price)}원',
+                                  if (subtitle.isNotEmpty) subtitle,
+                                ].join(' · '),
                                 query: _query,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: accent,
-                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
+                              trailing: _canInsert
+                                  ? FilledButton(
+                                      onPressed: () => _insert(item),
+                                      style: FilledButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        minimumSize: const Size(0, 36),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      child: Text(widget.insertLabel),
+                                    )
+                                  : SearchHighlightText(
+                                      text: item.price == null
+                                          ? '-'
+                                          : '${_won.format(item.price)}원',
+                                      query: _query,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: accent,
+                                      ),
+                                    ),
                               onTap: () => _showItem(item),
                             ),
                           ],

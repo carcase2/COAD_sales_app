@@ -2,225 +2,253 @@ import 'package:coad_customer_calls/features/customer_support/support_quote_docu
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-/// A/S 견적서 용지. 테마와 상관없이 흰 배경으로 캡처한다.
+/// A/S 견적서 용지. `0. 견적양식 AS 견적서` 엑셀과 같은 칸.
 class SupportQuotePaper extends StatelessWidget {
   const SupportQuotePaper({super.key, required this.doc});
 
   final SupportQuoteDocument doc;
 
   static const _ink = Color(0xFF111827);
-  static const _muted = Color(0xFF6B7280);
-  static const _line = Color(0xFFD1D5DB);
-  static const _accent = Color(0xFF0F766E);
-  static const _headerBg = Color(0xFF0F766E);
+  static const _muted = Color(0xFF4B5563);
+  static const _line = Color(0xFF111827);
+  static const _headerBg = Color(0xFF111827);
   static final _won = NumberFormat('#,###');
 
   String _money(int n) => n <= 0 ? '-' : '${_won.format(n)}원';
 
   @override
   Widget build(BuildContext context) {
+    var no = 0;
     return Container(
-      width: 420,
+      width: 560,
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
               color: _headerBg,
-              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _line, width: 1.4),
             ),
-            child: const Column(
-              children: [
-                Text(
-                  'A/S 견 적 서',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  '코아드 고객지원팀',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+            child: const Text(
+              '見  積  書',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 8,
+              ),
             ),
           ),
-          const SizedBox(height: 14),
-          _kv('견적일', doc.ymd),
-          _kv('고객명', doc.customerName),
-          if (doc.phone.trim().isNotEmpty) _kv('전화', doc.phone.trim()),
-          if (doc.email.trim().isNotEmpty) _kv('이메일', doc.email.trim()),
-          if (doc.site.trim().isNotEmpty) _kv('현장명', doc.site.trim()),
-          if (doc.address.trim().isNotEmpty) _kv('주소', doc.address.trim()),
-          if ((doc.createdBy ?? '').trim().isNotEmpty)
-            _kv('작성', doc.createdBy!.trim()),
           const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: _line),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
-                  ),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(7),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    _field('현장명', doc.site.trim().isEmpty ? doc.customerName : doc.site),
+                    _field('공사명', doc.workName.trim().isEmpty ? 'A/S 공사' : doc.workName),
+                    _field('담당자', doc.createdBy?.trim() ?? ''),
+                    _field('H.P', doc.phone),
+                    _field('E-MAIL', doc.email),
+                    _field('견적번호', doc.quoteNo),
+                    _field('견적일', doc.ymd),
+                    _field('납기', '발주 후 15일 이내'),
+                    _field('유효기간', '견적 후 10일 이내'),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              const SizedBox(
+                width: 210,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '본사주소 : 경기도 화성시 남양읍 현대기아로 202-37',
+                      style: TextStyle(fontSize: 10, height: 1.35, color: _ink),
                     ),
-                  ),
-                  child: const Row(
+                    Text(
+                      'TEL : 1899-7081   FAX : 0505-182-5567',
+                      style: TextStyle(fontSize: 10, height: 1.35, color: _ink),
+                    ),
+                    Text(
+                      'Homepage : www.coaddoor.com',
+                      style: TextStyle(fontSize: 10, height: 1.35, color: _ink),
+                    ),
+                    Text(
+                      'E-mail : cs@coaddoor.com',
+                      style: TextStyle(fontSize: 10, height: 1.35, color: _ink),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      '코아드 고객지원팀',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: _ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '下記와 같이 見積하나이다.',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _ink),
+          ),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '금액 : ${supportQuoteKoreanTotalLabel(doc.total)}',
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: _ink,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Table(
+            border: TableBorder.all(color: _line, width: 0.8),
+            columnWidths: const {
+              0: FixedColumnWidth(28),
+              1: FlexColumnWidth(3.4),
+              2: FlexColumnWidth(2.0),
+              3: FixedColumnWidth(36),
+              4: FixedColumnWidth(36),
+              5: FixedColumnWidth(86),
+              6: FixedColumnWidth(92),
+            },
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            children: [
+              TableRow(
+                decoration: const BoxDecoration(color: Color(0xFFF3F4F6)),
+                children: [
+                  _th('NO'),
+                  _th('품명\n(Description)'),
+                  _th('규격\n(Specification)'),
+                  _th('단위\n(Unit)'),
+                  _th("수량\n(Q'ty)"),
+                  _th('단가\n(Unit Price)'),
+                  _th('금액\n(Amount)'),
+                ],
+              ),
+              for (final kind in kSupportQuoteKindOrder) ...[
+                if (doc.linesOfKind(kind).isNotEmpty)
+                  TableRow(
+                    decoration: const BoxDecoration(color: Color(0xFFEEF2FF)),
                     children: [
-                      Expanded(flex: 4, child: Text('품명', style: _headStyle)),
-                      Expanded(flex: 3, child: Text('규격', style: _headStyle)),
-                      Expanded(child: Text('수량', style: _headStyle)),
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          '단가',
-                          style: _headStyle,
-                          textAlign: TextAlign.right,
-                        ),
+                      _td(''),
+                      _td(
+                        '◆ ${supportQuoteKindLabel(kind)}',
+                        bold: true,
+                        align: TextAlign.left,
                       ),
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          '금액',
-                          style: _headStyle,
-                          textAlign: TextAlign.right,
-                        ),
-                      ),
+                      _td(''),
+                      _td(''),
+                      _td(''),
+                      _td(''),
+                      _td(''),
                     ],
                   ),
-                ),
-                if (doc.lines.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Text('품목 없음', style: TextStyle(color: _muted)),
-                  )
-                else
-                  for (final line in doc.lines)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 7,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: Text(line.name, style: _cellStyle),
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              line.spec.trim().isEmpty ? '-' : line.spec.trim(),
-                              style: _cellStyle,
-                            ),
-                          ),
-                          Expanded(
-                            child: Text('${line.qty}', style: _cellStyle),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              _money(line.unitPrice ?? 0),
-                              style: _cellStyle,
-                              textAlign: TextAlign.right,
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              _money(line.amount),
-                              style: _cellStyle.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
-                              textAlign: TextAlign.right,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                for (final line in doc.linesOfKind(kind))
+                  TableRow(
+                    children: [
+                      _td('${++no}'),
+                      _td(line.name, align: TextAlign.left),
+                      _td(line.spec.trim().isEmpty ? '-' : line.spec.trim()),
+                      _td(line.unit.trim().isEmpty ? '-' : line.unit.trim()),
+                      _td('${line.qty}'),
+                      _moneyTd(line.unitPrice ?? 0),
+                      _moneyTd(line.amount, bold: true),
+                    ],
+                  ),
               ],
-            ),
+              if (doc.lines.isEmpty)
+                TableRow(
+                  children: [
+                    _td(''),
+                    _td('품목 없음', align: TextAlign.left),
+                    _td(''),
+                    _td(''),
+                    _td(''),
+                    _td(''),
+                    _td(''),
+                  ],
+                ),
+              TableRow(
+                decoration: const BoxDecoration(color: Color(0xFFF3F4F6)),
+                children: [
+                  _td(''),
+                  _td('TOTAL', bold: true, align: TextAlign.left),
+                  _td(''),
+                  _td(''),
+                  _td(''),
+                  _td(''),
+                  _moneyTd(doc.total, bold: true),
+                ],
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(border: Border.all(color: _line)),
             child: Text(
-              '합계 ${_money(doc.total)}',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: _accent,
-              ),
+              [
+                '※ NOTE',
+                '',
+                '1. VAT. 별도',
+                '2. 상기 견적서 이외의 추가 자재비 별도 청구',
+                '3. 결제조건 : A/S 완료 후 100% 당일결제',
+              ].join('\n'),
+              style: const TextStyle(fontSize: 11, height: 1.4, color: _ink),
             ),
           ),
-          if (doc.note.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
-            const Text(
-              '비고',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: _muted,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              doc.note.trim(),
-              style: const TextStyle(fontSize: 12, height: 1.35, color: _ink),
-            ),
-          ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           const Text(
-            '본 견적서는 코아드 고객지원팀 A/S 전용입니다.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 10, color: _muted),
+            '※ 코아드자동문(C-Series)은 전 모델 CE인증을 통과한 제품입니다.\n※ 6년연속한국소비자만족지수 1위 / 2015한국소비자선호도 1위 브랜드 대상',
+            style: TextStyle(fontSize: 9.5, height: 1.35, color: _muted),
           ),
         ],
       ),
     );
   }
 
-  Widget _kv(String label, String value) {
+  Widget _field(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 56,
+            width: 64,
             child: Text(
-              label,
+              '$label :',
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w800,
-                color: _muted,
+                color: _ink,
               ),
             ),
           ),
           Expanded(
             child: Text(
-              value,
+              value.trim().isEmpty ? '-' : value.trim(),
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 color: _ink,
               ),
@@ -230,16 +258,64 @@ class SupportQuotePaper extends StatelessWidget {
       ),
     );
   }
+
+  Widget _th(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          height: 1.15,
+          color: _ink,
+        ),
+      ),
+    );
+  }
+
+  Widget _td(
+    String text, {
+    TextAlign align = TextAlign.center,
+    bool bold = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+      child: Text(
+        text,
+        textAlign: align,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 10,
+          height: 1.2,
+          fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+          color: _ink,
+        ),
+      ),
+    );
+  }
+
+  Widget _moneyTd(int n, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Text(
+          _money(n),
+          maxLines: 1,
+          softWrap: false,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            fontSize: 10,
+            height: 1,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+            color: _ink,
+          ),
+        ),
+      ),
+    );
+  }
 }
-
-const _headStyle = TextStyle(
-  fontSize: 11,
-  fontWeight: FontWeight.w800,
-  color: Color(0xFF374151),
-);
-
-const _cellStyle = TextStyle(
-  fontSize: 11,
-  fontWeight: FontWeight.w600,
-  color: Color(0xFF111827),
-);
