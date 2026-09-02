@@ -67,17 +67,60 @@ bool isGosuFollowDueInRange(
   return ymd.compareTo(fromYmd) >= 0 && ymd.compareTo(toYmdInclusive) <= 0;
 }
 
-/// 고수 접수 담당자 칩. 인트라넷과 같이 자동문의고수 부서만. 비워도 됨.
+/// 고수 접수 담당자 칩. 인트라넷과 같이 자동문의고수 부서 + 이미 지정된 이름.
 List<String> gosuAssigneeChoices({
   required Iterable<String> departmentNames,
+  String? assignedTo,
 }) {
   final names = <String>{};
   for (final raw in departmentNames) {
     final n = raw.trim();
     if (n.isNotEmpty) names.add(n);
   }
+  for (final n in parseGosuAssignees(assignedTo)) {
+    names.add(n);
+  }
   final list = names.toList()..sort((a, b) => a.compareTo(b));
   return list;
+}
+
+/// `홍길동, 김철수` / `홍길동/김철수` 등 여러 담당자 표기.
+List<String> parseGosuAssignees(String? value) {
+  if (value == null) return const [];
+  final seen = <String>{};
+  final names = <String>[];
+  for (final part in value.split(RegExp(r'[,/·、，]'))) {
+    final name = part.trim();
+    if (name.isEmpty || seen.contains(name)) continue;
+    seen.add(name);
+    names.add(name);
+  }
+  return names;
+}
+
+String formatGosuAssignees(Iterable<String> names) =>
+    parseGosuAssignees(names.join(', ')).join(', ');
+
+String toggleGosuAssignee(
+  String? current,
+  String name, {
+  bool required = false,
+}) {
+  final target = name.trim();
+  if (target.isEmpty) return (current ?? '').trim();
+  final list = parseGosuAssignees(current);
+  final next = list.contains(target)
+      ? list.where((item) => item != target).toList()
+      : [...list, target];
+  if (required && next.isEmpty) return formatGosuAssignees(list);
+  return formatGosuAssignees(next);
+}
+
+String? validateGosuAssignees(String? value) {
+  if (parseGosuAssignees(value).isEmpty) {
+    return '담당자는 1명 이상 선택해야 합니다.';
+  }
+  return null;
 }
 
 String? validateGosuFollowUpForm({

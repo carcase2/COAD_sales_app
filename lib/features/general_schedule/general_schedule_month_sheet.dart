@@ -18,6 +18,7 @@ class GeneralScheduleMonthCalendar extends StatefulWidget {
     this.loginUserName,
     this.scrollController,
     this.showHeader = false,
+    this.showTableHeader = true,
     this.padding = const EdgeInsets.fromLTRB(12, 0, 12, 16),
   });
 
@@ -29,6 +30,7 @@ class GeneralScheduleMonthCalendar extends StatefulWidget {
   final String? loginUserName;
   final ScrollController? scrollController;
   final bool showHeader;
+  final bool showTableHeader;
   final EdgeInsets padding;
 
   @override
@@ -138,6 +140,7 @@ class _GeneralScheduleMonthCalendarState
                 ? 84
                 : 152,
             daysOfWeekHeight: 28,
+            headerVisible: widget.showTableHeader,
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
               titleCentered: true,

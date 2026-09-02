@@ -18,38 +18,226 @@ class GeneralScheduleCalendarViewToggle extends StatelessWidget {
     super.key,
     required this.view,
     required this.onChanged,
+    this.onToday,
+    this.isToday = false,
   });
 
   final GeneralScheduleCalendarView view;
   final ValueChanged<GeneralScheduleCalendarView> onChanged;
+  final VoidCallback? onToday;
+  final bool isToday;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
-      child: SegmentedButton<GeneralScheduleCalendarView>(
-        style: ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: WidgetStateProperty.all(
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    const selectedBorder = Color(0xFFE6A817);
+    const todayBlue = Color(0xFF2563EB);
+
+    Widget pill({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+      Color? selectedBorderColor,
+    }) {
+      return Material(
+        color: selected ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: selected
+                  ? Border.all(
+                      color: selectedBorderColor ?? selectedBorder,
+                      width: 1.6,
+                    )
+                  : null,
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: selected ? const Color(0xFF1D4ED8) : const Color(0xFF4B5563),
+              ),
+            ),
           ),
         ),
-        showSelectedIcon: false,
-        segments: const [
-          ButtonSegment(
-            value: GeneralScheduleCalendarView.week,
-            label: Text('주간'),
-            icon: Icon(Icons.view_week_rounded, size: 17),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  pill(
+                    label: '월간',
+                    selected: view == GeneralScheduleCalendarView.month,
+                    onTap: () => onChanged(GeneralScheduleCalendarView.month),
+                  ),
+                  pill(
+                    label: '주간',
+                    selected: view == GeneralScheduleCalendarView.week,
+                    onTap: () => onChanged(GeneralScheduleCalendarView.week),
+                  ),
+                ],
+              ),
+            ),
           ),
-          ButtonSegment(
-            value: GeneralScheduleCalendarView.month,
-            label: Text('월간'),
-            icon: Icon(Icons.calendar_month_rounded, size: 17),
+          const SizedBox(width: 8),
+          Material(
+            color: todayBlue,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: onToday,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Text(
+                  '오늘',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white.withValues(alpha: isToday ? 1 : 0.92),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
-        selected: {view},
-        onSelectionChanged: (selection) => onChanged(selection.first),
+      ),
+    );
+  }
+}
+
+/// 인트라넷 주간/월간 타이틀 — `7월 26일 - 8월 1일` + ◀ ▶.
+class GeneralScheduleRangeHeader extends StatelessWidget {
+  const GeneralScheduleRangeHeader({
+    super.key,
+    required this.title,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final String title;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    const titleBlue = Color(0xFF1E3A8A);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onPrevious,
+            tooltip: '이전',
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+            color: titleBlue,
+          ),
+          Expanded(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: titleBlue,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onNext,
+            tooltip: '다음',
+            icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+            color: titleBlue,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 담당자별 / 도어타입별 색상 모드.
+class GeneralScheduleColorModeToggle extends StatelessWidget {
+  const GeneralScheduleColorModeToggle({
+    super.key,
+    required this.mode,
+    required this.onChanged,
+  });
+
+  final GeneralScheduleColorMode mode;
+  final ValueChanged<GeneralScheduleColorMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tab(String label, GeneralScheduleColorMode value) {
+      final selected = mode == value;
+      return Material(
+        color: selected ? const Color(0xFF3B82F6) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: () => onChanged(value),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: selected ? Colors.white : const Color(0xFF4B5563),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                tab('담당자별', GeneralScheduleColorMode.assignee),
+                tab('도어타입별', GeneralScheduleColorMode.doorType),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -752,6 +940,93 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
             ),
           );
         }),
+      ),
+    );
+  }
+}
+
+/// 인트라넷 달력의 「통계」 드롭다운.
+class GeneralScheduleStatsDropdown extends StatefulWidget {
+  const GeneralScheduleStatsDropdown({
+    super.key,
+    required this.stats,
+    this.margin = const EdgeInsets.fromLTRB(12, 0, 12, 8),
+  });
+
+  final GeneralScheduleMonthStats stats;
+  final EdgeInsets margin;
+
+  @override
+  State<GeneralScheduleStatsDropdown> createState() =>
+      _GeneralScheduleStatsDropdownState();
+}
+
+class _GeneralScheduleStatsDropdownState
+    extends State<GeneralScheduleStatsDropdown> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: widget.margin,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _expanded = !_expanded);
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFD1D5DB)),
+                ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '통계',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF374151),
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 22,
+                      color: const Color(0xFF6B7280),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: 8),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                child: GeneralScheduleMonthStatsDetail(stats: widget.stats),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

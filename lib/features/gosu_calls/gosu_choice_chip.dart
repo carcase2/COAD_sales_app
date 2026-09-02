@@ -58,3 +58,33 @@ class GosuChoiceChip extends StatelessWidget {
     );
   }
 }
+
+/// 목록용 문의종류·문의방법 뱃지.
+class GosuNamedBadge extends StatelessWidget {
+  const GosuNamedBadge({super.key, required this.label, this.colorHex});
+
+  final String label;
+  final String? colorHex;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = gosuChipColorFromHex(colorHex) ?? scheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
+  }
+}

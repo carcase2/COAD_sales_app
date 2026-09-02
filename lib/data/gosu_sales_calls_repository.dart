@@ -68,7 +68,7 @@ class GosuSalesCallsRepository {
         id, call_date, call_time, customer_name, customer_phone, inquiry_content,
         status_id, assigned_to, created_by, created_at, updated_at,
         region_sido, region_name, region_label, region_manager, region_branch_type,
-        product_category_name, inquiry_method_name, status_name,
+        product_category_name, inquiry_method_name, inquiry_kind, status_name,
         follow_up, follow_up_content, call_stage, next_scheduled_date, source
       ''';
 
@@ -305,6 +305,7 @@ class GosuSalesCallsRepository {
     int? productCategoryId,
     String? inquiryMethodName,
     int? inquiryMethodId,
+    String? inquiryKind,
     int? regionId,
     String? regionSido,
     String? regionName,
@@ -323,13 +324,11 @@ class GosuSalesCallsRepository {
     if (closeImmediately && closeNote.trim().isEmpty) {
       throw ApiException('종료 접수 시 처리·안내 내용을 입력해주세요.');
     }
+    final assigned = formatGosuAssignees(parseGosuAssignees(assignedTo));
+    final assigneeError = validateGosuAssignees(assigned);
+    if (assigneeError != null) throw ApiException(assigneeError);
     try {
       final parts = seoulNowCallDateTimeParts();
-      var assigned = assignedTo?.trim() ?? '';
-      if (assigned.isEmpty || assigned == '시스템') {
-        final manager = regionManager?.trim() ?? '';
-        assigned = manager.isNotEmpty && manager != '시스템' ? manager : createdBy;
-      }
       final statusId = closeImmediately ? 4 : 1;
       final statusName = closeImmediately ? '단순문의' : '미결정';
       final row = await _client
@@ -346,6 +345,7 @@ class GosuSalesCallsRepository {
             'region_id': regionId,
             'inquiry_method_id': inquiryMethodId,
             'inquiry_method_name': inquiryMethodName,
+            'inquiry_kind': normalizeGosuInquiryKind(inquiryKind),
             'inquiry_content': inquiryContent.trim(),
             'status_id': statusId,
             'status_name': statusName,
@@ -389,7 +389,21 @@ class GosuSalesCallsRepository {
 
   Future<GosuSalesCall> updateCall(String id, Map<String, dynamic> body) async {
     try {
-      await _client.from('gosu_sales_calls').update(body).eq('id', id);
+      final next = Map<String, dynamic>.from(body);
+      if (next.containsKey('assigned_to')) {
+        final assigned = formatGosuAssignees(
+          parseGosuAssignees(next['assigned_to']?.toString()),
+        );
+        final assigneeError = validateGosuAssignees(assigned);
+        if (assigneeError != null) throw ApiException(assigneeError);
+        next['assigned_to'] = assigned;
+      }
+      if (next.containsKey('inquiry_kind')) {
+        next['inquiry_kind'] = normalizeGosuInquiryKind(
+          next['inquiry_kind']?.toString(),
+        );
+      }
+      await _client.from('gosu_sales_calls').update(next).eq('id', id);
       return fetchById(id);
     } catch (e) {
       if (e is ApiException) rethrow;

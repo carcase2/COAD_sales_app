@@ -56,6 +56,7 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
 
   int _productId = kGosuProductCategories.first.id;
   int _methodId = kGosuInquiryMethods.first.id;
+  String _inquiryKind = kGosuInquiryKindDefault;
   String? _regionId;
   bool _submitting = false;
   bool _closeImmediately = false;
@@ -69,7 +70,7 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
   bool _phoneLookupBusy = false;
   String? _lookedUpDigits;
   List<String> _assignees = [];
-  String? _assignedTo;
+  String _assignedTo = '';
 
   @override
   void initState() {
@@ -83,8 +84,10 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
     });
   }
 
-  List<String> get _assigneeChoices =>
-      gosuAssigneeChoices(departmentNames: _assignees);
+  List<String> get _assigneeChoices => gosuAssigneeChoices(
+    departmentNames: _assignees,
+    assignedTo: _assignedTo,
+  );
 
   Future<void> _loadAssignees() async {
     final names = await ref
@@ -419,6 +422,13 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
       ).showSnackBar(const SnackBar(content: Text('문의내용 본문을 입력해주세요.')));
       return;
     }
+    final assigneeError = validateGosuAssignees(_assignedTo);
+    if (assigneeError != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(assigneeError)));
+      return;
+    }
     if (_closeImmediately && _closeNoteCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('종료 접수 시 처리·안내 내용을 입력해주세요.')),
@@ -459,6 +469,7 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
             productCategoryId: null,
             inquiryMethodName: method.name,
             inquiryMethodId: gosuInquiryMethodIdForStorage(method.id),
+            inquiryKind: normalizeGosuInquiryKind(_inquiryKind),
             regionId: int.tryParse(_regionId ?? ''),
             regionSido: sido,
             regionName: regionName,
@@ -467,7 +478,7 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
             regionLabel: regionRow == null
                 ? null
                 : '${sido ?? ''}: ${regionName ?? ''}',
-            assignedTo: _assignedTo,
+            assignedTo: formatGosuAssignees(parseGosuAssignees(_assignedTo)),
             createdBy: user?.name ?? '시스템',
             images: _uploadedImageUrls,
             closeImmediately: _closeImmediately,
@@ -541,6 +552,27 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            const Text('문의종류', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              '미선택 시 단순문의로 저장됩니다.',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final k in kGosuInquiryKinds)
+                  GosuChoiceChip(
+                    label: k.name,
+                    selected: _inquiryKind == k.name,
+                    selectedColor: gosuChipColorFromHex(k.colorHex),
+                    onSelected: (_) => setState(() => _inquiryKind = k.name),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
             const Text('문의방법', style: TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             Wrap(
@@ -551,6 +583,7 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
                   GosuChoiceChip(
                     label: m.name,
                     selected: _methodId == m.id,
+                    selectedColor: gosuChipColorFromHex(m.colorHex),
                     onSelected: (_) => setState(() => _methodId = m.id),
                   ),
               ],
@@ -635,10 +668,10 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
               onChanged: (v) => setState(() => _regionId = v),
             ),
             const SizedBox(height: 12),
-            const Text('담당자', style: TextStyle(fontWeight: FontWeight.w800)),
+            const Text('담당자 *', style: TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
             Text(
-              '선택 사항',
+              '여러 명 선택 가능 · 1명 이상 필수',
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
@@ -655,9 +688,13 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
                   for (final name in _assigneeChoices)
                     GosuChoiceChip(
                       label: name,
-                      selected: _assignedTo == name,
-                      onSelected: (selected) => setState(
-                        () => _assignedTo = selected ? name : null,
+                      selected: parseGosuAssignees(_assignedTo).contains(name),
+                      onSelected: (_) => setState(
+                        () => _assignedTo = toggleGosuAssignee(
+                          _assignedTo,
+                          name,
+                          required: true,
+                        ),
                       ),
                     ),
                 ],

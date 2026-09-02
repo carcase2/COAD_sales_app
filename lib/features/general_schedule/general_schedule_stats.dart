@@ -160,3 +160,58 @@ Color? parseGeneralScheduleUserColor(String? raw, {Color? fallback}) {
   }
   return fallback;
 }
+
+/// 주간 달력 칸 색 — 담당자별 / 도어타입별 (COAD_home Calendar.tsx).
+enum GeneralScheduleColorMode { assignee, doorType }
+
+const Color kGeneralScheduleDoorTypeFallback = Color(0xFF6B7280);
+
+const Map<String, Color> kGeneralScheduleDoorTypeColors = {
+  'S': Color(0xFF3B82F6),
+  'O': Color(0xFF10B981),
+  'H': Color(0xFFF59E0B),
+  'SO': Color(0xFF8B5CF6),
+  'SH': Color(0xFFEF4444),
+  'OH': Color(0xFF14B8A6),
+  'HOS': Color(0xFF6366F1),
+  'VISIT': Color(0xFFEF4444),
+};
+
+/// COAD_home `normalizeDoorTypes` — 코드 정렬 후 OS→SO 등 정규화.
+String normalizeGeneralScheduleDoorTypeKey(Iterable<String> doorTypes) {
+  final codes = doorTypes
+      .map((e) => e.trim().toUpperCase())
+      .where((e) => e.isNotEmpty)
+      .toList()
+    ..sort();
+  if (codes.isEmpty) return '';
+  final joined = codes.join();
+  return switch (joined) {
+    'OS' => 'SO',
+    'HO' => 'OH',
+    'HS' => 'SH',
+    _ => joined,
+  };
+}
+
+Color generalScheduleDoorTypeBarColor(GeneralScheduleCell cell) {
+  for (final model in cell.models) {
+    final fromModel = parseGeneralScheduleUserColor(model.color);
+    if (fromModel != null) return fromModel;
+  }
+  final key = normalizeGeneralScheduleDoorTypeKey(cell.doorTypes);
+  if (key.isEmpty) return kGeneralScheduleDoorTypeFallback;
+  return kGeneralScheduleDoorTypeColors[key] ?? kGeneralScheduleDoorTypeFallback;
+}
+
+Color generalScheduleBarColor({
+  required GeneralScheduleCell cell,
+  required GeneralScheduleColorMode mode,
+  required Color fallback,
+}) {
+  if (mode == GeneralScheduleColorMode.assignee) {
+    return parseGeneralScheduleUserColor(cell.userColor, fallback: fallback) ??
+        fallback;
+  }
+  return generalScheduleDoorTypeBarColor(cell);
+}

@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_stats.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
@@ -113,5 +114,62 @@ void main() {
     final day = computeDayStats(grid, '2026-06-15');
     expect(day.usedSlots, 1);
     expect(day.emptySlots, 7);
+  });
+
+  test('normalizeGeneralScheduleDoorTypeKey — OS/HO/HS 정규화', () {
+    expect(normalizeGeneralScheduleDoorTypeKey(['O', 'S']), 'SO');
+    expect(normalizeGeneralScheduleDoorTypeKey(['H', 'O']), 'OH');
+    expect(normalizeGeneralScheduleDoorTypeKey(['H', 'S']), 'SH');
+    expect(normalizeGeneralScheduleDoorTypeKey(['H', 'O', 'S']), 'HOS');
+    expect(normalizeGeneralScheduleDoorTypeKey(['S']), 'S');
+  });
+
+  test('generalScheduleBarColor — 담당자별·도어타입별', () {
+    const cell = GeneralScheduleCell(
+      scheduleId: 'a',
+      site: '넥센타이',
+      start: '2026-07-28',
+      endDate: '2026-08-01',
+      userColor: '#F59E0B',
+      doorTypes: ['S', 'O'],
+    );
+    expect(
+      generalScheduleBarColor(
+        cell: cell,
+        mode: GeneralScheduleColorMode.assignee,
+        fallback: const Color(0xFF2563EB),
+      ),
+      const Color(0xFFF59E0B),
+    );
+    expect(
+      generalScheduleBarColor(
+        cell: cell,
+        mode: GeneralScheduleColorMode.doorType,
+        fallback: const Color(0xFF2563EB),
+      ),
+      kGeneralScheduleDoorTypeColors['SO'],
+    );
+  });
+
+  test('seoulSundayWeekRangeContaining — 일~토', () {
+    final range = seoulSundayWeekRangeContaining('2026-07-28');
+    expect(range.$1, '2026-07-26');
+    expect(range.$2, '2026-08-01');
+    expect(
+      seoulSundayWeekDays('2026-07-29'),
+      [
+        '2026-07-26',
+        '2026-07-27',
+        '2026-07-28',
+        '2026-07-29',
+        '2026-07-30',
+        '2026-07-31',
+        '2026-08-01',
+      ],
+    );
+    expect(
+      formatMonthDayRangeKo(range.$1, range.$2),
+      '7월 26일 - 8월 1일',
+    );
   });
 }

@@ -10,6 +10,7 @@ import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_create_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_choice_chip.dart';
 import 'package:coad_customer_calls/models/gosu_sales_call.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -185,7 +186,7 @@ class _GosuCallListScreenState extends ConsumerState<GosuCallListScreen> {
     final digits = q.replaceAll(RegExp(r'\D'), '');
     return _items.where((row) {
       final hay =
-          '${row.displayName} ${row.displayPhone} ${row.inquiryContent ?? ''} ${row.displayRegion} ${row.assignedTo ?? ''} ${row.productCategoryName ?? ''}'
+          '${row.displayName} ${row.displayPhone} ${row.inquiryContent ?? ''} ${row.displayRegion} ${row.assignedTo ?? ''} ${row.productCategoryName ?? ''} ${row.inquiryKind ?? ''} ${row.inquiryMethodName ?? ''}'
               .toLowerCase();
       if (hay.contains(q)) return true;
       if (digits.length >= 4 &&
@@ -537,6 +538,23 @@ class _GosuCallTile extends StatelessWidget {
                 text: row.displayPhone.isEmpty ? '-' : row.displayPhone,
                 query: query,
                 style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  GosuNamedBadge(
+                    label: normalizeGosuInquiryKind(row.inquiryKind),
+                    colorHex: gosuInquiryKindColorHex(row.inquiryKind),
+                  ),
+                  if ((row.inquiryMethodName ?? '').trim().isNotEmpty)
+                    GosuNamedBadge(
+                      label: row.inquiryMethodName!.trim(),
+                      colorHex: gosuInquiryMethodColorHex(row.inquiryMethodName),
+                    ),
+                ],
               ),
               const SizedBox(height: 4),
               Text(

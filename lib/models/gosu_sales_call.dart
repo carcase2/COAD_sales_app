@@ -68,6 +68,7 @@ class GosuSalesCall {
     this.regionLabel,
     this.productCategoryName,
     this.inquiryMethodName,
+    this.inquiryKind,
     this.statusName,
     this.followUp,
     this.followUpContent,
@@ -99,6 +100,7 @@ class GosuSalesCall {
   final String? regionLabel;
   final String? productCategoryName;
   final String? inquiryMethodName;
+  final String? inquiryKind;
   final String? statusName;
   final String? followUp;
   final String? followUpContent;
@@ -185,6 +187,7 @@ class GosuSalesCall {
       inquiryMethodName:
           _pick(json, const ['inquiry_method_name', 'inquiryMethodName']) ??
           _nestedName(json, const ['inquiry_methods', 'inquiry_method']),
+      inquiryKind: _pick(json, const ['inquiry_kind', 'inquiryKind']),
       statusName: _pick(json, const ['status_name', 'statusName']),
       followUp: _pick(json, const ['follow_up', 'followUp']),
       followUpContent: _pick(json, const [
@@ -215,6 +218,7 @@ class GosuSalesCall {
     String? inquiryContent,
     String? productCategoryName,
     String? inquiryMethodName,
+    String? inquiryKind,
     String? assignedTo,
   }) {
     return GosuSalesCall(
@@ -238,6 +242,7 @@ class GosuSalesCall {
       regionLabel: regionLabel,
       productCategoryName: productCategoryName ?? this.productCategoryName,
       inquiryMethodName: inquiryMethodName ?? this.inquiryMethodName,
+      inquiryKind: inquiryKind ?? this.inquiryKind,
       statusName: statusName,
       followUp: followUp ?? this.followUp,
       followUpContent: followUpContent ?? this.followUpContent,

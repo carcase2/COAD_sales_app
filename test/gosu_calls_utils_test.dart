@@ -114,6 +114,35 @@ void main() {
     expect(gosuAssigneeChoices(departmentNames: const ['  ']), isEmpty);
   });
 
+  test('이미 지정된 담당자는 부서 목록에 없어도 칩에 남긴다', () {
+    expect(
+      gosuAssigneeChoices(
+        departmentNames: const ['정은실'],
+        assignedTo: '정은실, 외부담당',
+      ),
+      ['외부담당', '정은실'],
+    );
+  });
+
+  test('문의종류는 알 수 없는 값을 단순문의로 보정한다', () {
+    expect(normalizeGosuInquiryKind(null), kGosuInquiryKindDefault);
+    expect(normalizeGosuInquiryKind(''), kGosuInquiryKindDefault);
+    expect(normalizeGosuInquiryKind('타사AS'), '타사AS');
+    expect(normalizeGosuInquiryKind('없는값'), kGosuInquiryKindDefault);
+  });
+
+  test('담당자는 여러 명을 파싱·토글하고 1명 이상 필수다', () {
+    expect(parseGosuAssignees('홍길동, 김철수'), ['홍길동', '김철수']);
+    expect(formatGosuAssignees(const ['홍길동', '김철수', '홍길동']), '홍길동, 김철수');
+
+    final added = toggleGosuAssignee('홍길동', '김철수', required: true);
+    expect(added, '홍길동, 김철수');
+    expect(toggleGosuAssignee(added, '홍길동', required: true), '김철수');
+    expect(toggleGosuAssignee('김철수', '김철수', required: true), '김철수');
+    expect(validateGosuAssignees(''), isNotNull);
+    expect(validateGosuAssignees('김철수'), isNull);
+  });
+
   test('다음 팔로업 차수', () {
     expect(getNextGosuFollowUpStage(0, 0), 1);
     expect(getNextGosuFollowUpStage(1, 1), 2);

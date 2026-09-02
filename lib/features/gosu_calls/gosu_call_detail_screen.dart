@@ -34,11 +34,14 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
   late final TextEditingController _inquiryCtrl;
   String? _categoryName;
   String? _methodName;
-  String? _assignedTo;
+  String _inquiryKind = kGosuInquiryKindDefault;
+  String _assignedTo = '';
   List<String> _assignees = [];
 
-  List<String> get _assigneeChoices =>
-      gosuAssigneeChoices(departmentNames: _assignees);
+  List<String> get _assigneeChoices => gosuAssigneeChoices(
+    departmentNames: _assignees,
+    assignedTo: _assignedTo,
+  );
 
   @override
   void initState() {
@@ -53,7 +56,8 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
     );
     _categoryName = widget.initial?.productCategoryName;
     _methodName = widget.initial?.inquiryMethodName;
-    _assignedTo = widget.initial?.assignedTo;
+    _inquiryKind = normalizeGosuInquiryKind(widget.initial?.inquiryKind);
+    _assignedTo = widget.initial?.assignedTo ?? '';
     _load();
   }
 
@@ -85,7 +89,8 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
         _inquiryCtrl.text = detailed.inquiryContent ?? '';
         _categoryName = detailed.productCategoryName;
         _methodName = detailed.inquiryMethodName;
-        _assignedTo = detailed.assignedTo;
+        _inquiryKind = normalizeGosuInquiryKind(detailed.inquiryKind);
+        _assignedTo = detailed.assignedTo ?? '';
         _assignees = names;
         _loading = false;
       });
@@ -106,12 +111,21 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
         _inquiryCtrl.text.trim() != (row.inquiryContent ?? '').trim() ||
         (_categoryName ?? '') != (row.productCategoryName ?? '') ||
         (_methodName ?? '') != (row.inquiryMethodName ?? '') ||
-        (_assignedTo ?? '') != (row.assignedTo ?? '');
+        _inquiryKind != normalizeGosuInquiryKind(row.inquiryKind) ||
+        formatGosuAssignees(parseGosuAssignees(_assignedTo)) !=
+            formatGosuAssignees(parseGosuAssignees(row.assignedTo));
   }
 
   Future<void> _saveBase() async {
     final row = _row;
     if (row == null || !_dirty) return;
+    final assigneeError = validateGosuAssignees(_assignedTo);
+    if (assigneeError != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(assigneeError)));
+      return;
+    }
     setState(() => _saving = true);
     try {
       GosuNamedOption? method;
@@ -135,12 +149,19 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
             'inquiry_method_id': method == null
                 ? null
                 : gosuInquiryMethodIdForStorage(method.id),
-            'assigned_to': _assignedTo,
+            'inquiry_kind': normalizeGosuInquiryKind(_inquiryKind),
+            'assigned_to': formatGosuAssignees(
+              parseGosuAssignees(_assignedTo),
+            ),
             'follow_up': row.followUp ?? kGosuProgressOpen,
             'follow_up_content': row.followUpContent,
           });
       if (!mounted) return;
-      setState(() => _row = updated);
+      setState(() {
+        _row = updated;
+        _inquiryKind = normalizeGosuInquiryKind(updated.inquiryKind);
+        _assignedTo = updated.assignedTo ?? '';
+      });
       invalidateHomeSalesCaches(ref.invalidate);
       ScaffoldMessenger.of(
         context,
@@ -306,39 +327,78 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
+                  '문의종류',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final k in kGosuInquiryKinds)
+                      GosuChoiceChip(
+                        label: k.name,
+                        selected: _inquiryKind == k.name,
+                        selectedColor: gosuChipColorFromHex(k.colorHex),
+                        onSelected: (_) =>
+                            setState(() => _inquiryKind = k.name),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
                   '문의방법',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 Wrap(
                   spacing: 8,
+                  runSpacing: 8,
                   children: [
                     for (final m in kGosuInquiryMethods)
                       GosuChoiceChip(
                         label: m.name,
                         selected: _methodName == m.name,
+                        selectedColor: gosuChipColorFromHex(m.colorHex),
                         onSelected: (_) => setState(() => _methodName = m.name),
                       ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '담당자',
+                  '담당자 *',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final name in _assigneeChoices)
-                      GosuChoiceChip(
-                        label: name,
-                        selected: _assignedTo == name,
-                        onSelected: (selected) => setState(
-                          () => _assignedTo = selected ? name : null,
-                        ),
-                      ),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  '여러 명 선택 가능 · 1명 이상 필수',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                 ),
+                const SizedBox(height: 8),
+                if (_assigneeChoices.isEmpty)
+                  Text(
+                    '자동문의고수 부서 담당자가 없습니다',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final name in _assigneeChoices)
+                        GosuChoiceChip(
+                          label: name,
+                          selected: parseGosuAssignees(
+                            _assignedTo,
+                          ).contains(name),
+                          onSelected: (_) => setState(
+                            () => _assignedTo = toggleGosuAssignee(
+                              _assignedTo,
+                              name,
+                              required: true,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _inquiryCtrl,

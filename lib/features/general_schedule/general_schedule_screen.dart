@@ -11,9 +11,9 @@ import 'package:coad_customer_calls/features/general_schedule/general_schedule_m
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_providers.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_slot_logic.dart';
 import 'package:coad_customer_calls/features/general_schedule/general_schedule_stats.dart';
+import 'package:coad_customer_calls/features/general_schedule/general_schedule_week_grid.dart';
 import 'package:coad_customer_calls/models/general_schedule.dart';
 import 'package:coad_customer_calls/providers.dart';
-import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,13 +37,14 @@ class GeneralScheduleScreen extends ConsumerStatefulWidget {
 }
 
 class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
-  final _weekPanelKey = GlobalKey<GeneralScheduleWeekPanelState>();
+  final _weekGridKey = GlobalKey<GeneralScheduleWeekGridState>();
 
   DateTime _selectedDay = DateTime.parse(todayYmdSeoul());
   String? _earliestAddCursorYmd;
   int _earliestAddCursorSlot = 0;
   String _searchQuery = '';
   String _selectedAssigneeFilter = kGeneralScheduleAllAssignees;
+  GeneralScheduleColorMode _colorMode = GeneralScheduleColorMode.assignee;
   GeneralScheduleCalendarView _calendarView = GeneralScheduleCalendarView.month;
   DateTime _monthFocusedDay = DateTime.parse(todayYmdSeoul());
   bool _returnToMonthViewOnBack = false;
@@ -57,9 +58,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
 
   String _ymd(DateTime d) => ymdSeoulFromDateTime(d);
 
-  /// 선택일 주변(날짜 스트립 ±60일)이 조회 구간 밖이면 하한을 앞당겨 재조회.
+  /// 선택 주가 조회 구간 밖이면 하한을 앞당겨 재조회.
   void _ensureHistoryWindowCovers(String ymd) {
-    final needed = addDaysToYmd(ymd, -GeneralScheduleWeekPanel.centerIndex);
+    final weekStart = seoulSundayWeekRangeContaining(ymd).$1;
+    final needed = addDaysToYmd(weekStart, -14);
     final current = ref.read(scheduleWindowStartProvider(_branch));
     if (needed.compareTo(current) < 0) {
       ref.read(scheduleWindowStartProvider(_branch).notifier).state = needed;
@@ -76,7 +78,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       _monthFocusedDay = DateTime(todayDt.year, todayDt.month, 1);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _weekPanelKey.currentState?.scrollStripToCenter();
+      _weekGridKey.currentState?.jumpToSelectedWeek();
     });
   }
 
@@ -97,9 +99,24 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     });
     if (changed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _weekPanelKey.currentState?.scrollStripToCenter();
+        _weekGridKey.currentState?.jumpToSelectedWeek();
       });
     }
+  }
+
+  void _shiftVisibleRange(int step) {
+    HapticFeedback.selectionClick();
+    if (_calendarView == GeneralScheduleCalendarView.week) {
+      _selectDayAndScroll(addDaysToYmd(_ymd(_selectedDay), step * 7));
+      return;
+    }
+    setState(() {
+      _monthFocusedDay = DateTime(
+        _monthFocusedDay.year,
+        _monthFocusedDay.month + step,
+        1,
+      );
+    });
   }
 
   void _switchToMonthView() {
@@ -707,7 +724,6 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     final statsAnchor = _calendarView == GeneralScheduleCalendarView.month
         ? _monthFocusedDay
         : _selectedDay;
-    final selectedMonthLabel = '${statsAnchor.year}년 ${statsAnchor.month}월';
     final monthStats = computeMonthStats(
       grid,
       statsAnchor.year,
@@ -721,12 +737,14 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
       statsAnchor.month,
     );
     final colorForAssignee = _assigneeColorBuilder(monthStats, scheme);
-    final scrollDays = List.generate(
-      GeneralScheduleWeekPanel.totalDays,
-      (i) =>
-          addDaysToYmd(selectedYmd, i - GeneralScheduleWeekPanel.centerIndex),
-    );
     final isToday = selectedYmd == todayYmdSeoul();
+    final weekRange = seoulSundayWeekRangeContaining(selectedYmd);
+    final rangeTitle = _calendarView == GeneralScheduleCalendarView.week
+        ? formatMonthDayRangeKo(weekRange.$1, weekRange.$2)
+        : formatGeneralScheduleMonthTitle(
+            _monthFocusedDay.year,
+            _monthFocusedDay.month,
+          );
 
     final scaffold = Scaffold(
       appBar: AppBar(
@@ -771,6 +789,10 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                   _switchToMonthView();
                 case 'pick':
                   unawaited(_pickDate());
+                case 'quick':
+                  if (!recordsAsync.isLoading) {
+                    unawaited(_onQuickAddEarliest(grid));
+                  }
                 case 'refresh':
                   if (!recordsAsync.isLoading) unawaited(_reload());
               }
@@ -792,6 +814,16 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.date_range_outlined),
                   title: Text('날짜 선택'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'quick',
+                enabled: !recordsAsync.isLoading,
+                child: const ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.bolt_rounded),
+                  title: Text('가장 빠른 빈 칸'),
                 ),
               ),
               PopupMenuItem(
@@ -820,18 +852,15 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-                child: Text(
-                  selectedMonthLabel,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
+              GeneralScheduleRangeHeader(
+                title: rangeTitle,
+                onPrevious: () => _shiftVisibleRange(-1),
+                onNext: () => _shiftVisibleRange(1),
               ),
               GeneralScheduleCalendarViewToggle(
                 view: _calendarView,
+                isToday: isToday,
+                onToday: _goToToday,
                 onChanged: (view) {
                   HapticFeedback.selectionClick();
                   setState(() {
@@ -847,98 +876,44 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                   });
                 },
               ),
-              GeneralScheduleAssigneeFilterBar(
-                assignees: monthAssignees,
-                counts: monthAssigneeCounts,
-                selected: _selectedAssigneeFilter,
-                colorForAssignee: colorForAssignee,
-                onSelected: (name) {
+              GeneralScheduleColorModeToggle(
+                mode: _colorMode,
+                onChanged: (mode) {
                   HapticFeedback.selectionClick();
-                  setState(() => _selectedAssigneeFilter = name);
+                  setState(() => _colorMode = mode);
                 },
               ),
-              if (isWeekView)
-                GeneralScheduleCollapsibleMonthStats(stats: monthStats),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _goToToday,
-                        style: OutlinedButton.styleFrom(
-                          minimumSize:
-                              const Size.fromHeight(AppTokens.minTouchTarget),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                        ),
-                        icon: Icon(
-                          Icons.today_rounded,
-                          size: 18,
-                          color: isToday ? scheme.primary : null,
-                        ),
-                        label: Text(
-                          isToday ? '오늘' : '오늘로',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: FilledButton.icon(
-                        onPressed: recordsAsync.isLoading
-                            ? null
-                            : () {
-                                HapticFeedback.mediumImpact();
-                                unawaited(_onQuickAddEarliest(grid));
-                              },
-                        style: FilledButton.styleFrom(
-                          minimumSize:
-                              const Size.fromHeight(AppTokens.minTouchTarget),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          backgroundColor:
-                              AppTokens.generalScheduleAccent(scheme),
-                          foregroundColor: scheme.onPrimary,
-                        ),
-                        icon: const Icon(Icons.bolt_rounded, size: 18),
-                        label: const Text(
-                          '가장 빠른 빈 칸',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ),
-                  ],
+              GeneralScheduleStatsDropdown(stats: monthStats),
+              if (!isWeekView)
+                GeneralScheduleAssigneeFilterBar(
+                  assignees: monthAssignees,
+                  counts: monthAssigneeCounts,
+                  selected: _selectedAssigneeFilter,
+                  colorForAssignee: colorForAssignee,
+                  onSelected: (name) {
+                    HapticFeedback.selectionClick();
+                    setState(() => _selectedAssigneeFilter = name);
+                  },
                 ),
-              ),
               Expanded(
                 child: isWeekView
-                    ? GeneralScheduleWeekPanel(
-                        key: _weekPanelKey,
-                        days: scrollDays,
+                    ? GeneralScheduleWeekGrid(
+                        key: _weekGridKey,
                         selectedYmd: selectedYmd,
                         grid: grid,
-                        assignees: monthAssignees,
-                        assigneeCounts: monthAssigneeCounts,
-                        selectedAssignee: _selectedAssigneeFilter,
-                        colorForAssignee: colorForAssignee,
+                        colorMode: _colorMode,
+                        assigneeFilter: _selectedAssigneeFilter,
                         searchQuery: _searchQuery,
-                        showAssigneeFilter: false,
-                        onAssigneeChanged: (name) =>
-                            setState(() => _selectedAssigneeFilter = name),
                         onDaySelected: _selectDayAndScroll,
                         onSlotTap: _onSlotTap,
                         onRefresh: _reload,
-                        loginUserName: user.name,
                       )
                     : GeneralScheduleMonthCalendar(
                         grid: grid,
                         focusedMonth: _monthFocusedDay,
                         assigneeFilter: _selectedAssigneeFilter,
                         loginUserName: user.name,
+                        showTableHeader: false,
                         onFocusedMonthChanged: (month) => setState(() {
                           _monthFocusedDay = DateTime(
                             month.year,

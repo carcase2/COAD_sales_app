@@ -409,6 +409,39 @@ String nextWorkdayYmd(String ymd) => addDaysToYmdSkippingWeekends(ymd, 1);
   return (fmt(monday), fmt(sunday));
 }
 
+/// [anyYmd]가 속한 주의 **일요일~토요일**(포함). COAD_home Calendar.tsx `getWeekStart` 과 동일.
+(String sundayYmd, String saturdayYmd) seoulSundayWeekRangeContaining(
+  String anyYmd,
+) {
+  final day = _parseYmdLocal(anyYmd);
+  if (day == null) return (anyYmd, anyYmd);
+  final fromSunday = day.weekday % 7;
+  final sunday = day.subtract(Duration(days: fromSunday));
+  final saturday = sunday.add(const Duration(days: 6));
+  String fmt(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  return (fmt(sunday), fmt(saturday));
+}
+
+/// 일요일부터 토요일까지 7일 `yyyy-MM-dd`.
+List<String> seoulSundayWeekDays(String anyYmd) {
+  final range = seoulSundayWeekRangeContaining(anyYmd);
+  return List.generate(7, (i) => addDaysToYmd(range.$1, i));
+}
+
+/// 인트라넷 주간 타이틀 — `7월 26일 - 8월 1일`.
+String formatMonthDayRangeKo(String startYmd, String endYmd) {
+  String label(String ymd) {
+    final p = ymd.split('-');
+    if (p.length != 3) return ymd;
+    final m = int.tryParse(p[1]) ?? 0;
+    final d = int.tryParse(p[2]) ?? 0;
+    return '$m월 $d일';
+  }
+
+  return '${label(startYmd)} - ${label(endYmd)}';
+}
+
 /// 홈 상단 인사 — `오늘은 5월12일(화) 입니다.` (서울 당일 기준).
 String formatTodayGreetingSentenceKo() {
   final ymd = todayYmdSeoul();
