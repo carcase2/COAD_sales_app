@@ -55,6 +55,7 @@ class _SupportVisitReportSheetState
   late String _visitYmd;
   String? _depositYmd;
   bool _depositPaid = false;
+  String? _depositPaidYmd;
   String? _nextVisitYmd;
   String? _nextVisitTeamId;
   String? _nextVisitTeamLabel;
@@ -165,6 +166,9 @@ class _SupportVisitReportSheetState
       amount: paid ? _amount : null,
       depositYmd: paid ? _depositYmd : null,
       depositPaid: paid && _depositPaid,
+      depositPaidYmd: paid && _depositPaid
+          ? (_depositPaidYmd ?? todayYmdSeoul())
+          : null,
       parts: List.of(_parts),
       photoUrls: _completed ? List.of(_photos) : const [],
       nextVisitYmd: _completed ? null : _nextVisitYmd,
@@ -313,7 +317,7 @@ class _SupportVisitReportSheetState
             const SizedBox(height: 8),
             Text(
               _completed
-                  ? '완료면 유무상을 고르고, 유상이면 금액·입금예정일로 입금을 챙깁니다.'
+                  ? '완료면 유무상을 고르고, 유상이면 금액·입금예정일·입금일을 남깁니다.'
                   : '끝나지 않았으면 다음 방문일을 잡고 다시 방문합니다.',
               style: TextStyle(
                 fontSize: 12.5,
@@ -395,10 +399,41 @@ class _SupportVisitReportSheetState
                 value: _depositPaid,
                 onChanged: _saving
                     ? null
-                    : (v) => setState(() => _depositPaid = v ?? false),
+                    : (v) => setState(() {
+                        _depositPaid = v ?? false;
+                        if (_depositPaid) {
+                          _depositPaidYmd ??= todayYmdSeoul();
+                        } else {
+                          _depositPaidYmd = null;
+                        }
+                      }),
                 title: const Text('입금완료'),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
+              if (_depositPaid)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event_available_rounded),
+                  title: const Text('입금일'),
+                  subtitle: Text(
+                    _depositPaidYmd == null
+                        ? '실제로 들어온 날'
+                        : _ymdLabel(_depositPaidYmd!),
+                  ),
+                  trailing: const Icon(Icons.event_rounded),
+                  onTap: _saving
+                      ? null
+                      : () async {
+                          final ymd = await _pickYmd(
+                            _depositPaidYmd ??
+                                _depositYmd ??
+                                todayYmdSeoul(),
+                          );
+                          if (ymd != null) {
+                            setState(() => _depositPaidYmd = ymd);
+                          }
+                        },
+                ),
             ],
             const SizedBox(height: 8),
             SupportUnitPriceOpenTile(

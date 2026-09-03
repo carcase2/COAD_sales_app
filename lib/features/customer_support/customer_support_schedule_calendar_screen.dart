@@ -254,11 +254,14 @@ class _CustomerSupportScheduleCalendarScreenState
     final report = event.visitReport;
     if (report == null || (report.id ?? '').isEmpty) return;
     try {
-      await ref
-          .read(supportCallLogRepositoryProvider)
-          .updateVisitReport(
-            report.copyWith(depositPaid: !(event.depositPaid ?? false)),
-          );
+      final next = await nextSupportDepositPaidReport(
+        context,
+        report: report,
+        currentlyPaid: event.depositPaid == true,
+        plannedYmd: report.depositYmd ?? event.ymd,
+      );
+      if (next == null || !mounted) return;
+      await ref.read(supportCallLogRepositoryProvider).updateVisitReport(next);
       if (mounted) await _loadMonth();
     } catch (e) {
       if (!mounted) return;

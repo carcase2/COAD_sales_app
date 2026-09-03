@@ -403,7 +403,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           SupportSectionCard(
             title: '수금관리',
-            subtitle: '입금예정 · 지난 수금 · 입금완료',
+            subtitle: '입금예정 · 입금일 · 지난 수금',
             icon: Icons.payments_outlined,
             onTap: () => openThenRefresh(
               () => _openStepFuture(

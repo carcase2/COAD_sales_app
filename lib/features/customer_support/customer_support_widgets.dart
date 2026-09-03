@@ -1,5 +1,6 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/region_branch.dart';
+import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_screen.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +28,39 @@ void showSupportSkeletonSnack(BuildContext context, String feature) {
 Future<String?> askSupportQuoteSentYmd(
   BuildContext context, {
   String? plannedYmd,
+}) {
+  return askSupportMarkedYmd(
+    context,
+    title: '견적서 발송일',
+    hint: '예정일이 아니어도 오늘이나 다른 날로 체크할 수 있습니다',
+    todayLabel: '오늘 발송',
+    plannedLabel: '예정일에 발송',
+    plannedYmd: plannedYmd,
+  );
+}
+
+/// 실제 입금일. 예정일과 달라도 된다.
+Future<String?> askSupportDepositPaidYmd(
+  BuildContext context, {
+  String? plannedYmd,
+}) {
+  return askSupportMarkedYmd(
+    context,
+    title: '입금일',
+    hint: '입금예정일과 다른 날에 들어와도 됩니다',
+    todayLabel: '오늘 입금',
+    plannedLabel: '예정일에 입금',
+    plannedYmd: plannedYmd,
+  );
+}
+
+Future<String?> askSupportMarkedYmd(
+  BuildContext context, {
+  required String title,
+  required String hint,
+  required String todayLabel,
+  required String plannedLabel,
+  String? plannedYmd,
 }) async {
   final today = todayYmdSeoul();
   final planned = (plannedYmd ?? '').trim();
@@ -40,23 +74,23 @@ Future<String?> askSupportQuoteSentYmd(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const ListTile(
+              ListTile(
                 title: Text(
-                  '견적서 발송일',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
-                subtitle: Text('예정일이 아니어도 오늘이나 다른 날로 체크할 수 있습니다'),
+                subtitle: Text(hint),
               ),
               ListTile(
                 leading: const Icon(Icons.today_rounded),
-                title: const Text('오늘 발송'),
+                title: Text(todayLabel),
                 subtitle: Text(today),
                 onTap: () => Navigator.pop(ctx, today),
               ),
               if (planned.isNotEmpty && planned != today)
                 ListTile(
                   leading: const Icon(Icons.event_available_rounded),
-                  title: const Text('예정일에 발송'),
+                  title: Text(plannedLabel),
                   subtitle: Text(planned),
                   onTap: () => Navigator.pop(ctx, planned),
                 ),
@@ -85,6 +119,23 @@ Future<String?> askSupportQuoteSentYmd(
       );
     },
   );
+}
+
+Future<SupportVisitReport?> nextSupportDepositPaidReport(
+  BuildContext context, {
+  required SupportVisitReport report,
+  required bool currentlyPaid,
+  String? plannedYmd,
+}) async {
+  if (currentlyPaid) {
+    return report.copyWith(depositPaid: false);
+  }
+  final ymd = await askSupportDepositPaidYmd(
+    context,
+    plannedYmd: plannedYmd ?? report.depositYmd,
+  );
+  if (ymd == null) return null;
+  return report.copyWith(depositPaid: true, depositPaidYmd: ymd);
 }
 
 class SupportSectionCard extends StatelessWidget {

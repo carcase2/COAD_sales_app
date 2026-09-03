@@ -1809,7 +1809,7 @@ class _CustomerSupportReceptionDetailScreenState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '방문 후 완료·유무상을 남깁니다. 미완료면 다음 방문일을 잡고, 유상이면 입금예정일로 입금을 챙깁니다.',
+                                  '방문 후 완료·유무상을 남깁니다. 미완료면 다음 방문일을 잡고, 유상이면 입금예정일과 실제 입금일을 따로 남깁니다.',
                                   style: TextStyle(
                                     fontSize: 13.5,
                                     color: scheme.onSurfaceVariant,
@@ -2196,7 +2196,12 @@ class _VisitReportTile extends StatelessWidget {
                     if ((report.depositYmd ?? '').isNotEmpty)
                       _ListChip(
                         label: report.depositPaid
-                            ? '입금완료 ${report.depositYmd}'
+                            ? [
+                                '입금완료 ${report.effectiveDepositPaidYmd ?? report.depositYmd}',
+                                if ((report.depositYmd ?? '') !=
+                                    (report.effectiveDepositPaidYmd ?? ''))
+                                  '예정 ${report.depositYmd}',
+                              ].join(' · ')
                             : '입금예정 ${report.depositYmd}',
                         color: report.depositPaid
                             ? AppTokens.success(scheme)
@@ -2302,8 +2307,11 @@ class _VisitReportTile extends StatelessWidget {
                             (report.depositYmd ?? '').isNotEmpty)
                           _ListChip(
                             label: report.depositPaid
-                                ? '입금완료'
-                                : '입금예정',
+                                ? (report.effectiveDepositPaidYmd ==
+                                          report.depositYmd
+                                      ? '입금완료 ${report.effectiveDepositPaidYmd}'
+                                      : '입금완료 ${report.effectiveDepositPaidYmd} · 예정 ${report.depositYmd}')
+                                : '입금예정 ${report.depositYmd}',
                             color: report.depositPaid
                                 ? AppTokens.success(scheme)
                                 : const Color(0xFF059669),

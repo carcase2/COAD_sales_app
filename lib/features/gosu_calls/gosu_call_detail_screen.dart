@@ -254,20 +254,29 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                 Row(
                   children: [
                     Chip(
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       label: Text(gosuWorkflowStatusLabel(row)),
                       backgroundColor: accent.withValues(alpha: 0.14),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      gosuStageLabel(row.callStage),
-                      style: TextStyle(color: scheme.onSurfaceVariant),
+                    Flexible(
+                      child: Text(
+                        gosuStageLabel(row.callStage),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
                     ),
-                    const Spacer(),
-                    Text(
-                      '${row.callDate ?? ''} ${row.callTime ?? ''}'.trim(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '${row.callDate ?? ''} ${row.callTime ?? ''}'.trim(),
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ],
@@ -460,14 +469,19 @@ class _GosuCallDetailScreenState extends ConsumerState<GosuCallDetailScreen> {
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const Spacer(),
-                                Text(
-                                  h.followResult,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: h.followResult == kGosuProgressClosed
-                                        ? scheme.onSurfaceVariant
-                                        : const Color(0xFFB45309),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    h.followResult,
+                                    textAlign: TextAlign.end,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color:
+                                          h.followResult == kGosuProgressClosed
+                                          ? scheme.onSurfaceVariant
+                                          : const Color(0xFFB45309),
+                                    ),
                                   ),
                                 ),
                               ],

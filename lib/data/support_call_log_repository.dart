@@ -897,20 +897,29 @@ class SupportCallLogRepository {
                   ),
                 );
               }
-              final depositYmd = report.depositYmd ?? '';
+              final calendarYmd = report.depositCalendarYmd ?? '';
               if (report.isPaid &&
-                  depositYmd.isNotEmpty &&
-                  depositYmd.compareTo(fromYmd) >= 0 &&
-                  depositYmd.compareTo(toYmdInclusive) <= 0) {
+                  calendarYmd.isNotEmpty &&
+                  calendarYmd.compareTo(fromYmd) >= 0 &&
+                  calendarYmd.compareTo(toYmdInclusive) <= 0) {
+                final due = (report.depositYmd ?? '').trim();
+                final paidDay = report.effectiveDepositPaidYmd ?? '';
+                final caption = report.depositPaid
+                    ? (due.isNotEmpty && due != paidDay
+                          ? '입금완료 $paidDay · 예정 $due'
+                          : '입금완료 $paidDay')
+                    : '입금예정';
                 addEvent(
                   SupportScheduleEvent(
                     kind: SupportScheduleKind.deposit,
-                    ymd: depositYmd,
+                    ymd: calendarYmd,
                     log: log,
-                    caption: report.depositPaid ? '입금완료' : '입금예정',
+                    caption: caption,
                     amount: report.amount,
                     depositPaid: report.depositPaid,
                     visitReport: report,
+                    scheduledYmd: due.isEmpty ? null : due,
+                    actualYmd: report.depositPaid ? paidDay : null,
                   ),
                 );
               }
@@ -1137,7 +1146,11 @@ class SupportScheduleEvent {
       SupportScheduleKind.visit => '방문예정',
       SupportScheduleKind.quoteSend =>
         quoteSent ? '발송완료 $quoteSentYmd' : '견적서 발송예정',
-      SupportScheduleKind.deposit => (depositPaid ?? false) ? '입금완료' : '입금예정',
+      SupportScheduleKind.deposit => (depositPaid ?? false)
+          ? ((actualYmd ?? '').trim().isEmpty
+                ? '입금완료'
+                : '입금완료 $actualYmd')
+          : '입금예정',
     };
   }
 }

@@ -77,11 +77,67 @@ void main() {
       amount: 50000,
       depositYmd: '2026-08-27',
       depositPaid: true,
+      depositPaidYmd: '2026-08-27',
       notes: '입금 확인',
     );
     final parsed = parseSupportVisitReport(serializeSupportVisitReport(report));
     expect(parsed!.depositPaid, isTrue);
+    expect(parsed.depositPaidYmd, '2026-08-27');
     expect(parsed.copyWith(depositPaid: false).depositPaid, isFalse);
+    expect(parsed.copyWith(depositPaid: false).depositPaidYmd, isNull);
+  });
+
+  test('입금일과 입금예정일을 따로 저장한다', () {
+    const report = SupportVisitReport(
+      visitYmd: '2026-08-20',
+      visitTime: '14:00',
+      completed: true,
+      paid: true,
+      amount: 50000,
+      depositYmd: '2026-08-27',
+      depositPaid: true,
+      depositPaidYmd: '2026-09-02',
+      notes: '늦게 입금',
+    );
+    final parsed = parseSupportVisitReport(serializeSupportVisitReport(report));
+    expect(parsed!.depositYmd, '2026-08-27');
+    expect(parsed.depositPaidYmd, '2026-09-02');
+    expect(parsed.depositCalendarYmd, '2026-09-02');
+    expect(parsed.effectiveDepositPaidYmd, '2026-09-02');
+  });
+
+  test('예전 입금완료 기록은 예정일을 입금일로 본다', () {
+    const raw = '''
+[방문기록]
+방문일: 2026-08-20
+방문시간: 10:00
+완료: 완료
+유상: 유상
+금액: 50000
+입금예정: 2026-08-27
+입금완료: 완료
+내용:
+예전 형식
+''';
+    final parsed = parseSupportVisitReport(raw);
+    expect(parsed, isNotNull);
+    expect(parsed!.depositPaid, isTrue);
+    expect(parsed.depositPaidYmd, '2026-08-27');
+    expect(parsed.depositCalendarYmd, '2026-08-27');
+  });
+
+  test('미입금이면 달력 날짜는 예정일이다', () {
+    const report = SupportVisitReport(
+      visitYmd: '2026-08-20',
+      visitTime: '10:00',
+      completed: true,
+      paid: true,
+      amount: 50000,
+      depositYmd: '2026-08-27',
+      notes: '대기',
+    );
+    expect(report.depositPaid, isFalse);
+    expect(report.depositCalendarYmd, '2026-08-27');
   });
 
   test('상담 텍스트는 방문 기록이 아니다', () {

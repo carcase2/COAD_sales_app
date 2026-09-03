@@ -192,15 +192,19 @@ class _GosuFollowUpSheetState extends ConsumerState<_GosuFollowUpSheet> {
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const Spacer(),
-                            Text(
-                              h.followResult,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: h.followResult == kGosuProgressClosed
-                                    ? scheme.onSurfaceVariant
-                                    : const Color(0xFFB45309),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                h.followResult,
+                                textAlign: TextAlign.end,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: h.followResult == kGosuProgressClosed
+                                      ? scheme.onSurfaceVariant
+                                      : const Color(0xFFB45309),
+                                ),
                               ),
                             ),
                           ],

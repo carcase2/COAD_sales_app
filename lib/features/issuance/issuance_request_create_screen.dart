@@ -64,13 +64,17 @@ class _IssuanceRequestCreateScreenState
   bool _recentSitesLoading = false;
   String _recentSiteQuery = '';
 
-  // Performance bond
-  String _bondType = '계약이행';
+  // Performance bond — 계약이행·선급금은 같이 요청 가능, 하자이행은 단독.
+  static const _bondTypeOrder = ['계약이행', '선급금', '하자이행'];
+  Set<String> _bondTypes = {'계약이행'};
+  final Map<String, _BondTypeTerms> _bondTerms = {
+    '계약이행': _BondTypeTerms(rate: '10', period: '1'),
+    '선급금': _BondTypeTerms(rate: '100', period: '1'),
+    '하자이행': _BondTypeTerms(rate: '3', period: '1'),
+  };
   final _bondCompanyName = TextEditingController();
   final _bondEmail = TextEditingController();
   final _bondContractAmount = TextEditingController();
-  final _bondGuaranteeRate = TextEditingController(text: '10');
-  final _bondGuaranteePeriod = TextEditingController(text: '1');
   final _bondContractDate = TextEditingController();
   final _bondConstructionEndDate = TextEditingController();
   final _bondRequestDeadline = TextEditingController();
@@ -126,7 +130,7 @@ class _IssuanceRequestCreateScreenState
             userName: user.name,
             userId: user.id,
             query: q,
-            limit: 6,
+            limit: 12,
           );
       if (!mounted || _recentSiteQuery != q) return;
       setState(() {
@@ -167,9 +171,8 @@ class _IssuanceRequestCreateScreenState
       _bondCompanyName.text = name;
       _bondEmail.text = email;
       final type = (row.master['bond_type'] ?? '').toString().trim();
-      if (type.isNotEmpty) {
-        _bondType = type;
-        _applyBondDefaultsByType(type);
+      if (type.isNotEmpty && _bondTypeOrder.contains(type)) {
+        _bondTypes = {type};
       }
       _bondReusedBizUrls = _bondBusinessUrlsFromRow(row);
       _bondBizFiles = [];
@@ -206,7 +209,7 @@ class _IssuanceRequestCreateScreenState
       return const SizedBox.shrink();
     }
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      padding: const EdgeInsets.only(top: 10, bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -218,24 +221,76 @@ class _IssuanceRequestCreateScreenState
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: LinearProgressIndicator(minHeight: 2),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // 한 화면에 약 3개. 나머지는 좌우 스크롤.
+                const gap = 8.0;
+                final cardW = (constraints.maxWidth - gap * 2) / 3;
+                return SizedBox(
+                  height: 78,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _recentSites.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: gap),
+                    itemBuilder: (context, index) {
+                      final row = _recentSites[index];
+                      final scheme = Theme.of(context).colorScheme;
+                      final dt = row.createdAt;
+                      final dateLabel = dt.millisecondsSinceEpoch == 0
+                          ? '날짜 없음'
+                          : '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}';
+                      return SizedBox(
+                        width: cardW,
+                        child: Material(
+                          color: scheme.surfaceContainerHighest.withValues(
+                            alpha: 0.55,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _applyRecentSite(row),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    row.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12.5,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      dateLabel,
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
             ),
-          ..._recentSites.map((row) {
-            return ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                row.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                row.createdAtText,
-                style: const TextStyle(fontSize: 11),
-              ),
-              trailing: const Icon(Icons.input_rounded, size: 18),
-              onTap: () => _applyRecentSite(row),
-            );
-          }),
         ],
       ),
     );
@@ -258,8 +313,9 @@ class _IssuanceRequestCreateScreenState
     _bondCompanyName.dispose();
     _bondEmail.dispose();
     _bondContractAmount.dispose();
-    _bondGuaranteeRate.dispose();
-    _bondGuaranteePeriod.dispose();
+    for (final terms in _bondTerms.values) {
+      terms.dispose();
+    }
     _bondContractDate.dispose();
     _bondConstructionEndDate.dispose();
     _bondRequestDeadline.dispose();
@@ -276,21 +332,59 @@ class _IssuanceRequestCreateScreenState
     );
   }
 
+  List<String> get _selectedBondTypes =>
+      _bondTypeOrder.where(_bondTypes.contains).toList();
+
+  bool get _bondIsDefectOnly =>
+      _bondTypes.length == 1 && _bondTypes.contains('하자이행');
+
+  void _toggleBondType(String type) {
+    setState(() {
+      if (type == '하자이행') {
+        _bondTypes = {'하자이행'};
+        return;
+      }
+      final next = {..._bondTypes}..remove('하자이행');
+      if (next.contains(type)) {
+        if (next.length <= 1) return;
+        next.remove(type);
+      } else {
+        next.add(type);
+      }
+      _bondTypes = next;
+    });
+  }
+
+  String _bondPeriodUnit(String type) => type == '하자이행' ? '년' : '달';
+
+  String? _bondTermsError(String type) {
+    final terms = _bondTerms[type];
+    if (terms == null) return '$type 보증 정보를 입력하세요.';
+    final rate = double.tryParse(terms.rate.text.trim()) ?? 0;
+    if (rate <= 0 || rate > 100) {
+      return '$type 보증금율은 0~100 사이로 입력하세요.';
+    }
+    if (_parseGuaranteePeriodValue(terms.period.text) <= 0) {
+      return type == '하자이행'
+          ? '하자이행 보증기간(년)을 입력하세요. (예: 1, 2)'
+          : '$type 보증기간(달)을 입력하세요. (예: 1, 6, 12)';
+    }
+    return null;
+  }
+
   String? _firstBondValidationMessage() {
+    if (_selectedBondTypes.isEmpty) {
+      return '증권 종류를 선택하세요.';
+    }
     if (_bondCompanyName.text.trim().isEmpty) {
       return '업체명을 입력하세요.';
     }
     if (_parseMoney(_bondContractAmount.text) <= 0) {
       return '계약금액을 입력하세요.';
     }
-    final rate = double.tryParse(_bondGuaranteeRate.text.trim()) ?? 0;
-    if (rate <= 0 || rate > 100) {
-      return '보증금율은 0~100 사이로 입력하세요.';
-    }
-    if (_parseGuaranteePeriodValue(_bondGuaranteePeriod.text) <= 0) {
-      return _bondType == '하자이행'
-          ? '보증기간(년)을 입력하세요. (예: 1, 2)'
-          : '보증기간(달)을 입력하세요. (예: 1, 6, 12)';
+    for (final type in _selectedBondTypes) {
+      final err = _bondTermsError(type);
+      if (err != null) return err;
     }
     if (_bondContractDate.text.trim().isEmpty) {
       return '시공 시작일을 선택하세요.';
@@ -719,7 +813,14 @@ class _IssuanceRequestCreateScreenState
     return [
       _ReviewSection(
         title: '증권 종류',
-        rows: [('종류', _bondType)],
+        rows: [
+          (
+            '종류',
+            _selectedBondTypes.isEmpty
+                ? '-'
+                : _selectedBondTypes.join(' · '),
+          ),
+        ],
       ),
       _ReviewSection(
         title: '기본 정보',
@@ -743,11 +844,16 @@ class _IssuanceRequestCreateScreenState
       _ReviewSection(
         title: '보증/기간',
         rows: [
-          ('보증금율', '${_bondGuaranteeRate.text.trim()}%'),
-          (
-            '보증기간',
-            '${_bondGuaranteePeriod.text.trim()}${_bondType == '하자이행' ? '년' : '달'}',
-          ),
+          for (final type in _selectedBondTypes) ...[
+            (
+              '$type 보증금율',
+              '${_bondTerms[type]!.rate.text.trim()}%',
+            ),
+            (
+              '$type 보증기간',
+              '${_bondTerms[type]!.period.text.trim()}${_bondPeriodUnit(type)}',
+            ),
+          ],
           ('시공 시작일', _bondContractDate.text.trim()),
           ('시공 종료일', _bondConstructionEndDate.text.trim()),
           (
@@ -810,19 +916,22 @@ class _IssuanceRequestCreateScreenState
   Future<void> _performSubmit(String userName) async {
     setState(() => _saving = true);
     try {
-      final IssuanceCreateResult result;
+      final List<IssuanceCreateResult> results;
       if (_domain == IssuanceDomain.taxInvoice) {
-        result = await _submitTax(userName);
+        results = [await _submitTax(userName)];
       } else {
-        result = await _submitBond(userName);
+        results = await _submitBonds(userName);
       }
       if (!mounted) return;
-      await NotificationService.markIssuanceRequestSeen(
-        prefs: ref.read(appDependenciesProvider).prefs,
-        domain: result.domain,
-        masterId: result.masterId,
-        issueId: result.issueId,
-      );
+      final prefs = ref.read(appDependenciesProvider).prefs;
+      for (final result in results) {
+        await NotificationService.markIssuanceRequestSeen(
+          prefs: prefs,
+          domain: result.domain,
+          masterId: result.masterId,
+          issueId: result.issueId,
+        );
+      }
       invalidateIssuanceCore(ref);
       await Future.wait([
         ref.read(issuancePendingCountProvider(IssuanceDomain.taxInvoice).future),
@@ -831,12 +940,16 @@ class _IssuanceRequestCreateScreenState
         ),
       ]);
       if (!mounted) return;
-      Navigator.of(context).pop(result);
+      final first = results.first;
+      Navigator.of(context).pop(first);
+      final snackName = results.length == 1
+          ? first.displayName
+          : '${first.displayName} · ${_selectedBondTypes.join('·')} ${results.length}건';
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final ctx = NotificationService.navigatorKey.currentContext;
         if (ctx == null) return;
         ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text('${result.displayName} 발급요청이 등록되었습니다.')),
+          SnackBar(content: Text('$snackName 발급요청이 등록되었습니다.')),
         );
       });
     } catch (e) {
@@ -945,7 +1058,7 @@ class _IssuanceRequestCreateScreenState
     );
   }
 
-  Future<IssuanceCreateResult> _submitBond(String userName) async {
+  Future<List<IssuanceCreateResult>> _submitBonds(String userName) async {
     FocusManager.instance.primaryFocus?.unfocus();
     final precheck = _firstBondValidationMessage();
     if (precheck != null) {
@@ -962,21 +1075,7 @@ class _IssuanceRequestCreateScreenState
     if (_bondContractFiles.isEmpty) throw Exception('계약서 파일을 1개 이상 첨부해주세요.');
 
     final contractAmount = _parseMoney(_bondContractAmount.text);
-    final guaranteeRate = double.tryParse(_bondGuaranteeRate.text.trim()) ?? 0;
-    final guaranteePeriod = _parseGuaranteePeriodValue(
-      _bondGuaranteePeriod.text.trim(),
-    );
     if (contractAmount <= 0) throw Exception('계약금액을 올바르게 입력해주세요.');
-    if (guaranteeRate <= 0 || guaranteeRate > 100) {
-      throw Exception('보증금율은 0~100 사이여야 합니다.');
-    }
-    if (guaranteePeriod <= 0) {
-      throw Exception(
-        _bondType == '하자이행'
-            ? '보증기간을 올바르게 입력해주세요. (예: 1년)'
-            : '보증기간을 올바르게 입력해주세요. (예: 1, 6, 12달)',
-      );
-    }
 
     final contractDate = DateTime.tryParse(_bondContractDate.text.trim());
     final endDate = DateTime.tryParse(_bondConstructionEndDate.text.trim());
@@ -987,7 +1086,6 @@ class _IssuanceRequestCreateScreenState
       throw Exception('시공 종료일은 시작일 이후여야 합니다.');
     }
 
-    final bondNumber = await _generateBondNumber();
     final businessUrls = _bondBizFiles.isNotEmpty
         ? await _uploadFiles(
             files: _bondBizFiles,
@@ -1001,12 +1099,42 @@ class _IssuanceRequestCreateScreenState
       ownerName: _bondCompanyName.text.trim(),
     );
 
+    final company = _bondCompanyName.text.trim();
+    final results = <IssuanceCreateResult>[];
+    for (final type in _selectedBondTypes) {
+      results.add(
+        await _insertOneBond(
+          userName: userName,
+          type: type,
+          company: company,
+          contractAmount: contractAmount,
+          businessUrls: businessUrls,
+          contractUrls: contractUrls,
+        ),
+      );
+    }
+    return results;
+  }
+
+  Future<IssuanceCreateResult> _insertOneBond({
+    required String userName,
+    required String type,
+    required String company,
+    required int contractAmount,
+    required List<String> businessUrls,
+    required List<String> contractUrls,
+  }) async {
+    final terms = _bondTerms[type]!;
+    final guaranteeRate = double.tryParse(terms.rate.text.trim()) ?? 0;
+    final guaranteePeriod = _parseGuaranteePeriodValue(terms.period.text.trim());
+    final bondNumber = await _generateBondNumber();
+
     final inserted = await _client
         .from('performance_bonds')
         .insert({
           'bond_number': bondNumber,
-          'bond_type': _bondType,
-          'company_name': _bondCompanyName.text.trim(),
+          'bond_type': type,
+          'company_name': company,
           'contract_amount': contractAmount,
           'guarantee_rate': guaranteeRate,
           'guarantee_period': guaranteePeriod,
@@ -1046,28 +1174,8 @@ class _IssuanceRequestCreateScreenState
       domain: IssuanceDomain.performanceBond,
       masterId: inserted['id'].toString(),
       issueId: issueInserted['id']?.toString(),
-      displayName: _bondCompanyName.text.trim().isNotEmpty
-          ? _bondCompanyName.text.trim()
-          : _bondType,
+      displayName: company.isNotEmpty ? company : type,
     );
-  }
-
-  void _applyBondDefaultsByType(String type) {
-    switch (type) {
-      case '선급금':
-        _bondGuaranteeRate.text = '100';
-        _bondGuaranteePeriod.text = '1';
-        break;
-      case '하자이행':
-        _bondGuaranteeRate.text = '3';
-        _bondGuaranteePeriod.text = '1';
-        break;
-      case '계약이행':
-      default:
-        _bondGuaranteeRate.text = '10';
-        _bondGuaranteePeriod.text = '1';
-        break;
-    }
   }
 
   @override
@@ -1738,39 +1846,155 @@ class _IssuanceRequestCreateScreenState
             ),
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: ['계약이행', '선급금', '하자이행'].map((type) {
-              final selected = _bondType == type;
-              final selectedBg = switch (type) {
-                '계약이행' => Colors.indigo.shade100,
-                '선급금' => Colors.orange.shade100,
-                '하자이행' => Colors.teal.shade100,
-                _ => Colors.blueGrey.shade100,
-              };
-              final selectedFg = switch (type) {
-                '계약이행' => Colors.indigo.shade900,
-                '선급금' => Colors.orange.shade900,
-                '하자이행' => Colors.teal.shade900,
-                _ => Colors.blueGrey.shade900,
-              };
-              return _buildTypeChip(
-                label: type,
-                selected: selected,
-                selectedBg: selectedBg,
-                selectedFg: selectedFg,
-                onTap: () {
-                  setState(() {
-                    _bondType = type;
-                    _applyBondDefaultsByType(type);
-                  });
-                },
-              );
-            }).toList(),
+          // 좁은 화면·큰 글자에서도 항상 1줄 (Wrap이면 하자이행이 아래로 감).
+          Row(
+            children: [
+              for (var i = 0; i < _bondTypeOrder.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Expanded(
+                  child: _buildBondTypeTile(
+                    type: _bondTypeOrder[i],
+                    selected: _bondTypes.contains(_bondTypeOrder[i]),
+                    onTap: () => _toggleBondType(_bondTypeOrder[i]),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _bondIsDefectOnly
+                ? '하자이행은 따로 요청합니다.'
+                : '계약이행과 선급금은 같이 고를 수 있습니다. 업체·금액·첨부는 공유하고, 보증금율·기간만 종류별로 넣습니다.',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBondTypeTile({
+    required String type,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final selectedBg = switch (type) {
+      '계약이행' => Colors.indigo.shade100,
+      '선급금' => Colors.orange.shade100,
+      '하자이행' => Colors.teal.shade100,
+      _ => Colors.blueGrey.shade100,
+    };
+    final selectedFg = switch (type) {
+      '계약이행' => Colors.indigo.shade900,
+      '선급금' => Colors.orange.shade900,
+      '하자이행' => Colors.teal.shade900,
+      _ => Colors.blueGrey.shade900,
+    };
+    return Material(
+      color: selected ? selectedBg : Colors.grey.shade50,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected
+                  ? selectedFg.withValues(alpha: 0.35)
+                  : Colors.grey.shade300,
+            ),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              type,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected ? selectedFg : Colors.black87,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBondTypeTermsPanel({
+    required String type,
+    required bool compact,
+  }) {
+    final accent = switch (type) {
+      '계약이행' => Colors.indigo,
+      '선급금' => Colors.orange,
+      '하자이행' => Colors.teal,
+      _ => Colors.blueGrey,
+    };
+    final terms = _bondTerms[type]!;
+    final unit = _bondPeriodUnit(type);
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (compact) ...[
+          Text(
+            type,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+              color: accent.shade800,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextFormField(
+          controller: terms.rate,
+          textInputAction: TextInputAction.next,
+          decoration: InputDecoration(
+            labelText: compact ? '보증금율(%) *' : '보증금율(%) *',
+            isDense: compact,
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          validator: (v) {
+            final n = double.tryParse((v ?? '').trim()) ?? 0;
+            return (n <= 0 || n > 100) ? '0~100' : null;
+          },
+        ),
+        SizedBox(height: compact ? 8 : 10),
+        TextFormField(
+          controller: terms.period,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            labelText: '보증기간($unit) *',
+            hintText: type == '하자이행' ? '예: 1, 2' : '예: 1, 6, 12',
+            isDense: compact,
+          ),
+          keyboardType: TextInputType.number,
+          validator: (v) {
+            if (_parseGuaranteePeriodValue(v ?? '') > 0) return null;
+            return type == '하자이행' ? '기간(년)' : '기간(달)';
+          },
+        ),
+      ],
+    );
+    if (!compact) return content;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+      decoration: BoxDecoration(
+        color: accent.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.shade200),
+      ),
+      child: content,
     );
   }
 
@@ -1791,7 +2015,6 @@ class _IssuanceRequestCreateScreenState
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? '업체명을 입력하세요.' : null,
                 ),
-                _buildRecentSitePicker(),
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _bondEmail,
@@ -1814,6 +2037,7 @@ class _IssuanceRequestCreateScreenState
                       _parseMoney(v ?? '') <= 0 ? '계약금액을 입력하세요.' : null,
                 ),
                 _buildKoreanAmountHint(_bondContractAmount),
+                _buildRecentSitePicker(),
               ],
             ),
           ),
@@ -1822,34 +2046,53 @@ class _IssuanceRequestCreateScreenState
             title: '보증/기간 정보',
             child: Column(
               children: [
-                TextFormField(
-                  controller: _bondGuaranteeRate,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: '보증금율(%) *'),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                if (_selectedBondTypes.length > 1)
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      const gap = 10.0;
+                      // 다음 칸이 살짝 보이게 해서 좌우 스크롤을 알린다.
+                      final cardW = constraints.maxWidth * 0.82;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '좌우로 밀면 ${_selectedBondTypes.skip(1).join(' · ')}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 168,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _selectedBondTypes.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: gap),
+                              itemBuilder: (context, i) {
+                                return SizedBox(
+                                  width: cardW,
+                                  child: _buildBondTypeTermsPanel(
+                                    type: _selectedBondTypes[i],
+                                    compact: true,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  )
+                else if (_selectedBondTypes.isNotEmpty)
+                  _buildBondTypeTermsPanel(
+                    type: _selectedBondTypes.first,
+                    compact: false,
                   ),
-                  validator: (v) {
-                    final n = double.tryParse((v ?? '').trim()) ?? 0;
-                    return (n <= 0 || n > 100) ? '0~100 범위로 입력하세요.' : null;
-                  },
-                ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  controller: _bondGuaranteePeriod,
-                  textInputAction: TextInputAction.done,
-                  decoration: InputDecoration(
-                    labelText: _bondType == '하자이행' ? '보증기간(년) *' : '보증기간(달) *',
-                    hintText: _bondType == '하자이행' ? '예: 1, 2' : '예: 1, 6, 12',
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (v) {
-                    if (_parseGuaranteePeriodValue(v ?? '') > 0) return null;
-                    return _bondType == '하자이행'
-                        ? '보증기간(년)을 입력하세요. (예: 1)'
-                        : '보증기간(달)을 입력하세요. (예: 1)';
-                  },
-                ),
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _bondContractDate,
@@ -2477,5 +2720,19 @@ class IssuanceCreateResult {
   final String masterId;
   final String? issueId;
   final String displayName;
+}
+
+class _BondTypeTerms {
+  _BondTypeTerms({required String rate, required String period})
+    : rate = TextEditingController(text: rate),
+      period = TextEditingController(text: period);
+
+  final TextEditingController rate;
+  final TextEditingController period;
+
+  void dispose() {
+    rate.dispose();
+    period.dispose();
+  }
 }
 

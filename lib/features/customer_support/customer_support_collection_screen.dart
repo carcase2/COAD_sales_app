@@ -166,11 +166,14 @@ class _CustomerSupportCollectionScreenState
     final report = event.visitReport;
     if (report == null || (report.id ?? '').isEmpty) return;
     try {
-      await ref
-          .read(supportCallLogRepositoryProvider)
-          .updateVisitReport(
-            report.copyWith(depositPaid: !(event.depositPaid ?? false)),
-          );
+      final next = await nextSupportDepositPaidReport(
+        context,
+        report: report,
+        currentlyPaid: event.depositPaid == true,
+        plannedYmd: report.depositYmd ?? event.ymd,
+      );
+      if (next == null || !mounted) return;
+      await ref.read(supportCallLogRepositoryProvider).updateVisitReport(next);
       invalidateSupportWorkCaches(ref);
       if (mounted) unawaited(_load());
     } catch (e) {
@@ -353,9 +356,17 @@ class _CustomerSupportCollectionScreenState
                       ),
                       subtitle: Text(
                         [
-                          e.depositPaid == true ? '입금완료' : '입금예정',
+                          if (e.depositPaid == true) ...[
+                            '입금완료',
+                            if ((e.actualYmd ?? '').isNotEmpty) e.actualYmd!,
+                            if ((e.scheduledYmd ?? '').isNotEmpty &&
+                                e.scheduledYmd != e.actualYmd)
+                              '예정 ${e.scheduledYmd}',
+                          ] else ...[
+                            '입금예정',
+                            e.ymd,
+                          ],
                           if (e.amount != null) '${_won.format(e.amount)}원',
-                          e.ymd,
                         ].join(' · '),
                       ),
                       onTap: () async {

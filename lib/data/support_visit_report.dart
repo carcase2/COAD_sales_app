@@ -41,6 +41,7 @@ class SupportVisitReport {
     this.amount,
     this.depositYmd,
     this.depositPaid = false,
+    this.depositPaidYmd,
     this.parts = const [],
     this.photoUrls = const [],
     this.nextVisitYmd,
@@ -59,6 +60,8 @@ class SupportVisitReport {
   final int? amount;
   final String? depositYmd;
   final bool depositPaid;
+  /// 실제로 입금된 날. 없으면 [depositYmd](예정일)과 같다고 본다.
+  final String? depositPaidYmd;
   final List<String> parts;
   final List<String> photoUrls;
   final String? nextVisitYmd;
@@ -70,7 +73,25 @@ class SupportVisitReport {
 
   bool get isPaid => paid && (amount ?? 0) > 0;
 
-  SupportVisitReport copyWith({bool? depositPaid}) {
+  /// 입금완료로 볼 실제 날짜. 예전 기록은 예정일을 쓴다.
+  String? get effectiveDepositPaidYmd {
+    if (!depositPaid) return null;
+    final actual = (depositPaidYmd ?? '').trim();
+    if (actual.isNotEmpty) return actual;
+    final due = (depositYmd ?? '').trim();
+    return due.isEmpty ? null : due;
+  }
+
+  /// 달력에 올리는 날: 미입금이면 예정일, 입금됐으면 입금일.
+  String? get depositCalendarYmd {
+    if (!isPaid) return null;
+    if (depositPaid) return effectiveDepositPaidYmd;
+    final due = (depositYmd ?? '').trim();
+    return due.isEmpty ? null : due;
+  }
+
+  SupportVisitReport copyWith({bool? depositPaid, String? depositPaidYmd}) {
+    final nextPaid = depositPaid ?? this.depositPaid;
     return SupportVisitReport(
       id: id,
       visitYmd: visitYmd,
@@ -79,7 +100,10 @@ class SupportVisitReport {
       paid: paid,
       amount: amount,
       depositYmd: depositYmd,
-      depositPaid: depositPaid ?? this.depositPaid,
+      depositPaid: nextPaid,
+      depositPaidYmd: nextPaid
+          ? (depositPaidYmd ?? this.depositPaidYmd)
+          : null,
       parts: parts,
       photoUrls: photoUrls,
       nextVisitYmd: nextVisitYmd,
@@ -108,7 +132,8 @@ String serializeSupportVisitReport(SupportVisitReport report) {
     if (paid && report.amount != null) '금액: ${report.amount}',
     if (paid && (report.depositYmd ?? '').trim().isNotEmpty)
       '입금예정: ${report.depositYmd!.trim()}',
-    if (paid) '입금완료: ${report.depositPaid ? '완료' : '미입금'}',
+    if (paid)
+      '입금완료: ${report.depositPaid ? (report.effectiveDepositPaidYmd ?? '완료') : '미입금'}',
     if (report.parts.isNotEmpty) '부품: ${report.parts.join(', ')}',
     if (report.photoUrls.isNotEmpty) '사진: ${report.photoUrls.join(' | ')}',
     if (!report.completed && (report.nextVisitYmd ?? '').trim().isNotEmpty)
@@ -175,7 +200,8 @@ SupportVisitReport? parseSupportVisitReport(
     paid: paid,
     amount: paid ? amount : null,
     depositYmd: paid ? _ymdOrNull(fields['입금예정']) : null,
-    depositPaid: paid && (fields['입금완료'] ?? '') == '완료',
+    depositPaid: paid && _depositMarkedPaid(fields['입금완료']),
+    depositPaidYmd: paid ? _parseDepositPaidYmd(fields) : null,
     parts: parts,
     photoUrls: photos,
     nextVisitYmd: _ymdOrNull(fields['다음방문']),
@@ -184,6 +210,22 @@ SupportVisitReport? parseSupportVisitReport(
     createdBy: createdBy,
     createdAt: createdAt,
   );
+}
+
+bool _depositMarkedPaid(String? raw) {
+  final v = (raw ?? '').trim();
+  if (v.isEmpty || v == '미입금') return false;
+  if (v == '완료') return true;
+  return _ymdOrNull(v) != null;
+}
+
+String? _parseDepositPaidYmd(Map<String, String> fields) {
+  final explicit = _ymdOrNull(fields['입금일']);
+  if (explicit != null) return explicit;
+  final done = (fields['입금완료'] ?? '').trim();
+  if (done == '미입금' || done.isEmpty) return null;
+  if (done == '완료') return _ymdOrNull(fields['입금예정']);
+  return _ymdOrNull(done);
 }
 
 String? _ymdOrNull(String? raw) {
