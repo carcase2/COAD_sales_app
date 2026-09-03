@@ -638,6 +638,8 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
     required this.slots,
     required this.scheme,
     this.assigneeFilter = kGeneralScheduleAllAssignees,
+    this.orderedAssignees = const [],
+    this.colorForAssignee,
     this.siteFontSize = 8.5,
     this.siteRowHeight = 18,
     this.siteRowGap = 1,
@@ -646,6 +648,8 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
   final List<GeneralScheduleCell?> slots;
   final ColorScheme scheme;
   final String assigneeFilter;
+  final List<String> orderedAssignees;
+  final Color Function(String assignee)? colorForAssignee;
   final double siteFontSize;
   final double siteRowHeight;
   final double siteRowGap;
@@ -709,11 +713,14 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
       );
     }
 
-    final accent = parseGeneralScheduleUserColor(
-          cell.userColor,
+    final name = generalScheduleAssigneeLabel(cell);
+    final accent = colorForAssignee?.call(name) ??
+        generalScheduleAssigneeAccent(
+          name: name,
+          userColor: cell.userColor,
+          orderedAssignees: orderedAssignees,
           fallback: scheme.primary,
-        ) ??
-        scheme.primary;
+        );
     final site = cell.site.trim();
     final textStyle = generalScheduleSlotLabelStyle(
       fontSize: siteFontSize,
@@ -725,8 +732,12 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
       clipBehavior: Clip.hardEdge,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: accent.withValues(alpha: 0.12),
+          color: accent.withValues(alpha: 0.28),
           borderRadius: BorderRadius.circular(2),
+          border: Border.all(
+            color: accent.withValues(alpha: 0.55),
+            width: 0.7,
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 1),
@@ -734,7 +745,7 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                width: 3,
+                width: 4,
                 margin: const EdgeInsets.only(left: 1, top: 1, bottom: 1),
                 decoration: BoxDecoration(
                   color: accent,
@@ -768,12 +779,16 @@ class GeneralScheduleStripSlotDots extends StatelessWidget {
     required this.slots,
     required this.scheme,
     this.assigneeFilter = kGeneralScheduleAllAssignees,
+    this.orderedAssignees = const [],
+    this.colorForAssignee,
     this.onPrimary = false,
   });
 
   final List<GeneralScheduleCell?> slots;
   final ColorScheme scheme;
   final String assigneeFilter;
+  final List<String> orderedAssignees;
+  final Color Function(String assignee)? colorForAssignee;
   final bool onPrimary;
 
   @override
@@ -788,6 +803,18 @@ class GeneralScheduleStripSlotDots extends StatelessWidget {
         );
         final filled = cell != null && visible;
         final active = filled ? cell : null;
+        final name = active == null ? '' : generalScheduleAssigneeLabel(active);
+        final accent = filled
+            ? (onPrimary
+                ? scheme.onPrimary
+                : (colorForAssignee?.call(name) ??
+                    generalScheduleAssigneeAccent(
+                      name: name,
+                      userColor: active?.userColor,
+                      orderedAssignees: orderedAssignees,
+                      fallback: scheme.primary,
+                    )))
+            : null;
         return Expanded(
           child: Container(
             height: 4,
@@ -796,12 +823,7 @@ class GeneralScheduleStripSlotDots extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: filled
-                  ? (onPrimary
-                      ? scheme.onPrimary
-                      : (parseGeneralScheduleUserColor(
-                            active?.userColor,
-                            fallback: scheme.primary,
-                          ) ?? scheme.primary))
+                  ? accent
                   : (onPrimary
                       ? scheme.onPrimary.withValues(alpha: 0.22)
                       : scheme.surfaceContainerHighest),
@@ -821,6 +843,8 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
     required this.slots,
     required this.scheme,
     this.assigneeFilter = kGeneralScheduleAllAssignees,
+    this.orderedAssignees = const [],
+    this.colorForAssignee,
     this.compact = false,
     this.onPrimary = false,
     this.height = 36,
@@ -831,6 +855,8 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
   final List<GeneralScheduleCell?> slots;
   final ColorScheme scheme;
   final String assigneeFilter;
+  final List<String> orderedAssignees;
+  final Color Function(String assignee)? colorForAssignee;
   final bool compact;
   final bool onPrimary;
   final double height;
@@ -859,13 +885,18 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
           final filled = cell != null && visible;
           final active = filled ? cell : null;
           final siteLabel = (active?.site ?? '').trim();
+          final name =
+              active == null ? '' : generalScheduleAssigneeLabel(active);
           final accent = filled
               ? (onPrimary
                   ? scheme.onPrimary
-                  : (parseGeneralScheduleUserColor(
-                        active?.userColor,
+                  : (colorForAssignee?.call(name) ??
+                      generalScheduleAssigneeAccent(
+                        name: name,
+                        userColor: active?.userColor,
+                        orderedAssignees: orderedAssignees,
                         fallback: scheme.primary,
-                      ) ?? scheme.primary))
+                      )))
               : scheme.outlineVariant;
 
           final radius = BorderRadius.circular(compact ? 2 : 4);
@@ -877,18 +908,18 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
               color: filled
                   ? (onPrimary
                       ? accent.withValues(alpha: 0.32)
-                      : accent.withValues(alpha: 0.18))
+                      : accent.withValues(alpha: 0.28))
                   : (onPrimary
                       ? scheme.onPrimary.withValues(alpha: 0.15)
                       : scheme.primary.withValues(alpha: 0.07)),
               borderRadius: radius,
               border: Border.all(
                 color: filled
-                    ? accent.withValues(alpha: onPrimary ? 0.55 : 0.4)
+                    ? accent.withValues(alpha: onPrimary ? 0.55 : 0.55)
                     : (onPrimary
                         ? scheme.onPrimary.withValues(alpha: 0.35)
                         : scheme.primary.withValues(alpha: 0.32)),
-                width: 0.5,
+                width: filled ? 0.9 : 0.5,
               ),
             ),
             child: Padding(
@@ -1245,10 +1276,12 @@ class GeneralScheduleMonthStatsDetail extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           ...stats.byUser.take(12).map((u) {
-            final accent = parseGeneralScheduleUserColor(
-              u.color,
+            final accent = generalScheduleAssigneeAccent(
+              name: u.name,
+              userColor: u.color,
+              orderedAssignees: stats.byUser.map((e) => e.name).toList(),
               fallback: scheme.primary,
-            )!;
+            );
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -1573,10 +1606,11 @@ class _GeneralScheduleAssigneeGroupedDayListState
   ) {
     for (final e in group) {
       if (e.cell != null) {
-        return parseGeneralScheduleUserColor(
-              e.cell!.userColor,
-              fallback: scheme.primary,
-            )!;
+        return generalScheduleAssigneeAccent(
+          name: generalScheduleAssigneeLabel(e.cell!),
+          userColor: e.cell!.userColor,
+          fallback: scheme.primary,
+        );
       }
     }
     return scheme.primary;
@@ -1685,10 +1719,11 @@ class GeneralScheduleSlotLaneCard extends StatelessWidget {
         !_generalScheduleCellMatchesQuery(cell!, normalizedQuery);
     final accent = isEmpty
         ? scheme.outline
-        : (parseGeneralScheduleUserColor(
-            cell!.userColor,
+        : generalScheduleAssigneeAccent(
+            name: generalScheduleAssigneeLabel(cell!),
+            userColor: cell!.userColor,
             fallback: scheme.primary,
-          )!);
+          );
     final assignee = isEmpty ? '' : generalScheduleAssigneeLabel(cell!);
 
     final radius = compact ? 8.0 : 12.0;

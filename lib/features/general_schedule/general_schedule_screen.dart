@@ -597,19 +597,16 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     GeneralScheduleMonthStats monthStats,
     ColorScheme scheme,
   ) {
-    final colorMap = <String, Color>{};
-    for (final u in monthStats.byUser) {
-      colorMap[u.name] = parseGeneralScheduleUserColor(
-        u.color,
-        fallback: scheme.primary,
-      )!;
-    }
+    final ordered = monthStats.byUser.map((u) => u.name).toList();
     return (name) {
       if (name == kGeneralScheduleAllAssignees) {
         return scheme.onSurfaceVariant;
       }
-      if (name == '미지정') return scheme.outline;
-      return colorMap[name] ?? scheme.primary;
+      return generalScheduleAssigneeAccent(
+        name: name,
+        orderedAssignees: ordered,
+        fallback: scheme.outline,
+      );
     };
   }
 
@@ -903,6 +900,8 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                         grid: grid,
                         colorMode: _colorMode,
                         assigneeFilter: _selectedAssigneeFilter,
+                        orderedAssignees:
+                            monthStats.byUser.map((u) => u.name).toList(),
                         searchQuery: _searchQuery,
                         onDaySelected: _selectDayAndScroll,
                         onSlotTap: _onSlotTap,
@@ -912,6 +911,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                         grid: grid,
                         focusedMonth: _monthFocusedDay,
                         assigneeFilter: _selectedAssigneeFilter,
+                        orderedAssignees:
+                            monthStats.byUser.map((u) => u.name).toList(),
+                        colorForAssignee: colorForAssignee,
                         loginUserName: user.name,
                         showTableHeader: false,
                         onFocusedMonthChanged: (month) => setState(() {

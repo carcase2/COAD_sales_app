@@ -130,6 +130,7 @@ void main() {
       site: '넥센타이',
       start: '2026-07-28',
       endDate: '2026-08-01',
+      userName: '김경덕',
       userColor: '#F59E0B',
       doorTypes: ['S', 'O'],
     );
@@ -138,8 +139,9 @@ void main() {
         cell: cell,
         mode: GeneralScheduleColorMode.assignee,
         fallback: const Color(0xFF2563EB),
+        orderedAssignees: const ['김경덕', '이상수'],
       ),
-      const Color(0xFFF59E0B),
+      kGeneralScheduleAssigneePalette[0],
     );
     expect(
       generalScheduleBarColor(
@@ -149,6 +151,19 @@ void main() {
       ),
       kGeneralScheduleDoorTypeColors['SO'],
     );
+  });
+
+  test('generalScheduleAssigneeAccent — 담당자마다 다른 팔레트 색', () {
+    const names = ['갑', '을', '병', '정'];
+    final colors = [
+      for (final n in names)
+        generalScheduleAssigneeAccent(
+          name: n,
+          orderedAssignees: names,
+        ),
+    ];
+    expect(colors.toSet().length, names.length);
+    expect(colors[0], isNot(colors[1]));
   });
 
   test('seoulSundayWeekRangeContaining — 일~토', () {

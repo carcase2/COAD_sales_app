@@ -16,6 +16,7 @@ class GeneralScheduleWeekGrid extends StatefulWidget {
     required this.onDaySelected,
     required this.onSlotTap,
     this.assigneeFilter = kGeneralScheduleAllAssignees,
+    this.orderedAssignees = const [],
     this.searchQuery = '',
     this.onRefresh,
   });
@@ -27,6 +28,7 @@ class GeneralScheduleWeekGrid extends StatefulWidget {
   final GeneralScheduleDayGrid grid;
   final GeneralScheduleColorMode colorMode;
   final String assigneeFilter;
+  final List<String> orderedAssignees;
   final String searchQuery;
   final ValueChanged<String> onDaySelected;
   final void Function(int slotIndex, String ymd, GeneralScheduleCell? cell)
@@ -137,6 +139,7 @@ class GeneralScheduleWeekGridState extends State<GeneralScheduleWeekGrid> {
                 grid: widget.grid,
                 colorMode: widget.colorMode,
                 assigneeFilter: widget.assigneeFilter,
+                orderedAssignees: widget.orderedAssignees,
                 searchQuery: widget.searchQuery,
                 onDaySelected: widget.onDaySelected,
                 onSlotTap: widget.onSlotTap,
@@ -300,6 +303,7 @@ class _WeekTable extends StatelessWidget {
     required this.grid,
     required this.colorMode,
     required this.assigneeFilter,
+    required this.orderedAssignees,
     required this.searchQuery,
     required this.onDaySelected,
     required this.onSlotTap,
@@ -310,6 +314,7 @@ class _WeekTable extends StatelessWidget {
   final GeneralScheduleDayGrid grid;
   final GeneralScheduleColorMode colorMode;
   final String assigneeFilter;
+  final List<String> orderedAssignees;
   final String searchQuery;
   final ValueChanged<String> onDaySelected;
   final void Function(int slotIndex, String ymd, GeneralScheduleCell? cell)
@@ -350,6 +355,7 @@ class _WeekTable extends StatelessWidget {
                       grid: grid,
                       colorMode: colorMode,
                       assigneeFilter: assigneeFilter,
+                      orderedAssignees: orderedAssignees,
                       searchQuery: searchQuery,
                       onDaySelected: onDaySelected,
                       onSlotTap: onSlotTap,
@@ -372,6 +378,7 @@ class _WeekDayColumn extends StatelessWidget {
     required this.grid,
     required this.colorMode,
     required this.assigneeFilter,
+    required this.orderedAssignees,
     required this.searchQuery,
     required this.onDaySelected,
     required this.onSlotTap,
@@ -383,6 +390,7 @@ class _WeekDayColumn extends StatelessWidget {
   final GeneralScheduleDayGrid grid;
   final GeneralScheduleColorMode colorMode;
   final String assigneeFilter;
+  final List<String> orderedAssignees;
   final String searchQuery;
   final ValueChanged<String> onDaySelected;
   final void Function(int slotIndex, String ymd, GeneralScheduleCell? cell)
@@ -462,6 +470,7 @@ class _WeekDayColumn extends StatelessWidget {
               child: _WeekSlotBar(
                 cell: slots[slot],
                 colorMode: colorMode,
+                orderedAssignees: orderedAssignees,
                 searchQuery: query,
                 onTap: () => onSlotTap(slot, ymd, slots[slot]),
               ),
@@ -476,12 +485,14 @@ class _WeekSlotBar extends StatelessWidget {
   const _WeekSlotBar({
     required this.cell,
     required this.colorMode,
+    required this.orderedAssignees,
     required this.searchQuery,
     required this.onTap,
   });
 
   final GeneralScheduleCell? cell;
   final GeneralScheduleColorMode colorMode;
+  final List<String> orderedAssignees;
   final String searchQuery;
   final VoidCallback onTap;
 
@@ -496,6 +507,7 @@ class _WeekSlotBar extends StatelessWidget {
             cell: cell!,
             mode: colorMode,
             fallback: const Color(0xFF2563EB),
+            orderedAssignees: orderedAssignees,
           )
         : const Color(0xFFFFFFFF);
     final site = (cell?.site ?? '').trim();

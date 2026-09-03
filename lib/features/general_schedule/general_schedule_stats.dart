@@ -161,6 +161,70 @@ Color? parseGeneralScheduleUserColor(String? raw, {Color? fallback}) {
   return fallback;
 }
 
+/// 담당자별 달력 색 — 서로 잘 구분되도록 채도·명도를 맞춘 고정 팔레트.
+/// (DB `users.color`가 비슷하거나 비어 있어도 칸·필터 칩이 섞이지 않게 한다.)
+const List<Color> kGeneralScheduleAssigneePalette = <Color>[
+  Color(0xFF1D4ED8), // blue
+  Color(0xFFDC2626), // red
+  Color(0xFF059669), // emerald
+  Color(0xFFD97706), // amber
+  Color(0xFF7C3AED), // violet
+  Color(0xFFDB2777), // pink
+  Color(0xFF0F766E), // teal
+  Color(0xFFEA580C), // orange
+  Color(0xFF4F46E5), // indigo
+  Color(0xFF65A30D), // lime
+  Color(0xFF0891B2), // cyan
+  Color(0xFFBE123C), // rose
+];
+
+const Color kGeneralScheduleAssigneeUnset = Color(0xFF6B7280);
+
+int _stableAssigneePaletteIndex(String name) {
+  // FNV-1a 변형 — 이름만으로도 팔레트에 고르게 분산.
+  var hash = 2166136261;
+  for (final unit in name.codeUnits) {
+    hash ^= unit;
+    hash = (hash * 16777619) & 0x7fffffff;
+  }
+  return hash;
+}
+
+/// 담당자 표시색. [orderedAssignees]가 있으면 가나다·등록 순으로 팔레트를 나눠
+/// 같은 달력 안의 담당자가 최대한 다른 색을 쓰게 한다.
+Color generalScheduleAssigneeAccent({
+  required String name,
+  String? userColor,
+  List<String>? orderedAssignees,
+  Color? fallback,
+}) {
+  final n = name.trim();
+  if (n.isEmpty || n == '미지정' || n == '전체') {
+    return fallback ?? kGeneralScheduleAssigneeUnset;
+  }
+
+  final ordered = (orderedAssignees ?? const <String>[])
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty && e != '전체' && e != '미지정')
+      .toList();
+  // 중복 이름 제거·순서 유지
+  final unique = <String>[];
+  final seen = <String>{};
+  for (final e in ordered) {
+    if (seen.add(e)) unique.add(e);
+  }
+
+  final index = unique.isEmpty
+      ? _stableAssigneePaletteIndex(n)
+      : (() {
+          final i = unique.indexOf(n);
+          return i >= 0 ? i : _stableAssigneePaletteIndex(n);
+        })();
+
+  return kGeneralScheduleAssigneePalette[
+      index % kGeneralScheduleAssigneePalette.length];
+}
+
 /// 주간 달력 칸 색 — 담당자별 / 도어타입별 (COAD_home Calendar.tsx).
 enum GeneralScheduleColorMode { assignee, doorType }
 
@@ -208,10 +272,16 @@ Color generalScheduleBarColor({
   required GeneralScheduleCell cell,
   required GeneralScheduleColorMode mode,
   required Color fallback,
+  List<String>? orderedAssignees,
 }) {
   if (mode == GeneralScheduleColorMode.assignee) {
-    return parseGeneralScheduleUserColor(cell.userColor, fallback: fallback) ??
-        fallback;
+    final name = (cell.userName ?? '').trim();
+    return generalScheduleAssigneeAccent(
+      name: name.isEmpty ? '미지정' : name,
+      userColor: cell.userColor,
+      orderedAssignees: orderedAssignees,
+      fallback: fallback,
+    );
   }
   return generalScheduleDoorTypeBarColor(cell);
 }

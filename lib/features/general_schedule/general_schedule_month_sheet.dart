@@ -20,6 +20,8 @@ class GeneralScheduleMonthCalendar extends StatefulWidget {
     this.showHeader = false,
     this.showTableHeader = true,
     this.padding = const EdgeInsets.fromLTRB(12, 0, 12, 16),
+    this.orderedAssignees = const [],
+    this.colorForAssignee,
   });
 
   final GeneralScheduleDayGrid grid;
@@ -32,6 +34,8 @@ class GeneralScheduleMonthCalendar extends StatefulWidget {
   final bool showHeader;
   final bool showTableHeader;
   final EdgeInsets padding;
+  final List<String> orderedAssignees;
+  final Color Function(String assignee)? colorForAssignee;
 
   @override
   State<GeneralScheduleMonthCalendar> createState() =>
@@ -377,6 +381,8 @@ class _GeneralScheduleMonthCalendarState
         slots: slots,
         scheme: scheme,
         assigneeFilter: assigneeFilter,
+        orderedAssignees: widget.orderedAssignees,
+        colorForAssignee: widget.colorForAssignee,
         compact: true,
         height: 32,
         slotGap: 3.5,
@@ -387,6 +393,8 @@ class _GeneralScheduleMonthCalendarState
       slots: slots,
       scheme: scheme,
       assigneeFilter: assigneeFilter,
+      orderedAssignees: widget.orderedAssignees,
+      colorForAssignee: widget.colorForAssignee,
       siteFontSize: 8.0,
       siteRowHeight: 14,
       siteRowGap: 1,
