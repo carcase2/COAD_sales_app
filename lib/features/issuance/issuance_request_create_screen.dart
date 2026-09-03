@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_domain_tab.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
@@ -1290,28 +1291,51 @@ class _IssuanceRequestCreateScreenState
                       ),
                     ),
                     const SizedBox(height: 12),
-                    SegmentedButton<IssuanceDomain>(
-                      segments: [
-                        ButtonSegment(
-                          value: IssuanceDomain.taxInvoice,
-                          label: _buildDomainSegmentLabel(
-                            title: '세금계산서',
-                            count: taxCount,
+                    Container(
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: IssuanceDomainTab(
+                              label: '세금계산서',
+                              selected: isTax,
+                              accent: accent,
+                              count: taxCount,
+                              onTap: () {
+                                if (_domain == IssuanceDomain.taxInvoice) {
+                                  return;
+                                }
+                                setState(
+                                  () => _domain = IssuanceDomain.taxInvoice,
+                                );
+                                unawaited(_loadRecentSites(''));
+                              },
+                            ),
                           ),
-                        ),
-                        ButtonSegment(
-                          value: IssuanceDomain.performanceBond,
-                          label: _buildDomainSegmentLabel(
-                            title: '이행증권',
-                            count: bondCount,
+                          Expanded(
+                            child: IssuanceDomainTab(
+                              label: '이행증권',
+                              selected: !isTax,
+                              accent: accent,
+                              count: bondCount,
+                              onTap: () {
+                                if (_domain ==
+                                    IssuanceDomain.performanceBond) {
+                                  return;
+                                }
+                                setState(
+                                  () => _domain =
+                                      IssuanceDomain.performanceBond,
+                                );
+                                unawaited(_loadRecentSites(''));
+                              },
+                            ),
                           ),
-                        ),
-                      ],
-                      selected: {_domain},
-                      onSelectionChanged: (v) {
-                        setState(() => _domain = v.first);
-                        unawaited(_loadRecentSites(''));
-                      },
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 10),
                     if (isTax) _buildTaxItemTypeSelector(accent),
@@ -1929,6 +1953,12 @@ class _IssuanceRequestCreateScreenState
     );
   }
 
+  /// 가로 스크롤 카드: 제목 + 라벨 + 입력 한 줄.
+  double _bondTermsCardListHeight(BuildContext context) {
+    final scale = MediaQuery.textScalerOf(context).scale(1);
+    return 12 + 18 * scale + 6 + 14 * scale + 4 + 44 * scale + 12;
+  }
+
   Widget _buildBondTypeTermsPanel({
     required String type,
     required bool compact,
@@ -1941,10 +1971,91 @@ class _IssuanceRequestCreateScreenState
     };
     final terms = _bondTerms[type]!;
     final unit = _bondPeriodUnit(type);
-    final content = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (compact) ...[
+
+    Widget labeledField({
+      required String label,
+      required TextEditingController controller,
+      required TextInputType keyboardType,
+      required String? Function(String?) validator,
+      TextInputAction textInputAction = TextInputAction.next,
+      String? suffixText,
+    }) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: accent.shade800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextFormField(
+            controller: controller,
+            textInputAction: textInputAction,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            decoration: InputDecoration(
+              isDense: true,
+              suffixText: suffixText,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 10,
+              ),
+            ),
+            keyboardType: keyboardType,
+            validator: validator,
+          ),
+        ],
+      );
+    }
+
+    if (!compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            controller: terms.rate,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: '보증금율(%) *'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            validator: (v) {
+              final n = double.tryParse((v ?? '').trim()) ?? 0;
+              return (n <= 0 || n > 100) ? '0~100' : null;
+            },
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: terms.period,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: '보증기간($unit) *',
+              hintText: type == '하자이행' ? '예: 1, 2' : '예: 1, 6, 12',
+            ),
+            keyboardType: TextInputType.number,
+            validator: (v) {
+              if (_parseGuaranteePeriodValue(v ?? '') > 0) return null;
+              return type == '하자이행' ? '기간(년)' : '기간(달)';
+            },
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: accent.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.shade200),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Text(
             type,
             textAlign: TextAlign.center,
@@ -1954,47 +2065,141 @@ class _IssuanceRequestCreateScreenState
               color: accent.shade800,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: labeledField(
+                  label: '보증금율(%)',
+                  controller: terms.rate,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  suffixText: '%',
+                  validator: (v) {
+                    final n = double.tryParse((v ?? '').trim()) ?? 0;
+                    return (n <= 0 || n > 100) ? '0~100' : null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: labeledField(
+                  label: '기간($unit)',
+                  controller: terms.period,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  suffixText: unit,
+                  validator: (v) {
+                    if (_parseGuaranteePeriodValue(v ?? '') > 0) return null;
+                    return '필수';
+                  },
+                ),
+              ),
+            ],
+          ),
         ],
-        TextFormField(
-          controller: terms.rate,
-          textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
-            labelText: compact ? '보증금율(%) *' : '보증금율(%) *',
-            isDense: compact,
-          ),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (v) {
-            final n = double.tryParse((v ?? '').trim()) ?? 0;
-            return (n <= 0 || n > 100) ? '0~100' : null;
-          },
-        ),
-        SizedBox(height: compact ? 8 : 10),
-        TextFormField(
-          controller: terms.period,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            labelText: '보증기간($unit) *',
-            hintText: type == '하자이행' ? '예: 1, 2' : '예: 1, 6, 12',
-            isDense: compact,
-          ),
-          keyboardType: TextInputType.number,
-          validator: (v) {
-            if (_parseGuaranteePeriodValue(v ?? '') > 0) return null;
-            return type == '하자이행' ? '기간(년)' : '기간(달)';
-          },
-        ),
-      ],
-    );
-    if (!compact) return content;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
-      decoration: BoxDecoration(
-        color: accent.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accent.shade200),
       ),
-      child: content,
+    );
+  }
+
+  Widget _buildConstructionDateField({
+    required String label,
+    required TextEditingController controller,
+    required Future<void> Function() onPick,
+    required String? Function(String?) validator,
+  }) {
+    return FormField<String>(
+      validator: (_) => validator(controller.text),
+      builder: (state) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Material(
+              color: Theme.of(context).inputDecorationTheme.fillColor ??
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                  await onPick();
+                  if (!mounted) return;
+                  state.didChange(controller.text);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: state.hasError
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.6),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            controller.text.trim().isEmpty
+                                ? '선택'
+                                : controller.text.trim(),
+                            maxLines: 1,
+                            softWrap: false,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: controller.text.trim().isEmpty
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant
+                                  : Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (state.hasError)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: Text(
+                  state.errorText!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -2046,39 +2251,49 @@ class _IssuanceRequestCreateScreenState
             title: '보증/기간 정보',
             child: Column(
               children: [
-                if (_selectedBondTypes.length > 1)
+                if (_selectedBondTypes.isNotEmpty)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       const gap = 10.0;
-                      // 다음 칸이 살짝 보이게 해서 좌우 스크롤을 알린다.
-                      final cardW = constraints.maxWidth * 0.82;
+                      final multi = _selectedBondTypes.length > 1;
+                      // 1개여도 복수 선택 때와 같은 카드 비율로 맞춘다.
+                      final cardW = constraints.maxWidth * 0.9;
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '좌우로 밀면 ${_selectedBondTypes.skip(1).join(' · ')}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                          if (multi) ...[
+                            Text(
+                              '좌우로 밀면 ${_selectedBondTypes.skip(1).join(' · ')}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
+                            const SizedBox(height: 8),
+                          ],
                           SizedBox(
-                            height: 168,
+                            height: _bondTermsCardListHeight(context),
                             child: ListView.separated(
                               scrollDirection: Axis.horizontal,
+                              physics: multi
+                                  ? null
+                                  : const NeverScrollableScrollPhysics(),
+                              padding: EdgeInsets.zero,
                               itemCount: _selectedBondTypes.length,
                               separatorBuilder: (_, _) =>
                                   const SizedBox(width: gap),
                               itemBuilder: (context, i) {
-                                return SizedBox(
-                                  width: cardW,
-                                  child: _buildBondTypeTermsPanel(
-                                    type: _selectedBondTypes[i],
-                                    compact: true,
+                                return Align(
+                                  alignment: Alignment.topLeft,
+                                  child: SizedBox(
+                                    width: cardW,
+                                    child: _buildBondTypeTermsPanel(
+                                      type: _selectedBondTypes[i],
+                                      compact: true,
+                                    ),
                                   ),
                                 );
                               },
@@ -2087,32 +2302,61 @@ class _IssuanceRequestCreateScreenState
                         ],
                       );
                     },
-                  )
-                else if (_selectedBondTypes.isNotEmpty)
-                  _buildBondTypeTermsPanel(
-                    type: _selectedBondTypes.first,
-                    compact: false,
                   ),
                 const SizedBox(height: 10),
-                TextFormField(
-                  controller: _bondContractDate,
-                  readOnly: true,
-                  decoration: const InputDecoration(labelText: '시공 시작일 *'),
-                  onTap: () => _pickDate(_bondContractDate),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? '시공 시작일을 선택하세요.' : null,
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '시공 기간',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  controller: _bondConstructionEndDate,
-                  readOnly: true,
-                  decoration: const InputDecoration(labelText: '시공 종료일 *'),
-                  onTap: () => _pickDate(
-                    _bondConstructionEndDate,
-                    firstDate: DateTime.tryParse(_bondContractDate.text.trim()),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? '시공 종료일을 선택하세요.' : null,
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _buildConstructionDateField(
+                        label: '시작일 *',
+                        controller: _bondContractDate,
+                        onPick: () => _pickDate(_bondContractDate),
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? '시작일'
+                            : null,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6, right: 6, top: 28),
+                      child: Text(
+                        '~',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildConstructionDateField(
+                        label: '종료일 *',
+                        controller: _bondConstructionEndDate,
+                        onPick: () => _pickDate(
+                          _bondConstructionEndDate,
+                          firstDate: DateTime.tryParse(
+                            _bondContractDate.text.trim(),
+                          ),
+                        ),
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? '종료일'
+                            : null,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -2269,31 +2513,6 @@ class _IssuanceRequestCreateScreenState
         color: selected ? selectedFg : Colors.black87,
       ),
       onSelected: (_) => onTap(),
-    );
-  }
-
-  Widget _buildDomainSegmentLabel({
-    required String title,
-    required int? count,
-  }) {
-    final countText = count == null ? '…' : '$count';
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(title),
-        const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            countText,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-          ),
-        ),
-      ],
     );
   }
 }
