@@ -10,22 +10,25 @@ type PushUser = {
   fcm_token?: string | null
 }
 
+const CS_GROUPS = new Set(['고객지원', '고객지원팀', '관리자'])
+
 /** 임시: 고객지원 알림을 받을 추가 계정(아이디 또는 이름). */
 const EXTRA_CS_NOTIFY = new Set(['남현우'])
 
-function isAdminUser(u: PushUser): boolean {
+function isCsRecipient(u: PushUser): boolean {
   const role = (u.role ?? '').toString().trim().toLowerCase()
   const groupName = (u.groups?.name ?? '').toString().trim()
-  return role === 'admin' || groupName === '관리자'
-}
-
-function isExtraCsNotifyUser(u: PushUser): boolean {
   const id = (u.id ?? '').toString().trim()
   const name = (u.name ?? '').toString().trim()
-  return EXTRA_CS_NOTIFY.has(id) || EXTRA_CS_NOTIFY.has(name)
+  return (
+    role === 'admin' ||
+    CS_GROUPS.has(groupName) ||
+    EXTRA_CS_NOTIFY.has(id) ||
+    EXTRA_CS_NOTIFY.has(name)
+  )
 }
 
-async function resolveAdminUsers(
+async function resolveCsUsers(
   supabaseAdmin: ReturnType<typeof createClient>,
 ): Promise<PushUser[]> {
   const { data: users, error } = await supabaseAdmin
@@ -33,7 +36,7 @@ async function resolveAdminUsers(
     .select('id, name, role, fcm_token, groups(name)')
 
   if (error) throw error
-  return (users ?? []).filter((u) => u?.id && (isAdminUser(u) || isExtraCsNotifyUser(u)))
+  return (users ?? []).filter((u) => u?.id && isCsRecipient(u))
 }
 
 async function resolvePushTokens(
@@ -94,16 +97,16 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
-    const users = await resolveAdminUsers(supabaseAdmin)
+    const users = await resolveCsUsers(supabaseAdmin)
     if (users.length === 0) {
-      return new Response(JSON.stringify({ message: 'No admin users found' }), { status: 200 })
+      return new Response(JSON.stringify({ message: 'No CS/admin users found' }), { status: 200 })
     }
 
     const tokens = await resolvePushTokens(supabaseAdmin, users)
     if (tokens.length === 0) {
       return new Response(
         JSON.stringify({
-          message: 'No FCM tokens for admins',
+          message: 'No FCM tokens for CS/admin',
           recipientUsers: users.map((u) => u.name),
         }),
         { status: 200 },
@@ -134,7 +137,7 @@ serve(async (req) => {
       .join(' · ')
 
     console.log(
-      `A/S push asId=${asId} admins=${users.map((u) => u.name).join(',')} tokens=${tokens.length}`,
+      `A/S push asId=${asId} users=${users.map((u) => u.name).join(',')} tokens=${tokens.length}`,
     )
 
     const results = await Promise.all(
@@ -151,6 +154,8 @@ serve(async (req) => {
               body: JSON.stringify({
                 message: {
                   token,
+                  // iOS는 data-only면 백그라운드/종료 시 배너가 안 뜸. notification + apns alert 필수.
+                  notification: { title, body },
                   data: {
                     type: 'as_reception',
                     as_id: asId,
@@ -158,7 +163,13 @@ serve(async (req) => {
                     body,
                     click_action: 'FLUTTER_NOTIFICATION_CLICK',
                   },
-                  android: { priority: 'high' },
+                  android: {
+                    priority: 'high',
+                    notification: {
+                      channel_id: 'call_notifications',
+                      sound: 'default',
+                    },
+                  },
                   apns: {
                     headers: {
                       'apns-push-type': 'alert',
