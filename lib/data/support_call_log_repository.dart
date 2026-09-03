@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/region_branch.dart';
+import 'package:coad_customer_calls/core/utils/support_visit_capacity.dart';
 import 'package:coad_customer_calls/data/support_supabase.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/models/region.dart';
@@ -22,6 +23,8 @@ class SupportCallLog {
     this.secondImageUrls = const [],
     this.serviceStatusId,
     this.visitDate,
+    this.visitTeamId,
+    this.visitTime,
     this.latitude,
     this.longitude,
   });
@@ -38,6 +41,8 @@ class SupportCallLog {
   final List<String> secondImageUrls;
   final int? serviceStatusId;
   final String? visitDate;
+  final String? visitTeamId;
+  final String? visitTime;
   final double? latitude;
   final double? longitude;
 
@@ -54,6 +59,10 @@ class SupportCallLog {
   SupportCallLog copyWith({
     int? serviceStatusId,
     String? visitDate,
+    String? visitTeamId,
+    String? visitTime,
+    bool clearVisitTeamId = false,
+    bool clearVisitTime = false,
     double? latitude,
     double? longitude,
   }) {
@@ -70,6 +79,10 @@ class SupportCallLog {
       secondImageUrls: secondImageUrls,
       serviceStatusId: serviceStatusId ?? this.serviceStatusId,
       visitDate: visitDate ?? this.visitDate,
+      visitTeamId: clearVisitTeamId
+          ? null
+          : (visitTeamId ?? this.visitTeamId),
+      visitTime: clearVisitTime ? null : (visitTime ?? this.visitTime),
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
     );
@@ -93,6 +106,15 @@ class SupportCallLog {
         if (raw.isEmpty) return null;
         return raw.length >= 10 ? raw.substring(0, 10) : raw;
       }(),
+      visitTeamId: () {
+        final raw = json['visit_team_id']?.toString().trim() ?? '';
+        return raw.isEmpty ? null : raw;
+      }(),
+      visitTime: () {
+        final raw = json['visit_time']?.toString().trim() ?? '';
+        if (raw.isEmpty) return null;
+        return raw.length >= 5 ? raw.substring(0, 5) : raw;
+      }(),
       latitude: double.tryParse('${json['latitude'] ?? ''}'),
       longitude: double.tryParse('${json['longitude'] ?? ''}'),
     );
@@ -114,18 +136,23 @@ class SupportHomePeriodStats {
     required this.reception,
     required this.pending,
     required this.visits,
+    this.visitsCompleted = 0,
     required this.updated,
   });
 
   final int reception;
   final int pending;
+  /// 기간 내 방문예정(미완료).
   final int visits;
+  /// 기간 내 방문완료.
+  final int visitsCompleted;
   final int updated;
 
   static const empty = SupportHomePeriodStats(
     reception: 0,
     pending: 0,
     visits: 0,
+    visitsCompleted: 0,
     updated: 0,
   );
 }
@@ -158,7 +185,7 @@ const kSupportStatusReceived = 4;
 const kSupportStatusVisitScheduled = 5;
 
 const _supportCallLogSelect =
-    'id, customer_name, customer_phone, issue, address, created_by, created_at, call_date, first_image_urls, second_image_urls, service_status_id, visit_date, latitude, longitude';
+    'id, customer_name, customer_phone, issue, address, created_by, created_at, call_date, first_image_urls, second_image_urls, service_status_id, visit_date, visit_team_id, visit_time, latitude, longitude';
 
 class SupportCallLogRepository {
   SupportCallLogRepository();
@@ -365,26 +392,43 @@ class SupportCallLogRepository {
       } catch (_) {}
 
       var visits = 0;
+      var visitsCompleted = 0;
       try {
         final visitRows = await client
             .from('call_logs')
-            .select('id')
+            .select('id, service_status_id')
             .gte('visit_date', fromYmd)
             .lte('visit_date', toYmdInclusive);
-        visits = List<dynamic>.from(visitRows).length;
+        for (final row in List<Map<String, dynamic>>.from(visitRows)) {
+          final status = int.tryParse('${row['service_status_id'] ?? ''}');
+          if (status == kSupportStatusCompleted) {
+            visitsCompleted++;
+          } else {
+            visits++;
+          }
+        }
       } catch (_) {
-        visits = created.where((row) {
+        for (final row in created) {
           final ymd = _rowYmd(row['visit_date']);
-          return ymd != null &&
-              ymd.compareTo(fromYmd) >= 0 &&
-              ymd.compareTo(toYmdInclusive) <= 0;
-        }).length;
+          if (ymd == null ||
+              ymd.compareTo(fromYmd) < 0 ||
+              ymd.compareTo(toYmdInclusive) > 0) {
+            continue;
+          }
+          final status = int.tryParse('${row['service_status_id'] ?? ''}');
+          if (status == kSupportStatusCompleted) {
+            visitsCompleted++;
+          } else {
+            visits++;
+          }
+        }
       }
 
       return SupportHomePeriodStats(
         reception: created.length,
         pending: pending,
         visits: visits,
+        visitsCompleted: visitsCompleted,
         updated: updated,
       );
     } catch (e) {
@@ -543,6 +587,21 @@ class SupportCallLogRepository {
             : kSupportStatusVisitScheduled,
         'visit_date': report.completed ? report.visitYmd : report.nextVisitYmd,
       };
+      if (report.completed) {
+        patch['visit_team_id'] = null;
+        patch['visit_time'] = null;
+      } else {
+        final teamId = (report.nextVisitTeamId ?? '').trim();
+        if (teamId.isEmpty) {
+          throw ApiException('다음 방문 팀을 선택해 주세요.');
+        }
+        final time = (report.nextVisitTime ?? '').trim();
+        if (time.isEmpty) {
+          throw ApiException('다음 방문 시간을 선택해 주세요.');
+        }
+        patch['visit_team_id'] = teamId;
+        patch['visit_time'] = time.length >= 5 ? time.substring(0, 5) : time;
+      }
       await client.from('call_logs').update(patch).eq('id', callLogId);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -573,24 +632,44 @@ class SupportCallLogRepository {
     int? currentStatusId,
     SupportConsultOutcome? outcome,
     String? visitYmd,
+    String? visitTeamId,
+    String? visitTime,
+    String? visitTeamLabel,
     String? sendYmd,
     int? amount,
   }) async {
     final text = description.trim();
-    if (text.isEmpty) {
-      throw ApiException('상담 내용을 입력해 주세요.');
-    }
     if (outcome == SupportConsultOutcome.visit &&
         (visitYmd == null || visitYmd.trim().isEmpty)) {
       throw ApiException('방문예정일을 선택해 주세요.');
+    }
+    if (outcome == SupportConsultOutcome.visit &&
+        (visitTeamId == null || visitTeamId.trim().isEmpty)) {
+      throw ApiException('방문 팀을 선택해 주세요.');
+    }
+    if (outcome == SupportConsultOutcome.visit &&
+        (visitTime == null || visitTime.trim().isEmpty)) {
+      throw ApiException('방문 시간을 선택해 주세요.');
     }
     if (outcome == SupportConsultOutcome.verbalQuote &&
         (amount == null || amount <= 0)) {
       throw ApiException('구두 견적 금액을 입력해 주세요.');
     }
+    final body = text.isNotEmpty
+        ? text
+        : outcome == SupportConsultOutcome.visit
+        ? supportVisitConsultBody(
+            ymd: visitYmd!,
+            time: visitTime!,
+            teamLabel: visitTeamLabel,
+          )
+        : '';
+    if (body.isEmpty) {
+      throw ApiException('상담 내용을 입력해 주세요.');
+    }
     try {
       final client = supportSupabaseClient();
-      final body = [
+      final bodyLines = [
         if (outcome != null)
           supportConsultOutcomeLine(
             outcome,
@@ -599,17 +678,20 @@ class SupportCallLogRepository {
                 : outcome == SupportConsultOutcome.quoteSend
                 ? sendYmd
                 : null,
+            visitTime: outcome == SupportConsultOutcome.visit
+                ? visitTime
+                : null,
             amount:
                 outcome == SupportConsultOutcome.verbalQuote ||
                     outcome == SupportConsultOutcome.quoteSend
                 ? amount
                 : null,
           ),
-        text,
+        body,
       ].join('\n');
       await client.from('service_requests').insert({
         'call_log_id': callLogId,
-        'description': body,
+        'description': bodyLines,
         if (createdBy != null && createdBy.trim().isNotEmpty)
           'created_by': createdBy.trim(),
       });
@@ -618,6 +700,9 @@ class SupportCallLogRepository {
         patch['service_status_id'] = supportConsultOutcomeStatusId(outcome);
         if (outcome == SupportConsultOutcome.visit) {
           patch['visit_date'] = visitYmd;
+          patch['visit_team_id'] = visitTeamId!.trim();
+          final t = visitTime!.trim();
+          patch['visit_time'] = t.length >= 5 ? t.substring(0, 5) : t;
         }
       } else if (isSupportServiceStatusPending(currentStatusId)) {
         patch['service_status_id'] = kSupportStatusInProgress;
@@ -628,6 +713,36 @@ class SupportCallLogRepository {
     } catch (e) {
       if (e is ApiException) rethrow;
       throw ApiException('상담 내용 저장에 실패했습니다. $e');
+    }
+  }
+
+  /// 방문예정일·팀만 변경 (접수 상세·달력).
+  Future<void> updateVisitSchedule({
+    required String callLogId,
+    required String visitYmd,
+    required String visitTeamId,
+    required String visitTime,
+  }) async {
+    final id = callLogId.trim();
+    final ymd = visitYmd.trim();
+    final teamId = visitTeamId.trim();
+    final time = visitTime.trim();
+    if (id.isEmpty) throw ApiException('접수 id가 없습니다.');
+    if (ymd.isEmpty) throw ApiException('방문예정일을 선택해 주세요.');
+    if (teamId.isEmpty) throw ApiException('방문 팀을 선택해 주세요.');
+    if (time.isEmpty) throw ApiException('방문 시간을 선택해 주세요.');
+    try {
+      await supportSupabaseClient()
+          .from('call_logs')
+          .update({
+            'visit_date': ymd,
+            'visit_team_id': teamId,
+            'visit_time': time.length >= 5 ? time.substring(0, 5) : time,
+            'service_status_id': kSupportStatusVisitScheduled,
+          })
+          .eq('id', id);
+    } catch (e) {
+      throw ApiException('방문예정일을 저장하지 못했습니다. $e');
     }
   }
 
@@ -669,35 +784,13 @@ class SupportCallLogRepository {
         events.add(event);
       }
 
-      final visitRows = await client
-          .from('call_logs')
-          .select(_supportCallLogSelect)
-          .gte('visit_date', fromYmd)
-          .lte('visit_date', toYmdInclusive)
-          .limit(400);
-      for (final row in List<Map<String, dynamic>>.from(visitRows)) {
-        final log = SupportCallLog.fromJson(row);
-        final ymd = log.visitDate;
-        if (ymd == null || ymd.isEmpty) continue;
-        addEvent(
-          SupportScheduleEvent(
-            kind: SupportScheduleKind.visit,
-            ymd: ymd,
-            log: log,
-            caption: log.serviceStatusId == kSupportStatusCompleted
-                ? '방문완료'
-                : '방문예정',
-          ),
-        );
-      }
-
+      final byLog = <String, List<SupportVisitReport>>{};
       try {
         final reports = await client
             .from('service_requests')
             .select('id, description, call_log_id, created_by, created_at')
             .ilike('description', '$kSupportVisitReportMarker%')
             .limit(800);
-        final byLog = <String, List<SupportVisitReport>>{};
         for (final row in List<Map<String, dynamic>>.from(reports)) {
           final parsed = parseSupportVisitReport(
             (row['description'] ?? '').toString(),
@@ -709,7 +802,51 @@ class SupportCallLogRepository {
           if (parsed == null || id.isEmpty) continue;
           byLog.putIfAbsent(id, () => []).add(parsed);
         }
-        if (byLog.isNotEmpty) {
+      } catch (_) {}
+
+      SupportVisitReport? reportOnDay(String logId, String ymd) {
+        for (final r in byLog[logId] ?? const <SupportVisitReport>[]) {
+          if (r.visitYmd.trim() == ymd) return r;
+        }
+        return null;
+      }
+
+      String? normalizeTime(String? raw) {
+        final t = (raw ?? '').trim();
+        if (t.isEmpty) return null;
+        return t.length >= 5 ? t.substring(0, 5) : t;
+      }
+
+      final visitRows = await client
+          .from('call_logs')
+          .select(_supportCallLogSelect)
+          .gte('visit_date', fromYmd)
+          .lte('visit_date', toYmdInclusive)
+          .limit(400);
+      for (final row in List<Map<String, dynamic>>.from(visitRows)) {
+        final log = SupportCallLog.fromJson(row);
+        final ymd = log.visitDate;
+        if (ymd == null || ymd.isEmpty) continue;
+        final report = reportOnDay(log.id, ymd);
+        addEvent(
+          SupportScheduleEvent(
+            kind: SupportScheduleKind.visit,
+            ymd: ymd,
+            log: log,
+            caption: log.serviceStatusId == kSupportStatusCompleted
+                ? '방문완료'
+                : '방문예정',
+            visitReport: report,
+            scheduledYmd: ymd,
+            scheduledTime: normalizeTime(log.visitTime),
+            actualYmd: report?.visitYmd,
+            actualTime: normalizeTime(report?.visitTime),
+          ),
+        );
+      }
+
+      if (byLog.isNotEmpty) {
+        try {
           final logs = await client
               .from('call_logs')
               .select(_supportCallLogSelect)
@@ -719,15 +856,24 @@ class SupportCallLogRepository {
             final log = SupportCallLog.fromJson(row);
             for (final report
                 in byLog[log.id] ?? const <SupportVisitReport>[]) {
-              final visitYmd = report.visitYmd;
+                final visitYmd = report.visitYmd;
               if (visitYmd.compareTo(fromYmd) >= 0 &&
                   visitYmd.compareTo(toYmdInclusive) <= 0) {
+                final logStillOnSameDay = (log.visitDate ?? '') == visitYmd;
                 addEvent(
                   SupportScheduleEvent(
                     kind: SupportScheduleKind.visit,
                     ymd: visitYmd,
                     log: log,
                     caption: report.completed ? '방문완료' : '방문',
+                    visitReport: report,
+                    scheduledYmd: visitYmd,
+                    scheduledTime: logStillOnSameDay
+                        ? normalizeTime(log.visitTime) ??
+                              normalizeTime(report.visitTime)
+                        : normalizeTime(report.visitTime),
+                    actualYmd: visitYmd,
+                    actualTime: normalizeTime(report.visitTime),
                   ),
                 );
               }
@@ -742,6 +888,12 @@ class SupportCallLogRepository {
                     ymd: next,
                     log: log,
                     caption: '재방문예정',
+                    visitReport: report,
+                    scheduledYmd: next,
+                    scheduledTime: normalizeTime(report.nextVisitTime) ??
+                        normalizeTime(log.visitTime),
+                    actualYmd: null,
+                    actualTime: null,
                   ),
                 );
               }
@@ -764,8 +916,8 @@ class SupportCallLogRepository {
               }
             }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       try {
         final reqs = await client
@@ -842,14 +994,36 @@ class SupportCallLogRepository {
     required List<Region> regions,
     String? excludeLogId,
   }) async {
+    final byDay = await listScheduledVisitsByYmd(
+      fromYmd: fromYmd,
+      toYmdInclusive: toYmdInclusive,
+      branch: branch,
+      regions: regions,
+      excludeLogId: excludeLogId,
+    );
+    return {
+      for (final e in byDay.entries) e.key: e.value.totalCount,
+    };
+  }
+
+  /// 완료되지 않은 방문예정 — 날짜별 팀 배정·총 건수. 같은 지점만.
+  Future<Map<String, SupportVisitDayBookings>> listScheduledVisitsByYmd({
+    required String fromYmd,
+    required String toYmdInclusive,
+    required String branch,
+    required List<Region> regions,
+    String? excludeLogId,
+  }) async {
     try {
       final rows = await supportSupabaseClient()
           .from('call_logs')
-          .select('id, address, visit_date, service_status_id')
+          .select(
+            'id, address, visit_date, visit_team_id, visit_time, service_status_id',
+          )
           .gte('visit_date', fromYmd)
           .lte('visit_date', toYmdInclusive)
           .limit(800);
-      final counts = <String, int>{};
+      final counts = <String, SupportVisitDayBookings>{};
       final skip = (excludeLogId ?? '').trim();
       for (final row in List<Map<String, dynamic>>.from(rows)) {
         final id = (row['id'] ?? '').toString();
@@ -863,7 +1037,22 @@ class SupportCallLogRepository {
           regions,
         );
         if (matched != branch) continue;
-        counts[ymd] = (counts[ymd] ?? 0) + 1;
+        final prev = counts[ymd] ?? const SupportVisitDayBookings();
+        final teamId = (row['visit_team_id'] ?? '').toString().trim();
+        final timeRaw = (row['visit_time'] ?? '').toString().trim();
+        final time = timeRaw.length >= 5 ? timeRaw.substring(0, 5) : timeRaw;
+        final timesByTeam = <String, Set<String>>{
+          for (final e in prev.timesByTeamId.entries) e.key: {...e.value},
+        };
+        if (teamId.isNotEmpty) {
+          final set = {...(timesByTeam[teamId] ?? <String>{})};
+          if (time.isNotEmpty) set.add(time);
+          timesByTeam[teamId] = set;
+        }
+        counts[ymd] = SupportVisitDayBookings(
+          timesByTeamId: timesByTeam,
+          totalCount: prev.totalCount + 1,
+        );
       }
       return counts;
     } catch (e) {
@@ -917,6 +1106,10 @@ class SupportScheduleEvent {
     this.consultationId,
     this.consultationDescription,
     this.quoteSentYmd,
+    this.scheduledYmd,
+    this.scheduledTime,
+    this.actualYmd,
+    this.actualTime,
   });
 
   final SupportScheduleKind kind;
@@ -929,6 +1122,12 @@ class SupportScheduleEvent {
   final String? consultationId;
   final String? consultationDescription;
   final String? quoteSentYmd;
+  /// 방문 예정일 (접수에 잡힌 일정).
+  final String? scheduledYmd;
+  final String? scheduledTime;
+  /// 실제 방문일 (방문 기록).
+  final String? actualYmd;
+  final String? actualTime;
 
   bool get quoteSent => (quoteSentYmd ?? '').trim().isNotEmpty;
 
@@ -1003,6 +1202,7 @@ int supportConsultOutcomeStatusId(SupportConsultOutcome outcome) =>
 String supportConsultOutcomeLine(
   SupportConsultOutcome outcome, {
   String? ymd,
+  String? visitTime,
   String? sentYmd,
   int? amount,
 }) {
@@ -1014,6 +1214,7 @@ String supportConsultOutcomeLine(
     SupportConsultOutcome.visit => '방문 요청',
   };
   final day = (ymd ?? '').trim();
+  final time = (visitTime ?? '').trim();
   final sent = (sentYmd ?? '').trim();
   if (outcome == SupportConsultOutcome.quoteSend && day.isNotEmpty) {
     final extra = amount != null ? ' · 금액 $amount' : '';
@@ -1023,12 +1224,33 @@ String supportConsultOutcomeLine(
     return '[결과: $stored · 발송예정 $day$extra]';
   }
   if (outcome == SupportConsultOutcome.visit && day.isNotEmpty) {
-    return '[결과: $stored · 방문예정 $day]';
+    final t = time.isEmpty
+        ? ''
+        : ' · 시간 ${time.length >= 5 ? time.substring(0, 5) : time}';
+    return '[결과: $stored · 방문예정 $day$t]';
   }
   if (outcome == SupportConsultOutcome.verbalQuote && amount != null) {
     return '[결과: $stored · 금액 $amount]';
   }
   return '[결과: $stored]';
+}
+
+/// 방문 상담 본문(내용 비어 있을 때).
+String supportVisitConsultBody({
+  required String ymd,
+  required String time,
+  String? teamLabel,
+}) {
+  final day = ymd.trim();
+  final t = time.trim();
+  final slot = t.length >= 5 ? t.substring(0, 5) : t;
+  final team = (teamLabel ?? '').trim();
+  final parts = <String>[
+    if (day.isNotEmpty && slot.isNotEmpty) '방문일정 $day $slot',
+    if (day.isNotEmpty && slot.isEmpty) '방문일정 $day',
+    if (team.isNotEmpty) team,
+  ];
+  return parts.join(' · ');
 }
 
 int? parseSupportConsultAmountDigits(String raw) {
@@ -1064,6 +1286,7 @@ String rewriteSupportQuoteSentLine(String description, {String? sentYmd}) {
 ({
   SupportConsultOutcome? outcome,
   String? ymd,
+  String? visitTime,
   String? sentYmd,
   int? amount,
   String body,
@@ -1071,12 +1294,17 @@ String rewriteSupportQuoteSentLine(String description, {String? sentYmd}) {
 parseSupportConsultation(String raw) {
   SupportConsultOutcome? outcome;
   String? ymd;
+  String? visitTime;
   String? sentYmd;
   int? amount;
   final rest = <String>[];
   for (final line in raw.split('\n')) {
     final m = RegExp(
-      r'^\[결과:\s*(마무리|피드백 대기|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*발송완료\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*금액\s*([\d,]+))?\]$',
+      r'^\[결과:\s*(마무리|피드백 대기|구두 견적|견적서 발송|방문 요청)'
+      r'(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?'
+      r'(?:\s*·\s*시간\s*(\d{1,2}:\d{2}))?'
+      r'(?:\s*·\s*발송완료\s*(\d{4}-\d{2}-\d{2}))?'
+      r'(?:\s*·\s*금액\s*([\d,]+))?\]$',
     ).firstMatch(line.trim());
     if (m != null && outcome == null) {
       outcome = switch (m.group(1)) {
@@ -1088,8 +1316,9 @@ parseSupportConsultation(String raw) {
         _ => null,
       };
       ymd = m.group(2);
-      sentYmd = m.group(3);
-      amount = parseSupportConsultAmountDigits(m.group(4) ?? '');
+      visitTime = m.group(3);
+      sentYmd = m.group(4);
+      amount = parseSupportConsultAmountDigits(m.group(5) ?? '');
       continue;
     }
     rest.add(line);
@@ -1097,6 +1326,7 @@ parseSupportConsultation(String raw) {
   return (
     outcome: outcome,
     ymd: ymd,
+    visitTime: visitTime,
     sentYmd: sentYmd,
     amount: amount,
     body: rest.join('\n').trim(),

@@ -58,7 +58,28 @@ void main() {
     final parsed = parseSupportConsultation('$line\n현장 확인 후 교체');
     expect(parsed.outcome, SupportConsultOutcome.visit);
     expect(parsed.ymd, '2026-08-25');
+    expect(parsed.visitTime, isNull);
     expect(parsed.body, '현장 확인 후 교체');
+  });
+
+  test('방문 상담은 일정·시간을 남기고 본문 없이도 된다', () {
+    final line = supportConsultOutcomeLine(
+      SupportConsultOutcome.visit,
+      ymd: '2026-09-03',
+      visitTime: '10:00',
+    );
+    expect(line, '[결과: 방문 요청 · 방문예정 2026-09-03 · 시간 10:00]');
+    final body = supportVisitConsultBody(
+      ymd: '2026-09-03',
+      time: '10:00',
+      teamLabel: '1팀 · 남현우',
+    );
+    expect(body, '방문일정 2026-09-03 10:00 · 1팀 · 남현우');
+    final parsed = parseSupportConsultation('$line\n$body');
+    expect(parsed.outcome, SupportConsultOutcome.visit);
+    expect(parsed.ymd, '2026-09-03');
+    expect(parsed.visitTime, '10:00');
+    expect(parsed.body, body);
   });
 
   test('구두 견적은 금액과 내용을 같이 남긴다', () {
@@ -363,7 +384,7 @@ void main() {
     expect(summary.todaySend, 1);
     expect(summary.overdueSend, 1);
     expect(summary.hasAny, isTrue);
-    expect(summary.body, '오늘 방문 1건 · 오늘 발송 1건 · 지난 방문 1건 · 지난 발송 1건');
+    expect(summary.body, '오늘 방문예정 1건 · 오늘 발송 1건 · 지난 방문 1건 · 지난 발송 1건');
   });
 
   test('due schedule summary empty when nothing pending', () {

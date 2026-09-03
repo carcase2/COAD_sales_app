@@ -45,7 +45,7 @@ class SupportDueScheduleSummary {
 
   String get body {
     final parts = <String>[];
-    if (todayVisit > 0) parts.add('오늘 방문 $todayVisit건');
+    if (todayVisit > 0) parts.add('오늘 방문예정 $todayVisit건');
     if (todaySend > 0) parts.add('오늘 발송 $todaySend건');
     if (todayDeposit > 0) parts.add('오늘 입금 $todayDeposit건');
     if (overdueVisit > 0) parts.add('지난 방문 $overdueVisit건');
@@ -116,6 +116,7 @@ class SupportDeskCounts {
     required this.feedbackWait,
     required this.quoteWait,
     required this.todayVisit,
+    this.todayVisitCompleted = 0,
     required this.overdueVisit,
     required this.todayDeposit,
     required this.overdueDeposit,
@@ -128,7 +129,10 @@ class SupportDeskCounts {
   final int inProgress;
   final int feedbackWait;
   final int quoteWait;
+  /// 오늘 방문예정(미완료).
   final int todayVisit;
+  /// 오늘 방문완료.
+  final int todayVisitCompleted;
   final int overdueVisit;
   final int todayDeposit;
   final int overdueDeposit;
@@ -142,6 +146,7 @@ class SupportDeskCounts {
     feedbackWait: 0,
     quoteWait: 0,
     todayVisit: 0,
+    todayVisitCompleted: 0,
     overdueVisit: 0,
     todayDeposit: 0,
     overdueDeposit: 0,
@@ -184,6 +189,13 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
     SupportConsultOutcome.quoteSend,
   );
   final incomplete = await repo.list(incompleteOnly: true, limit: 400);
+  final todayVisitCompleted = await repo.list(
+    visitOnly: true,
+    fromYmd: today,
+    toYmdInclusive: today,
+    statusId: kSupportStatusCompleted,
+    limit: 200,
+  );
   var all = 0;
   try {
     all = await repo.countAll();
@@ -199,6 +211,7 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
     feedbackWait: feedbackWait.length,
     quoteWait: quoteWait.length,
     todayVisit: due.todayVisit,
+    todayVisitCompleted: todayVisitCompleted.length,
     overdueVisit: due.overdueVisit,
     todayDeposit: due.todayDeposit,
     overdueDeposit: due.overdueDeposit,

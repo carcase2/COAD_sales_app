@@ -65,6 +65,9 @@ class _SupportFirstConsultationSheetState
   SupportConsultOutcome? _outcome;
   late String _sendYmd;
   String? _visitYmd;
+  String? _visitTeamId;
+  String? _visitTeamLabel;
+  String? _visitTime;
   SupportQuoteDocument? _quoteDoc;
   String? _quoteConsultBlock;
 
@@ -92,13 +95,20 @@ class _SupportFirstConsultationSheetState
 
   Future<void> _pickDate({required bool visit}) async {
     if (visit) {
-      final ymd = await showSupportVisitDatePicker(
+      final picked = await showSupportVisitDatePicker(
         context,
         log: widget.log,
         selectedYmd: _visitYmd,
+        selectedTeamId: _visitTeamId,
+        selectedTime: _visitTime,
       );
-      if (ymd == null || !mounted) return;
-      setState(() => _visitYmd = ymd);
+      if (picked == null || !mounted) return;
+      setState(() {
+        _visitYmd = picked.ymd;
+        _visitTeamId = picked.teamId;
+        _visitTeamLabel = picked.teamLabel;
+        _visitTime = picked.time;
+      });
       return;
     }
     final initial = DateTime.tryParse(_sendYmd) ?? DateTime.now();
@@ -210,6 +220,20 @@ class _SupportFirstConsultationSheetState
       ).showSnackBar(const SnackBar(content: Text('방문예정일을 선택해 주세요.')));
       return;
     }
+    if (_outcome == SupportConsultOutcome.visit &&
+        (_visitTeamId == null || _visitTeamId!.isEmpty)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('방문 팀을 선택해 주세요.')));
+      return;
+    }
+    if (_outcome == SupportConsultOutcome.visit &&
+        (_visitTime == null || _visitTime!.isEmpty)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('방문 시간을 선택해 주세요.')));
+      return;
+    }
     if (_outcome == SupportConsultOutcome.verbalQuote &&
         (_verbalAmount == null || _verbalAmount! <= 0)) {
       ScaffoldMessenger.of(
@@ -229,6 +253,13 @@ class _SupportFirstConsultationSheetState
         consultText.isEmpty) {
       consultText = supportQuoteConsultBody(_quoteDoc!);
     }
+    if (_outcome == SupportConsultOutcome.visit && consultText.isEmpty) {
+      consultText = supportVisitConsultBody(
+        ymd: _visitYmd!,
+        time: _visitTime!,
+        teamLabel: _visitTeamLabel,
+      );
+    }
     if (consultText.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -247,6 +278,9 @@ class _SupportFirstConsultationSheetState
             currentStatusId: widget.log.serviceStatusId,
             outcome: _outcome,
             visitYmd: _visitYmd,
+            visitTeamId: _visitTeamId,
+            visitTime: _visitTime,
+            visitTeamLabel: _visitTeamLabel,
             sendYmd: _sendYmd,
             amount: _outcome == SupportConsultOutcome.verbalQuote
                 ? _verbalAmount
@@ -446,7 +480,12 @@ class _SupportFirstConsultationSheetState
                 title: '방문예정일',
                 value: _visitYmd == null
                     ? '방문일을 잡고, 다녀온 뒤 방문 기록을 남깁니다'
-                    : _ymdLabel(_visitYmd!),
+                    : [
+                        _ymdLabel(_visitYmd!),
+                        if ((_visitTime ?? '').isNotEmpty) _visitTime!,
+                        if ((_visitTeamLabel ?? '').isNotEmpty)
+                          _visitTeamLabel!,
+                      ].join(' · '),
                 filled: _visitYmd != null,
                 onTap: _saving ? null : () => _pickDate(visit: true),
               ),
@@ -459,9 +498,13 @@ class _SupportFirstConsultationSheetState
                 maxLines: 6,
                 enabled: !_saving,
                 decoration: InputDecoration(
-                  hintText: _outcome == SupportConsultOutcome.feedbackWait
-                      ? '전화로 안내·조치한 내용을 적어 주세요'
-                      : '상담 내용을 입력해 주세요',
+                  hintText: switch (_outcome) {
+                    SupportConsultOutcome.feedbackWait =>
+                      '전화로 안내·조치한 내용을 적어 주세요',
+                    SupportConsultOutcome.visit =>
+                      '상담 내용(선택) · 비워도 방문일정·시간으로 저장됩니다',
+                    _ => '상담 내용을 입력해 주세요',
+                  },
                   filled: true,
                 ),
               ),

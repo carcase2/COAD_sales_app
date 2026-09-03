@@ -15,6 +15,7 @@ import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_first_consultation_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_date_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_sites_map_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
@@ -96,6 +97,8 @@ class _CustomerSupportReceptionListScreenState
         widget.initialStatusTab ??
         (widget.pendingOnly
             ? '미처리'
+            : widget.statusId == kSupportStatusCompleted
+            ? '전체'
             : widget.visitOnly
             ? '방문예정'
             : '전체');
@@ -124,7 +127,12 @@ class _CustomerSupportReceptionListScreenState
   List<SupportCallLog> get _filtered {
     final q = _query.trim().toLowerCase();
     var source = _branchSource;
-    if (_statusTab != '전체') {
+    final statusFilterActive =
+        !widget.pendingOnly &&
+        !widget.visitOnly &&
+        widget.statusId == null &&
+        _statusTab != '전체';
+    if (statusFilterActive) {
       source = source
           .where(
             (e) => supportCallLogProgressLabel(e.serviceStatusId) == _statusTab,
@@ -541,7 +549,12 @@ class _CustomerSupportReceptionListScreenState
                                                   log.serviceStatusId !=
                                                       kSupportStatusCompleted)
                                                 _ListChip(
-                                                  label: '방문 ${log.visitDate}',
+                                                  label: [
+                                                    '방문 ${log.visitDate}',
+                                                    if ((log.visitTime ?? '')
+                                                        .isNotEmpty)
+                                                      log.visitTime!,
+                                                  ].join(' '),
                                                   color: scheme.tertiary,
                                                 ),
                                               if ((log.createdBy ?? '')
@@ -633,6 +646,7 @@ class _CustomerSupportReceptionDetailScreenState
   bool _busy = false;
   final _consultPageCtrl = PageController();
   int _consultPage = 0;
+  String? _visitTeamLabel;
 
   @override
   void initState() {
@@ -692,12 +706,28 @@ class _CustomerSupportReceptionDetailScreenState
               callLogId: log.id,
             );
       } catch (_) {}
+      String? teamLabel;
+      final teamId = (log.visitTeamId ?? '').trim();
+      if (teamId.isNotEmpty) {
+        try {
+          final teams = await ref
+              .read(supportAsVisitTeamRepositoryProvider)
+              .list(activeOnly: false);
+          for (final t in teams) {
+            if (t.id == teamId) {
+              teamLabel = t.label;
+              break;
+            }
+          }
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() {
         _log = log;
         _consults = consults;
         _visits = visits;
         _quotes = quotes;
+        _visitTeamLabel = teamLabel;
         _loading = false;
         _consultPage = consults.isEmpty ? 0 : consults.length - 1;
       });
@@ -806,6 +836,48 @@ class _CustomerSupportReceptionDetailScreenState
       quoteSendYmd: sendYmd,
       quoteSentYmd: sentYmd,
     );
+  }
+
+  Future<void> _changeVisitSchedule() async {
+    final log = _log;
+    if (log == null) return;
+    final picked = await showSupportVisitDatePicker(
+      context,
+      log: log,
+      selectedYmd: log.visitDate,
+      selectedTeamId: log.visitTeamId,
+      selectedTime: log.visitTime,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(supportCallLogRepositoryProvider)
+          .updateVisitSchedule(
+            callLogId: log.id,
+            visitYmd: picked.ymd,
+            visitTeamId: picked.teamId,
+            visitTime: picked.time,
+          );
+      invalidateSupportWorkCaches(ref);
+      unawaited(refreshSupportDueReminders(ref));
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _changed = true;
+        _visitTeamLabel = picked.teamLabel;
+      });
+      unawaited(_load());
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('방문예정일을 바꿨습니다.')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+    }
   }
 
   SupportQuoteDocument? _quoteForConsult(SupportConsultation consult) {
@@ -1227,6 +1299,7 @@ class _CustomerSupportReceptionDetailScreenState
     final hasPhone = normalizePhoneDigits(phone).length >= 8;
     final cue = _flowCue;
     final pending = _log?.isPending ?? true;
+    final completed = _log?.serviceStatusId == kSupportStatusCompleted;
 
     return PopScope(
       canPop: false,
@@ -1283,9 +1356,13 @@ class _CustomerSupportReceptionDetailScreenState
         bottomNavigationBar: _log == null
             ? null
             : UxActionDock(
-                flexes: _canAddVisitRecord
-                    ? const [2, 2, 3, 3]
-                    : const [2, 2, 4],
+                flexes: () {
+                  final showConsult = !completed;
+                  final showVisit = _canAddVisitRecord;
+                  if (showConsult && showVisit) return const [2, 2, 3, 3];
+                  if (showConsult || showVisit) return const [2, 2, 4];
+                  return const [1, 1];
+                }(),
                 children: [
                   UxDockButton(
                     icon: Icons.call_rounded,
@@ -1305,12 +1382,13 @@ class _CustomerSupportReceptionDetailScreenState
                         ? () => LauncherUtils.sendSMS(phone)
                         : null,
                   ),
-                  UxDockButton(
-                    icon: Icons.add_comment_rounded,
-                    label: '${_consults.length + 1}차 상담',
-                    emphasized: cue.action == SupportNextAction.consult,
-                    onPressed: _addConsultation,
-                  ),
+                  if (!completed)
+                    UxDockButton(
+                      icon: Icons.add_comment_rounded,
+                      label: '${_consults.length + 1}차 상담',
+                      emphasized: cue.action == SupportNextAction.consult,
+                      onPressed: _addConsultation,
+                    ),
                   if (_canAddVisitRecord)
                     UxDockButton(
                       icon: Icons.home_repair_service_outlined,
@@ -1530,6 +1608,44 @@ class _CustomerSupportReceptionDetailScreenState
                     ),
                   ),
                   const SizedBox(height: 10),
+                  if ((_log?.visitDate ?? '').trim().isNotEmpty &&
+                      _log?.serviceStatusId != kSupportStatusCompleted)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _DetailCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _label(scheme, '방문예정일'),
+                            const SizedBox(height: 4),
+                            Text(
+                              [
+                                _log!.visitDate!,
+                                if ((_log!.visitTime ?? '').isNotEmpty)
+                                  _log!.visitTime!,
+                                if ((_visitTeamLabel ?? '').isNotEmpty)
+                                  _visitTeamLabel!,
+                              ].join(' · '),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton.tonalIcon(
+                                onPressed: _busy
+                                    ? null
+                                    : () => unawaited(_changeVisitSchedule()),
+                                icon: const Icon(Icons.edit_calendar_rounded),
+                                label: const Text('방문일 변경'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   _DetailCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1742,6 +1858,18 @@ class _CustomerSupportReceptionDetailScreenState
     if (parsed.outcome == SupportConsultOutcome.quoteSend) {
       return _quoteConsultSlide(scheme, i, consult);
     }
+    final bodyText = () {
+      final body = parsed.body.trim();
+      if (body.isNotEmpty) return body;
+      if (parsed.outcome == SupportConsultOutcome.visit &&
+          (parsed.ymd ?? '').isNotEmpty) {
+        return supportVisitConsultBody(
+          ymd: parsed.ymd!,
+          time: parsed.visitTime ?? '',
+        );
+      }
+      return consult.description;
+    }();
     return SingleChildScrollView(
       padding: const EdgeInsets.only(right: 8),
       child: Column(
@@ -1766,7 +1894,16 @@ class _CustomerSupportReceptionDetailScreenState
                   color: scheme.primary,
                 ),
                 if ((parsed.ymd ?? '').isNotEmpty)
-                  _ListChip(label: parsed.ymd!, color: scheme.tertiary),
+                  _ListChip(
+                    label: [
+                      if (parsed.outcome == SupportConsultOutcome.visit)
+                        '방문',
+                      parsed.ymd!,
+                      if ((parsed.visitTime ?? '').isNotEmpty)
+                        parsed.visitTime!,
+                    ].join(' '),
+                    color: scheme.tertiary,
+                  ),
                 if (parsed.amount != null && parsed.amount! > 0)
                   _ListChip(
                     label: formatSupportUnitPriceWon(parsed.amount),
@@ -1777,7 +1914,7 @@ class _CustomerSupportReceptionDetailScreenState
           ],
           const SizedBox(height: 4),
           Text(
-            parsed.body.isEmpty ? consult.description : parsed.body,
+            bodyText,
             style: const TextStyle(
               fontSize: 15.5,
               fontWeight: FontWeight.w700,
@@ -2002,75 +2139,188 @@ class _VisitReportTile extends StatelessWidget {
   final SupportVisitReport report;
   final int index;
 
-  @override
-  Widget build(BuildContext context) {
+  String get _whenLabel {
+    final time = (report.visitTime ?? '').trim();
+    final timeLabel = time.isEmpty
+        ? ''
+        : (time.length >= 5 ? time.substring(0, 5) : time);
+    return [
+      '$index회 · ${report.visitYmd}',
+      if (timeLabel.isNotEmpty) timeLabel,
+    ].join(' ');
+  }
+
+  Future<void> _openDetail(BuildContext context) async {
     final scheme = Theme.of(context).colorScheme;
     final doneColor = report.completed
         ? AppTokens.success(scheme)
         : scheme.error;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$index회 · ${report.visitYmd}',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: scheme.onSurfaceVariant,
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: false,
+      builder: (ctx) {
+        final bottomInset = MediaQuery.viewPaddingOf(ctx).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 4, 16, 20 + bottomInset),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _whenLabel,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    _ListChip(
+                      label: report.completed ? '완료' : '미완료',
+                      color: doneColor,
+                    ),
+                    _ListChip(
+                      label: report.isPaid
+                          ? '유상 ${formatSupportUnitPriceWon(report.amount)}'
+                          : '무상',
+                      color: report.isPaid
+                          ? const Color(0xFFD97706)
+                          : scheme.primary,
+                    ),
+                    if ((report.depositYmd ?? '').isNotEmpty)
+                      _ListChip(
+                        label: report.depositPaid
+                            ? '입금완료 ${report.depositYmd}'
+                            : '입금예정 ${report.depositYmd}',
+                        color: report.depositPaid
+                            ? AppTokens.success(scheme)
+                            : const Color(0xFF059669),
+                      ),
+                    if ((report.nextVisitYmd ?? '').isNotEmpty)
+                      _ListChip(
+                        label: [
+                          '다음방문 ${report.nextVisitYmd}',
+                          if ((report.nextVisitTime ?? '').trim().isNotEmpty)
+                            (report.nextVisitTime!.trim().length >= 5
+                                ? report.nextVisitTime!.trim().substring(0, 5)
+                                : report.nextVisitTime!.trim()),
+                        ].join(' '),
+                        color: scheme.error,
+                      ),
+                    for (final part in report.parts)
+                      _ListChip(label: part, color: scheme.secondary),
+                  ],
+                ),
+                if (report.notes.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '방문 내용',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    report.notes,
+                    style: const TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+                if ((report.createdBy ?? '').trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '방문 ${report.createdBy!.trim()}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                if (report.photoUrls.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SalesCallAttachmentsStrip(urls: report.photoUrls),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openDetail(context),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _whenLabel,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (report.isPaid)
+                          _ListChip(
+                            label:
+                                '유상 ${formatSupportUnitPriceWon(report.amount)}',
+                            color: const Color(0xFFD97706),
+                          )
+                        else
+                          _ListChip(label: '무상', color: scheme.primary),
+                        if (report.isPaid &&
+                            (report.depositYmd ?? '').isNotEmpty)
+                          _ListChip(
+                            label: report.depositPaid
+                                ? '입금완료'
+                                : '입금예정',
+                            color: report.depositPaid
+                                ? AppTokens.success(scheme)
+                                : const Color(0xFF059669),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: [
-            _ListChip(label: report.completed ? '완료' : '미완료', color: doneColor),
-            _ListChip(
-              label: report.isPaid ? '유상 ${report.amount}원' : '무상',
-              color: report.isPaid ? const Color(0xFFD97706) : scheme.primary,
-            ),
-            if ((report.depositYmd ?? '').isNotEmpty)
-              _ListChip(
-                label: report.depositPaid
-                    ? '입금완료 ${report.depositYmd}'
-                    : '입금예정 ${report.depositYmd}',
-                color: report.depositPaid
-                    ? AppTokens.success(scheme)
-                    : const Color(0xFF059669),
-              ),
-            if ((report.nextVisitYmd ?? '').isNotEmpty)
-              _ListChip(
-                label: '다음방문 ${report.nextVisitYmd}',
-                color: scheme.error,
-              ),
-            for (final part in report.parts)
-              _ListChip(label: part, color: scheme.secondary),
-          ],
-        ),
-        if (report.notes.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            report.notes,
-            style: const TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w700,
-              height: 1.4,
-            ),
-          ),
-        ],
-        if ((report.createdBy ?? '').trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '방문 ${report.createdBy!.trim()}',
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-          ),
-        if (report.photoUrls.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          SalesCallAttachmentsStrip(urls: report.photoUrls),
-        ],
-      ],
+      ),
     );
   }
 }

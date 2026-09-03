@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/support_visit_capacity.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
@@ -16,7 +17,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 
 Future<bool> showSupportVisitReportSheet(
   BuildContext context, {
@@ -56,6 +56,10 @@ class _SupportVisitReportSheetState
   String? _depositYmd;
   bool _depositPaid = false;
   String? _nextVisitYmd;
+  String? _nextVisitTeamId;
+  String? _nextVisitTeamLabel;
+  String? _nextVisitTime;
+  String? _visitTime;
   final List<String> _parts = [];
   final List<String> _photos = [];
   bool _uploadBusy = false;
@@ -66,6 +70,8 @@ class _SupportVisitReportSheetState
     _visitYmd = (widget.log.visitDate ?? '').trim().isNotEmpty
         ? widget.log.visitDate!
         : todayYmdSeoul();
+    final t = (widget.log.visitTime ?? '').trim();
+    _visitTime = t.isEmpty ? null : (t.length >= 5 ? t.substring(0, 5) : t);
   }
 
   @override
@@ -153,6 +159,7 @@ class _SupportVisitReportSheetState
     final paid = _completed && _paid;
     final report = SupportVisitReport(
       visitYmd: _visitYmd,
+      visitTime: _visitTime,
       completed: _completed,
       paid: paid,
       amount: paid ? _amount : null,
@@ -161,6 +168,8 @@ class _SupportVisitReportSheetState
       parts: List.of(_parts),
       photoUrls: _completed ? List.of(_photos) : const [],
       nextVisitYmd: _completed ? null : _nextVisitYmd,
+      nextVisitTeamId: _completed ? null : _nextVisitTeamId,
+      nextVisitTime: _completed ? null : _nextVisitTime,
       notes: _notesCtrl.text.trim(),
       createdBy:
           ref.read(authControllerProvider)?.name ??
@@ -230,7 +239,12 @@ class _SupportVisitReportSheetState
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.event_available_rounded),
               title: const Text('방문일'),
-              subtitle: Text(_ymdLabel(_visitYmd)),
+              subtitle: Text(
+                [
+                  _ymdLabel(_visitYmd),
+                  if ((_visitTime ?? '').isNotEmpty) _visitTime!,
+                ].join(' · '),
+              ),
               trailing: const Icon(Icons.event_rounded),
               onTap: _saving
                   ? null
@@ -240,6 +254,30 @@ class _SupportVisitReportSheetState
                     },
             ),
             const SizedBox(height: 4),
+            Text(
+              '방문 시간',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final slot in kSupportVisitTimeSlots)
+                  ChoiceChip(
+                    label: Text(slot),
+                    selected: _visitTime == slot,
+                    onSelected: _saving
+                        ? null
+                        : (_) => setState(() => _visitTime = slot),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Text(
               '완료 여부',
               style: TextStyle(
@@ -325,26 +363,14 @@ class _SupportVisitReportSheetState
                 controller: _amountCtrl,
                 enabled: !_saving,
                 keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                inputFormatters: const [_VisitAmountThousandsFormatter()],
                 decoration: const InputDecoration(
                   labelText: '금액',
-                  hintText: '숫자만',
+                  hintText: '0',
+                  suffixText: '원',
                   filled: true,
                 ),
-                onChanged: (_) => setState(() {}),
               ),
-              if (_amount != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    '${NumberFormat('#,###').format(_amount)}원',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.payments_outlined),
@@ -380,14 +406,28 @@ class _SupportVisitReportSheetState
               insertLabel: '기록에 넣기',
               onInsert: (item) {
                 final name = item.name.trim();
-                if (name.isNotEmpty && !_parts.contains(name)) {
+                final addedPart =
+                    name.isNotEmpty && !_parts.contains(name);
+                if (addedPart) {
                   _parts.add(name);
                 }
-                if (_completed &&
+                final price = item.price ?? 0;
+                if (_completed && _paid && price > 0 && addedPart) {
+                  final current =
+                      int.tryParse(
+                        _amountCtrl.text.replaceAll(',', '').trim(),
+                      ) ??
+                      0;
+                  _amountCtrl.text = formatSupportConsultAmountGrouped(
+                    '${current + price}',
+                  );
+                } else if (_completed &&
                     _paid &&
-                    item.price != null &&
+                    price > 0 &&
                     _amountCtrl.text.trim().isEmpty) {
-                  _amountCtrl.text = '${item.price}';
+                  _amountCtrl.text = formatSupportConsultAmountGrouped(
+                    '$price',
+                  );
                 }
                 final line = supportUnitPriceInsertLine(item);
                 final cur = _notesCtrl.text.trim();
@@ -476,19 +516,34 @@ class _SupportVisitReportSheetState
                 title: const Text('다음 방문일'),
                 subtitle: Text(
                   _nextVisitYmd == null
-                      ? '날짜를 선택해 주세요'
-                      : _ymdLabel(_nextVisitYmd!),
+                      ? '날짜·팀·시간을 선택해 주세요'
+                      : [
+                          _ymdLabel(_nextVisitYmd!),
+                          if ((_nextVisitTime ?? '').isNotEmpty)
+                            _nextVisitTime!,
+                          if ((_nextVisitTeamLabel ?? '').isNotEmpty)
+                            _nextVisitTeamLabel!,
+                        ].join(' · '),
                 ),
                 trailing: const Icon(Icons.event_rounded),
                 onTap: _saving
                     ? null
                     : () async {
-                        final ymd = await showSupportVisitDatePicker(
+                        final picked = await showSupportVisitDatePicker(
                           context,
                           log: widget.log,
                           selectedYmd: _nextVisitYmd,
+                          selectedTeamId: _nextVisitTeamId,
+                          selectedTime: _nextVisitTime,
                         );
-                        if (ymd != null) setState(() => _nextVisitYmd = ymd);
+                        if (picked != null) {
+                          setState(() {
+                            _nextVisitYmd = picked.ymd;
+                            _nextVisitTeamId = picked.teamId;
+                            _nextVisitTeamLabel = picked.teamLabel;
+                            _nextVisitTime = picked.time;
+                          });
+                        }
                       },
               ),
             const SizedBox(height: 12),
@@ -586,6 +641,22 @@ class _FlowChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _VisitAmountThousandsFormatter extends TextInputFormatter {
+  const _VisitAmountThousandsFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final grouped = formatSupportConsultAmountGrouped(newValue.text);
+    return TextEditingValue(
+      text: grouped,
+      selection: TextSelection.collapsed(offset: grouped.length),
     );
   }
 }

@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
-import 'package:coad_customer_calls/core/utils/support_visit_capacity.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_teams_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
@@ -33,8 +33,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late bool _notifyGeneralSchedule;
   late bool _notifyDaeguSchedule;
   late bool _notifyAsDue;
-  late int _visitTeamsHq;
-  late int _visitTeamsBranch;
   int _updateHistoryReloadToken = 0;
 
   @override
@@ -51,8 +49,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         prefs.getBool(NotificationService.prefKeyNotifyDaeguSchedule) ?? true;
     _notifyAsDue =
         prefs.getBool(NotificationService.prefKeyNotifyAsDue) ?? true;
-    _visitTeamsHq = supportVisitTeamsHq(prefs);
-    _visitTeamsBranch = supportVisitTeamsBranch(prefs);
     _loadFlowUncalledPref();
   }
 
@@ -93,37 +89,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           color: scheme.onSurfaceVariant,
           height: 1.35,
         ),
-      ),
-    );
-  }
-
-  Widget _buildTeamStepper({
-    required String title,
-    required String subtitle,
-    required int value,
-    required ValueChanged<int> onChanged,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: value <= 1 ? null : () => onChanged(value - 1),
-            icon: const Icon(Icons.remove_rounded),
-          ),
-          Text('$value팀', style: const TextStyle(fontWeight: FontWeight.w900)),
-          IconButton(
-            onPressed: value >= 9 ? null : () => onChanged(value + 1),
-            icon: const Icon(Icons.add_rounded),
-          ),
-        ],
       ),
     );
   }
@@ -445,33 +410,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 }());
               },
             ),
-            _buildTeamStepper(
-              title: '본사 방문 팀',
-              subtitle: '하루 방문 가능 팀 수',
-              value: _visitTeamsHq,
-              onChanged: (v) {
-                setState(() => _visitTeamsHq = v);
-                unawaited(
-                  ref
-                      .read(appDependenciesProvider)
-                      .prefs
-                      .setInt(kSupportVisitTeamsHqPref, v),
-                );
-              },
-            ),
-            _buildTeamStepper(
-              title: '지사 방문 팀',
-              subtitle: '대구·대전·전남 등 지사 하루 팀 수',
-              value: _visitTeamsBranch,
-              onChanged: (v) {
-                setState(() => _visitTeamsBranch = v);
-                unawaited(
-                  ref
-                      .read(appDependenciesProvider)
-                      .prefs
-                      .setInt(kSupportVisitTeamsBranchPref, v),
-                );
-              },
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.groups_rounded),
+              title: const Text(
+                'A/S 방문 팀 설정',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: const Text('본사·지사별 팀 수 · 팀원 이름 (서버 공유)'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => unawaited(openSupportVisitTeamsScreen(context)),
             ),
           ],
           const SizedBox(height: 16),

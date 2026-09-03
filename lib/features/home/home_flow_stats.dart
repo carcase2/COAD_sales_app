@@ -253,14 +253,17 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
     required this.receptionLabel,
     required this.pendingLabel,
     required this.visitLabel,
+    this.visitCompletedLabel,
     required this.updatedLabel,
     required this.reception,
     required this.pending,
     required this.visits,
+    this.visitsCompleted = 0,
     required this.updated,
     required this.onTapReception,
     required this.onTapPending,
     required this.onTapVisit,
+    this.onTapVisitCompleted,
     required this.onTapUpdated,
     this.onTapAll,
     this.allCount = 0,
@@ -275,14 +278,17 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
   final String receptionLabel;
   final String pendingLabel;
   final String visitLabel;
+  final String? visitCompletedLabel;
   final String updatedLabel;
   final int reception;
   final int pending;
   final int visits;
+  final int visitsCompleted;
   final int updated;
   final VoidCallback onTapReception;
   final VoidCallback onTapPending;
   final VoidCallback onTapVisit;
+  final VoidCallback? onTapVisitCompleted;
   final VoidCallback onTapUpdated;
   final VoidCallback? onTapAll;
   final int allCount;
@@ -350,18 +356,38 @@ class HomeSupportMiniStatsWidget extends StatelessWidget {
                 ),
                 SizedBox(width: gap),
                 Expanded(
-                  child: _FlowStatTile(
-                    icon: Icons.update_rounded,
-                    label: updatedLabel,
-                    value: updated.toString(),
-                    color: scheme.secondary,
-                    onTap: onTapUpdated,
-                    compact: compact,
-                  ),
+                  child: onTapVisitCompleted != null
+                      ? _FlowStatTile(
+                          icon: Icons.event_repeat_rounded,
+                          label: visitCompletedLabel ?? '방문완료',
+                          value: visitsCompleted.toString(),
+                          color: const Color(0xFF15803D),
+                          onTap: onTapVisitCompleted!,
+                          compact: compact,
+                        )
+                      : _FlowStatTile(
+                          icon: Icons.update_rounded,
+                          label: updatedLabel,
+                          value: updated.toString(),
+                          color: scheme.secondary,
+                          onTap: onTapUpdated,
+                          compact: compact,
+                        ),
                 ),
               ],
             ),
           ),
+          if (onTapVisitCompleted != null) ...[
+            SizedBox(height: gap),
+            _FlowStatTile(
+              icon: Icons.update_rounded,
+              label: updatedLabel,
+              value: updated.toString(),
+              color: scheme.secondary,
+              onTap: onTapUpdated,
+              compact: compact,
+            ),
+          ],
           if (onTapAll != null) ...[
             SizedBox(height: gap),
             _FlowStatTile(

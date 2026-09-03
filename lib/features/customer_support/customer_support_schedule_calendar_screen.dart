@@ -4,7 +4,9 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/data/support_as_visit_team_repository.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
@@ -20,12 +22,16 @@ class CustomerSupportScheduleCalendarScreen extends ConsumerStatefulWidget {
   const CustomerSupportScheduleCalendarScreen({
     super.key,
     this.initialKind,
+    this.initialVisitCompleted,
     this.initialBranch,
     this.initialYmd,
   });
 
-  /// null 이면 방문+발송 모두.
+  /// null 이면 방문+발송+입금 모두.
   final SupportScheduleKind? initialKind;
+  /// 상태 필터: `false`=예정, `true`=완료. null이면 예정(`false`).
+  /// 종류(전체/방문/발송/입금)와 무관하게 항상 적용.
+  final bool? initialVisitCompleted;
   final String? initialBranch;
   final String? initialYmd;
 
@@ -39,15 +45,20 @@ class _CustomerSupportScheduleCalendarScreenState
   late DateTime _focused;
   late DateTime _selected;
   SupportScheduleKind? _kind;
+  /// 상태 필터: false=예정, true=완료. 종류와 무관하게 항상 적용.
+  late bool _phaseCompleted;
   String _branchTab = '전체';
   List<SupportScheduleEvent> _events = const [];
+  Map<String, SupportAsVisitTeam> _teamsById = const {};
   bool _loading = true;
   Object? _error;
+  bool _openedInitialDay = false;
 
   @override
   void initState() {
     super.initState();
     _kind = widget.initialKind;
+    _phaseCompleted = widget.initialVisitCompleted ?? false;
     final branch = (widget.initialBranch ?? '').trim();
     if (kSupportBranchTabOrder.contains(branch)) {
       _branchTab = branch;
@@ -81,14 +92,31 @@ class _CustomerSupportScheduleCalendarScreenState
     });
     try {
       final range = seoulMonthRangeContaining(_toYmd(_focused));
-      final rows = await ref
+      final rowsFuture = ref
           .read(supportCallLogRepositoryProvider)
           .listScheduleEvents(fromYmd: range.$1, toYmdInclusive: range.$2);
+      final teamsFuture = ref
+          .read(supportAsVisitTeamRepositoryProvider)
+          .list(activeOnly: false);
+      final rows = await rowsFuture;
+      Map<String, SupportAsVisitTeam> teamsById = _teamsById;
+      try {
+        final teams = await teamsFuture;
+        teamsById = {for (final t in teams) t.id: t};
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _events = rows;
+        _teamsById = teamsById;
         _loading = false;
       });
+      final initial = (widget.initialYmd ?? '').trim();
+      if (!_openedInitialDay && initial.length >= 10) {
+        _openedInitialDay = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_showDayEventsSheet(_selected));
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -98,11 +126,63 @@ class _CustomerSupportScheduleCalendarScreenState
     }
   }
 
-  List<SupportScheduleEvent> get _visible {
-    var rows = _events;
-    if (_kind != null) {
-      rows = rows.where((e) => e.kind == _kind).toList();
+  String _siteName(SupportCallLog log) {
+    final site = parseSupportIssueBody(log.issue).siteName.trim();
+    if (site.isNotEmpty) return site;
+    final name = log.customerName.trim();
+    return name.isEmpty ? '(현장 없음)' : name;
+  }
+
+  SupportAsVisitTeam? _teamFor(SupportCallLog log) {
+    final id = (log.visitTeamId ?? '').trim();
+    if (id.isEmpty) return null;
+    return _teamsById[id];
+  }
+
+  String _visitTimeLabel(SupportCallLog log) {
+    final raw = (log.visitTime ?? '').trim();
+    if (raw.isEmpty) return '';
+    return raw.length >= 5 ? raw.substring(0, 5) : raw;
+  }
+
+  bool _isVisitCompleted(SupportScheduleEvent e) {
+    if (e.kind != SupportScheduleKind.visit) return false;
+    if (e.log.serviceStatusId == kSupportStatusCompleted) return true;
+    final cap = (e.caption ?? '').trim();
+    if (cap == '방문완료' || cap.startsWith('방문완료')) return true;
+    final report = e.visitReport;
+    if (report != null &&
+        report.completed &&
+        report.visitYmd.trim() == e.ymd.trim()) {
+      return true;
     }
+    return false;
+  }
+
+  bool _isEventCompleted(SupportScheduleEvent e) {
+    switch (e.kind) {
+      case SupportScheduleKind.visit:
+        return _isVisitCompleted(e);
+      case SupportScheduleKind.quoteSend:
+        return e.quoteSent;
+      case SupportScheduleKind.deposit:
+        return e.depositPaid == true;
+    }
+  }
+
+  List<SupportScheduleEvent> _applyKindFilter(List<SupportScheduleEvent> rows) {
+    var out = rows;
+    if (_kind != null) {
+      out = out.where((e) => e.kind == _kind).toList();
+    }
+    out = out
+        .where((e) => _isEventCompleted(e) == _phaseCompleted)
+        .toList();
+    return out;
+  }
+
+  List<SupportScheduleEvent> get _visible {
+    var rows = _applyKindFilter(_events);
     if (_branchTab != '전체') {
       final regions = ref.watch(regionsRawProvider).valueOrNull ?? const [];
       rows = rows
@@ -118,9 +198,7 @@ class _CustomerSupportScheduleCalendarScreenState
 
   Map<String, int> _branchCounts() {
     final regions = ref.watch(regionsRawProvider).valueOrNull ?? const [];
-    final source = _kind == null
-        ? _events
-        : _events.where((e) => e.kind == _kind).toList();
+    final source = _applyKindFilter(_events);
     final counts = <String, int>{'전체': source.length};
     for (final e in source) {
       final b = matchSupportBranchType(e.log.address ?? '', regions);
@@ -131,7 +209,19 @@ class _CustomerSupportScheduleCalendarScreenState
 
   List<SupportScheduleEvent> _forDay(DateTime day) {
     final ymd = _toYmd(day);
-    return _visible.where((e) => e.ymd == ymd).toList();
+    final rows = _visible.where((e) => e.ymd == ymd).toList();
+    rows.sort((a, b) {
+      final at = (a.scheduledTime ?? a.actualTime ?? _visitTimeLabel(a.log));
+      final bt = (b.scheduledTime ?? b.actualTime ?? _visitTimeLabel(b.log));
+      final kindOrder = a.kind.index.compareTo(b.kind.index);
+      if (at.isNotEmpty || bt.isNotEmpty) {
+        final t = at.compareTo(bt);
+        if (t != 0) return t;
+      }
+      if (kindOrder != 0) return kindOrder;
+      return _siteName(a.log).compareTo(_siteName(b.log));
+    });
+    return rows;
   }
 
   Future<void> _toggleQuoteSent(SupportScheduleEvent event) async {
@@ -151,7 +241,7 @@ class _CustomerSupportScheduleCalendarScreenState
             description: raw,
             sentYmd: sentYmd,
           );
-      if (mounted) unawaited(_loadMonth());
+      if (mounted) await _loadMonth();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -169,7 +259,7 @@ class _CustomerSupportScheduleCalendarScreenState
           .updateVisitReport(
             report.copyWith(depositPaid: !(event.depositPaid ?? false)),
           );
-      if (mounted) unawaited(_loadMonth());
+      if (mounted) await _loadMonth();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -184,7 +274,251 @@ class _CustomerSupportScheduleCalendarScreenState
         builder: (_) => CustomerSupportReceptionDetailScreen(log: log),
       ),
     );
-    if (mounted) unawaited(_loadMonth());
+    if (mounted) await _loadMonth();
+  }
+
+  Future<void> _showDayEventsSheet(DateTime day) async {
+    final scheme = Theme.of(context).colorScheme;
+    final sendColor = const Color(0xFFD97706);
+    final depositColor = const Color(0xFF059669);
+    final won = NumberFormat('#,###');
+    final regions = ref.read(regionsRawProvider).valueOrNull ?? const [];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: false,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setModal) {
+            final events = _forDay(day);
+            Future<void> refresh() async {
+              await _loadMonth();
+              if (sheetContext.mounted) setModal(() {});
+            }
+
+            final media = MediaQuery.of(sheetContext);
+            final bottom = media.viewPadding.bottom;
+            final sheetH = (media.size.height - bottom) * 0.78;
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottom),
+              child: SizedBox(
+                height: sheetH,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${day.month}월 ${day.day}일 · ${events.length}건',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '닫기',
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: events.isEmpty
+                          ? const AppEmpty(
+                              icon: Icons.event_available_outlined,
+                              message: '이 날 방문·발송·입금 일정이 없습니다.',
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                12,
+                                16,
+                                24,
+                              ),
+                              itemCount: events.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, i) {
+                                final e = events[i];
+                                final branch = matchSupportBranchType(
+                                  e.log.address ?? '',
+                                  regions,
+                                );
+                                return _eventCard(
+                                  e,
+                                  scheme: scheme,
+                                  sendColor: sendColor,
+                                  depositColor: depositColor,
+                                  won: won,
+                                  branch: branch,
+                                  onOpen: () async {
+                                    await _open(e.log);
+                                    if (sheetContext.mounted) setModal(() {});
+                                  },
+                                  onToggleDeposit: () async {
+                                    await _toggleDepositPaid(e);
+                                    await refresh();
+                                  },
+                                  onVisitReport: () async {
+                                    final saved =
+                                        await showSupportVisitReportSheet(
+                                          context,
+                                          log: e.log,
+                                        );
+                                    if (saved) await refresh();
+                                  },
+                                  onToggleQuote: () async {
+                                    await _toggleQuoteSent(e);
+                                    await refresh();
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _eventCard(
+    SupportScheduleEvent e, {
+    required ColorScheme scheme,
+    required Color sendColor,
+    required Color depositColor,
+    required NumberFormat won,
+    required String branch,
+    required Future<void> Function() onOpen,
+    required Future<void> Function() onToggleDeposit,
+    required Future<void> Function() onVisitReport,
+    required Future<void> Function() onToggleQuote,
+  }) {
+    final visit = e.kind == SupportScheduleKind.visit;
+    final deposit = e.kind == SupportScheduleKind.deposit;
+    final color = visit
+        ? scheme.tertiary
+        : deposit
+        ? depositColor
+        : sendColor;
+    final amountText = e.amount == null ? '' : '${won.format(e.amount)}원';
+    final site = _siteName(e.log);
+    final team = visit || deposit ? _teamFor(e.log) : null;
+    final teamName = (team?.name ?? '').trim();
+    final members = (team?.members ?? '').trim();
+    final scheduled = _dayTimeLabel(e.scheduledYmd, e.scheduledTime);
+    final actual = _dayTimeLabel(e.actualYmd, e.actualTime);
+    final detailLines = <String>[
+      [
+        e.label,
+        if (amountText.isNotEmpty) amountText,
+      ].join(' · '),
+      if (branch.isNotEmpty) '지사 $branch',
+      if (teamName.isNotEmpty || members.isNotEmpty)
+        [
+          if (teamName.isNotEmpty) '팀 $teamName',
+          if (members.isNotEmpty) members,
+        ].join(' · '),
+      if (visit) ...[
+        '예정 ${scheduled.isEmpty ? '—' : scheduled}',
+        '실제 ${actual.isEmpty ? '—' : actual}',
+      ],
+    ];
+    return Material(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => unawaited(onOpen()),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(
+                  visit
+                      ? Icons.event_available_rounded
+                      : deposit
+                      ? Icons.payments_outlined
+                      : Icons.send_outlined,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      site,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    for (var li = 0; li < detailLines.length; li++)
+                      Padding(
+                        padding: EdgeInsets.only(top: li == 0 ? 0 : 2),
+                        child: Text(
+                          detailLines[li],
+                          style: TextStyle(
+                            color: li == 0 ? color : scheme.onSurfaceVariant,
+                            fontWeight: li == 0
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            fontSize: li == 0 ? 13 : 12.5,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (deposit)
+                Checkbox(
+                  value: e.depositPaid ?? false,
+                  onChanged: (_) => unawaited(onToggleDeposit()),
+                )
+              else if (visit)
+                IconButton(
+                  tooltip: '방문 기록',
+                  icon: const Icon(Icons.home_repair_service_outlined),
+                  onPressed: () => unawaited(onVisitReport()),
+                )
+              else
+                Checkbox(
+                  value: e.quoteSent,
+                  onChanged: (_) => unawaited(onToggleQuote()),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _dayTimeLabel(String? ymd, String? time) {
+    final d = (ymd ?? '').trim();
+    final t = (time ?? '').trim();
+    final t5 = t.length >= 5 ? t.substring(0, 5) : t;
+    if (d.isEmpty && t5.isEmpty) return '';
+    if (d.isEmpty) return t5;
+    if (t5.isEmpty) return d;
+    return '$d $t5';
   }
 
   static const _satColor = Color(0xFF1565C0);
@@ -264,8 +598,7 @@ class _CustomerSupportScheduleCalendarScreenState
     final accent = AppTokens.customerSupportAccent(scheme);
     final sendColor = const Color(0xFFD97706);
     final depositColor = const Color(0xFF059669);
-    final dayEvents = _forDay(_selected);
-    final won = NumberFormat('#,###');
+    final selectedCount = _forDay(_selected).length;
     return Scaffold(
       appBar: AppBar(
         title: const Text('방문 · 발송 달력'),
@@ -320,6 +653,27 @@ class _CustomerSupportScheduleCalendarScreenState
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _FilterChip(
+                  label: '예정',
+                  selected: !_phaseCompleted,
+                  color: accent,
+                  onTap: () => setState(() => _phaseCompleted = false),
+                ),
+                _FilterChip(
+                  label: '완료',
+                  selected: _phaseCompleted,
+                  color: const Color(0xFF15803D),
+                  onTap: () => setState(() => _phaseCompleted = true),
+                ),
+              ],
+            ),
+          ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(12),
@@ -328,225 +682,178 @@ class _CustomerSupportScheduleCalendarScreenState
                 style: TextStyle(color: scheme.error),
               ),
             ),
-          TableCalendar<SupportScheduleEvent>(
-            locale: 'ko_KR',
-            firstDay: DateTime(2024, 1, 1),
-            lastDay: DateTime(2035, 12, 31),
-            focusedDay: _focused,
-            selectedDayPredicate: (d) => isSameDay(d, _selected),
-            calendarFormat: CalendarFormat.month,
-            startingDayOfWeek: StartingDayOfWeek.sunday,
-            daysOfWeekHeight: 28,
-            headerStyle: const HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: true,
-            ),
-            daysOfWeekStyle: const DaysOfWeekStyle(
-              weekdayStyle: TextStyle(fontSize: 0),
-              weekendStyle: TextStyle(fontSize: 0),
-            ),
-            eventLoader: _forDay,
-            onDaySelected: (selected, focused) {
-              setState(() {
-                _selected = selected;
-                _focused = focused;
-              });
-            },
-            onPageChanged: (focused) {
-              final sameMonth =
-                  focused.year == _focused.year &&
-                  focused.month == _focused.month;
-              setState(() => _focused = focused);
-              if (!sameMonth) unawaited(_loadMonth());
-            },
-            calendarStyle: CalendarStyle(
-              weekendTextStyle: const TextStyle(fontSize: 0),
-              holidayTextStyle: const TextStyle(fontSize: 0),
-            ),
-            calendarBuilders: CalendarBuilders(
-              dowBuilder: (context, day) {
-                return Center(
-                  child: Text(
-                    _weekdayKo(day.weekday),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      height: 1.0,
-                      leadingDistribution: TextLeadingDistribution.even,
-                      color: _weekdayColor(day.weekday, scheme),
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: TableCalendar<SupportScheduleEvent>(
+                      locale: 'ko_KR',
+                      firstDay: DateTime(2024, 1, 1),
+                      lastDay: DateTime(2035, 12, 31),
+                      focusedDay: _focused,
+                      selectedDayPredicate: (d) => isSameDay(d, _selected),
+                      calendarFormat: CalendarFormat.month,
+                      startingDayOfWeek: StartingDayOfWeek.sunday,
+                      daysOfWeekHeight: 28,
+                      rowHeight: 48,
+                      headerStyle: const HeaderStyle(
+                        formatButtonVisible: false,
+                        titleCentered: true,
+                      ),
+                      daysOfWeekStyle: const DaysOfWeekStyle(
+                        weekdayStyle: TextStyle(fontSize: 0),
+                        weekendStyle: TextStyle(fontSize: 0),
+                      ),
+                      eventLoader: _forDay,
+                      onDaySelected: (selected, focused) {
+                        setState(() {
+                          _selected = selected;
+                          _focused = focused;
+                        });
+                        unawaited(_showDayEventsSheet(selected));
+                      },
+                      onPageChanged: (focused) {
+                        final sameMonth =
+                            focused.year == _focused.year &&
+                            focused.month == _focused.month;
+                        setState(() => _focused = focused);
+                        if (!sameMonth) unawaited(_loadMonth());
+                      },
+                      calendarStyle: const CalendarStyle(
+                        weekendTextStyle: TextStyle(fontSize: 0),
+                        holidayTextStyle: TextStyle(fontSize: 0),
+                      ),
+                      calendarBuilders: CalendarBuilders(
+                        dowBuilder: (context, day) {
+                          return Center(
+                            child: Text(
+                              _weekdayKo(day.weekday),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                height: 1.0,
+                                leadingDistribution:
+                                    TextLeadingDistribution.even,
+                                color: _weekdayColor(day.weekday, scheme),
+                              ),
+                            ),
+                          );
+                        },
+                        defaultBuilder: (context, day, focused) => _dayCell(
+                          day,
+                          scheme: scheme,
+                          accent: accent,
+                          outside: false,
+                        ),
+                        todayBuilder: (context, day, focused) => _dayCell(
+                          day,
+                          scheme: scheme,
+                          accent: accent,
+                          outside: false,
+                          today: true,
+                        ),
+                        selectedBuilder: (context, day, focused) => _dayCell(
+                          day,
+                          scheme: scheme,
+                          accent: accent,
+                          outside: false,
+                          selected: true,
+                        ),
+                        outsideBuilder: (context, day, focused) => _dayCell(
+                          day,
+                          scheme: scheme,
+                          accent: accent,
+                          outside: true,
+                        ),
+                        markerBuilder: (context, day, events) {
+                          if (events.isEmpty) return const SizedBox.shrink();
+                          final hasVisit = events.any(
+                            (e) => e.kind == SupportScheduleKind.visit,
+                          );
+                          final hasSend = events.any(
+                            (e) => e.kind == SupportScheduleKind.quoteSend,
+                          );
+                          final hasDeposit = events.any(
+                            (e) => e.kind == SupportScheduleKind.deposit,
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (hasVisit)
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: scheme.tertiary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                if (hasVisit && (hasSend || hasDeposit))
+                                  const SizedBox(width: 3),
+                                if (hasSend)
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: sendColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                if (hasSend && hasDeposit)
+                                  const SizedBox(width: 3),
+                                if (hasDeposit)
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: depositColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 );
               },
-              defaultBuilder: (context, day, focused) =>
-                  _dayCell(day, scheme: scheme, accent: accent, outside: false),
-              todayBuilder: (context, day, focused) => _dayCell(
-                day,
-                scheme: scheme,
-                accent: accent,
-                outside: false,
-                today: true,
-              ),
-              selectedBuilder: (context, day, focused) => _dayCell(
-                day,
-                scheme: scheme,
-                accent: accent,
-                outside: false,
-                selected: true,
-              ),
-              outsideBuilder: (context, day, focused) =>
-                  _dayCell(day, scheme: scheme, accent: accent, outside: true),
-              markerBuilder: (context, day, events) {
-                if (events.isEmpty) return const SizedBox.shrink();
-                final hasVisit = events.any(
-                  (e) => e.kind == SupportScheduleKind.visit,
-                );
-                final hasSend = events.any(
-                  (e) => e.kind == SupportScheduleKind.quoteSend,
-                );
-                final hasDeposit = events.any(
-                  (e) => e.kind == SupportScheduleKind.deposit,
-                );
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (hasVisit)
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: scheme.tertiary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      if (hasVisit && (hasSend || hasDeposit))
-                        const SizedBox(width: 3),
-                      if (hasSend)
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: sendColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      if (hasSend && hasDeposit) const SizedBox(width: 3),
-                      if (hasDeposit)
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: depositColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
             ),
-          ),
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '${_selected.month}/${_selected.day} · ${dayEvents.length}건',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ),
-          Expanded(
-            child: dayEvents.isEmpty
-                ? AppEmpty(
-                    icon: Icons.event_available_outlined,
-                    message: '이 날 방문·발송·입금 일정이 없습니다.',
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    itemCount: dayEvents.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) {
-                      final e = dayEvents[i];
-                      final visit = e.kind == SupportScheduleKind.visit;
-                      final deposit = e.kind == SupportScheduleKind.deposit;
-                      final color = visit
-                          ? scheme.tertiary
-                          : deposit
-                          ? depositColor
-                          : sendColor;
-                      final amountText = e.amount == null
-                          ? ''
-                          : '${won.format(e.amount)}원';
-                      return Material(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(14),
-                        child: ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          leading: Icon(
-                            visit
-                                ? Icons.event_available_rounded
-                                : deposit
-                                ? Icons.payments_outlined
-                                : Icons.send_outlined,
-                            color: color,
-                          ),
-                          title: Text(
-                            e.log.customerName.isEmpty
-                                ? '(이름 없음)'
-                                : e.log.customerName,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          subtitle: Text(
-                            [
-                              e.label,
-                              if (amountText.isNotEmpty) amountText,
-                            ].join(' · '),
-                            style: TextStyle(
-                              color: color,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          trailing: deposit
-                              ? Checkbox(
-                                  value: e.depositPaid ?? false,
-                                  onChanged: (_) =>
-                                      unawaited(_toggleDepositPaid(e)),
-                                )
-                              : visit
-                              ? IconButton(
-                                  tooltip: '방문 기록',
-                                  icon: const Icon(
-                                    Icons.home_repair_service_outlined,
-                                  ),
-                                  onPressed: () async {
-                                    final saved =
-                                        await showSupportVisitReportSheet(
-                                          context,
-                                          log: e.log,
-                                        );
-                                    if (saved && mounted) {
-                                      unawaited(_loadMonth());
-                                    }
-                                  },
-                                )
-                              : Checkbox(
-                                  value: e.quoteSent,
-                                  onChanged: (_) =>
-                                      unawaited(_toggleQuoteSent(e)),
-                                ),
-                          onTap: () => unawaited(_open(e.log)),
-                        ),
-                      );
-                    },
-                  ),
           ),
         ],
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '날짜를 누르면 일정을 크게 볼 수 있습니다',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonal(
+                onPressed: () => unawaited(_showDayEventsSheet(_selected)),
+                child: Text(
+                  '${_selected.month}/${_selected.day} · $selectedCount건 보기',
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

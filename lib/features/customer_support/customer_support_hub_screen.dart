@@ -15,10 +15,10 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_s
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_create_host_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
-import 'package:coad_customer_calls/features/customer_support/support_branch_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_sites_map_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_teams_screen.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -53,32 +53,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
       if (context.mounted) invalidateSupportWorkCaches(ref);
     }
 
-    Future<void> openWithBranch({
-      required String pickerTitle,
-      required String pickerSubtitle,
-      required Future<Iterable<String>> Function() addresses,
-      required Widget Function(String branch) screen,
-    }) async {
-      final branch = await pickSupportBranch(
-        context: context,
-        ref: ref,
-        title: pickerTitle,
-        subtitle: pickerSubtitle,
-        loadAddresses: addresses,
-      );
-      if (branch == null || !context.mounted) return;
-      await _openStepFuture(context, screen(branch));
-    }
-
-    Future<Iterable<String>> logAddresses(
-      Future<List<SupportCallLog>> Function() load,
-    ) async {
-      return (await load()).map((e) => e.address ?? '');
-    }
-
-    final repo = ref.read(supportCallLogRepositoryProvider);
     final today = todayYmdSeoul();
-    final month = seoulMonthRangeContaining(today);
 
     return Scaffold(
       appBar: AppBar(
@@ -163,16 +138,11 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             count: desk.pending,
             alert: desk.pending > 0,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '미처리 지사 선택',
-                pickerSubtitle: '날짜 상관없이 1차 상담 전',
-                addresses: () => logAddresses(
-                  () => repo.list(pendingOnly: true, limit: 200),
-                ),
-                screen: (branch) => CustomerSupportReceptionListScreen(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportReceptionListScreen(
                   title: '전체 A/S 미처리',
                   pendingOnly: true,
-                  initialBranch: branch,
                 ),
               ),
             ),
@@ -184,16 +154,11 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             count: desk.incomplete,
             alert: desk.incomplete > 0,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '미완료 지사 선택',
-                pickerSubtitle: '마무리·방문 완료가 아닌 모든 건',
-                addresses: () => logAddresses(
-                  () => repo.list(incompleteOnly: true, limit: 400),
-                ),
-                screen: (branch) => CustomerSupportReceptionListScreen(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportReceptionListScreen(
                   title: '전체 A/S 미완료',
                   incompleteOnly: true,
-                  initialBranch: branch,
                 ),
               ),
             ),
@@ -205,18 +170,11 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             count: desk.feedbackWait,
             alert: desk.feedbackWait > 0,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '피드백 대기 지사 선택',
-                pickerSubtitle: '안내 후 고객 연락을 기다리는 건',
-                addresses: () => logAddresses(
-                  () => repo.listByLastConsultOutcome(
-                    SupportConsultOutcome.feedbackWait,
-                  ),
-                ),
-                screen: (branch) => CustomerSupportReceptionListScreen(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportReceptionListScreen(
                   title: '피드백 대기',
                   consultOutcome: SupportConsultOutcome.feedbackWait,
-                  initialBranch: branch,
                 ),
               ),
             ),
@@ -228,18 +186,11 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             count: desk.quoteWait,
             alert: desk.quoteWait > 0,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '견적서 대기 지사 선택',
-                pickerSubtitle: '정식 견적서를 보내고 고객 답을 기다리는 건',
-                addresses: () => logAddresses(
-                  () => repo.listByLastConsultOutcome(
-                    SupportConsultOutcome.quoteSend,
-                  ),
-                ),
-                screen: (branch) => CustomerSupportReceptionListScreen(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportReceptionListScreen(
                   title: '정식 견적서 대기',
                   consultOutcome: SupportConsultOutcome.quoteSend,
-                  initialBranch: branch,
                 ),
               ),
             ),
@@ -251,18 +202,12 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             count: desk.inProgress,
             alert: desk.inProgress > 0,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '답 대기 지사 선택',
-                pickerSubtitle: '안내 후 피드백 · 구두 견적 · 정식 견적서',
-                addresses: () => logAddresses(
-                  () =>
-                      repo.list(statusId: kSupportStatusInProgress, limit: 200),
-                ),
-                screen: (branch) => CustomerSupportReceptionListScreen(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportReceptionListScreen(
                   title: '답 대기·견적서',
                   statusId: kSupportStatusInProgress,
                   initialStatusTab: '답 대기·견적서',
-                  initialBranch: branch,
                 ),
               ),
             ),
@@ -276,23 +221,13 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               count: desk.todayPending,
               alert: desk.todayPending > 0,
               onTap: () => openThenRefresh(
-                () => openWithBranch(
-                  pickerTitle: '미처리 지사 선택',
-                  pickerSubtitle: '오늘 접수 · 1차 상담 전',
-                  addresses: () => logAddresses(
-                    () => repo.list(
-                      pendingOnly: true,
-                      fromYmd: today,
-                      toYmdInclusive: today,
-                      limit: 200,
-                    ),
-                  ),
-                  screen: (branch) => CustomerSupportReceptionListScreen(
+                () => _openStepFuture(
+                  context,
+                  CustomerSupportReceptionListScreen(
                     title: '금일 A/S 미처리',
                     fromYmd: today,
                     toYmdInclusive: today,
                     pendingOnly: true,
-                    initialBranch: branch,
                   ),
                 ),
               ),
@@ -303,20 +238,12 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               icon: Icons.timelapse_rounded,
               count: desk.inProgress,
               onTap: () => openThenRefresh(
-                () => openWithBranch(
-                  pickerTitle: '답 대기 지사 선택',
-                  pickerSubtitle: '안내 후 피드백 · 구두 견적 · 정식 견적서',
-                  addresses: () => logAddresses(
-                    () => repo.list(
-                      statusId: kSupportStatusInProgress,
-                      limit: 200,
-                    ),
-                  ),
-                  screen: (branch) => CustomerSupportReceptionListScreen(
+                () => _openStepFuture(
+                  context,
+                  const CustomerSupportReceptionListScreen(
                     title: '답 대기·견적서',
                     statusId: kSupportStatusInProgress,
                     initialStatusTab: '답 대기·견적서',
-                    initialBranch: branch,
                   ),
                 ),
               ),
@@ -325,57 +252,51 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           _HubTileRow(
             left: SupportHubTile(
               title: '금일 방문예정',
-              subtitle: '오늘 방문하기로 한 건 · 방문 기록',
+              subtitle: '오늘 방문하기로 한 건',
               icon: Icons.event_available_rounded,
               count: desk.todayVisit,
               alert: desk.todayVisit > 0,
               onTap: () => openThenRefresh(
-                () => openWithBranch(
-                  pickerTitle: '방문 지사 선택',
-                  pickerSubtitle: '오늘 방문하기로 한 건',
-                  addresses: () => logAddresses(
-                    () => repo.list(
-                      visitOnly: true,
-                      fromYmd: today,
-                      toYmdInclusive: today,
-                      limit: 200,
-                    ),
-                  ),
-                  screen: (branch) => CustomerSupportScheduleCalendarScreen(
+                () => _openStepFuture(
+                  context,
+                  CustomerSupportScheduleCalendarScreen(
                     initialKind: SupportScheduleKind.visit,
-                    initialBranch: branch,
                     initialYmd: today,
                   ),
                 ),
               ),
             ),
             right: SupportHubTile(
-              title: '지난 방문예정',
-              subtitle: '날짜가 지난 방문 · 재방문',
-              icon: Icons.event_busy_rounded,
-              count: desk.overdueVisit,
-              alert: desk.overdueVisit > 0,
+              title: '금일 방문완료',
+              subtitle: '오늘 다녀온 방문 기록',
+              icon: Icons.event_repeat_rounded,
+              count: desk.todayVisitCompleted,
               onTap: () => openThenRefresh(
-                () => openWithBranch(
-                  pickerTitle: '방문 지사 선택',
-                  pickerSubtitle: '날짜가 지난 방문',
-                  addresses: () async {
-                    final events = await repo.listDueScheduleEvents(
-                      todayYmd: today,
-                    );
-                    return events
-                        .where(
-                          (e) =>
-                              e.kind == SupportScheduleKind.visit &&
-                              e.ymd.compareTo(today) < 0,
-                        )
-                        .map((e) => e.log.address ?? '');
-                  },
-                  screen: (branch) => CustomerSupportScheduleCalendarScreen(
-                    initialKind: SupportScheduleKind.visit,
-                    initialBranch: branch,
-                    initialYmd: today,
+                () => _openStepFuture(
+                  context,
+                  CustomerSupportReceptionListScreen(
+                    title: '금일 방문완료',
+                    fromYmd: today,
+                    toYmdInclusive: today,
+                    visitOnly: true,
+                    statusId: kSupportStatusCompleted,
                   ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SupportHubCountBar(
+            title: '지난 방문예정',
+            icon: Icons.event_busy_rounded,
+            count: desk.overdueVisit,
+            alert: desk.overdueVisit > 0,
+            onTap: () => openThenRefresh(
+              () => _openStepFuture(
+                context,
+                CustomerSupportScheduleCalendarScreen(
+                  initialKind: SupportScheduleKind.visit,
+                  initialYmd: today,
                 ),
               ),
             ),
@@ -387,26 +308,9 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               icon: Icons.payments_outlined,
               count: desk.todayDeposit,
               onTap: () => openThenRefresh(
-                () => openWithBranch(
-                  pickerTitle: '입금 지사 선택',
-                  pickerSubtitle: '오늘 입금 예정',
-                  addresses: () async {
-                    final events = await repo.listDueScheduleEvents(
-                      todayYmd: today,
-                    );
-                    return events
-                        .where(
-                          (e) =>
-                              e.kind == SupportScheduleKind.deposit &&
-                              e.ymd == today &&
-                              e.depositPaid != true,
-                        )
-                        .map((e) => e.log.address ?? '');
-                  },
-                  screen: (branch) => CustomerSupportCollectionScreen(
-                    initialBranch: branch,
-                    initialFilter: 'due',
-                  ),
+                () => _openStepFuture(
+                  context,
+                  const CustomerSupportCollectionScreen(initialFilter: 'due'),
                 ),
               ),
             ),
@@ -417,24 +321,9 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               count: desk.overdueDeposit,
               alert: desk.overdueDeposit > 0,
               onTap: () => openThenRefresh(
-                () => openWithBranch(
-                  pickerTitle: '입금 지사 선택',
-                  pickerSubtitle: '예정일이 지난 수금',
-                  addresses: () async {
-                    final events = await repo.listDueScheduleEvents(
-                      todayYmd: today,
-                    );
-                    return events
-                        .where(
-                          (e) =>
-                              e.kind == SupportScheduleKind.deposit &&
-                              e.ymd.compareTo(today) < 0 &&
-                              e.depositPaid != true,
-                        )
-                        .map((e) => e.log.address ?? '');
-                  },
-                  screen: (branch) => CustomerSupportCollectionScreen(
-                    initialBranch: branch,
+                () => _openStepFuture(
+                  context,
+                  const CustomerSupportCollectionScreen(
                     initialFilter: 'overdue',
                   ),
                 ),
@@ -454,13 +343,19 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '미처리 · 답 대기·견적서 · 방문예정 · 완료',
             icon: Icons.list_alt_rounded,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '접수 지사 선택',
-                pickerSubtitle: 'A/S 접수내역',
-                addresses: () => logAddresses(() => repo.list(limit: 150)),
-                screen: (branch) =>
-                    CustomerSupportReceptionListScreen(initialBranch: branch),
+              () => _openStepFuture(
+                context,
+                const CustomerSupportReceptionListScreen(),
               ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SupportSectionCard(
+            title: 'A/S 방문 팀',
+            subtitle: '본사·지사 팀 수 · 팀원 이름',
+            icon: Icons.groups_rounded,
+            onTap: () => openThenRefresh(
+              () => openSupportVisitTeamsScreen(context),
             ),
           ),
           const SizedBox(height: 8),
@@ -469,14 +364,9 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '미처리·방문을 큰 지도에서 · 가까운 순',
             icon: Icons.map_rounded,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '지도 지사 선택',
-                pickerSubtitle: '미처리·방문을 큰 지도에서',
-                addresses: () => logAddresses(() => repo.listForMap()),
-                screen: (branch) => SupportSitesMapScreen(
-                  pendingOnly: true,
-                  initialBranch: branch,
-                ),
+              () => _openStepFuture(
+                context,
+                const SupportSitesMapScreen(pendingOnly: true),
               ),
             ),
           ),
@@ -486,19 +376,9 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '방문 · 견적 발송 · 입금 일정',
             icon: Icons.calendar_month_rounded,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '일정 지사 선택',
-                pickerSubtitle: '방문 · 견적 발송 · 입금',
-                addresses: () async {
-                  final events = await repo.listScheduleEvents(
-                    fromYmd: month.$1,
-                    toYmdInclusive: month.$2,
-                  );
-                  return events.map((e) => e.log.address ?? '');
-                },
-                screen: (branch) => CustomerSupportScheduleCalendarScreen(
-                  initialBranch: branch,
-                ),
+              () => _openStepFuture(
+                context,
+                const CustomerSupportScheduleCalendarScreen(),
               ),
             ),
           ),
@@ -526,19 +406,9 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '입금예정 · 지난 수금 · 입금완료',
             icon: Icons.payments_outlined,
             onTap: () => openThenRefresh(
-              () => openWithBranch(
-                pickerTitle: '수금 지사 선택',
-                pickerSubtitle: '입금예정 · 지난 수금 · 입금완료',
-                addresses: () async {
-                  final events = await repo.listDueScheduleEvents(
-                    todayYmd: today,
-                  );
-                  return events
-                      .where((e) => e.kind == SupportScheduleKind.deposit)
-                      .map((e) => e.log.address ?? '');
-                },
-                screen: (branch) =>
-                    CustomerSupportCollectionScreen(initialBranch: branch),
+              () => _openStepFuture(
+                context,
+                const CustomerSupportCollectionScreen(),
               ),
             ),
           ),

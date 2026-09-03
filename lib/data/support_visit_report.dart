@@ -6,10 +6,19 @@ bool isSupportVisitReportText(String raw) =>
 /// 방문 기록 저장 전 검증. 완료+유상이면 금액·입금예정일이 필요하다.
 String? supportVisitReportIssue(SupportVisitReport report) {
   if (report.visitYmd.trim().isEmpty) return '방문일을 선택해 주세요.';
+  if ((report.visitTime ?? '').trim().isEmpty) {
+    return '방문 시간을 선택해 주세요.';
+  }
   if (report.notes.trim().isEmpty) return '방문 내용을 입력해 주세요.';
   if (!report.completed) {
     if ((report.nextVisitYmd ?? '').trim().isEmpty) {
       return '미완료이면 다음 방문일을 선택해 주세요.';
+    }
+    if ((report.nextVisitTeamId ?? '').trim().isEmpty) {
+      return '미완료이면 다음 방문 팀을 선택해 주세요.';
+    }
+    if ((report.nextVisitTime ?? '').trim().isEmpty) {
+      return '미완료이면 다음 방문 시간을 선택해 주세요.';
     }
     return null;
   }
@@ -26,6 +35,7 @@ class SupportVisitReport {
   const SupportVisitReport({
     this.id,
     required this.visitYmd,
+    this.visitTime,
     required this.completed,
     required this.paid,
     this.amount,
@@ -34,6 +44,8 @@ class SupportVisitReport {
     this.parts = const [],
     this.photoUrls = const [],
     this.nextVisitYmd,
+    this.nextVisitTeamId,
+    this.nextVisitTime,
     this.notes = '',
     this.createdBy,
     this.createdAt,
@@ -41,6 +53,7 @@ class SupportVisitReport {
 
   final String? id;
   final String visitYmd;
+  final String? visitTime;
   final bool completed;
   final bool paid;
   final int? amount;
@@ -49,6 +62,8 @@ class SupportVisitReport {
   final List<String> parts;
   final List<String> photoUrls;
   final String? nextVisitYmd;
+  final String? nextVisitTeamId;
+  final String? nextVisitTime;
   final String notes;
   final String? createdBy;
   final DateTime? createdAt;
@@ -59,6 +74,7 @@ class SupportVisitReport {
     return SupportVisitReport(
       id: id,
       visitYmd: visitYmd,
+      visitTime: visitTime,
       completed: completed,
       paid: paid,
       amount: amount,
@@ -67,6 +83,8 @@ class SupportVisitReport {
       parts: parts,
       photoUrls: photoUrls,
       nextVisitYmd: nextVisitYmd,
+      nextVisitTeamId: nextVisitTeamId,
+      nextVisitTime: nextVisitTime,
       notes: notes,
       createdBy: createdBy,
       createdAt: createdAt,
@@ -76,9 +94,15 @@ class SupportVisitReport {
 
 String serializeSupportVisitReport(SupportVisitReport report) {
   final paid = report.isPaid;
+  final time = (report.visitTime ?? '').trim();
+  final timeLabel = time.length >= 5 ? time.substring(0, 5) : time;
+  final nextTime = (report.nextVisitTime ?? '').trim();
+  final nextTimeLabel =
+      nextTime.length >= 5 ? nextTime.substring(0, 5) : nextTime;
   return [
     kSupportVisitReportMarker,
     '방문일: ${report.visitYmd}',
+    if (timeLabel.isNotEmpty) '방문시간: $timeLabel',
     '완료: ${report.completed ? '완료' : '미완료'}',
     '유상: ${paid ? '유상' : '무상'}',
     if (paid && report.amount != null) '금액: ${report.amount}',
@@ -89,6 +113,8 @@ String serializeSupportVisitReport(SupportVisitReport report) {
     if (report.photoUrls.isNotEmpty) '사진: ${report.photoUrls.join(' | ')}',
     if (!report.completed && (report.nextVisitYmd ?? '').trim().isNotEmpty)
       '다음방문: ${report.nextVisitYmd!.trim()}',
+    if (!report.completed && nextTimeLabel.isNotEmpty)
+      '다음방문시간: $nextTimeLabel',
     '내용:',
     report.notes.trim(),
   ].join('\n');
@@ -144,6 +170,7 @@ SupportVisitReport? parseSupportVisitReport(
   return SupportVisitReport(
     id: id,
     visitYmd: fields['방문일'] ?? '',
+    visitTime: _timeOrNull(fields['방문시간']),
     completed: (fields['완료'] ?? '') == '완료',
     paid: paid,
     amount: paid ? amount : null,
@@ -152,6 +179,7 @@ SupportVisitReport? parseSupportVisitReport(
     parts: parts,
     photoUrls: photos,
     nextVisitYmd: _ymdOrNull(fields['다음방문']),
+    nextVisitTime: _timeOrNull(fields['다음방문시간']),
     notes: body.join('\n').trim(),
     createdBy: createdBy,
     createdAt: createdAt,
@@ -162,4 +190,10 @@ String? _ymdOrNull(String? raw) {
   final v = (raw ?? '').trim();
   if (v.length < 10) return null;
   return v.substring(0, 10);
+}
+
+String? _timeOrNull(String? raw) {
+  final v = (raw ?? '').trim();
+  if (v.isEmpty) return null;
+  return v.length >= 5 ? v.substring(0, 5) : v;
 }
