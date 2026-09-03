@@ -92,7 +92,9 @@ class SupportQuoteLine {
       spec: (json['spec'] ?? '').toString(),
       unit: (json['unit'] ?? '').toString(),
       qty: int.tryParse('${json['qty'] ?? 1}') ?? 1,
-      unitPrice: int.tryParse('${json['unitPrice'] ?? json['unit_price'] ?? ''}'),
+      unitPrice: int.tryParse(
+        '${json['unitPrice'] ?? json['unit_price'] ?? ''}',
+      ),
       note: (json['note'] ?? '').toString(),
       kind: normalizeSupportQuoteKind(
         (json['kind'] ?? json['category'] ?? '').toString(),
@@ -154,6 +156,8 @@ class SupportQuoteDocument {
   final String? callLogId;
 
   int get total => lines.fold(0, (sum, e) => sum + e.amount);
+
+  bool get isSent => (sentYmd ?? '').trim().isNotEmpty;
 
   List<SupportQuoteLine> linesOfKind(String kind) =>
       lines.where((e) => e.kind == kind).toList();
@@ -218,6 +222,7 @@ class SupportQuoteDocument {
 
   SupportQuoteDocument copyWith({
     String? sentYmd,
+    bool clearSentYmd = false,
     String? quoteNo,
     String? callLogId,
   }) {
@@ -235,7 +240,7 @@ class SupportQuoteDocument {
       note: note,
       createdBy: createdBy,
       createdAt: createdAt,
-      sentYmd: sentYmd ?? this.sentYmd,
+      sentYmd: clearSentYmd ? null : (sentYmd ?? this.sentYmd),
       callLogId: callLogId ?? this.callLogId,
     );
   }
@@ -245,8 +250,7 @@ bool supportQuoteMatches(SupportQuoteDocument doc, String query) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return true;
   final digits = normalizePhoneDigits(query);
-  if (digits.length >= 4 &&
-      normalizePhoneDigits(doc.phone).contains(digits)) {
+  if (digits.length >= 4 && normalizePhoneDigits(doc.phone).contains(digits)) {
     return true;
   }
   final blob = [
@@ -261,7 +265,10 @@ bool supportQuoteMatches(SupportQuoteDocument doc, String query) {
     doc.ymd,
     doc.sentYmd ?? '',
     '${doc.total}',
-    ...doc.lines.map((e) => '${e.name} ${e.spec} ${e.unit} ${e.note} ${supportQuoteKindLabel(e.kind)}'),
+    ...doc.lines.map(
+      (e) =>
+          '${e.name} ${e.spec} ${e.unit} ${e.note} ${supportQuoteKindLabel(e.kind)}',
+    ),
   ].join(' ').toLowerCase();
   return blob.contains(q);
 }
@@ -339,12 +346,28 @@ String supportQuoteKoreanTotalLabel(int amount) {
   return '일금 $words원정 (${won.format(amount)}원, VAT. 별도)';
 }
 
+String supportQuoteConsultBody(SupportQuoteDocument doc) {
+  final won = NumberFormat('#,###');
+  return [
+    supportQuoteHistoryLine(doc),
+    for (final line in doc.lines)
+      [
+        supportQuoteKindLabel(line.kind),
+        line.name.trim(),
+        if (line.spec.trim().isNotEmpty) line.spec.trim(),
+        if (line.qty > 0) '${line.qty}${line.unit.trim()}',
+        if (line.amount > 0) '${won.format(line.amount)}원',
+      ].where((e) => e.trim().isNotEmpty).join(' · '),
+    if (doc.total > 0) '합계 ${won.format(doc.total)}원',
+  ].where((e) => e.trim().isNotEmpty).join('\n');
+}
+
 String supportQuoteHistoryLine(SupportQuoteDocument doc) {
   final won = NumberFormat('#,###');
   final total = doc.total <= 0 ? '-' : '${won.format(doc.total)}원';
   final sent = (doc.sentYmd ?? '').trim();
   final when = sent.isNotEmpty ? sent : doc.ymd;
-  final status = sent.isNotEmpty ? '발송' : '작성';
+  final status = sent.isNotEmpty ? '발송완료' : '미발송';
   final no = doc.quoteNo.trim();
   return [
     when,
@@ -411,8 +434,7 @@ List<SupportQuoteSiteGroup> supportQuoteSiteGroups(
   }
   final groups = <SupportQuoteSiteGroup>[];
   for (final entry in map.entries) {
-    final quotes = [...entry.value]
-      ..sort((a, b) => b.ymd.compareTo(a.ymd));
+    final quotes = [...entry.value]..sort((a, b) => b.ymd.compareTo(a.ymd));
     String pick(String Function(SupportQuoteDocument doc) of) {
       for (final q in quotes) {
         final v = of(q).trim();

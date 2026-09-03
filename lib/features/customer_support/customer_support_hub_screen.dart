@@ -223,6 +223,29 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           SupportHubCountBar(
+            title: '정식 견적서 대기',
+            icon: Icons.request_quote_outlined,
+            count: desk.quoteWait,
+            alert: desk.quoteWait > 0,
+            onTap: () => openThenRefresh(
+              () => openWithBranch(
+                pickerTitle: '견적서 대기 지사 선택',
+                pickerSubtitle: '정식 견적서를 보내고 고객 답을 기다리는 건',
+                addresses: () => logAddresses(
+                  () => repo.listByLastConsultOutcome(
+                    SupportConsultOutcome.quoteSend,
+                  ),
+                ),
+                screen: (branch) => CustomerSupportReceptionListScreen(
+                  title: '정식 견적서 대기',
+                  consultOutcome: SupportConsultOutcome.quoteSend,
+                  initialBranch: branch,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SupportHubCountBar(
             title: '답 대기·견적서',
             icon: Icons.timelapse_rounded,
             count: desk.inProgress,

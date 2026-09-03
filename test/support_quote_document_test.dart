@@ -67,6 +67,9 @@ void main() {
     expect(supportQuoteKoreanTotalLabel(200000), contains('이십만원정'));
     expect(supportQuoteKoreanTotalLabel(0), '일금 영원정 (0원, VAT. 별도)');
     expect(supportQuoteHistoryLine(mixed), contains('200,000원'));
+    final consult = supportQuoteConsultBody(mixed);
+    expect(consult, contains('교체인건비'));
+    expect(consult, contains('합계 200,000원'));
   });
 
   test('완료된 접수도 같은 전화면 한 현장으로 묶이고 검색된다', () {

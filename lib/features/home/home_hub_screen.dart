@@ -2351,6 +2351,28 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       invalidateSupportWorkCaches(ref);
     }
 
+    Future<void> openQuoteWaitBranchPicker() async {
+      HapticFeedback.selectionClick();
+      final selected = await _pickSupportBranchForLogs(
+        title: '견적서 대기 지사 선택',
+        subtitle: '정식 견적서를 보내고 고객 답을 기다리는 건',
+        load: () => ref
+            .read(supportCallLogRepositoryProvider)
+            .listByLastConsultOutcome(SupportConsultOutcome.quoteSend),
+      );
+      if (!mounted || selected == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CustomerSupportReceptionListScreen(
+            title: '정식 견적서 대기',
+            consultOutcome: SupportConsultOutcome.quoteSend,
+            initialBranch: selected,
+          ),
+        ),
+      );
+      invalidateSupportWorkCaches(ref);
+    }
+
     Future<void> openFeedbackWaitBranchPicker() async {
       HapticFeedback.selectionClick();
       final selected = await _pickSupportBranchForLogs(
@@ -2469,6 +2491,14 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           icon: Icons.phonelink_ring_rounded,
           badge: desk.feedbackWait > 0 ? '${desk.feedbackWait}' : null,
           onTap: () => unawaited(openFeedbackWaitBranchPicker()),
+        ),
+        const SizedBox(height: 8),
+        SupportSectionCard(
+          title: '정식 견적서 대기',
+          subtitle: '정식 견적서를 보내고 고객 답을 기다리는 건',
+          icon: Icons.request_quote_outlined,
+          badge: desk.quoteWait > 0 ? '${desk.quoteWait}' : null,
+          onTap: () => unawaited(openQuoteWaitBranchPicker()),
         ),
         const SizedBox(height: 8),
         SupportSectionCard(

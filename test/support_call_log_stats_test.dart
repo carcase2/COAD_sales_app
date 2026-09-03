@@ -61,12 +61,43 @@ void main() {
     expect(parsed.body, '현장 확인 후 교체');
   });
 
+  test('구두 견적은 금액과 내용을 같이 남긴다', () {
+    final line = supportConsultOutcomeLine(
+      SupportConsultOutcome.verbalQuote,
+      amount: 150000,
+    );
+    expect(line, '[결과: 구두 견적 · 금액 150000]');
+    final parsed = parseSupportConsultation('$line\n모터 교체 안내');
+    expect(parsed.outcome, SupportConsultOutcome.verbalQuote);
+    expect(parsed.amount, 150000);
+    expect(parsed.body, '모터 교체 안내');
+    expect(parseSupportConsultation('[결과: 구두 견적]\n견적 안내').amount, isNull);
+    expect(parseSupportConsultAmountDigits('150,000원'), 150000);
+    expect(formatSupportConsultAmountGrouped('150000'), '150,000');
+    expect(formatSupportConsultAmountGrouped('1500'), '1,500');
+    expect(formatSupportConsultAmountGrouped(''), '');
+  });
+
   test('견적서 발송예정에 발송완료 날짜를 남긴다', () {
     final planned = supportConsultOutcomeLine(
       SupportConsultOutcome.quoteSend,
       ymd: '2026-08-22',
     );
     expect(planned, '[결과: 견적서 발송 · 발송예정 2026-08-22]');
+    expect(
+      supportConsultOutcomeLine(
+        SupportConsultOutcome.quoteSend,
+        ymd: '2026-08-22',
+        amount: 250000,
+      ),
+      '[결과: 견적서 발송 · 발송예정 2026-08-22 · 금액 250000]',
+    );
+    expect(
+      parseSupportConsultation(
+        '[결과: 견적서 발송 · 발송예정 2026-08-22 · 금액 250000]\n모터 교체',
+      ).amount,
+      250000,
+    );
     final parsed = parseSupportConsultation('$planned\n단가 안내');
     expect(parsed.outcome, SupportConsultOutcome.quoteSend);
     expect(parsed.ymd, '2026-08-22');
@@ -165,7 +196,11 @@ void main() {
     );
     expect(
       supportConsultOutcomeHint(SupportConsultOutcome.verbalQuote),
-      contains('방문일'),
+      contains('상담 내용과 금액'),
+    );
+    expect(
+      supportConsultOutcomeHint(SupportConsultOutcome.verbalQuote),
+      contains('견적서는 작성하지 않습니다'),
     );
     expect(
       supportConsultOutcomeHint(SupportConsultOutcome.quoteSend),

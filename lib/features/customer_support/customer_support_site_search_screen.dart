@@ -9,9 +9,9 @@ import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen
 import 'package:coad_customer_calls/features/customer_support/customer_support_completion_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_export.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_site_index.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -461,11 +461,12 @@ class _CustomerSupportSiteDetailScreenState
           OutlinedButton.icon(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => CustomerSupportQuoteScreen(site: site),
+                builder: (_) =>
+                    SupportQuoteWriterScreen(site: site, startNew: true),
               ),
             ),
-            icon: const Icon(Icons.calculate_outlined),
-            label: const Text('견적서'),
+            icon: const Icon(Icons.edit_document),
+            label: const Text('견적서 작성'),
           ),
           const SizedBox(height: 8),
           TextButton(
@@ -543,14 +544,20 @@ class _CustomerSupportSiteDetailScreenState
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.request_quote_outlined, size: 18),
                     title: Text(supportQuoteHistoryLine(q)),
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(ctx);
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              SupportQuoteWriterScreen(site: site, openDoc: q),
-                        ),
+                      final action = await showSupportQuoteExportSheet(
+                        context,
+                        doc: q,
                       );
+                      if (!context.mounted) return;
+                      if (action == SupportQuoteViewAction.edit) {
+                        await pushSupportQuoteEditor(
+                          context,
+                          existing: q,
+                          site: site,
+                        );
+                      }
                     },
                   ),
               ],

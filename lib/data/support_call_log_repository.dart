@@ -574,6 +574,7 @@ class SupportCallLogRepository {
     SupportConsultOutcome? outcome,
     String? visitYmd,
     String? sendYmd,
+    int? amount,
   }) async {
     final text = description.trim();
     if (text.isEmpty) {
@@ -582,6 +583,10 @@ class SupportCallLogRepository {
     if (outcome == SupportConsultOutcome.visit &&
         (visitYmd == null || visitYmd.trim().isEmpty)) {
       throw ApiException('방문예정일을 선택해 주세요.');
+    }
+    if (outcome == SupportConsultOutcome.verbalQuote &&
+        (amount == null || amount <= 0)) {
+      throw ApiException('구두 견적 금액을 입력해 주세요.');
     }
     try {
       final client = supportSupabaseClient();
@@ -593,6 +598,11 @@ class SupportCallLogRepository {
                 ? visitYmd
                 : outcome == SupportConsultOutcome.quoteSend
                 ? sendYmd
+                : null,
+            amount:
+                outcome == SupportConsultOutcome.verbalQuote ||
+                    outcome == SupportConsultOutcome.quoteSend
+                ? amount
                 : null,
           ),
         text,
@@ -956,7 +966,7 @@ String supportConsultOutcomeHint(SupportConsultOutcome outcome) =>
       SupportConsultOutcome.feedbackWait =>
         '전화로 이것저것 안내하고 일단 해보게 합니다. 고객이 다시 연락 오면 다음 상담에서 마무리하거나 방문·견적을 잡습니다.',
       SupportConsultOutcome.verbalQuote =>
-        '구두로 먼저 전달합니다. 고객이 다시 전화하면 방문일을 잡고, 그날 방문한 뒤 기록을 남깁니다.',
+        '견적서는 작성하지 않습니다. 상담 내용과 금액만 남깁니다. 고객이 다시 전화하면 방문일을 잡습니다.',
       SupportConsultOutcome.quoteSend =>
         '정식 견적서를 작성하고, 보낼 날을 정한 뒤 보냅니다. 받은 다음 방문 요청이면 방문일을 잡습니다.',
       SupportConsultOutcome.visit => '방문일을 잡고 현장에 갑니다. 다녀온 뒤에 방문 기록을 남깁니다.',
@@ -994,6 +1004,7 @@ String supportConsultOutcomeLine(
   SupportConsultOutcome outcome, {
   String? ymd,
   String? sentYmd,
+  int? amount,
 }) {
   final stored = switch (outcome) {
     SupportConsultOutcome.closed => '마무리',
@@ -1005,15 +1016,37 @@ String supportConsultOutcomeLine(
   final day = (ymd ?? '').trim();
   final sent = (sentYmd ?? '').trim();
   if (outcome == SupportConsultOutcome.quoteSend && day.isNotEmpty) {
+    final extra = amount != null ? ' · 금액 $amount' : '';
     if (sent.isNotEmpty) {
-      return '[결과: $stored · 발송예정 $day · 발송완료 $sent]';
+      return '[결과: $stored · 발송예정 $day · 발송완료 $sent$extra]';
     }
-    return '[결과: $stored · 발송예정 $day]';
+    return '[결과: $stored · 발송예정 $day$extra]';
   }
   if (outcome == SupportConsultOutcome.visit && day.isNotEmpty) {
     return '[결과: $stored · 방문예정 $day]';
   }
+  if (outcome == SupportConsultOutcome.verbalQuote && amount != null) {
+    return '[결과: $stored · 금액 $amount]';
+  }
   return '[결과: $stored]';
+}
+
+int? parseSupportConsultAmountDigits(String raw) {
+  final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return null;
+  return int.tryParse(digits);
+}
+
+String formatSupportConsultAmountGrouped(String raw) {
+  final amount = parseSupportConsultAmountDigits(raw);
+  if (amount == null) return '';
+  final digits = amount.toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+    buf.write(digits[i]);
+  }
+  return buf.toString();
 }
 
 String rewriteSupportQuoteSentLine(String description, {String? sentYmd}) {
@@ -1028,15 +1061,22 @@ String rewriteSupportQuoteSentLine(String description, {String? sentYmd}) {
   return '$head\n${parsed.body}';
 }
 
-({SupportConsultOutcome? outcome, String? ymd, String? sentYmd, String body})
+({
+  SupportConsultOutcome? outcome,
+  String? ymd,
+  String? sentYmd,
+  int? amount,
+  String body,
+})
 parseSupportConsultation(String raw) {
   SupportConsultOutcome? outcome;
   String? ymd;
   String? sentYmd;
+  int? amount;
   final rest = <String>[];
   for (final line in raw.split('\n')) {
     final m = RegExp(
-      r'^\[결과:\s*(마무리|피드백 대기|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*발송완료\s*(\d{4}-\d{2}-\d{2}))?\]$',
+      r'^\[결과:\s*(마무리|피드백 대기|구두 견적|견적서 발송|방문 요청)(?:\s*·\s*(?:발송예정|방문예정)\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*발송완료\s*(\d{4}-\d{2}-\d{2}))?(?:\s*·\s*금액\s*([\d,]+))?\]$',
     ).firstMatch(line.trim());
     if (m != null && outcome == null) {
       outcome = switch (m.group(1)) {
@@ -1049,6 +1089,7 @@ parseSupportConsultation(String raw) {
       };
       ymd = m.group(2);
       sentYmd = m.group(3);
+      amount = parseSupportConsultAmountDigits(m.group(4) ?? '');
       continue;
     }
     rest.add(line);
@@ -1057,6 +1098,7 @@ parseSupportConsultation(String raw) {
     outcome: outcome,
     ymd: ymd,
     sentYmd: sentYmd,
+    amount: amount,
     body: rest.join('\n').trim(),
   );
 }

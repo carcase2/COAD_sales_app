@@ -10,15 +10,16 @@ import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_quote_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_first_consultation_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_sites_map_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_unit_price.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
+import 'package:coad_customer_calls/features/customer_support/support_quote_export.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
@@ -630,6 +631,8 @@ class _CustomerSupportReceptionDetailScreenState
   bool _loading = false;
   bool _changed = false;
   bool _busy = false;
+  final _consultPageCtrl = PageController();
+  int _consultPage = 0;
 
   @override
   void initState() {
@@ -638,6 +641,12 @@ class _CustomerSupportReceptionDetailScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });
+  }
+
+  @override
+  void dispose() {
+    _consultPageCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -674,7 +683,9 @@ class _CustomerSupportReceptionDetailScreenState
       } catch (_) {}
       var quotes = <SupportQuoteDocument>[];
       try {
-        quotes = await ref.read(supportAsQuoteRepositoryProvider).listForSite(
+        quotes = await ref
+            .read(supportAsQuoteRepositoryProvider)
+            .listForSite(
               phone: log.customerPhone,
               site: log.customerName,
               customerName: log.customerName,
@@ -688,6 +699,13 @@ class _CustomerSupportReceptionDetailScreenState
         _visits = visits;
         _quotes = quotes;
         _loading = false;
+        _consultPage = consults.isEmpty ? 0 : consults.length - 1;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_consultPageCtrl.hasClients || consults.isEmpty) {
+          return;
+        }
+        _consultPageCtrl.jumpToPage(consults.length - 1);
       });
     } catch (e) {
       if (!mounted) return;
@@ -790,11 +808,304 @@ class _CustomerSupportReceptionDetailScreenState
     );
   }
 
+  SupportQuoteDocument? _quoteForConsult(SupportConsultation consult) {
+    if (_quotes.isEmpty) return null;
+    final byLog = _quotes
+        .where((q) => (q.callLogId ?? '') == (_log?.id ?? ''))
+        .toList();
+    final pool = byLog.isNotEmpty ? byLog : _quotes;
+    for (final q in pool) {
+      final no = q.quoteNo.trim();
+      if (no.isNotEmpty && consult.description.contains(no)) return q;
+    }
+    return pool.first;
+  }
+
+  SupportSiteSample _siteFromLog() {
+    final log = _log;
+    return SupportSiteSample(
+      id: log?.id ?? '',
+      name: (log?.customerName ?? '').trim(),
+      address: log?.address ?? '',
+      phone: log?.customerPhone ?? '',
+      assignee: log?.createdBy ?? '',
+      revisitCount: 0,
+      installCompletedYmd: null,
+      addresses: [
+        if ((log?.address ?? '').trim().isNotEmpty) log!.address!.trim(),
+      ],
+      history: const [],
+      quotes: const [],
+      hasBusinessLicense: false,
+      hasChecksheet: false,
+    );
+  }
+
+  List<SupportQuoteDocument> get _siteQuotesOldestFirst {
+    final list = List<SupportQuoteDocument>.from(_quotes);
+    list.sort((a, b) {
+      // 미발송을 위에 두고, 같은 그룹은 작성일 오름차순(1차→N차)
+      final bySent = (a.isSent ? 1 : 0).compareTo(b.isSent ? 1 : 0);
+      if (bySent != 0) return bySent;
+      final ad = a.ymd.trim();
+      final bd = b.ymd.trim();
+      final byDay = ad.compareTo(bd);
+      if (byDay != 0) return byDay;
+      return (a.createdAt ?? '').compareTo(b.createdAt ?? '');
+    });
+    return list;
+  }
+
+  int _siteQuoteStage(SupportQuoteDocument q) {
+    final chrono = List<SupportQuoteDocument>.from(_quotes)
+      ..sort((a, b) {
+        final ad = a.ymd.trim();
+        final bd = b.ymd.trim();
+        final byDay = ad.compareTo(bd);
+        if (byDay != 0) return byDay;
+        return (a.createdAt ?? '').compareTo(b.createdAt ?? '');
+      });
+    final i = chrono.indexWhere((e) => e.id == q.id);
+    return i < 0 ? chrono.length : i + 1;
+  }
+
+  String _siteQuoteLineLabel(SupportQuoteDocument q, int stage) {
+    final day = q.ymd.trim().isEmpty ? '날짜 없음' : q.ymd.trim();
+    final total = q.total <= 0 ? '-' : formatSupportUnitPriceWon(q.total);
+    return '$stage차, $day, $total';
+  }
+
+  String _siteQuotesCardSubtitle() {
+    final ordered = _siteQuotesOldestFirst;
+    if (ordered.isEmpty) return '없음';
+    final unsent = ordered.where((e) => !e.isSent).length;
+    if (unsent > 0) {
+      return '미발송 $unsent건 · 전체 ${ordered.length}건';
+    }
+    final last = ordered.last;
+    return '모두 발송 · ${_siteQuoteLineLabel(last, _siteQuoteStage(last))}';
+  }
+
+  Future<void> _openSiteQuotesSheet() async {
+    final host = context;
+    final ordered = _siteQuotesOldestFirst;
+    final unsentCount = ordered.where((e) => !e.isSent).length;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: false,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        final media = MediaQuery.of(ctx);
+        // Android 3버튼/제스처 바와 겹치지 않도록 viewPadding 기준 하단 여백.
+        final bottomInset = media.viewPadding.bottom;
+        final maxH = media.size.height * 0.62;
+        final warn = scheme.error;
+        final ok = AppTokens.success(scheme);
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxH),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '이 현장 견적서',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  ordered.isEmpty
+                      ? '등록된 견적서가 없습니다'
+                      : unsentCount > 0
+                      ? '미발송 $unsentCount건 · 탭하면 상세 · 이미지/PDF/이메일'
+                      : '모두 발송 완료 · 탭하면 상세',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: unsentCount > 0 ? warn : scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (ordered.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Text(
+                      '이 현장의 견적서가 아직 없습니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: ordered.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final q = ordered[i];
+                        final stage = _siteQuoteStage(q);
+                        final sent = q.isSent;
+                        final statusColor = sent ? ok : warn;
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            _siteQuoteLineLabel(q, stage),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            sent
+                                ? '발송완료 ${q.sentYmd!.trim()}'
+                                : '미발송 · 작성만 됨',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: statusColor,
+                            ),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  sent ? '발송' : '미발송',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w900,
+                                    color: statusColor,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ),
+                          onTap: () async {
+                            Navigator.pop(ctx);
+                            final action = await showSupportQuoteExportSheet(
+                              host,
+                              doc: q,
+                            );
+                            if (!mounted) return;
+                            if (action == SupportQuoteViewAction.edit) {
+                              await pushSupportQuoteEditor(
+                                context,
+                                existing: q,
+                                callLogId: _log?.id,
+                                site: _siteFromLog(),
+                              );
+                              unawaited(_load());
+                              return;
+                            }
+                            if (action == SupportQuoteViewAction.sent) {
+                              try {
+                                await ref
+                                    .read(supportAsQuoteRepositoryProvider)
+                                    .upsert(
+                                      q.copyWith(sentYmd: todayYmdSeoul()),
+                                    );
+                              } catch (_) {}
+                              unawaited(_load());
+                            }
+                            if (action == SupportQuoteViewAction.unsent) {
+                              try {
+                                await ref
+                                    .read(supportAsQuoteRepositoryProvider)
+                                    .upsert(q.copyWith(clearSentYmd: true));
+                              } catch (_) {}
+                              unawaited(_load());
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _exportQuote(SupportConsultation consult) async {
+    var quote = _quoteForConsult(consult);
+    if (quote == null) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => SupportQuoteWriterScreen(
+            callLogId: _log?.id,
+            site: _siteFromLog(),
+          ),
+        ),
+      );
+      if (mounted) unawaited(_load());
+      return;
+    }
+    final action = await showSupportQuoteExportSheet(context, doc: quote);
+    if (!mounted) return;
+    if (action == SupportQuoteViewAction.edit) {
+      await pushSupportQuoteEditor(
+        context,
+        existing: quote,
+        callLogId: _log?.id,
+        site: _siteFromLog(),
+      );
+      unawaited(_load());
+      return;
+    }
+    if (action == SupportQuoteViewAction.unsent) {
+      try {
+        await ref
+            .read(supportAsQuoteRepositoryProvider)
+            .upsert(quote.copyWith(clearSentYmd: true));
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() => _changed = true);
+      unawaited(_load());
+      return;
+    }
+    if (action != SupportQuoteViewAction.sent) return;
+    try {
+      await ref
+          .read(supportAsQuoteRepositoryProvider)
+          .upsert(quote.copyWith(sentYmd: todayYmdSeoul()));
+      await ref
+          .read(supportCallLogRepositoryProvider)
+          .markQuoteSent(
+            consultationId: consult.id,
+            description: consult.description,
+            sentYmd: todayYmdSeoul(),
+          );
+      unawaited(refreshSupportDueReminders(ref));
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _changed = true);
+    unawaited(_load());
+  }
+
   Future<void> _toggleQuoteSent(SupportConsultation consult) async {
     final parsed = parseSupportConsultation(consult.description);
+    final quote = _quoteForConsult(consult);
     try {
       String? sentYmd;
-      if ((parsed.sentYmd ?? '').isEmpty) {
+      if ((parsed.sentYmd ?? '').isEmpty && !(quote?.isSent ?? false)) {
         sentYmd = await askSupportQuoteSentYmd(context, plannedYmd: parsed.ymd);
         if (sentYmd == null || !mounted) return;
       }
@@ -805,6 +1116,15 @@ class _CustomerSupportReceptionDetailScreenState
             description: consult.description,
             sentYmd: sentYmd,
           );
+      if (quote != null) {
+        await ref
+            .read(supportAsQuoteRepositoryProvider)
+            .upsert(
+              sentYmd == null
+                  ? quote.copyWith(clearSentYmd: true)
+                  : quote.copyWith(sentYmd: sentYmd),
+            );
+      }
       unawaited(refreshSupportDueReminders(ref));
       if (!mounted) return;
       setState(() => _changed = true);
@@ -917,7 +1237,12 @@ class _CustomerSupportReceptionDetailScreenState
       child: Scaffold(
         backgroundColor: Color.lerp(scheme.surface, urgency, 0.10),
         appBar: AppBar(
-          title: const Text('접수 상세'),
+          title: const FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text('접수 상세'),
+          ),
+          titleSpacing: 8,
           backgroundColor: urgency,
           foregroundColor: Colors.white,
           iconTheme: const IconThemeData(color: Colors.white),
@@ -942,15 +1267,15 @@ class _CustomerSupportReceptionDetailScreenState
                 onPressed: () => openSupportUnitPriceLookup(context),
                 icon: const Icon(Icons.grid_on_rounded),
               ),
-              TextButton(
+              IconButton(
+                tooltip: '수정',
                 onPressed: _edit,
-                style: TextButton.styleFrom(foregroundColor: Colors.white),
-                child: const Text('수정'),
+                icon: const Icon(Icons.edit_outlined),
               ),
-              TextButton(
+              IconButton(
+                tooltip: '삭제',
                 onPressed: _delete,
-                style: TextButton.styleFrom(foregroundColor: Colors.white),
-                child: const Text('삭제'),
+                icon: const Icon(Icons.delete_outline_rounded),
               ),
             ],
           ],
@@ -1008,7 +1333,8 @@ class _CustomerSupportReceptionDetailScreenState
             : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
                 children: [
-                  if (cue.action != SupportNextAction.done) ...[
+                  if (cue.action != SupportNextAction.done &&
+                      cue.action != SupportNextAction.quote) ...[
                     UxStatusHeroBanner(
                       title: cue.title,
                       subtitle: cue.subtitle,
@@ -1033,14 +1359,7 @@ class _CustomerSupportReceptionDetailScreenState
                           case SupportNextAction.consult:
                             unawaited(_addConsultation());
                           case SupportNextAction.quote:
-                            unawaited(
-                              Navigator.of(context).push<void>(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      const CustomerSupportQuoteScreen(),
-                                ),
-                              ),
-                            );
+                            break;
                           case SupportNextAction.visit:
                             unawaited(_addVisitReport());
                           case SupportNextAction.deposit:
@@ -1059,10 +1378,6 @@ class _CustomerSupportReceptionDetailScreenState
                     ),
                     const SizedBox(height: 10),
                   ],
-                  const SupportUnitPriceOpenTile(
-                    subtitle: '접수·상담 중 품명 · 금액 검색',
-                  ),
-                  const SizedBox(height: 10),
                   _UrgencyBanner(
                     color: urgency,
                     label: _urgencyLabel,
@@ -1233,98 +1548,53 @@ class _CustomerSupportReceptionDetailScreenState
                   ),
                   const SizedBox(height: 10),
                   _DetailCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _label(scheme, '이 현장 견적서'),
-                        if (_quotes.isEmpty)
-                          Text(
-                            '아직 작성한 견적서가 없습니다. 언제·얼마를 보냈는지 여기서 확인할 수 있습니다.',
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          )
-                        else
-                          for (final q in _quotes)
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title: Text(
-                                supportQuoteHistoryLine(q),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _openSiteQuotesSheet,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.request_quote_outlined,
+                                color: AppTokens.customerSupportAccent(scheme),
                               ),
-                              trailing: const Icon(Icons.chevron_right_rounded),
-                              onTap: () async {
-                                await Navigator.of(context).push<void>(
-                                  MaterialPageRoute(
-                                    builder: (_) => SupportQuoteWriterScreen(
-                                      openDoc: q,
-                                      callLogId: _log?.id,
-                                      site: SupportSiteSample(
-                                        id: _log?.id ?? '',
-                                        name: (_log?.customerName ?? '').trim(),
-                                        address: _log?.address ?? '',
-                                        phone: _log?.customerPhone ?? '',
-                                        assignee: _log?.createdBy ?? '',
-                                        revisitCount: 0,
-                                        installCompletedYmd: null,
-                                        addresses: [
-                                          if ((_log?.address ?? '')
-                                              .trim()
-                                              .isNotEmpty)
-                                            _log!.address!.trim(),
-                                        ],
-                                        history: const [],
-                                        quotes: const [],
-                                        hasBusinessLicense: false,
-                                        hasChecksheet: false,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '이 현장 견적서',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
                                       ),
                                     ),
-                                  ),
-                                );
-                                if (mounted) unawaited(_load());
-                              },
-                            ),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                            onPressed: () async {
-                              await Navigator.of(context).push<void>(
-                                MaterialPageRoute(
-                                  builder: (_) => SupportQuoteWriterScreen(
-                                    startNew: true,
-                                    callLogId: _log?.id,
-                                    site: SupportSiteSample(
-                                      id: _log?.id ?? '',
-                                      name: (_log?.customerName ?? '').trim(),
-                                      address: _log?.address ?? '',
-                                      phone: _log?.customerPhone ?? '',
-                                      assignee: _log?.createdBy ?? '',
-                                      revisitCount: 0,
-                                      installCompletedYmd: null,
-                                      addresses: [
-                                        if ((_log?.address ?? '')
-                                            .trim()
-                                            .isNotEmpty)
-                                          _log!.address!.trim(),
-                                      ],
-                                      history: const [],
-                                      quotes: const [],
-                                      hasBusinessLicense: false,
-                                      hasChecksheet: false,
+                                    Text(
+                                      _siteQuotesCardSubtitle(),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                        color:
+                                            _quotes.any((e) => !e.isSent)
+                                            ? scheme.error
+                                            : scheme.onSurfaceVariant,
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              );
-                              if (mounted) unawaited(_load());
-                            },
-                            child: const Text('견적서 작성'),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -1332,7 +1602,21 @@ class _CustomerSupportReceptionDetailScreenState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _label(scheme, '상담내용'),
+                        Row(
+                          children: [
+                            _label(scheme, '상담내용'),
+                            const Spacer(),
+                            if (_consults.isNotEmpty)
+                              Text(
+                                '${_consultPage + 1}차 / ${_consults.length}차 · 좌우로 넘김',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
+                        ),
                         if (_consults.isEmpty)
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1353,112 +1637,47 @@ class _CustomerSupportReceptionDetailScreenState
                               ),
                             ],
                           )
-                        else
-                          for (var i = 0; i < _consults.length; i++) ...[
-                            if (i > 0) const SizedBox(height: 10),
-                            Builder(
-                              builder: (context) {
-                                final parsed = parseSupportConsultation(
-                                  _consults[i].description,
-                                );
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${i + 1}차',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                        color: scheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                    if (parsed.outcome != null) ...[
-                                      const SizedBox(height: 4),
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 4,
-                                        children: [
-                                          _ListChip(
-                                            label: supportConsultOutcomeLabel(
-                                              parsed.outcome!,
-                                            ),
-                                            color: scheme.primary,
-                                          ),
-                                          if ((parsed.ymd ?? '').isNotEmpty)
-                                            _ListChip(
-                                              label:
-                                                  parsed.outcome ==
-                                                      SupportConsultOutcome
-                                                          .quoteSend
-                                                  ? '발송예정 ${parsed.ymd}'
-                                                  : parsed.ymd!,
-                                              color: scheme.tertiary,
-                                            ),
-                                          if ((parsed.sentYmd ?? '').isNotEmpty)
-                                            _ListChip(
-                                              label: '발송완료 ${parsed.sentYmd}',
-                                              color: AppTokens.success(scheme),
-                                            ),
-                                        ],
-                                      ),
-                                      if (parsed.outcome ==
-                                          SupportConsultOutcome.quoteSend)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 4,
-                                          ),
-                                          child: Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: TextButton.icon(
-                                              onPressed: () => unawaited(
-                                                _toggleQuoteSent(_consults[i]),
-                                              ),
-                                              icon: Icon(
-                                                (parsed.sentYmd ?? '')
-                                                        .isNotEmpty
-                                                    ? Icons.check_box
-                                                    : Icons
-                                                          .check_box_outline_blank,
-                                              ),
-                                              label: Text(
-                                                (parsed.sentYmd ?? '')
-                                                        .isNotEmpty
-                                                    ? '발송 체크 해제'
-                                                    : '발송했다',
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      parsed.body.isEmpty
-                                          ? _consults[i].description
-                                          : parsed.body,
-                                      style: const TextStyle(
-                                        fontSize: 15.5,
-                                        fontWeight: FontWeight.w700,
-                                        height: 1.4,
-                                      ),
-                                    ),
-                                    if ((_consults[i].createdBy ?? '')
-                                        .trim()
-                                        .isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                          '상담 ${_consults[i].createdBy!.trim()}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: scheme.onSurfaceVariant,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                );
+                        else ...[
+                          SizedBox(
+                            // 페이지 넘기는 동안에도 견적 슬라이드가 잘리지 않도록
+                            // 현재 페이지가 아니라 전체 중 최대 높이 사용.
+                            height: _consultPageHeight(),
+                            child: PageView.builder(
+                              controller: _consultPageCtrl,
+                              itemCount: _consults.length,
+                              onPageChanged: (i) =>
+                                  setState(() => _consultPage = i),
+                              itemBuilder: (context, i) {
+                                return _consultSlide(scheme, i);
                               },
                             ),
-                          ],
+                          ),
+                          if (_consults.length > 1)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  for (var i = 0; i < _consults.length; i++)
+                                    Container(
+                                      width: i == _consultPage ? 16 : 7,
+                                      height: 7,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: i == _consultPage
+                                            ? AppTokens.customerSupportAccent(
+                                                scheme,
+                                              )
+                                            : scheme.outlineVariant,
+                                        borderRadius: BorderRadius.circular(99),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ],
                     ),
                   ),
@@ -1514,6 +1733,251 @@ class _CustomerSupportReceptionDetailScreenState
                 ],
               ),
       ),
+    );
+  }
+
+  Widget _consultSlide(ColorScheme scheme, int i) {
+    final consult = _consults[i];
+    final parsed = parseSupportConsultation(consult.description);
+    if (parsed.outcome == SupportConsultOutcome.quoteSend) {
+      return _quoteConsultSlide(scheme, i, consult);
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${i + 1}차',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          if (parsed.outcome != null) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                _ListChip(
+                  label: supportConsultOutcomeLabel(parsed.outcome!),
+                  color: scheme.primary,
+                ),
+                if ((parsed.ymd ?? '').isNotEmpty)
+                  _ListChip(label: parsed.ymd!, color: scheme.tertiary),
+                if (parsed.amount != null && parsed.amount! > 0)
+                  _ListChip(
+                    label: formatSupportUnitPriceWon(parsed.amount),
+                    color: AppTokens.info(scheme),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            parsed.body.isEmpty ? consult.description : parsed.body,
+            style: const TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+          if ((consult.createdBy ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '상담 ${consult.createdBy!.trim()}',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  double _consultPageHeight() {
+    for (final consult in _consults) {
+      final parsed = parseSupportConsultation(consult.description);
+      if (parsed.outcome == SupportConsultOutcome.quoteSend) {
+        return 280;
+      }
+    }
+    return 210;
+  }
+
+  Widget _quoteConsultSlide(
+    ColorScheme scheme,
+    int i,
+    SupportConsultation consult,
+  ) {
+    final parsed = parseSupportConsultation(consult.description);
+    final quote = _quoteForConsult(consult);
+    final total = quote?.total ?? parsed.amount ?? 0;
+    final planned = (parsed.ymd ?? '').trim();
+    final sent = (parsed.sentYmd ?? quote?.sentYmd ?? '').trim();
+    final isSent = sent.isNotEmpty;
+    final accent = AppTokens.customerSupportAccent(scheme);
+    final today = todayYmdSeoul();
+    final overdue = !isSent && planned.isNotEmpty && planned.compareTo(today) < 0;
+    final dueToday = !isSent && planned == today;
+    return Material(
+      color: accent.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => unawaited(_exportQuote(consult)),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${i + 1}차 · 정식 견적서',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: (isSent ? AppTokens.success(scheme) : scheme.error)
+                          .withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      isSent ? '발송완료' : '미발송',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                        color: isSent
+                            ? AppTokens.success(scheme)
+                            : scheme.error,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                total > 0 ? formatSupportUnitPriceWon(total) : '금액 없음',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  height: 1.1,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _quoteMetaRow(
+                scheme,
+                label: '발송예정',
+                value: planned.isEmpty
+                    ? '미정'
+                    : overdue
+                    ? '$planned · 지남'
+                    : dueToday
+                    ? '$planned · 오늘'
+                    : planned,
+                valueColor: overdue || dueToday
+                    ? scheme.error
+                    : scheme.onSurface,
+              ),
+              const SizedBox(height: 4),
+              _quoteMetaRow(
+                scheme,
+                label: '실제발송',
+                value: isSent ? sent : '아직 안 보냄',
+                valueColor: isSent
+                    ? AppTokens.success(scheme)
+                    : scheme.error,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () => unawaited(_toggleQuoteSent(consult)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    child: Text(
+                      isSent ? '미발송으로' : '발송완료로',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '탭하면 견적서 상세',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              if ((consult.createdBy ?? '').trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '상담 ${consult.createdBy!.trim()}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _quoteMetaRow(
+    ColorScheme scheme, {
+    required String label,
+    required String value,
+    Color? valueColor,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 64,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              color: valueColor ?? scheme.onSurface,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

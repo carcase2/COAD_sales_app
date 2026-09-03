@@ -22,6 +22,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+Future<SupportQuoteDocument?> pushSupportQuoteEditor(
+  BuildContext context, {
+  SupportSiteSample? site,
+  String? callLogId,
+  SupportQuoteDocument? existing,
+}) {
+  return Navigator.of(context).push<SupportQuoteDocument>(
+    MaterialPageRoute(
+      builder: (_) => _SupportQuoteEditorPage(
+        existing: existing,
+        site: site,
+        callLogId: callLogId,
+      ),
+    ),
+  );
+}
+
 /// 고객지원팀 전용 견적서. 영업 셔터 견적서 작성과 별개.
 class SupportQuoteWriterScreen extends ConsumerStatefulWidget {
   const SupportQuoteWriterScreen({
@@ -59,7 +76,7 @@ class _SupportQuoteWriterScreenState
       if (!mounted) return;
       unawaited(_reload());
       if (widget.openDoc != null) {
-        unawaited(_edit(existing: widget.openDoc));
+        unawaited(_viewQuote(widget.openDoc!));
       } else if (widget.startNew) {
         unawaited(_edit());
       }
@@ -128,17 +145,25 @@ class _SupportQuoteWriterScreenState
     }
     await _persist(next);
     if (!mounted) return;
-    final sent = await showSupportQuoteExportSheet(context, doc: stored);
-    if (sent == true && mounted) {
-      final marked = stored.copyWith(sentYmd: todayYmdSeoul());
-      try {
-        await ref.read(supportAsQuoteRepositoryProvider).upsert(marked);
-      } catch (_) {}
-      final markedList = [..._items];
-      final mi = markedList.indexWhere((e) => e.id == marked.id);
-      if (mi >= 0) markedList[mi] = marked;
-      await _persist(markedList);
+    await _viewQuote(stored);
+  }
+
+  Future<void> _viewQuote(SupportQuoteDocument doc) async {
+    final action = await showSupportQuoteExportSheet(context, doc: doc);
+    if (!mounted) return;
+    if (action == SupportQuoteViewAction.edit) {
+      await _edit(existing: doc);
+      return;
     }
+    if (action != SupportQuoteViewAction.sent) return;
+    final marked = doc.copyWith(sentYmd: todayYmdSeoul());
+    try {
+      await ref.read(supportAsQuoteRepositoryProvider).upsert(marked);
+    } catch (_) {}
+    final markedList = [..._items];
+    final mi = markedList.indexWhere((e) => e.id == marked.id);
+    if (mi >= 0) markedList[mi] = marked;
+    await _persist(markedList);
   }
 
   Future<void> _delete(SupportQuoteDocument doc) async {
@@ -184,7 +209,9 @@ class _SupportQuoteWriterScreenState
     final accent = AppTokens.customerSupportAccent(scheme);
     final site = widget.site;
     final rows = _visible;
-    final groups = site == null ? supportQuoteSiteGroups(rows) : const <SupportQuoteSiteGroup>[];
+    final groups = site == null
+        ? supportQuoteSiteGroups(rows)
+        : const <SupportQuoteSiteGroup>[];
     final title = site == null ? 'A/S 견적서' : '${site.name} 견적서';
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -199,9 +226,7 @@ class _SupportQuoteWriterScreenState
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: SearchBar(
               controller: _queryCtrl,
-              hintText: site == null
-                  ? '현장 · 고객 · 전화 · 품목 검색'
-                  : '이 현장 견적 검색',
+              hintText: site == null ? '현장 · 고객 · 전화 · 품목 검색' : '이 현장 견적 검색',
               leading: const Icon(Icons.search_rounded, size: 20),
               onChanged: (v) => setState(() => _query = v),
               padding: const WidgetStatePropertyAll(
@@ -329,14 +354,11 @@ class _SupportQuoteWriterScreenState
                               IconButton(
                                 tooltip: '이미지 · PDF · 이메일',
                                 icon: const Icon(Icons.ios_share_rounded),
-                                onPressed: () => showSupportQuoteExportSheet(
-                                  context,
-                                  doc: doc,
-                                ),
+                                onPressed: () => unawaited(_viewQuote(doc)),
                               ),
                             ],
                           ),
-                          onTap: () => _edit(existing: doc),
+                          onTap: () => unawaited(_viewQuote(doc)),
                           onLongPress: () => _delete(doc),
                         ),
                       );
