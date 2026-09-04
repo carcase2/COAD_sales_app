@@ -6,10 +6,12 @@ import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_site_search_screen.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
-import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_today_desk_panel.dart';
+import 'package:coad_customer_calls/features/gosu_calls/gosu_calendar_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
+import 'package:coad_customer_calls/features/home/home_support_calendar_panel.dart';
+import 'package:coad_customer_calls/features/home/sales_today_desk.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_dept.dart';
@@ -2095,13 +2097,34 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   Widget _buildCalendarBody() {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.only(bottom: _homeBottomInset(context)),
-      child: HomeFollowCalendarPanel(
-        key: ValueKey('cal_$_calendarKeyNonce'),
-        initialCalendarFormat: _launchCalendarFormat,
-        fitSingleScreen: true,
-        onRefresh: _onRefresh,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+            child: _deptTabBar(scheme),
+          ),
+          Expanded(
+            child: switch (_deptPageIndex) {
+              0 => HomeFollowCalendarPanel(
+                key: ValueKey('cal_sales_$_calendarKeyNonce'),
+                initialCalendarFormat: _launchCalendarFormat,
+                fitSingleScreen: true,
+                onRefresh: _onRefresh,
+              ),
+              1 => HomeSupportCalendarPanel(
+                key: ValueKey('cal_cs_$_calendarKeyNonce'),
+                onRefresh: _onRefresh,
+              ),
+              _ => GosuCalendarScreen(
+                key: ValueKey('cal_gosu_$_calendarKeyNonce'),
+                embedded: true,
+              ),
+            },
+          ),
+        ],
       ),
     );
   }
@@ -2162,13 +2185,39 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   }
 
   Widget _buildSupportPeriodStats({required HubPeriodKey periodKey}) {
+    if (periodKey.period == HubPeriod.day) {
+      Widget? headerAlert;
+      final prevYmd = addDaysToYmd(periodKey.anchorYmd, -1);
+      final prevPending =
+          ref
+              .watch(
+                supportHomeStatsProvider((
+                  period: HubPeriod.day,
+                  anchorYmd: prevYmd,
+                )),
+              )
+              .valueOrNull
+              ?.pending ??
+          0;
+      if (prevPending > 0) {
+        final scheme = Theme.of(context).colorScheme;
+        headerAlert = _HomeOneLineAlert(
+          icon: Icons.history_rounded,
+          label: '전일 미처리',
+          count: prevPending,
+          color: AppTokens.customerSupportAccent(scheme),
+          onTap: () => unawaited(_openPrevDaySupportPending(prevYmd)),
+        );
+      }
+      return SupportTodayDeskHost(headerAlert: headerAlert);
+    }
+
     final stats =
         ref.watch(supportHomeStatsProvider(periodKey)).valueOrNull ??
         SupportHomePeriodStats.empty;
     final desk =
         ref.watch(supportDeskCountsProvider).valueOrNull ??
         SupportDeskCounts.empty;
-    final allPending = desk.pending;
     final range = switch (periodKey.period) {
       HubPeriod.day => (periodKey.anchorYmd, periodKey.anchorYmd),
       HubPeriod.week => seoulWeekRangeContaining(periodKey.anchorYmd),
@@ -2253,48 +2302,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => const CustomerSupportReceptionListScreen(
-            title: '전체 A/S 미처리',
+            title: '접수 · 미처리',
             pendingOnly: true,
-          ),
-        ),
-      );
-      invalidateSupportWorkCaches(ref);
-    }
-
-    Future<void> openInProgress() async {
-      HapticFeedback.selectionClick();
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const CustomerSupportReceptionListScreen(
-            title: '답 대기·견적서',
-            statusId: kSupportStatusInProgress,
-            initialStatusTab: '답 대기·견적서',
-          ),
-        ),
-      );
-      invalidateSupportWorkCaches(ref);
-    }
-
-    Future<void> openQuoteWait() async {
-      HapticFeedback.selectionClick();
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const CustomerSupportReceptionListScreen(
-            title: '정식 견적서 대기',
-            consultOutcome: SupportConsultOutcome.quoteSend,
-          ),
-        ),
-      );
-      invalidateSupportWorkCaches(ref);
-    }
-
-    Future<void> openFeedbackWait() async {
-      HapticFeedback.selectionClick();
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const CustomerSupportReceptionListScreen(
-            title: '피드백 대기',
-            consultOutcome: SupportConsultOutcome.feedbackWait,
           ),
         ),
       );
@@ -2306,7 +2315,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => const CustomerSupportReceptionListScreen(
-            title: '전체 A/S 미완료',
+            title: '현장 · 미완료',
             incompleteOnly: true,
           ),
         ),
@@ -2314,108 +2323,37 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       invalidateSupportWorkCaches(ref);
     }
 
-    Widget? headerAlert;
-    if (periodKey.period == HubPeriod.day) {
-      final prevYmd = addDaysToYmd(periodKey.anchorYmd, -1);
-      final prevPending =
-          ref
-              .watch(
-                supportHomeStatsProvider((
-                  period: HubPeriod.day,
-                  anchorYmd: prevYmd,
-                )),
-              )
-              .valueOrNull
-              ?.pending ??
-          0;
-      if (prevPending > 0) {
-        final scheme = Theme.of(context).colorScheme;
-        headerAlert = _HomeOneLineAlert(
-          icon: Icons.history_rounded,
-          label: '전일 미처리',
-          count: prevPending,
-          color: AppTokens.customerSupportAccent(scheme),
-          onTap: () => unawaited(_openPrevDaySupportPending(prevYmd)),
+    return HomeSupportMiniStatsWidget(
+      receptionLabel: receptionLabel,
+      pendingLabel: pendingLabel,
+      visitLabel: visitLabel,
+      visitCompletedLabel: visitCompletedLabel,
+      updatedLabel: updatedLabel,
+      reception: stats.reception,
+      pending: stats.pending,
+      visits: stats.visits,
+      visitsCompleted: stats.visitsCompleted,
+      updated: stats.updated,
+      onTapReception: () => unawaited(openList(title: receptionLabel)),
+      onTapPending: () =>
+          unawaited(openList(title: pendingLabel, pendingOnly: true)),
+      onTapVisit: () => unawaited(openVisitCalendar()),
+      onTapVisitCompleted: () => unawaited(openVisitCompletedList()),
+      onTapUpdated: () => unawaited(openList(title: updatedLabel)),
+      allCount: desk.all,
+      allPending: desk.pending,
+      allIncomplete: desk.incomplete,
+      onTapAll: () {
+        HapticFeedback.selectionClick();
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                const CustomerSupportSiteSearchScreen(title: '현장 검색'),
+          ),
         );
-      }
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        HomeSupportMiniStatsWidget(
-          receptionLabel: receptionLabel,
-          pendingLabel: pendingLabel,
-          visitLabel: visitLabel,
-          visitCompletedLabel: visitCompletedLabel,
-          updatedLabel: updatedLabel,
-          reception: stats.reception,
-          pending: stats.pending,
-          visits: stats.visits,
-          visitsCompleted: stats.visitsCompleted,
-          updated: stats.updated,
-          onTapReception: () => unawaited(openList(title: receptionLabel)),
-          onTapPending: () =>
-              unawaited(openList(title: pendingLabel, pendingOnly: true)),
-          onTapVisit: () => unawaited(openVisitCalendar()),
-          onTapVisitCompleted: () => unawaited(openVisitCompletedList()),
-          onTapUpdated: () => unawaited(openList(title: updatedLabel)),
-          allCount: desk.all,
-          allPending: allPending,
-          allIncomplete: desk.incomplete,
-          onTapAll: () {
-            HapticFeedback.selectionClick();
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    const CustomerSupportSiteSearchScreen(title: '전체'),
-              ),
-            );
-          },
-          onTapAllPending: () => unawaited(openAllPending()),
-          onTapAllIncomplete: () => unawaited(openAllIncomplete()),
-          headerAlert: headerAlert,
-        ),
-        const SizedBox(height: 10),
-        SupportSectionCard(
-          title: '답 대기·견적서',
-          subtitle: '안내 후 피드백 · 구두 견적 · 정식 견적서',
-          icon: Icons.timelapse_rounded,
-          badge: desk.inProgress > 0 ? '${desk.inProgress}' : null,
-          onTap: () => unawaited(openInProgress()),
-        ),
-        const SizedBox(height: 8),
-        SupportSectionCard(
-          title: '피드백 대기',
-          subtitle: '안내 후 고객 연락을 기다리는 건',
-          icon: Icons.phonelink_ring_rounded,
-          badge: desk.feedbackWait > 0 ? '${desk.feedbackWait}' : null,
-          onTap: () => unawaited(openFeedbackWait()),
-        ),
-        const SizedBox(height: 8),
-        SupportSectionCard(
-          title: '정식 견적서 대기',
-          subtitle: '정식 견적서를 보내고 고객 답을 기다리는 건',
-          icon: Icons.request_quote_outlined,
-          badge: desk.quoteWait > 0 ? '${desk.quoteWait}' : null,
-          onTap: () => unawaited(openQuoteWait()),
-        ),
-        const SizedBox(height: 8),
-        SupportSectionCard(
-          title: 'A/S 단가표',
-          subtitle: '부품 · 인건비 검색 · 수정 이력',
-          icon: Icons.grid_on_rounded,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const SupportUnitPriceScreen(),
-              ),
-            );
-          },
-        ),
-      ],
+      },
+      onTapAllPending: () => unawaited(openAllPending()),
+      onTapAllIncomplete: () => unawaited(openAllIncomplete()),
     );
   }
 
@@ -2777,6 +2715,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             salesCard,
+            if (scope == HubPeriod.day) ...[
+              const SizedBox(height: 10),
+              const SalesTodayDeskHost(),
+            ],
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(

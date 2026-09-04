@@ -453,7 +453,7 @@ class SupportExcelButton extends StatelessWidget {
   }
 }
 
-const kSupportStatusTabOrder = ['전체', '미처리', '답 대기·견적서', '방문예정', '완료'];
+const kSupportStatusTabOrder = ['전체', '미처리', '대기', '방문예정', '완료'];
 
 Color supportStatusTabColor(String tab, ColorScheme scheme) {
   switch (tab) {
@@ -463,6 +463,7 @@ Color supportStatusTabColor(String tab, ColorScheme scheme) {
       return scheme.tertiary;
     case '완료':
       return AppTokens.success(scheme);
+    case '대기':
     case '답 대기·견적서':
     case '진행중':
       return scheme.primary;

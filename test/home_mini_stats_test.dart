@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/features/home/home_flow_stats.dart';
+import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -103,5 +104,68 @@ void main() {
     await tester.tap(find.text('전체'));
     await tester.pump();
     expect(opened, isTrue);
+  });
+
+  test('달력 옆 숫자는 고른 부서의 일정 건수다', () {
+    expect(
+      homeCalendarBadgeForDept(
+        deptIndex: 0,
+        salesFollow: 7,
+        supportVisitDue: 3,
+        supportDepositDue: 2,
+        gosuFollow: 4,
+      ),
+      7,
+    );
+    expect(
+      homeCalendarBadgeForDept(
+        deptIndex: 1,
+        salesFollow: 7,
+        supportVisitDue: 3,
+        supportDepositDue: 2,
+        gosuFollow: 4,
+      ),
+      5,
+    );
+    expect(
+      homeCalendarBadgeForDept(
+        deptIndex: 2,
+        salesFollow: 7,
+        supportVisitDue: 3,
+        supportDepositDue: 2,
+        gosuFollow: 4,
+      ),
+      4,
+    );
+  });
+
+  test('흐름 옆 숫자는 고른 부서의 지금 할 일 건수다', () {
+    expect(
+      homeFlowBadgeForDept(
+        deptIndex: 0,
+        salesUncalled: 9,
+        supportDoNow: 6,
+        gosuFollowOpen: 3,
+      ),
+      9,
+    );
+    expect(
+      homeFlowBadgeForDept(
+        deptIndex: 1,
+        salesUncalled: 9,
+        supportDoNow: 6,
+        gosuFollowOpen: 3,
+      ),
+      6,
+    );
+    expect(
+      homeFlowBadgeForDept(
+        deptIndex: 2,
+        salesUncalled: 9,
+        supportDoNow: 6,
+        gosuFollowOpen: 3,
+      ),
+      3,
+    );
   });
 }

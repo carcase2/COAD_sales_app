@@ -217,11 +217,11 @@ void main() {
     );
     expect(
       supportConsultOutcomeHint(SupportConsultOutcome.verbalQuote),
-      contains('상담 내용과 금액'),
+      contains('말로 금액'),
     );
     expect(
       supportConsultOutcomeHint(SupportConsultOutcome.verbalQuote),
-      contains('견적서는 작성하지 않습니다'),
+      contains('정식 견적서'),
     );
     expect(
       supportConsultOutcomeHint(SupportConsultOutcome.quoteSend),
@@ -236,7 +236,7 @@ void main() {
   test('진행 상태 라벨', () {
     expect(supportCallLogProgressLabel(null), '미처리');
     expect(supportCallLogProgressLabel(4), '미처리');
-    expect(supportCallLogProgressLabel(2), '답 대기·견적서');
+    expect(supportCallLogProgressLabel(2), '대기');
     expect(supportCallLogProgressLabel(5), '방문예정');
     expect(supportCallLogProgressLabel(1), '완료');
   });
@@ -268,7 +268,7 @@ void main() {
         consultationCount: 1,
         lastOutcome: SupportConsultOutcome.verbalQuote,
       ).progressLabel,
-      '고객 전화 대기',
+      '구두 견적 대기',
     );
     expect(
       supportFlowCue(
@@ -308,6 +308,23 @@ void main() {
     expect(
       supportFlowCue(serviceStatusId: kSupportStatusCompleted).action,
       SupportNextAction.done,
+    );
+    expect(
+      supportFlowCueFromLog(
+        const SupportCallLog(
+          id: 'q1',
+          customerName: '견적현장',
+          customerPhone: '01000000000',
+          issue: '모터',
+          serviceStatusId: kSupportStatusInProgress,
+        ),
+        last: const SupportConsultSnapshot(
+          outcome: SupportConsultOutcome.quoteSend,
+          ymd: '2026-09-04',
+          count: 1,
+        ),
+      ).progressLabel,
+      '발송예정 2026-09-04',
     );
   });
 

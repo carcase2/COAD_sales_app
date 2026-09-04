@@ -536,7 +536,7 @@ class _SupportFirstConsultationSheetState
                           SupportConsultOutcome.closed => '마무리 저장',
                           SupportConsultOutcome.feedbackWait => '피드백 대기로 저장',
                           SupportConsultOutcome.verbalQuote => '구두 견적 저장',
-                          SupportConsultOutcome.quoteSend => '발송일 저장',
+                          SupportConsultOutcome.quoteSend => '견적 저장',
                           SupportConsultOutcome.visit => '방문일 저장',
                           null => '저장',
                         }),

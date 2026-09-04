@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_calendar_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_list_screen.dart';
+import 'package:coad_customer_calls/features/home/gosu_today_desk.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -156,6 +157,10 @@ class GosuHomePanel extends ConsumerWidget {
             ),
           ],
         ),
+        if (_key.period == HubPeriod.day) ...[
+          const SizedBox(height: 12),
+          const GosuTodayDeskHost(),
+        ],
         const SizedBox(height: 12),
         SupportSectionCard(
           title: '전체',

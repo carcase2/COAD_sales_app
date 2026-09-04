@@ -1,6 +1,7 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/features/customer_support/support_today_desk.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
@@ -107,7 +108,7 @@ class SupportDueScheduleSummary {
 }
 
 class SupportDeskCounts {
-  const SupportDeskCounts({
+  SupportDeskCounts({
     required this.all,
     required this.todayPending,
     required this.pending,
@@ -115,6 +116,9 @@ class SupportDeskCounts {
     required this.inProgress,
     required this.feedbackWait,
     required this.quoteWait,
+    this.verbalWait = 0,
+    this.unsentQuote = 0,
+    this.quoteSentWait = 0,
     required this.todayVisit,
     this.todayVisitCompleted = 0,
     required this.overdueVisit,
@@ -129,6 +133,10 @@ class SupportDeskCounts {
   final int inProgress;
   final int feedbackWait;
   final int quoteWait;
+  final int verbalWait;
+  final int unsentQuote;
+  /// 정식 견적서 발송 후 고객 답 대기.
+  final int quoteSentWait;
   /// 오늘 방문예정(미완료).
   final int todayVisit;
   /// 오늘 방문완료.
@@ -137,7 +145,9 @@ class SupportDeskCounts {
   final int todayDeposit;
   final int overdueDeposit;
 
-  static const empty = SupportDeskCounts(
+  int get depositDue => todayDeposit + overdueDeposit;
+
+  static final empty = SupportDeskCounts(
     all: 0,
     todayPending: 0,
     pending: 0,
@@ -145,6 +155,9 @@ class SupportDeskCounts {
     inProgress: 0,
     feedbackWait: 0,
     quoteWait: 0,
+    verbalWait: 0,
+    unsentQuote: 0,
+    quoteSentWait: 0,
     todayVisit: 0,
     todayVisitCompleted: 0,
     overdueVisit: 0,
@@ -153,13 +166,18 @@ class SupportDeskCounts {
   );
 
   bool get hasAttention =>
-      todayPending > 0 || pending > 0 || overdueVisit > 0 || overdueDeposit > 0;
+      todayPending > 0 ||
+      pending > 0 ||
+      overdueVisit > 0 ||
+      overdueDeposit > 0 ||
+      unsentQuote > 0;
 }
 
 /// 접수 삭제·상담·방문 저장 후 홈/허브 미처리·미완료 숫자를 다시 불러온다.
 void invalidateSupportWorkCaches(WidgetRef ref) {
   ref.invalidate(supportHomeStatsProvider);
   ref.invalidate(supportDeskCountsProvider);
+  ref.invalidate(supportTodayDeskProvider);
 }
 
 final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
@@ -169,16 +187,15 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
   final today = todayYmdSeoul();
   final events = await repo.listDueScheduleEvents(todayYmd: today);
   final due = SupportDueScheduleSummary.fromEvents(events, today);
-  final pending = await repo.list(pendingOnly: true, limit: 200);
   final todayPending = await repo.list(
     pendingOnly: true,
     fromYmd: today,
     toYmdInclusive: today,
-    limit: 200,
+    limit: 400,
   );
   final progress = await repo.list(
     statusId: kSupportStatusInProgress,
-    limit: 200,
+    limit: 400,
   );
   final feedbackWait = await repo.filterLogsByLastConsultOutcome(
     progress,
@@ -188,28 +205,53 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
     progress,
     SupportConsultOutcome.quoteSend,
   );
-  final incomplete = await repo.list(incompleteOnly: true, limit: 400);
+  final verbalWait = await repo.filterLogsByLastConsultOutcome(
+    progress,
+    SupportConsultOutcome.verbalQuote,
+  );
+  var quoteSentWait = 0;
+  try {
+    final snaps = await repo.lastConsultSnapshots(quoteWait.map((e) => e.id));
+    for (final s in snaps.values) {
+      if ((s.sentYmd ?? '').trim().isNotEmpty) quoteSentWait += 1;
+    }
+  } catch (_) {}
   final todayVisitCompleted = await repo.list(
     visitOnly: true,
     fromYmd: today,
     toYmdInclusive: today,
     statusId: kSupportStatusCompleted,
-    limit: 200,
+    limit: 400,
   );
   var all = 0;
+  var pending = progress.length;
+  var incomplete = progress.length;
   try {
     all = await repo.countAll();
+  } catch (_) {}
+  try {
+    pending = await repo.countPending();
   } catch (_) {
-    all = incomplete.length;
+    final rows = await repo.list(pendingOnly: true, limit: 400);
+    pending = rows.length;
+  }
+  try {
+    incomplete = await repo.countIncomplete();
+  } catch (_) {
+    final rows = await repo.list(incompleteOnly: true, limit: 400);
+    incomplete = rows.length;
   }
   return SupportDeskCounts(
     all: all,
     todayPending: todayPending.length,
-    pending: pending.length,
-    incomplete: incomplete.length,
+    pending: pending,
+    incomplete: incomplete,
     inProgress: progress.length,
     feedbackWait: feedbackWait.length,
     quoteWait: quoteWait.length,
+    verbalWait: verbalWait.length,
+    unsentQuote: due.todaySend + due.overdueSend,
+    quoteSentWait: quoteSentWait,
     todayVisit: due.todayVisit,
     todayVisitCompleted: todayVisitCompleted.length,
     overdueVisit: due.overdueVisit,

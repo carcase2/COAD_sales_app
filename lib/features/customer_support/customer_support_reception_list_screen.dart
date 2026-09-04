@@ -8,6 +8,7 @@ import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_collection_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
@@ -60,6 +61,7 @@ class CustomerSupportReceptionListScreen extends ConsumerStatefulWidget {
     this.incompleteOnly = false,
     this.statusId,
     this.consultOutcome,
+    this.quoteSentOnly = false,
     this.initialStatusTab,
     this.initialBranch,
   });
@@ -72,6 +74,8 @@ class CustomerSupportReceptionListScreen extends ConsumerStatefulWidget {
   final bool incompleteOnly;
   final int? statusId;
   final SupportConsultOutcome? consultOutcome;
+  /// 정식 견적서 중 발송완료만 (발송 후 고객 답 대기).
+  final bool quoteSentOnly;
   final String? initialStatusTab;
   final String? initialBranch;
 
@@ -84,6 +88,7 @@ class _CustomerSupportReceptionListScreenState
     extends ConsumerState<CustomerSupportReceptionListScreen> {
   final _queryCtrl = TextEditingController();
   List<SupportCallLog> _items = const [];
+  Map<String, SupportConsultSnapshot> _lastConsults = const {};
   bool _loading = true;
   Object? _error;
   String _query = '';
@@ -93,15 +98,18 @@ class _CustomerSupportReceptionListScreenState
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialStatusTab;
     _statusTab =
-        widget.initialStatusTab ??
-        (widget.pendingOnly
-            ? '미처리'
-            : widget.statusId == kSupportStatusCompleted
-            ? '전체'
-            : widget.visitOnly
-            ? '방문예정'
-            : '전체');
+        initial == '답 대기·견적서'
+            ? '대기'
+            : (initial ??
+                  (widget.pendingOnly
+                      ? '미처리'
+                      : widget.statusId == kSupportStatusCompleted
+                      ? '전체'
+                      : widget.visitOnly
+                      ? '방문예정'
+                      : '전체'));
     final branch = (widget.initialBranch ?? '').trim();
     if (kSupportBranchTabOrder.contains(branch)) {
       _branchTab = branch;
@@ -185,9 +193,20 @@ class _CustomerSupportReceptionListScreenState
               statusId: widget.statusId,
               limit: widget.incompleteOnly ? 400 : 150,
             );
+      Map<String, SupportConsultSnapshot> last = const {};
+      try {
+        last = await repo.lastConsultSnapshots(rows.map((e) => e.id));
+      } catch (_) {}
+      var visible = rows;
+      if (widget.quoteSentOnly) {
+        visible = rows
+            .where((e) => (last[e.id]?.sentYmd ?? '').trim().isNotEmpty)
+            .toList();
+      }
       if (!mounted) return;
       setState(() {
-        _items = rows;
+        _items = visible;
+        _lastConsults = last;
         _loading = false;
       });
     } catch (e) {
@@ -351,7 +370,10 @@ class _CustomerSupportReceptionListScreenState
                           scheme,
                           parsed.urgency,
                         );
-                        final cue = supportFlowCueFromLog(log);
+                        final cue = supportFlowCueFromLog(
+                          log,
+                          last: _lastConsults[log.id],
+                        );
                         return Material(
                           color: Color.lerp(scheme.surface, urgency, 0.12),
                           shape: RoundedRectangleBorder(
@@ -802,6 +824,34 @@ class _CustomerSupportReceptionDetailScreenState
     existingVisitReportCount: _visits.length,
   );
 
+  bool get _canScheduleVisit {
+    final log = _log;
+    if (log == null) return false;
+    if (log.serviceStatusId == kSupportStatusCompleted) return false;
+    if (log.isPending && _consults.isEmpty) return false;
+    return true;
+  }
+
+  SupportConsultOutcome? get _lastOutcome =>
+      lastSupportConsultOutcome(_consults.map((c) => c.description));
+
+  bool get _canWriteOfficialQuote {
+    if (_log == null) return false;
+    if (_log!.serviceStatusId == kSupportStatusCompleted) return false;
+    if (_flowCue.action == SupportNextAction.quote) return true;
+    return _lastOutcome == SupportConsultOutcome.verbalQuote;
+  }
+
+  SupportConsultation? get _lastQuoteConsult {
+    for (final c in _consults.reversed) {
+      if (parseSupportConsultation(c.description).outcome ==
+          SupportConsultOutcome.quoteSend) {
+        return c;
+      }
+    }
+    return null;
+  }
+
   SupportVisitReport? get _unpaidDeposit {
     for (final report in _visits.reversed) {
       if (report.isPaid &&
@@ -880,17 +930,175 @@ class _CustomerSupportReceptionDetailScreenState
     }
   }
 
+  Future<void> _scheduleVisitDirect() async {
+    final log = _log;
+    if (log == null || _busy) return;
+    if ((log.visitDate ?? '').trim().isNotEmpty) {
+      await _changeVisitSchedule();
+      return;
+    }
+    final picked = await showSupportVisitDatePicker(context, log: log);
+    if (picked == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(supportCallLogRepositoryProvider)
+          .addConsultation(
+            callLogId: log.id,
+            description: supportVisitConsultBody(
+              ymd: picked.ymd,
+              time: picked.time,
+              teamLabel: picked.teamLabel,
+            ),
+            createdBy: ref.read(authControllerProvider)?.name,
+            currentStatusId: log.serviceStatusId,
+            outcome: SupportConsultOutcome.visit,
+            visitYmd: picked.ymd,
+            visitTeamId: picked.teamId,
+            visitTime: picked.time,
+            visitTeamLabel: picked.teamLabel,
+          );
+      invalidateSupportWorkCaches(ref);
+      unawaited(refreshSupportDueReminders(ref));
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _changed = true;
+        _visitTeamLabel = picked.teamLabel;
+      });
+      unawaited(_load());
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('방문일을 잡았습니다.')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+    }
+  }
+
+  Future<void> _openQuoteCockpit() async {
+    final log = _log;
+    if (log == null) return;
+    final unsent = _quotes.where((q) => !q.isSent).toList();
+    var consult = _lastQuoteConsult;
+    if (unsent.isNotEmpty && consult != null) {
+      await _exportQuote(consult);
+      return;
+    }
+    if (unsent.isNotEmpty) {
+      await _openSiteQuotesSheet();
+      return;
+    }
+    final saved = await pushSupportQuoteEditor(
+      context,
+      callLogId: log.id,
+      site: _siteFromLog(),
+    );
+    if (!mounted) return;
+    if (saved != null) {
+      SupportQuoteDocument stored = saved;
+      try {
+        stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(saved);
+      } catch (_) {}
+      if (!mounted) return;
+      if (consult == null) {
+        try {
+          await ref
+              .read(supportCallLogRepositoryProvider)
+              .addConsultation(
+                callLogId: log.id,
+                description: supportQuoteConsultBody(stored),
+                createdBy: ref.read(authControllerProvider)?.name,
+                currentStatusId: log.serviceStatusId,
+                outcome: SupportConsultOutcome.quoteSend,
+                sendYmd: todayYmdSeoul(),
+                amount: stored.total > 0 ? stored.total : null,
+              );
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+          }
+        }
+      }
+      if (!mounted) return;
+      final action = await showSupportQuoteExportSheet(context, doc: stored);
+      if (action == SupportQuoteViewAction.sent) {
+        await _load();
+        consult = _lastQuoteConsult;
+        if (consult != null) {
+          try {
+            await ref
+                .read(supportCallLogRepositoryProvider)
+                .markQuoteSent(
+                  consultationId: consult.id,
+                  description: consult.description,
+                  sentYmd: todayYmdSeoul(),
+                );
+            await ref
+                .read(supportAsQuoteRepositoryProvider)
+                .upsert(stored.copyWith(sentYmd: todayYmdSeoul()));
+          } catch (_) {}
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() => _changed = true);
+    unawaited(_load());
+  }
+
+  Future<void> _confirmDeposit() async {
+    final report = _unpaidDeposit;
+    if (report == null || (report.id ?? '').isEmpty) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              const CustomerSupportCollectionScreen(initialFilter: 'due'),
+        ),
+      );
+      if (mounted) unawaited(_load());
+      return;
+    }
+    try {
+      final next = await nextSupportDepositPaidReport(
+        context,
+        report: report,
+        currentlyPaid: false,
+        plannedYmd: report.depositYmd,
+      );
+      if (next == null || !mounted) return;
+      await ref.read(supportCallLogRepositoryProvider).updateVisitReport(next);
+      invalidateSupportWorkCaches(ref);
+      if (!mounted) return;
+      setState(() => _changed = true);
+      unawaited(_load());
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('입금을 확인했습니다.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
+    }
+  }
+
   SupportQuoteDocument? _quoteForConsult(SupportConsultation consult) {
     if (_quotes.isEmpty) return null;
     final byLog = _quotes
         .where((q) => (q.callLogId ?? '') == (_log?.id ?? ''))
         .toList();
-    final pool = byLog.isNotEmpty ? byLog : _quotes;
+    final pool = byLog.isNotEmpty ? byLog : const <SupportQuoteDocument>[];
     for (final q in pool) {
       final no = q.quoteNo.trim();
       if (no.isNotEmpty && consult.description.contains(no)) return q;
     }
-    return pool.first;
+    if (pool.length == 1) return pool.first;
+    return null;
   }
 
   SupportSiteSample _siteFromLog() {
@@ -1357,10 +1565,17 @@ class _CustomerSupportReceptionDetailScreenState
             ? null
             : UxActionDock(
                 flexes: () {
-                  final showConsult = !completed;
-                  final showVisit = _canAddVisitRecord;
-                  if (showConsult && showVisit) return const [2, 2, 3, 3];
-                  if (showConsult || showVisit) return const [2, 2, 4];
+                  final extra = !completed;
+                  final quote = cue.action == SupportNextAction.quote;
+                  final visitBtn = _canAddVisitRecord;
+                  final sched = _canScheduleVisit && !visitBtn;
+                  final n = 2 +
+                      (extra ? 1 : 0) +
+                      ((quote || visitBtn || sched || cue.action == SupportNextAction.deposit)
+                          ? 1
+                          : 0);
+                  if (n >= 4) return const [2, 2, 3, 3];
+                  if (n == 3) return const [2, 2, 4];
                   return const [1, 1];
                 }(),
                 children: [
@@ -1374,20 +1589,39 @@ class _CustomerSupportReceptionDetailScreenState
                         ? () => LauncherUtils.makePhoneCall(phone)
                         : null,
                   ),
-                  UxDockButton(
-                    icon: Icons.message_rounded,
-                    label: '문자',
-                    enabled: hasPhone,
-                    onPressed: hasPhone
-                        ? () => LauncherUtils.sendSMS(phone)
-                        : null,
-                  ),
-                  if (!completed)
+                  if (!_canWriteOfficialQuote ||
+                      cue.action == SupportNextAction.quote)
+                    UxDockButton(
+                      icon: Icons.message_rounded,
+                      label: '문자',
+                      enabled: hasPhone,
+                      onPressed: hasPhone
+                          ? () => LauncherUtils.sendSMS(phone)
+                          : null,
+                    ),
+                  if (!completed &&
+                      cue.action != SupportNextAction.quote &&
+                      cue.action != SupportNextAction.visit &&
+                      cue.action != SupportNextAction.deposit)
                     UxDockButton(
                       icon: Icons.add_comment_rounded,
                       label: '${_consults.length + 1}차 상담',
                       emphasized: cue.action == SupportNextAction.consult,
                       onPressed: _addConsultation,
+                    ),
+                  if (_canWriteOfficialQuote)
+                    UxDockButton(
+                      icon: Icons.request_quote_outlined,
+                      label: '견적서',
+                      emphasized: cue.action == SupportNextAction.quote,
+                      onPressed: () => unawaited(_openQuoteCockpit()),
+                    ),
+                  if (cue.action == SupportNextAction.deposit)
+                    UxDockButton(
+                      icon: Icons.payments_outlined,
+                      label: '입금 확인',
+                      emphasized: true,
+                      onPressed: () => unawaited(_confirmDeposit()),
                     ),
                   if (_canAddVisitRecord)
                     UxDockButton(
@@ -1395,6 +1629,22 @@ class _CustomerSupportReceptionDetailScreenState
                       label: '방문 기록',
                       emphasized: cue.action == SupportNextAction.visit,
                       onPressed: _addVisitReport,
+                    )
+                  else if (_canScheduleVisit &&
+                      cue.action != SupportNextAction.quote)
+                    UxDockButton(
+                      icon: Icons.event_available_rounded,
+                      label: (_log?.visitDate ?? '').trim().isEmpty
+                          ? '방문일'
+                          : '일정 변경',
+                      onPressed: () => unawaited(_scheduleVisitDirect()),
+                    ),
+                  if (cue.action == SupportNextAction.quote &&
+                      _canScheduleVisit)
+                    UxDockButton(
+                      icon: Icons.event_available_rounded,
+                      label: '방문일',
+                      onPressed: () => unawaited(_scheduleVisitDirect()),
                     ),
                 ],
               ),
@@ -1411,8 +1661,7 @@ class _CustomerSupportReceptionDetailScreenState
             : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
                 children: [
-                  if (cue.action != SupportNextAction.done &&
-                      cue.action != SupportNextAction.quote) ...[
+                  if (cue.action != SupportNextAction.done) ...[
                     UxStatusHeroBanner(
                       title: cue.title,
                       subtitle: cue.subtitle,
@@ -1437,18 +1686,11 @@ class _CustomerSupportReceptionDetailScreenState
                           case SupportNextAction.consult:
                             unawaited(_addConsultation());
                           case SupportNextAction.quote:
-                            break;
+                            unawaited(_openQuoteCockpit());
                           case SupportNextAction.visit:
                             unawaited(_addVisitReport());
                           case SupportNextAction.deposit:
-                            unawaited(
-                              Navigator.of(context).push<void>(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      const CustomerSupportScheduleCalendarScreen(),
-                                ),
-                              ),
-                            );
+                            unawaited(_confirmDeposit());
                           case SupportNextAction.done:
                             break;
                         }
@@ -1608,8 +1850,7 @@ class _CustomerSupportReceptionDetailScreenState
                     ),
                   ),
                   const SizedBox(height: 10),
-                  if ((_log?.visitDate ?? '').trim().isNotEmpty &&
-                      _log?.serviceStatusId != kSupportStatusCompleted)
+                  if (_canScheduleVisit)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _DetailCard(
@@ -1619,13 +1860,15 @@ class _CustomerSupportReceptionDetailScreenState
                             _label(scheme, '방문예정일'),
                             const SizedBox(height: 4),
                             Text(
-                              [
-                                _log!.visitDate!,
-                                if ((_log!.visitTime ?? '').isNotEmpty)
-                                  _log!.visitTime!,
-                                if ((_visitTeamLabel ?? '').isNotEmpty)
-                                  _visitTeamLabel!,
-                              ].join(' · '),
+                              (_log?.visitDate ?? '').trim().isEmpty
+                                  ? '아직 없음'
+                                  : [
+                                      _log!.visitDate!,
+                                      if ((_log!.visitTime ?? '').isNotEmpty)
+                                        _log!.visitTime!,
+                                      if ((_visitTeamLabel ?? '').isNotEmpty)
+                                        _visitTeamLabel!,
+                                    ].join(' · '),
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
@@ -1637,9 +1880,13 @@ class _CustomerSupportReceptionDetailScreenState
                               child: FilledButton.tonalIcon(
                                 onPressed: _busy
                                     ? null
-                                    : () => unawaited(_changeVisitSchedule()),
+                                    : () => unawaited(_scheduleVisitDirect()),
                                 icon: const Icon(Icons.edit_calendar_rounded),
-                                label: const Text('방문일 변경'),
+                                label: Text(
+                                  (_log?.visitDate ?? '').trim().isEmpty
+                                      ? '방문일 잡기'
+                                      : '방문일 변경',
+                                ),
                               ),
                             ),
                           ],

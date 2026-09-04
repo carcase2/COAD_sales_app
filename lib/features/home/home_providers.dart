@@ -10,6 +10,7 @@ import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
+import 'package:coad_customer_calls/features/customer_support/support_today_desk.dart';
 import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -851,32 +852,143 @@ int _countCalendarBadgeInPeriod({
   return totalInPeriod;
 }
 
-/// 홈 [흐름] 탭 배지 — 처리할 미통화(최근 60일), 로그인 담당자 건수.
+/// 홈 [흐름] 옆 숫자 — 고른 부서에서 지금 처리할 건수.
+int homeFlowBadgeForDept({
+  required int deptIndex,
+  required int salesUncalled,
+  required int supportDoNow,
+  required int gosuFollowOpen,
+}) {
+  return switch (deptIndex) {
+    1 => supportDoNow,
+    2 => gosuFollowOpen,
+    _ => salesUncalled,
+  };
+}
+
+/// 홈 [흐름] 탭 배지. 영업부=미통화, 고객지원=오늘 할 일, 고수=팔로업중.
 final hubSegmentIncompleteBadgeProvider = Provider<AsyncValue<int>>((ref) {
+  final dept = ref.watch(homeDeptPageIndexProvider);
+
+  if (dept == 1) {
+    return ref.watch(supportTodayDeskProvider).when(
+      data: (desk) => AsyncValue.data(
+        homeFlowBadgeForDept(
+          deptIndex: 1,
+          salesUncalled: 0,
+          supportDoNow:
+              desk.todayPending +
+              desk.todayVisit +
+              desk.overdueVisit +
+              desk.unsentQuote +
+              desk.depositDue,
+          gosuFollowOpen: 0,
+        ),
+      ),
+      loading: () => const AsyncValue.loading(),
+      error: (e, st) => AsyncValue.error(e, st),
+    );
+  }
+
+  if (dept == 2) {
+    final key = hubPeriodKeyFromNav(
+      ref.watch(homeHubNavStepProvider),
+      ref.watch(homeHubFlowAnchorYmdProvider),
+    );
+    return ref.watch(gosuHomeCountsProvider(key)).when(
+      data: (counts) => AsyncValue.data(
+        homeFlowBadgeForDept(
+          deptIndex: 2,
+          salesUncalled: 0,
+          supportDoNow: 0,
+          gosuFollowOpen: counts.awaitingFollowUp,
+        ),
+      ),
+      loading: () => const AsyncValue.loading(),
+      error: (e, st) => AsyncValue.error(e, st),
+    );
+  }
+
   final summaryAsync = ref.watch(hubPendingUncalledSummaryProvider);
   final loginName = ref.watch(
     authControllerProvider.select((u) => u?.name.trim()),
   );
   return summaryAsync.when(
     data: (summary) {
-      if (loginName != null && loginName.isNotEmpty) {
-        return AsyncValue.data(summary.userCount);
-      }
-      return AsyncValue.data(summary.total);
+      final sales = loginName != null && loginName.isNotEmpty
+          ? summary.userCount
+          : summary.total;
+      return AsyncValue.data(
+        homeFlowBadgeForDept(
+          deptIndex: 0,
+          salesUncalled: sales,
+          supportDoNow: 0,
+          gosuFollowOpen: 0,
+        ),
+      );
     },
     loading: () => const AsyncValue.loading(),
     error: (e, st) => AsyncValue.error(e, st),
   );
 });
 
-/// 홈 [달력] 탭 배지 — [calendarFollowRangeProvider] 결과에서 파생(추가 fetch 없음).
+/// 홈 [달력] 옆 숫자 — 고른 부서 달력에 해당하는 건수.
+int homeCalendarBadgeForDept({
+  required int deptIndex,
+  required int salesFollow,
+  required int supportVisitDue,
+  required int supportDepositDue,
+  required int gosuFollow,
+}) {
+  return switch (deptIndex) {
+    1 => supportVisitDue + supportDepositDue,
+    2 => gosuFollow,
+    _ => salesFollow,
+  };
+}
+
+/// 홈 [달력] 탭 배지. 영업부=팔로우, 고객지원=방문·수금 예정, 고수=팔로업.
 final hubSegmentCalendarBadgeProvider = Provider<AsyncValue<int>>((ref) {
+  final dept = ref.watch(homeDeptPageIndexProvider);
   final anchor = ref.watch(homeHubFlowAnchorYmdProvider);
   final navStep = ref.watch(homeHubNavStepProvider);
+
+  if (dept == 1) {
+    return ref.watch(supportTodayDeskProvider).when(
+      data: (desk) => AsyncValue.data(
+        homeCalendarBadgeForDept(
+          deptIndex: 1,
+          salesFollow: 0,
+          supportVisitDue: desk.todayVisit + desk.overdueVisit,
+          supportDepositDue: desk.depositDue,
+          gosuFollow: 0,
+        ),
+      ),
+      loading: () => const AsyncValue.loading(),
+      error: (e, st) => AsyncValue.error(e, st),
+    );
+  }
+
+  if (dept == 2) {
+    final key = hubPeriodKeyFromNav(navStep, anchor);
+    return ref.watch(gosuHomeCountsProvider(key)).when(
+      data: (counts) => AsyncValue.data(
+        homeCalendarBadgeForDept(
+          deptIndex: 2,
+          salesFollow: 0,
+          supportVisitDue: 0,
+          supportDepositDue: 0,
+          gosuFollow: counts.periodFollow,
+        ),
+      ),
+      loading: () => const AsyncValue.loading(),
+      error: (e, st) => AsyncValue.error(e, st),
+    );
+  }
+
   final loginName = ref.watch(
     authControllerProvider.select((u) => u?.name.trim()),
   );
-
   final range = switch (navStep) {
     HubNavStep.day => (anchor, anchor),
     HubNavStep.month => seoulMonthRangeContaining(anchor),

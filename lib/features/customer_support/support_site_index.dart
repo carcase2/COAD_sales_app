@@ -144,7 +144,7 @@ String supportIndexedSiteBranch(SupportIndexedSite site, List<Region> regions) {
 bool supportIndexedSiteMatchesStatus(SupportIndexedSite site, String tab) {
   if (tab == '전체' || tab.trim().isEmpty) return true;
   if (site.logs.isEmpty) {
-    return tab == '답 대기·견적서' && site.quotes.isNotEmpty;
+    return (tab == '대기' || tab == '답 대기·견적서') && site.quotes.isNotEmpty;
   }
   return site.logs.any(
     (l) => supportCallLogProgressLabel(l.serviceStatusId) == tab,
@@ -167,7 +167,7 @@ Map<String, int> supportIndexedSiteBranchCounts(
 Map<String, int> supportIndexedSiteStatusCounts(
   Iterable<SupportIndexedSite> sites,
 ) {
-  const tabs = ['미처리', '답 대기·견적서', '방문예정', '완료'];
+  const tabs = ['미처리', '대기', '방문예정', '완료'];
   final counts = <String, int>{'전체': 0};
   for (final site in sites) {
     counts['전체'] = (counts['전체'] ?? 0) + 1;

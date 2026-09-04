@@ -69,17 +69,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          _FlowHeader(
-            accent: accent,
-            scheme: scheme,
-            onStepTap: (step) {
-              if (step == SupportFlowStep.intake) {
-                unawaited(openThenRefresh(() => _openIntake(context)));
-                return;
-              }
-              unawaited(openThenRefresh(() => _openStep(context, step)));
-            },
-          ),
+          _BoardHeader(accent: accent, scheme: scheme),
           if (desk.hasAttention) ...[
             const SizedBox(height: 12),
             Material(
@@ -92,8 +82,9 @@ class CustomerSupportHubScreen extends ConsumerWidget {
                 ),
                 title: Text(
                   [
-                    if (desk.todayPending > 0) '금일 미처리 ${desk.todayPending}',
-                    if (desk.pending > 0) '전체 미처리 ${desk.pending}',
+                    if (desk.todayPending > 0) '오늘 미처리 ${desk.todayPending}',
+                    if (desk.pending > 0) '미처리 ${desk.pending}',
+                    if (desk.unsentQuote > 0) '견적 미발송 ${desk.unsentQuote}',
                     if (desk.overdueVisit > 0) '지난 방문 ${desk.overdueVisit}',
                     if (desk.overdueDeposit > 0) '지난 입금 ${desk.overdueDeposit}',
                   ].join(' · '),
@@ -103,7 +94,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
                   ),
                 ),
                 subtitle: Text(
-                  '접수를 놓치지 말고 방문·수금을 먼저 챙기세요.',
+                  '접수·견적·방문·수금을 먼저 챙기세요.',
                   style: TextStyle(color: scheme.onErrorContainer),
                 ),
               ),
@@ -119,21 +110,8 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 8),
-          SupportHubTile(
-            title: '전체',
-            subtitle: '완료 포함 · 현장·전화·주소 검색',
-            icon: Icons.list_alt_rounded,
-            count: desk.all,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                const CustomerSupportSiteSearchScreen(title: '전체'),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
           SupportHubCountBar(
-            title: '전체 미처리',
+            title: '접수 · 미처리',
             icon: Icons.phone_callback_rounded,
             count: desk.pending,
             alert: desk.pending > 0,
@@ -141,7 +119,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               () => _openStepFuture(
                 context,
                 const CustomerSupportReceptionListScreen(
-                  title: '전체 A/S 미처리',
+                  title: '접수 · 미처리',
                   pendingOnly: true,
                 ),
               ),
@@ -149,55 +127,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           SupportHubCountBar(
-            title: '전체 미완료',
-            icon: Icons.assignment_late_outlined,
-            count: desk.incomplete,
-            alert: desk.incomplete > 0,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                const CustomerSupportReceptionListScreen(
-                  title: '전체 A/S 미완료',
-                  incompleteOnly: true,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SupportHubCountBar(
-            title: '피드백 대기',
-            icon: Icons.phonelink_ring_rounded,
-            count: desk.feedbackWait,
-            alert: desk.feedbackWait > 0,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                const CustomerSupportReceptionListScreen(
-                  title: '피드백 대기',
-                  consultOutcome: SupportConsultOutcome.feedbackWait,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SupportHubCountBar(
-            title: '정식 견적서 대기',
-            icon: Icons.request_quote_outlined,
-            count: desk.quoteWait,
-            alert: desk.quoteWait > 0,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                const CustomerSupportReceptionListScreen(
-                  title: '정식 견적서 대기',
-                  consultOutcome: SupportConsultOutcome.quoteSend,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SupportHubCountBar(
-            title: '답 대기·견적서',
+            title: '대기',
             icon: Icons.timelapse_rounded,
             count: desk.inProgress,
             alert: desk.inProgress > 0,
@@ -205,45 +135,42 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               () => _openStepFuture(
                 context,
                 const CustomerSupportReceptionListScreen(
-                  title: '답 대기·견적서',
+                  title: '대기',
                   statusId: kSupportStatusInProgress,
-                  initialStatusTab: '답 대기·견적서',
+                  initialStatusTab: '대기',
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           _HubTileRow(
             left: SupportHubTile(
-              title: '금일 미처리',
-              subtitle: '오늘 접수 · 1차 상담 전',
-              icon: Icons.today_rounded,
-              count: desk.todayPending,
-              alert: desk.todayPending > 0,
+              title: '피드백',
+              subtitle: '안내 후 고객 연락 대기',
+              icon: Icons.phonelink_ring_rounded,
+              count: desk.feedbackWait,
+              alert: desk.feedbackWait > 0,
               onTap: () => openThenRefresh(
                 () => _openStepFuture(
                   context,
-                  CustomerSupportReceptionListScreen(
-                    title: '금일 A/S 미처리',
-                    fromYmd: today,
-                    toYmdInclusive: today,
-                    pendingOnly: true,
+                  const CustomerSupportReceptionListScreen(
+                    title: '피드백 대기',
+                    consultOutcome: SupportConsultOutcome.feedbackWait,
                   ),
                 ),
               ),
             ),
             right: SupportHubTile(
-              title: '답 대기·견적서',
-              subtitle: '안내 후 피드백 · 구두 견적 · 정식 견적서',
-              icon: Icons.timelapse_rounded,
-              count: desk.inProgress,
+              title: '구두 견적',
+              subtitle: '말로 금액 전달 · 재연락',
+              icon: Icons.record_voice_over_outlined,
+              count: desk.verbalWait,
               onTap: () => openThenRefresh(
                 () => _openStepFuture(
                   context,
                   const CustomerSupportReceptionListScreen(
-                    title: '답 대기·견적서',
-                    statusId: kSupportStatusInProgress,
-                    initialStatusTab: '답 대기·견적서',
+                    title: '구두 견적',
+                    consultOutcome: SupportConsultOutcome.verbalQuote,
                   ),
                 ),
               ),
@@ -251,8 +178,42 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           ),
           _HubTileRow(
             left: SupportHubTile(
-              title: '금일 방문예정',
-              subtitle: '오늘 방문하기로 한 건',
+              title: '견적 미발송',
+              subtitle: '작성·보낼 날 체크',
+              icon: Icons.request_quote_outlined,
+              count: desk.unsentQuote,
+              alert: desk.unsentQuote > 0,
+              onTap: () => openThenRefresh(
+                () => _openStepFuture(
+                  context,
+                  CustomerSupportScheduleCalendarScreen(
+                    initialKind: SupportScheduleKind.quoteSend,
+                    initialYmd: today,
+                  ),
+                ),
+              ),
+            ),
+            right: SupportHubTile(
+              title: '발송 후 대기',
+              subtitle: '정식 견적 보냄 · 고객 답',
+              icon: Icons.mark_email_read_outlined,
+              count: desk.quoteSentWait,
+              onTap: () => openThenRefresh(
+                () => _openStepFuture(
+                  context,
+                  const CustomerSupportReceptionListScreen(
+                    title: '발송 후 대기',
+                    consultOutcome: SupportConsultOutcome.quoteSend,
+                    quoteSentOnly: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          _HubTileRow(
+            left: SupportHubTile(
+              title: '오늘 방문',
+              subtitle: '오늘 가기로 한 현장',
               icon: Icons.event_available_rounded,
               count: desk.todayVisit,
               alert: desk.todayVisit > 0,
@@ -267,36 +228,18 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               ),
             ),
             right: SupportHubTile(
-              title: '금일 방문완료',
-              subtitle: '오늘 다녀온 방문 기록',
-              icon: Icons.event_repeat_rounded,
-              count: desk.todayVisitCompleted,
+              title: '지난 방문',
+              subtitle: '기록 안 남긴 방문',
+              icon: Icons.event_busy_rounded,
+              count: desk.overdueVisit,
+              alert: desk.overdueVisit > 0,
               onTap: () => openThenRefresh(
                 () => _openStepFuture(
                   context,
-                  CustomerSupportReceptionListScreen(
-                    title: '금일 방문완료',
-                    fromYmd: today,
-                    toYmdInclusive: today,
-                    visitOnly: true,
-                    statusId: kSupportStatusCompleted,
+                  CustomerSupportScheduleCalendarScreen(
+                    initialKind: SupportScheduleKind.visit,
+                    initialYmd: today,
                   ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SupportHubCountBar(
-            title: '지난 방문예정',
-            icon: Icons.event_busy_rounded,
-            count: desk.overdueVisit,
-            alert: desk.overdueVisit > 0,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                CustomerSupportScheduleCalendarScreen(
-                  initialKind: SupportScheduleKind.visit,
-                  initialYmd: today,
                 ),
               ),
             ),
@@ -330,7 +273,44 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               ),
             ),
           ),
+          SupportHubCountBar(
+            title: '현장 · 미완료',
+            icon: Icons.assignment_late_outlined,
+            count: desk.incomplete,
+            alert: desk.incomplete > 0,
+            onTap: () => openThenRefresh(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportReceptionListScreen(
+                  title: '현장 · 미완료',
+                  incompleteOnly: true,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SupportHubTile(
+            title: '현장 검색',
+            subtitle: '완료 포함 · 현장·전화·주소',
+            icon: Icons.location_searching_rounded,
+            count: desk.all,
+            onTap: () => openThenRefresh(
+              () => _openStepFuture(
+                context,
+                const CustomerSupportSiteSearchScreen(title: '현장 검색'),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
+          Text(
+            '도구',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
           SupportSectionCard(
             title: '새 접수',
             subtitle: 'A/S 접수 후 바로 1차 상담',
@@ -339,13 +319,13 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           SupportSectionCard(
-            title: 'A/S 접수내역',
-            subtitle: '미처리 · 답 대기·견적서 · 방문예정 · 완료',
-            icon: Icons.list_alt_rounded,
+            title: '방문 달력',
+            subtitle: '주간표에서 빈 시간에 방문 · 월간은 발송·입금',
+            icon: Icons.calendar_month_rounded,
             onTap: () => openThenRefresh(
               () => _openStepFuture(
                 context,
-                const CustomerSupportReceptionListScreen(),
+                const CustomerSupportScheduleCalendarScreen(),
               ),
             ),
           ),
@@ -372,20 +352,8 @@ class CustomerSupportHubScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           SupportSectionCard(
-            title: '방문 · 발송 달력',
-            subtitle: '방문 · 견적 발송 · 입금 일정',
-            icon: Icons.calendar_month_rounded,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                const CustomerSupportScheduleCalendarScreen(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SupportSectionCard(
             title: 'A/S 단가표',
-            subtitle: '접수·팔로우업 중 검색 · 추가·수정·삭제 · 이력',
+            subtitle: '접수·상담 중 검색 · 추가·수정',
             icon: Icons.grid_on_rounded,
             onTap: () => openThenRefresh(
               () => _openStepFuture(context, const SupportUnitPriceScreen()),
@@ -398,18 +366,6 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             icon: Icons.request_quote_outlined,
             onTap: () => openThenRefresh(
               () => _openStep(context, SupportFlowStep.quote),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SupportSectionCard(
-            title: '수금관리',
-            subtitle: '입금예정 · 입금일 · 지난 수금',
-            icon: Icons.payments_outlined,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                const CustomerSupportCollectionScreen(),
-              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -436,18 +392,6 @@ class CustomerSupportHubScreen extends ConsumerWidget {
               fontSize: 13,
               fontWeight: FontWeight.w800,
               color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SupportSectionCard(
-            title: '현장검색',
-            subtitle: '전체 현장 · 완료 포함 · 검색',
-            icon: Icons.location_searching_rounded,
-            onTap: () => openThenRefresh(
-              () => _openStepFuture(
-                context,
-                const CustomerSupportSiteSearchScreen(title: '현장검색'),
-              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -532,25 +476,11 @@ class _HubTileRow extends StatelessWidget {
   }
 }
 
-class _FlowHeader extends StatelessWidget {
-  const _FlowHeader({
-    required this.accent,
-    required this.scheme,
-    required this.onStepTap,
-  });
+class _BoardHeader extends StatelessWidget {
+  const _BoardHeader({required this.accent, required this.scheme});
 
   final Color accent;
   final ColorScheme scheme;
-  final ValueChanged<SupportFlowStep> onStepTap;
-
-  static const _steps = <(SupportFlowStep, String)>[
-    (SupportFlowStep.intake, '접수'),
-    (SupportFlowStep.siteSearch, '현장'),
-    (SupportFlowStep.quote, '견적'),
-    (SupportFlowStep.completion, '완료'),
-    (SupportFlowStep.collection, '수금'),
-    (SupportFlowStep.tax, '세금계산서'),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -568,7 +498,7 @@ class _FlowHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'AS 업무 흐름',
+            '현장 보드',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -577,63 +507,13 @@ class _FlowHeader extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '접수 → 1차 상담(마무리·피드백·견적·방문) → 방문 기록 → 수금. 놓친 건은 위에서 먼저 보입니다.',
+            '접수 → 전화 상담 → 구두·정식 견적 → 방문 → 수금. 오늘 할 일은 홈에서도 바로 조치합니다.',
             style: TextStyle(
               fontSize: 12.5,
               color: scheme.onPrimary.withValues(alpha: 0.88),
             ),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (var i = 0; i < _steps.length; i++) ...[
-                _StepChip(
-                  label: '${i + 1} ${_steps[i].$2}',
-                  onTap: () => onStepTap(_steps[i].$1),
-                ),
-                if (i < _steps.length - 1)
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 16,
-                    color: scheme.onPrimary.withValues(alpha: 0.7),
-                  ),
-              ],
-            ],
-          ),
         ],
-      ),
-    );
-  }
-}
-
-class _StepChip extends StatelessWidget {
-  const _StepChip({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.onPrimary.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: scheme.onPrimary,
-            ),
-          ),
-        ),
       ),
     );
   }

@@ -10,6 +10,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_i
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_report_sheet.dart';
+import 'package:coad_customer_calls/features/customer_support/support_visit_week_board.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -50,6 +51,7 @@ class _CustomerSupportScheduleCalendarScreenState
   String _branchTab = '전체';
   List<SupportScheduleEvent> _events = const [];
   Map<String, SupportAsVisitTeam> _teamsById = const {};
+  bool _weekMode = true;
   bool _loading = true;
   Object? _error;
   bool _openedInitialDay = false;
@@ -58,6 +60,9 @@ class _CustomerSupportScheduleCalendarScreenState
   void initState() {
     super.initState();
     _kind = widget.initialKind;
+    _weekMode =
+        widget.initialKind == null ||
+        widget.initialKind == SupportScheduleKind.visit;
     _phaseCompleted = widget.initialVisitCompleted ?? false;
     final branch = (widget.initialBranch ?? '').trim();
     if (kSupportBranchTabOrder.contains(branch)) {
@@ -91,7 +96,9 @@ class _CustomerSupportScheduleCalendarScreenState
       _error = null;
     });
     try {
-      final range = seoulMonthRangeContaining(_toYmd(_focused));
+      final range = _weekMode
+          ? seoulSundayWeekRangeContaining(_toYmd(_focused))
+          : seoulMonthRangeContaining(_toYmd(_focused));
       final rowsFuture = ref
           .read(supportCallLogRepositoryProvider)
           .listScheduleEvents(fromYmd: range.$1, toYmdInclusive: range.$2);
@@ -111,7 +118,7 @@ class _CustomerSupportScheduleCalendarScreenState
         _loading = false;
       });
       final initial = (widget.initialYmd ?? '').trim();
-      if (!_openedInitialDay && initial.length >= 10) {
+      if (!_weekMode && !_openedInitialDay && initial.length >= 10) {
         _openedInitialDay = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_showDayEventsSheet(_selected));
@@ -604,8 +611,26 @@ class _CustomerSupportScheduleCalendarScreenState
     final selectedCount = _forDay(_selected).length;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('방문 · 발송 달력'),
+        title: Text(_weekMode ? '방문 주간표' : '방문 · 발송 달력'),
         actions: [
+          IconButton(
+            tooltip: _weekMode ? '월간 달력' : '주간표',
+            onPressed: () {
+              setState(() {
+                _weekMode = !_weekMode;
+                if (_weekMode) {
+                  _kind = SupportScheduleKind.visit;
+                  _phaseCompleted = false;
+                }
+              });
+              unawaited(_loadMonth());
+            },
+            icon: Icon(
+              _weekMode
+                  ? Icons.calendar_month_rounded
+                  : Icons.view_week_rounded,
+            ),
+          ),
           IconButton(
             tooltip: '새로고침',
             onPressed: _loading ? null : () => unawaited(_loadMonth()),
@@ -620,6 +645,7 @@ class _CustomerSupportScheduleCalendarScreenState
             counts: _branchCounts(),
             onSelected: (tab) => setState(() => _branchTab = tab),
           ),
+          if (!_weekMode)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: Wrap(
@@ -656,6 +682,7 @@ class _CustomerSupportScheduleCalendarScreenState
               ],
             ),
           ),
+          if (!_weekMode)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
             child: Wrap(
@@ -677,6 +704,46 @@ class _CustomerSupportScheduleCalendarScreenState
               ],
             ),
           ),
+          if (_weekMode)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: '이전 주',
+                    onPressed: () {
+                      setState(
+                        () => _focused = _focused.subtract(
+                          const Duration(days: 7),
+                        ),
+                      );
+                      unawaited(_loadMonth());
+                    },
+                    icon: const Icon(Icons.chevron_left_rounded),
+                  ),
+                  Expanded(
+                    child: Text(
+                      formatMonthDayRangeKo(
+                        seoulSundayWeekRangeContaining(_toYmd(_focused)).$1,
+                        seoulSundayWeekRangeContaining(_toYmd(_focused)).$2,
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '다음 주',
+                    onPressed: () {
+                      setState(
+                        () => _focused = _focused.add(const Duration(days: 7)),
+                      );
+                      unawaited(_loadMonth());
+                    },
+                    icon: const Icon(Icons.chevron_right_rounded),
+                  ),
+                ],
+              ),
+            ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(12),
@@ -687,7 +754,15 @@ class _CustomerSupportScheduleCalendarScreenState
             ),
           if (_loading) const LinearProgressIndicator(minHeight: 2),
           Expanded(
-            child: LayoutBuilder(
+            child: _weekMode
+                ? SupportVisitWeekBoard(
+                    anchorYmd: _toYmd(_focused),
+                    events: _events,
+                    teams: _teamsById.values.toList(),
+                    branch: _branchTab,
+                    onReload: _loadMonth,
+                  )
+                : LayoutBuilder(
               builder: (context, constraints) {
                 return SingleChildScrollView(
                   child: ConstrainedBox(
@@ -831,7 +906,9 @@ class _CustomerSupportScheduleCalendarScreenState
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
+      bottomNavigationBar: _weekMode
+          ? null
+          : SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,

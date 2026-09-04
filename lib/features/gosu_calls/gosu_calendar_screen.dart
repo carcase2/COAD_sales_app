@@ -11,7 +11,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class GosuCalendarScreen extends ConsumerStatefulWidget {
-  const GosuCalendarScreen({super.key});
+  const GosuCalendarScreen({super.key, this.embedded = false});
+
+  /// 홈 달력 탭에 넣을 때 AppBar 없이 본문만.
+  final bool embedded;
 
   @override
   ConsumerState<GosuCalendarScreen> createState() => _GosuCalendarScreenState();
@@ -76,22 +79,16 @@ class _GosuCalendarScreenState extends ConsumerState<GosuCalendarScreen> {
     final scheme = Theme.of(context).colorScheme;
     final accent = AppTokens.gosuAccent(scheme);
     final selectedRows = _forDay(_selected);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('자동문의고수 달력'),
-        backgroundColor: accent,
-        foregroundColor: Colors.white,
-      ),
-      body: _loading
-          ? const AppLoading(message: '예정 일정을 불러오는 중…')
-          : _error != null
-          ? AppErrorState(
-              message: koreanErrorMessage(_error!),
-              onRetry: _load,
-            )
-          : Column(
-              children: [
-                TableCalendar<GosuSalesCall>(
+    final body = _loading
+        ? const AppLoading(message: '예정 일정을 불러오는 중…')
+        : _error != null
+        ? AppErrorState(
+            message: koreanErrorMessage(_error!),
+            onRetry: _load,
+          )
+        : Column(
+            children: [
+              TableCalendar<GosuSalesCall>(
                   firstDay: DateTime.utc(2020, 1, 1),
                   lastDay: DateTime.utc(2035, 12, 31),
                   focusedDay: _focused,
@@ -178,7 +175,18 @@ class _GosuCalendarScreenState extends ConsumerState<GosuCalendarScreen> {
                         ),
                 ),
               ],
-            ),
+            );
+    if (widget.embedded) {
+      if (_loading || _error != null) return body;
+      return RefreshIndicator(onRefresh: _load, child: body);
+    }
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('자동문의고수 달력'),
+        backgroundColor: accent,
+        foregroundColor: Colors.white,
+      ),
+      body: body,
     );
   }
 }
