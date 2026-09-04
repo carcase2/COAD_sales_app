@@ -73,7 +73,7 @@ class SupportTodayDesk {
   final int quoteSentWait;
   final List<SupportDeskItem> items;
 
-  static const previewLimit = 6;
+  static const previewLimit = 4;
 
   static final empty = SupportTodayDesk(
     todayYmd: '',

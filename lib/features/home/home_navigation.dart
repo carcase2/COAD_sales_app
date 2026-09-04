@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -32,7 +33,12 @@ void openHomeHub(
   WidgetRef ref, {
   HomeHubSection section = HomeHubSection.flow,
   CalendarFormat calendarFormat = CalendarFormat.week,
+  int? deptPageIndex,
 }) {
+  if (deptPageIndex != null) {
+    ref.read(pendingHomeDeptPageIndexProvider.notifier).state =
+        deptPageIndex.clamp(kHomeDeptSales, kHomeDeptGosu);
+  }
   requestHomeHubSection(ref, section, calendarFormat: calendarFormat);
   Navigator.of(context).popUntil((route) => route.isFirst);
 }
@@ -42,12 +48,20 @@ void navigateToHomeAndRefresh(
   BuildContext context,
   WidgetRef ref, {
   String? message,
+  int? deptPageIndex,
+  HomeHubSection section = HomeHubSection.flow,
 }) {
   ref.read(salesCallsRepositoryProvider).invalidateTempManagerCache(
         forceRevertOnNextFetch: true,
       );
   invalidateHomeSalesCaches(ref.invalidate);
+  if (deptPageIndex != null) {
+    ref.read(pendingHomeDeptPageIndexProvider.notifier).state =
+        deptPageIndex.clamp(kHomeDeptSales, kHomeDeptGosu);
+  }
+  requestHomeHubSection(ref, section);
   ref.read(homeHubFlowResetTickProvider.notifier).state++;
+  ref.read(requestSelectHomeTabTickProvider.notifier).state++;
   // AuthGate의 MainTabScreen을 유지하고 스택만 비움 (중복 MainTabScreen·GlobalKey 충돌 방지).
   Navigator.of(context).popUntil((route) => route.isFirst);
   if (message == null) return;

@@ -3,8 +3,13 @@ import 'package:timezone/timezone.dart' as tz;
 
 /// 서울 기준 오늘 날짜 `yyyy-MM-dd` (쿼리 `date` 등).
 String todayYmdSeoul() {
-  final now = tz.TZDateTime.now(tz.local);
-  return DateFormat('yyyy-MM-dd').format(now);
+  try {
+    final seoul = tz.getLocation('Asia/Seoul');
+    final now = tz.TZDateTime.now(seoul);
+    return DateFormat('yyyy-MM-dd').format(now);
+  } catch (_) {
+    return seoulNowCallDateTimeParts().ymd;
+  }
 }
 
 /// 어떤 DateTime이 들어와도 서울 기준 `yyyy-MM-dd`로 정규화한다.
@@ -187,7 +192,7 @@ DateTime _utcToSeoul(DateTime utc) {
     n = now;
   } else {
     try {
-      n = tz.TZDateTime.now(tz.local);
+      n = tz.TZDateTime.now(tz.getLocation('Asia/Seoul'));
     } catch (_) {
       // 테스트 등 timezone 미초기화 — UTC+9 벽시계
       n = DateTime.now().toUtc().add(const Duration(hours: 9));
@@ -198,6 +203,29 @@ DateTime _utcToSeoul(DateTime utc) {
   final hms =
       '${n.hour.toString().padLeft(2, '0')}:${n.minute.toString().padLeft(2, '0')}:${n.second.toString().padLeft(2, '0')}';
   return (ymd: ymd, hms: hms);
+}
+
+/// KST 달력일 [ymd] 00:00:00 → UTC ISO8601 (`…Z`).
+///
+/// PostgREST/DB가 `+09:00` 오프셋을 빼고 UTC 자정으로 읽으면
+/// 새벽~오전 KST 접수가 전일로 넘어가므로, 항상 `Z`로 보낸다.
+String seoulDayStartUtcIso(String ymd) {
+  final p = ymd.split('-');
+  if (p.length < 3) return '${ymd}T15:00:00.000Z';
+  final y = int.tryParse(p[0]);
+  final m = int.tryParse(p[1]);
+  final d = int.tryParse(p[2]);
+  if (y == null || m == null || d == null) return '${ymd}T15:00:00.000Z';
+  return DateTime.utc(
+    y,
+    m,
+    d,
+  ).subtract(const Duration(hours: 9)).toIso8601String();
+}
+
+/// KST 달력일 [ymdInclusive]의 다음날 00:00:00 UTC ISO (`…Z`, exclusive end).
+String seoulDayEndExclusiveUtcIso(String ymdInclusive) {
+  return seoulDayStartUtcIso(addDaysToYmd(ymdInclusive, 1));
 }
 
 /// DB UTC `now()` 벽시계를 KST로 그대로 읽은 경우 — 시계면이 약 9시간 차이.

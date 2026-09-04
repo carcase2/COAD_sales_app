@@ -1,10 +1,11 @@
 import 'package:coad_customer_calls/core/constants/app_meta.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
-import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
+import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_create_screen.dart';
+import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_create_screen.dart';
@@ -17,7 +18,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// 하단 접수 · 유형 전환 탭이 있는 등록 화면.
 /// [initialKind]가 없으면 지금 홈에서 보고 있는 부서 탭을 연다.
 Future<void> openReceptionCreateHost(
-  BuildContext context, {
+  BuildContext context,
+  WidgetRef ref, {
   ReceptionKind? initialKind,
 }) async {
   final created = await Navigator.of(context).push<Object?>(
@@ -27,13 +29,12 @@ Future<void> openReceptionCreateHost(
     ),
   );
   if (!context.mounted || created is! SupportCallLog) return;
-  ScaffoldMessenger.of(
+  invalidateSupportWorkCaches(ref);
+  navigateToHomeAndRefresh(
     context,
-  ).showSnackBar(const SnackBar(content: Text('접수가 저장되었습니다. 1차 상담을 남겨 주세요.')));
-  await Navigator.of(context).push<void>(
-    MaterialPageRoute(
-      builder: (_) => CustomerSupportReceptionDetailScreen(log: created),
-    ),
+    ref,
+    deptPageIndex: kHomeDeptCustomerSupport,
+    message: '접수가 저장되었습니다. 홈에서 1차 상담을 남겨 주세요.',
   );
 }
 

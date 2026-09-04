@@ -14,7 +14,11 @@ class SupportQuotePaper extends StatelessWidget {
   static const _headerBg = Color(0xFF111827);
   static final _won = NumberFormat('#,###');
 
-  String _money(int n) => n <= 0 ? '-' : '${_won.format(n)}원';
+  String _money(int n) {
+    if (n == 0) return '-';
+    if (n < 0) return '-${_won.format(-n)}원';
+    return '${_won.format(n)}원';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -188,6 +192,34 @@ class SupportQuotePaper extends StatelessWidget {
                     _td(''),
                   ],
                 ),
+              if (doc.hasNego) ...[
+                TableRow(
+                  children: [
+                    _td(''),
+                    _td('소계', bold: true, align: TextAlign.left),
+                    _td(''),
+                    _td(''),
+                    _td(''),
+                    _td(''),
+                    _moneyTd(doc.listTotal, bold: true),
+                  ],
+                ),
+                TableRow(
+                  children: [
+                    _td(''),
+                    _td(
+                      '네고 ${doc.negoSummary}',
+                      bold: true,
+                      align: TextAlign.left,
+                    ),
+                    _td(''),
+                    _td(''),
+                    _td(''),
+                    _td(''),
+                    _moneyTd(-doc.negoOff, bold: true),
+                  ],
+                ),
+              ],
               TableRow(
                 decoration: const BoxDecoration(color: Color(0xFFF3F4F6)),
                 children: [

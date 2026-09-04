@@ -11,6 +11,7 @@ import 'package:coad_customer_calls/data/business_card_repository.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/support_as_quote_repository.dart';
 import 'package:coad_customer_calls/data/support_as_visit_team_repository.dart';
+import 'package:coad_customer_calls/data/support_supabase.dart';
 import 'package:coad_customer_calls/data/support_unit_price_repository.dart';
 import 'package:coad_customer_calls/data/mes_repository.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -85,7 +86,7 @@ final supportUnitPriceRepositoryProvider = Provider<SupportUnitPriceRepository>(
 final supportAsQuoteRepositoryProvider = Provider<SupportAsQuoteRepository>((
   ref,
 ) {
-  return SupportAsQuoteRepository();
+  return SupportAsQuoteRepository(client: supportSupabaseClient());
 });
 
 final supportAsVisitTeamRepositoryProvider =

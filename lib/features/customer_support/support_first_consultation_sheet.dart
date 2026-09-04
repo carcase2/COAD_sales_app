@@ -30,7 +30,7 @@ Future<bool> showSupportFirstConsultationSheet(
     isDismissible: false,
     enableDrag: false,
     showDragHandle: true,
-    // Android 네비 바와 SafeArea만으로는 부족할 수 있어 본문에서 viewPadding 처리.
+    // Android 네비는 하단 고정 버튼 SafeArea에서 처리.
     useSafeArea: false,
     builder: (_) => _SupportFirstConsultationSheet(
       log: log,
@@ -168,7 +168,11 @@ class _SupportFirstConsultationSheetState
     if (draft == null || !mounted) return;
     SupportQuoteDocument stored = draft;
     try {
-      stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(draft);
+      stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(
+        draft,
+        editorName: ref.read(authControllerProvider)?.name ??
+            ref.read(authControllerProvider)?.id,
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -199,10 +203,17 @@ class _SupportFirstConsultationSheetState
     if (action != SupportQuoteViewAction.sent) return;
     final marked = doc.copyWith(sentYmd: todayYmdSeoul());
     try {
-      await ref.read(supportAsQuoteRepositoryProvider).upsert(marked);
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() => _quoteDoc = marked);
+      final stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(
+        marked,
+        editorName: ref.read(authControllerProvider)?.name ??
+            ref.read(authControllerProvider)?.id,
+      );
+      if (!mounted) return;
+      setState(() => _quoteDoc = stored);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _quoteDoc = marked);
+    }
   }
 
   Future<void> _save() async {
@@ -305,243 +316,292 @@ class _SupportFirstConsultationSheetState
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final media = MediaQuery.of(context);
-    // 키보드(viewInsets) + Android 3버튼/제스처 바(viewPadding).
-    final bottom = media.viewInsets.bottom + media.viewPadding.bottom;
+    // 키보드는 시트 전체를 올리고, Android 네비는 하단 버튼 SafeArea로만 처리.
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottom),
-      child: SingleChildScrollView(
+      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: media.size.height * 0.92),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              '${widget.stage}차 상담내용',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              widget.stage == 1
-                  ? '${widget.log.customerName} · 마무리 / 피드백 대기 / 구두 견적 / 정식 견적서 / 방문'
-                  : widget.lastOutcome == SupportConsultOutcome.feedbackWait
-                  ? '${widget.log.customerName} · 다시 연락 왔으면 마무리하거나 방문·견적을 잡습니다'
-                  : widget.lastOutcome == SupportConsultOutcome.verbalQuote
-                  ? '${widget.log.customerName} · 다시 전화 왔으면 방문일을 잡고, 그날 방문합니다'
-                  : '${widget.log.customerName} · 답이 왔으면 마무리·정식 견적서·방문을 고릅니다',
-              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
-            ),
-            if (_outcome != SupportConsultOutcome.verbalQuote) ...[
-              const SizedBox(height: 12),
-              SupportUnitPriceOpenTile(
-                subtitle: '상담 중 품명 · 금액 검색. 고르면 상담 내용에 넣습니다',
-                insertLabel: '상담에 넣기',
-                onInsert: (item) {
-                  final line = supportUnitPriceInsertLine(item);
-                  final cur = _ctrl.text.trim();
-                  _ctrl.text = cur.isEmpty ? line : '$cur\n$line';
-                  _ctrl.selection = TextSelection.collapsed(
-                    offset: _ctrl.text.length,
-                  );
-                  setState(() {});
-                },
-              ),
-            ],
-            const SizedBox(height: 12),
-            Text(
-              '상담 결과',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Column(
-              children: [
-                Row(
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: _OutcomeChip(
-                        outcome: SupportConsultOutcome.closed,
-                        selected: _outcome == SupportConsultOutcome.closed,
-                        enabled: !_saving,
-                        onTap: () => setState(
-                          () => _outcome = SupportConsultOutcome.closed,
-                        ),
+                    Text(
+                      '${widget.stage}차 상담내용',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _OutcomeChip(
-                        outcome: SupportConsultOutcome.feedbackWait,
-                        selected:
-                            _outcome == SupportConsultOutcome.feedbackWait,
-                        enabled: !_saving,
-                        onTap: () => setState(
-                          () => _outcome = SupportConsultOutcome.feedbackWait,
-                        ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.stage == 1
+                          ? '${widget.log.customerName} · 마무리 / 피드백 대기 / 구두 견적 / 정식 견적서 / 방문'
+                          : widget.lastOutcome ==
+                                SupportConsultOutcome.feedbackWait
+                          ? '${widget.log.customerName} · 다시 연락 왔으면 마무리하거나 방문·견적을 잡습니다'
+                          : widget.lastOutcome ==
+                                SupportConsultOutcome.verbalQuote
+                          ? '${widget.log.customerName} · 다시 전화 왔으면 방문일을 잡고, 그날 방문합니다'
+                          : '${widget.log.customerName} · 답이 왔으면 마무리·정식 견적서·방문을 고릅니다',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _OutcomeChip(
-                        outcome: SupportConsultOutcome.verbalQuote,
-                        selected: _outcome == SupportConsultOutcome.verbalQuote,
-                        enabled: !_saving,
-                        onTap: () => setState(
-                          () => _outcome = SupportConsultOutcome.verbalQuote,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _OutcomeChip(
-                        outcome: SupportConsultOutcome.quoteSend,
-                        selected: _outcome == SupportConsultOutcome.quoteSend,
-                        enabled: !_saving,
-                        onTap: () => setState(
-                          () => _outcome = SupportConsultOutcome.quoteSend,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _OutcomeChip(
-                  outcome: SupportConsultOutcome.visit,
-                  selected: _outcome == SupportConsultOutcome.visit,
-                  enabled: !_saving,
-                  onTap: () {
-                    setState(() => _outcome = SupportConsultOutcome.visit);
-                    if (_visitYmd == null) {
-                      unawaited(_pickDate(visit: true));
-                    }
-                  },
-                ),
-              ],
-            ),
-            if (_outcome != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                supportConsultOutcomeHint(_outcome!),
-                style: TextStyle(
-                  fontSize: 12.5,
-                  height: 1.35,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurface,
-                ),
-              ),
-            ],
-            if (_outcome == SupportConsultOutcome.verbalQuote) ...[
-              const SizedBox(height: 12),
-              _VerbalQuoteFields(
-                amountCtrl: _amountCtrl,
-                contentCtrl: _ctrl,
-                enabled: !_saving,
-              ),
-            ],
-            if (_outcome == SupportConsultOutcome.quoteSend) ...[
-              const SizedBox(height: 10),
-              _QuotePriceCheckTile(
-                enabled: !_saving,
-                written: _quoteDoc != null,
-                summary: _quoteDoc == null
-                    ? null
-                    : supportQuoteHistoryLine(_quoteDoc!),
-                onTap: _openQuoteWriter,
-              ),
-              if (_quoteDoc != null) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _saving ? null : _openQuoteExport,
-                  icon: const Icon(Icons.send_outlined),
-                  label: const Text('이미지 · PDF · 이메일'),
-                ),
-              ],
-            ],
-            if (_outcome == SupportConsultOutcome.quoteSend) ...[
-              const SizedBox(height: 10),
-              _DateActionTile(
-                icon: Icons.send_outlined,
-                title: '언제까지 보낼지',
-                value:
-                    '${_ymdLabel(_sendYmd)}${_sendYmd == todayYmdSeoul() ? ' · 오늘' : ''}',
-                filled: true,
-                onTap: _saving ? null : () => _pickDate(visit: false),
-              ),
-            ],
-            if (_outcome == SupportConsultOutcome.visit) ...[
-              const SizedBox(height: 10),
-              _DateActionTile(
-                icon: Icons.event_available_rounded,
-                title: '방문예정일',
-                value: _visitYmd == null
-                    ? '방문일을 잡고, 다녀온 뒤 방문 기록을 남깁니다'
-                    : [
-                        _ymdLabel(_visitYmd!),
-                        if ((_visitTime ?? '').isNotEmpty) _visitTime!,
-                        if ((_visitTeamLabel ?? '').isNotEmpty)
-                          _visitTeamLabel!,
-                      ].join(' · '),
-                filled: _visitYmd != null,
-                onTap: _saving ? null : () => _pickDate(visit: true),
-              ),
-            ],
-            if (_outcome != SupportConsultOutcome.verbalQuote) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _ctrl,
-                minLines: 3,
-                maxLines: 6,
-                enabled: !_saving,
-                decoration: InputDecoration(
-                  hintText: switch (_outcome) {
-                    SupportConsultOutcome.feedbackWait =>
-                      '전화로 안내·조치한 내용을 적어 주세요',
-                    SupportConsultOutcome.visit =>
-                      '상담 내용(선택) · 비워도 방문일정·시간으로 저장됩니다',
-                    _ => '상담 내용을 입력해 주세요',
-                  },
-                  filled: true,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: _saving
-                      ? null
-                      : () => Navigator.of(context).pop(false),
-                  child: const Text('나중에'),
-                ),
-                const Spacer(),
-                FilledButton(
-                  onPressed: _saving
-                      ? null
-                      : () {
-                          HapticFeedback.selectionClick();
-                          _save();
+                    if (_outcome != SupportConsultOutcome.verbalQuote) ...[
+                      const SizedBox(height: 12),
+                      SupportUnitPriceOpenTile(
+                        subtitle: '상담 중 품명 · 금액 검색. 고르면 상담 내용에 넣습니다',
+                        insertLabel: '상담에 넣기',
+                        onInsert: (item) {
+                          final line = supportUnitPriceInsertLine(item);
+                          final cur = _ctrl.text.trim();
+                          _ctrl.text = cur.isEmpty ? line : '$cur\n$line';
+                          _ctrl.selection = TextSelection.collapsed(
+                            offset: _ctrl.text.length,
+                          );
+                          setState(() {});
                         },
-                  child: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(switch (_outcome) {
-                          SupportConsultOutcome.closed => '마무리 저장',
-                          SupportConsultOutcome.feedbackWait => '피드백 대기로 저장',
-                          SupportConsultOutcome.verbalQuote => '구두 견적 저장',
-                          SupportConsultOutcome.quoteSend => '견적 저장',
-                          SupportConsultOutcome.visit => '방문일 저장',
-                          null => '저장',
-                        }),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Text(
+                      '상담 결과',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _OutcomeChip(
+                                outcome: SupportConsultOutcome.closed,
+                                selected:
+                                    _outcome == SupportConsultOutcome.closed,
+                                enabled: !_saving,
+                                onTap: () => setState(
+                                  () =>
+                                      _outcome = SupportConsultOutcome.closed,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _OutcomeChip(
+                                outcome: SupportConsultOutcome.feedbackWait,
+                                selected:
+                                    _outcome ==
+                                    SupportConsultOutcome.feedbackWait,
+                                enabled: !_saving,
+                                onTap: () => setState(
+                                  () => _outcome =
+                                      SupportConsultOutcome.feedbackWait,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _OutcomeChip(
+                                outcome: SupportConsultOutcome.verbalQuote,
+                                selected:
+                                    _outcome ==
+                                    SupportConsultOutcome.verbalQuote,
+                                enabled: !_saving,
+                                onTap: () => setState(
+                                  () => _outcome =
+                                      SupportConsultOutcome.verbalQuote,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _OutcomeChip(
+                                outcome: SupportConsultOutcome.quoteSend,
+                                selected:
+                                    _outcome ==
+                                    SupportConsultOutcome.quoteSend,
+                                enabled: !_saving,
+                                onTap: () => setState(
+                                  () => _outcome =
+                                      SupportConsultOutcome.quoteSend,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _OutcomeChip(
+                          outcome: SupportConsultOutcome.visit,
+                          selected: _outcome == SupportConsultOutcome.visit,
+                          enabled: !_saving,
+                          onTap: () {
+                            setState(
+                              () => _outcome = SupportConsultOutcome.visit,
+                            );
+                            if (_visitYmd == null) {
+                              unawaited(_pickDate(visit: true));
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    if (_outcome != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        supportConsultOutcomeHint(_outcome!),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.35,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ],
+                    if (_outcome == SupportConsultOutcome.verbalQuote) ...[
+                      const SizedBox(height: 12),
+                      _VerbalQuoteFields(
+                        amountCtrl: _amountCtrl,
+                        contentCtrl: _ctrl,
+                        enabled: !_saving,
+                      ),
+                    ],
+                    if (_outcome == SupportConsultOutcome.quoteSend) ...[
+                      const SizedBox(height: 10),
+                      _QuotePriceCheckTile(
+                        enabled: !_saving,
+                        written: _quoteDoc != null,
+                        summary: _quoteDoc == null
+                            ? null
+                            : supportQuoteHistoryLine(_quoteDoc!),
+                        onTap: _openQuoteWriter,
+                      ),
+                      if (_quoteDoc != null) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _saving ? null : _openQuoteExport,
+                          icon: const Icon(Icons.send_outlined),
+                          label: const Text('이미지 · PDF · 이메일'),
+                        ),
+                      ],
+                    ],
+                    if (_outcome == SupportConsultOutcome.quoteSend) ...[
+                      const SizedBox(height: 10),
+                      _DateActionTile(
+                        icon: Icons.send_outlined,
+                        title: '언제까지 보낼지',
+                        value:
+                            '${_ymdLabel(_sendYmd)}${_sendYmd == todayYmdSeoul() ? ' · 오늘' : ''}',
+                        filled: true,
+                        onTap: _saving
+                            ? null
+                            : () => _pickDate(visit: false),
+                      ),
+                    ],
+                    if (_outcome == SupportConsultOutcome.visit) ...[
+                      const SizedBox(height: 10),
+                      _DateActionTile(
+                        icon: Icons.event_available_rounded,
+                        title: '방문예정일',
+                        value: _visitYmd == null
+                            ? '방문일을 잡고, 다녀온 뒤 방문 기록을 남깁니다'
+                            : [
+                                _ymdLabel(_visitYmd!),
+                                if ((_visitTime ?? '').isNotEmpty)
+                                  _visitTime!,
+                                if ((_visitTeamLabel ?? '').isNotEmpty)
+                                  _visitTeamLabel!,
+                              ].join(' · '),
+                        filled: _visitYmd != null,
+                        onTap: _saving
+                            ? null
+                            : () => _pickDate(visit: true),
+                      ),
+                    ],
+                    if (_outcome != SupportConsultOutcome.verbalQuote) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _ctrl,
+                        minLines: 3,
+                        maxLines: 6,
+                        enabled: !_saving,
+                        decoration: InputDecoration(
+                          hintText: switch (_outcome) {
+                            SupportConsultOutcome.feedbackWait =>
+                              '전화로 안내·조치한 내용을 적어 주세요',
+                            SupportConsultOutcome.visit =>
+                              '상담 내용(선택) · 비워도 방문일정·시간으로 저장됩니다',
+                            _ => '상담 내용을 입력해 주세요',
+                          },
+                          filled: true,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
+            ),
+            Material(
+              elevation: 3,
+              color: scheme.surface,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.of(context).pop(false),
+                        child: const Text('나중에'),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: _saving
+                            ? null
+                            : () {
+                                HapticFeedback.selectionClick();
+                                _save();
+                              },
+                        child: _saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(switch (_outcome) {
+                                SupportConsultOutcome.closed => '마무리 저장',
+                                SupportConsultOutcome.feedbackWait =>
+                                  '피드백 대기로 저장',
+                                SupportConsultOutcome.verbalQuote =>
+                                  '구두 견적 저장',
+                                SupportConsultOutcome.quoteSend => '견적 저장',
+                                SupportConsultOutcome.visit => '방문일 저장',
+                                null => '저장',
+                              }),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         ),

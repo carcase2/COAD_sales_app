@@ -101,6 +101,12 @@ typedef ConsultationLaunchTarget = ({
 final pendingConsultationLaunchProvider =
     StateProvider<ConsultationLaunchTarget?>((ref) => null);
 
+/// 홈으로 돌아갈 때 열 부서 페이지(0 영업 · 1 고객지원 · 2 고수). 소비 후 null.
+final pendingHomeDeptPageIndexProvider = StateProvider<int?>((ref) => null);
+
+/// 증가하면 [MainTabScreen]이 홈 탭을 연다.
+final requestSelectHomeTabTickProvider = StateProvider<int>((ref) => 0);
+
 /// [MainTabScreen]이 홈(탭 0)으로 이동할 때마다 증가. [HomeHubScreen]이 업무 흐름을 **일·금일**로 맞춤.
 final homeHubFlowResetTickProvider = StateProvider<int>((ref) => 0);
 

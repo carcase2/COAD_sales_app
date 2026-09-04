@@ -2,6 +2,35 @@ import 'package:coad_customer_calls/data/support_visit_report.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('방문예정일과 실제 방문일을 따로 저장한다', () {
+    const report = SupportVisitReport(
+      visitYmd: '2026-09-05',
+      visitTime: '15:00',
+      scheduledYmd: '2026-09-04',
+      scheduledTime: '10:00',
+      completed: true,
+      paid: false,
+      notes: '하루 늦게 방문',
+    );
+    final parsed = parseSupportVisitReport(serializeSupportVisitReport(report));
+    expect(parsed!.visitYmd, '2026-09-05');
+    expect(parsed.visitTime, '15:00');
+    expect(parsed.scheduledYmd, '2026-09-04');
+    expect(parsed.scheduledTime, '10:00');
+    expect(supportVisitReportIssue(report), isNull);
+    expect(
+      supportVisitReportIssue(
+        const SupportVisitReport(
+          visitYmd: '',
+          completed: true,
+          paid: false,
+          notes: 'x',
+        ),
+      ),
+      '실제 방문일을 선택해 주세요.',
+    );
+  });
+
   test('유상 방문 기록 왕복', () {
     const report = SupportVisitReport(
       visitYmd: '2026-08-20',
@@ -198,7 +227,7 @@ void main() {
           notes: '부품 대기',
         ),
       ),
-      '방문 시간을 선택해 주세요.',
+      '실제 방문 시간을 선택해 주세요.',
     );
     expect(
       supportVisitReportIssue(

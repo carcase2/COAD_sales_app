@@ -143,16 +143,207 @@ class _HomeSupportCalendarPanelState
     await widget.onRefresh?.call();
   }
 
+  Future<void> _showDayEventsSheet(DateTime day) async {
+    final scheme = Theme.of(context).colorScheme;
+    final visitColor = scheme.tertiary;
+    final depositColor = const Color(0xFF059669);
+    final kindLabel = _kind == SupportHomeCalendarKind.visit
+        ? '방문예정'
+        : '수금예정';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: false,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setModal) {
+            final events = _forDay(day);
+            Future<void> refresh() async {
+              await _load();
+              if (sheetContext.mounted) setModal(() {});
+            }
+
+            final media = MediaQuery.of(sheetContext);
+            final bottom = media.viewPadding.bottom;
+            final sheetH = (media.size.height - bottom) * 0.72;
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottom),
+              child: SizedBox(
+                height: sheetH,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${day.month}월 ${day.day}일 $kindLabel · ${events.length}건',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '닫기',
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: events.isEmpty
+                          ? AppEmpty(
+                              icon: Icons.event_available_outlined,
+                              message: _kind == SupportHomeCalendarKind.visit
+                                  ? '이 날짜에 방문예정이 없습니다.'
+                                  : '이 날짜에 수금예정이 없습니다.',
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                12,
+                                16,
+                                24,
+                              ),
+                              itemCount: events.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, i) {
+                                final e = events[i];
+                                final visit =
+                                    e.kind == SupportScheduleKind.visit;
+                                final color = visit
+                                    ? visitColor
+                                    : depositColor;
+                                final time = _timeLabel(e);
+                                final amount =
+                                    e.amount == null || e.amount! <= 0
+                                    ? ''
+                                    : formatSupportUnitPriceWon(e.amount);
+                                return Material(
+                                  color: color.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () async {
+                                      await _open(e.log);
+                                      if (sheetContext.mounted) {
+                                        setModal(() {});
+                                      }
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        12,
+                                        8,
+                                        4,
+                                        8,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            visit
+                                                ? Icons
+                                                      .event_available_rounded
+                                                : Icons.payments_outlined,
+                                            color: color,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _siteName(e.log),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.w900,
+                                                    fontSize: 14.5,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  [
+                                                    if (visit &&
+                                                        time.isNotEmpty)
+                                                      time,
+                                                    if (!visit &&
+                                                        amount.isNotEmpty)
+                                                      amount,
+                                                    e.label,
+                                                  ].join(' · '),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 12.5,
+                                                    fontWeight:
+                                                        FontWeight.w700,
+                                                    color: color,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          if (visit)
+                                            IconButton(
+                                              tooltip: '방문 기록',
+                                              onPressed: () async {
+                                                await _visitReport(e.log);
+                                                await refresh();
+                                              },
+                                              icon: const Icon(
+                                                Icons
+                                                    .home_repair_service_outlined,
+                                              ),
+                                            )
+                                          else
+                                            Checkbox(
+                                              value: e.depositPaid ?? false,
+                                              onChanged: (_) async {
+                                                await _toggleDeposit(e);
+                                                await refresh();
+                                              },
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final accent = AppTokens.customerSupportAccent(scheme);
     final visitColor = scheme.tertiary;
     final depositColor = const Color(0xFF059669);
-    final dayRows = _forDay(_selected);
     return RefreshIndicator(
       onRefresh: _refresh,
-      child: Column(
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 16),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -216,6 +407,7 @@ class _HomeSupportCalendarPanelState
                 _selected = selected;
                 _focused = focused;
               });
+              unawaited(_showDayEventsSheet(selected));
             },
             onPageChanged: (focused) {
               final sameMonth =
@@ -241,107 +433,16 @@ class _HomeSupportCalendarPanelState
               ),
             ),
           ),
-          const Divider(height: 1),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '${_toYmd(_selected)} ${_kind == SupportHomeCalendarKind.visit ? '방문예정' : '수금예정'} · ${dayRows.length}건',
-                style: const TextStyle(fontWeight: FontWeight.w900),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              '날짜를 누르면 그날 ${_kind == SupportHomeCalendarKind.visit ? '방문예정' : '수금예정'}이 열립니다',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
               ),
             ),
-          ),
-          Expanded(
-            child: dayRows.isEmpty
-                ? AppEmpty(
-                    message: _kind == SupportHomeCalendarKind.visit
-                        ? '이 날짜에 방문예정이 없습니다.'
-                        : '이 날짜에 수금예정이 없습니다.',
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-                    itemCount: dayRows.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) {
-                      final e = dayRows[i];
-                      final visit = e.kind == SupportScheduleKind.visit;
-                      final color = visit ? visitColor : depositColor;
-                      final time = _timeLabel(e);
-                      final amount = e.amount == null || e.amount! <= 0
-                          ? ''
-                          : formatSupportUnitPriceWon(e.amount);
-                      return Material(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => unawaited(_open(e.log)),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  visit
-                                      ? Icons.event_available_rounded
-                                      : Icons.payments_outlined,
-                                  color: color,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _siteName(e.log),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 14.5,
-                                        ),
-                                      ),
-                                      Text(
-                                        [
-                                          if (visit && time.isNotEmpty) time,
-                                          if (!visit && amount.isNotEmpty)
-                                            amount,
-                                          e.label,
-                                        ].join(' · '),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: color,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (visit)
-                                  IconButton(
-                                    tooltip: '방문 기록',
-                                    onPressed: () =>
-                                        unawaited(_visitReport(e.log)),
-                                    icon: const Icon(
-                                      Icons.home_repair_service_outlined,
-                                    ),
-                                  )
-                                else
-                                  Checkbox(
-                                    value: e.depositPaid ?? false,
-                                    onChanged: (_) =>
-                                        unawaited(_toggleDeposit(e)),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
           ),
         ],
       ),

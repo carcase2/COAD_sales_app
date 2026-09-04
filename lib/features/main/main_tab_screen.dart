@@ -433,6 +433,19 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     _trackTab(ref.read(authControllerProvider), 'home');
   }
 
+  /// 홈 탭만 연다. 흐름 리셋은 호출 쪽에서 한 번만 한다.
+  void _ensureHomeTabVisible() {
+    if (_navSelectedIndex == _navHomeIndex && _currentIndex == _homeTabIndex) {
+      return;
+    }
+    ref.invalidate(appUpdateStatusProvider);
+    setState(() {
+      _navSelectedIndex = _navHomeIndex;
+      _currentIndex = _homeTabIndex;
+    });
+    _trackTab(ref.read(authControllerProvider), 'home');
+  }
+
   void _selectIssuanceTab() {
     ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
     _loadedIndices.add(_issuanceTabIndex);
@@ -607,7 +620,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   }
 
   Future<void> _openReceptionCreate() async {
-    await openReceptionCreateHost(context);
+    await openReceptionCreateHost(context, ref);
   }
 
   /// 접수 롱프레스 — 목록 바로가기(탭은 등록으로 직행).
@@ -728,16 +741,25 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         unawaited(
           openReceptionCreateHost(
             context,
+            ref,
             initialKind: ReceptionKind.afterSales,
           ),
         );
       case 'sales':
         unawaited(
-          openReceptionCreateHost(context, initialKind: ReceptionKind.sales),
+          openReceptionCreateHost(
+            context,
+            ref,
+            initialKind: ReceptionKind.sales,
+          ),
         );
       case 'gosu':
         unawaited(
-          openReceptionCreateHost(context, initialKind: ReceptionKind.gosu),
+          openReceptionCreateHost(
+            context,
+            ref,
+            initialKind: ReceptionKind.gosu,
+          ),
         );
       case 'today':
         await _openTodayReceptionList();
@@ -810,7 +832,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   Widget build(BuildContext context) {
     ref.listen(pendingConsultationLaunchProvider, (prev, next) {
       if (next == null) return;
-      _selectHomeTab();
+      _ensureHomeTabVisible();
+    });
+    ref.listen(requestSelectHomeTabTickProvider, (prev, next) {
+      if (prev == next) return;
+      _ensureHomeTabVisible();
     });
     ref.listen(pendingIssuanceLaunchProvider, (prev, next) {
       if (next == null || !context.mounted) return;

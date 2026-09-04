@@ -152,10 +152,10 @@ void main() {
       ),
     );
 
-    expect(find.text('오늘 접수'), findsOneWidget);
-    expect(find.text('오늘 방문'), findsOneWidget);
+    expect(find.text('접수'), findsOneWidget);
+    expect(find.text('방문'), findsOneWidget);
     expect(find.text('수금'), findsOneWidget);
-    expect(find.text('견적 미발송'), findsOneWidget);
+    expect(find.text('미발송'), findsOneWidget);
     expect(find.text('고객 대기'), findsOneWidget);
     expect(find.text('피드백'), findsOneWidget);
     expect(find.text('구두 견적'), findsOneWidget);

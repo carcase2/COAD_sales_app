@@ -61,7 +61,7 @@ class SupportTodayDeskCard extends StatelessWidget {
     final accent = AppTokens.customerSupportAccent(scheme);
     const gap = 8.0;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: HomeHubVisual.elevatedCard(scheme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -74,7 +74,7 @@ class SupportTodayDeskCard extends StatelessWidget {
                 Expanded(
                   child: _DeskCountTile(
                     icon: Icons.inbox_rounded,
-                    label: '오늘 접수',
+                    label: '접수',
                     count: desk.todayReception,
                     color: accent,
                     alert: desk.todayPending > 0,
@@ -88,7 +88,7 @@ class SupportTodayDeskCard extends StatelessWidget {
                 Expanded(
                   child: _DeskCountTile(
                     icon: Icons.event_available_rounded,
-                    label: '오늘 방문',
+                    label: '방문',
                     count: desk.todayVisit,
                     color: scheme.tertiary,
                     alert: desk.overdueVisit > 0,
@@ -98,14 +98,7 @@ class SupportTodayDeskCard extends StatelessWidget {
                     onTap: onTapVisit,
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: gap),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+                const SizedBox(width: gap),
                 Expanded(
                   child: _DeskCountTile(
                     icon: Icons.payments_outlined,
@@ -123,7 +116,7 @@ class SupportTodayDeskCard extends StatelessWidget {
                 Expanded(
                   child: _DeskCountTile(
                     icon: Icons.request_quote_outlined,
-                    label: '견적 미발송',
+                    label: '미발송',
                     count: desk.unsentQuote,
                     color: const Color(0xFFD97706),
                     alert: desk.unsentQuote > 0,
@@ -133,72 +126,29 @@ class SupportTodayDeskCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            '고객 대기',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 6),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _WaitTile(
-                    label: '피드백',
-                    count: desk.feedbackWait,
-                    icon: Icons.phonelink_ring_rounded,
-                    onTap: onTapFeedback,
-                  ),
-                ),
-                const SizedBox(width: gap),
-                Expanded(
-                  child: _WaitTile(
-                    label: '구두 견적',
-                    count: desk.verbalWait,
-                    icon: Icons.record_voice_over_outlined,
-                    onTap: onTapVerbal,
-                  ),
-                ),
-                const SizedBox(width: gap),
-                Expanded(
-                  child: _WaitTile(
-                    label: '발송 후',
-                    count: desk.quoteSentWait,
-                    icon: Icons.mark_email_read_outlined,
-                    onTap: onTapQuoteSent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             desk.items.isEmpty ? '오늘 조치할 건이 없습니다' : '오늘 조치',
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               color: scheme.onSurfaceVariant,
             ),
           ),
           if (desk.items.isEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 2),
+              padding: const EdgeInsets.only(top: 4),
               child: Text(
                 '새 접수·방문·수금이 생기면 여기에 바로 나옵니다.',
                 style: TextStyle(
-                  fontSize: 12.5,
-                  height: 1.35,
+                  fontSize: 12,
+                  height: 1.3,
                   color: scheme.onSurfaceVariant,
                 ),
               ),
             )
           else ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             for (final item in desk.preview) ...[
               _DeskActionRow(
                 item: item,
@@ -206,14 +156,60 @@ class SupportTodayDeskCard extends StatelessWidget {
                 onAction: () => onTapAction(item),
                 onPhone: onTapPhone == null ? null : () => onTapPhone!(item),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
             ],
             if (desk.hasMore && onTapMore != null)
               TextButton(
                 onPressed: onTapMore,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: Text('더보기 ${desk.moreCount}건 · 보드'),
               ),
           ],
+          const SizedBox(height: 8),
+          Text(
+            '고객 대기',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: _WaitTile(
+                  label: '피드백',
+                  count: desk.feedbackWait,
+                  icon: Icons.phonelink_ring_rounded,
+                  onTap: onTapFeedback,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _WaitTile(
+                  label: '구두 견적',
+                  count: desk.verbalWait,
+                  icon: Icons.record_voice_over_outlined,
+                  onTap: onTapVerbal,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _WaitTile(
+                  label: '발송 후',
+                  count: desk.quoteSentWait,
+                  icon: Icons.mark_email_read_outlined,
+                  onTap: onTapQuoteSent,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -246,7 +242,7 @@ class _DeskCountTile extends StatelessWidget {
     return Material(
       color: tone.withValues(alpha: alert ? 0.12 : 0.06),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: BorderSide(
           color: alert
               ? scheme.error.withValues(alpha: 0.35)
@@ -258,20 +254,20 @@ class _DeskCountTile extends StatelessWidget {
           HapticFeedback.selectionClick();
           onTap();
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(icon, size: 18, color: tone),
+                  Icon(icon, size: 13, color: tone),
                   const Spacer(),
                   Text(
                     '$count',
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 15,
                       fontWeight: FontWeight.w900,
                       height: 1,
                       color: tone,
@@ -279,13 +275,13 @@ class _DeskCountTile extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 3),
               Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 14.5,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                   height: 1.1,
                   color: scheme.onSurface,
@@ -293,13 +289,13 @@ class _DeskCountTile extends StatelessWidget {
               ),
               if ((badge ?? '').isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.only(top: 1),
                   child: Text(
                     badge!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w800,
                       color: tone,
                     ),
@@ -336,7 +332,7 @@ class _WaitTile extends StatelessWidget {
           ? accent.withValues(alpha: 0.10)
           : scheme.surfaceContainerHighest.withValues(alpha: 0.45),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         side: BorderSide(
           color: scheme.outlineVariant.withValues(alpha: 0.22),
         ),
@@ -348,30 +344,42 @@ class _WaitTile extends StatelessWidget {
                 HapticFeedback.selectionClick();
                 onTap!();
               },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 6),
           child: Column(
             children: [
-              Icon(icon, size: 18, color: hot ? accent : scheme.onSurfaceVariant),
-              const SizedBox(height: 4),
-              Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                  color: hot ? accent : scheme.onSurface,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 12,
+                    color: hot ? accent : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                      color: hot ? accent : scheme.onSurface,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 2),
               Text(
                 label,
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                overflow: TextOverflow.clip,
+                softWrap: false,
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
+                  height: 1.1,
                   color: scheme.onSurfaceVariant,
                 ),
               ),
@@ -410,19 +418,19 @@ class _DeskActionRow extends StatelessWidget {
       color: alert
           ? scheme.errorContainer.withValues(alpha: 0.45)
           : scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: () {
           HapticFeedback.selectionClick();
           onTap();
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
           child: Row(
             children: [
-              Icon(_kindIcon(item.kind), size: 20, color: tone),
-              const SizedBox(width: 8),
+              Icon(_kindIcon(item.kind), size: 17, color: tone),
+              const SizedBox(width: 6),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -432,8 +440,9 @@ class _DeskActionRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 14.5,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w900,
+                        height: 1.15,
                       ),
                     ),
                     Text(
@@ -441,8 +450,9 @@ class _DeskActionRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
+                        height: 1.15,
                         color: tone,
                       ),
                     ),
@@ -453,10 +463,15 @@ class _DeskActionRow extends StatelessWidget {
                 IconButton(
                   tooltip: '전화',
                   visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
                   onPressed: onPhone,
                   icon: Icon(
                     Icons.phone_rounded,
-                    size: 18,
+                    size: 16,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
@@ -467,10 +482,14 @@ class _DeskActionRow extends StatelessWidget {
                 },
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 30),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: Text(item.actionLabel),
+                child: Text(
+                  item.actionLabel,
+                  style: const TextStyle(fontSize: 12),
+                ),
               ),
             ],
           ),

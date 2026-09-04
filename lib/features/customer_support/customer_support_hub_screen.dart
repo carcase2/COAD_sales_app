@@ -315,7 +315,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             title: '새 접수',
             subtitle: 'A/S 접수 후 바로 1차 상담',
             icon: Icons.add_ic_call_rounded,
-            onTap: () => openThenRefresh(() => _openIntake(context)),
+            onTap: () => openThenRefresh(() => _openIntake(context, ref)),
           ),
           const SizedBox(height: 8),
           SupportSectionCard(
@@ -365,7 +365,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '작성 · 이미지/PDF · 이메일',
             icon: Icons.request_quote_outlined,
             onTap: () => openThenRefresh(
-              () => _openStep(context, SupportFlowStep.quote),
+              () => _openStep(context, ref, SupportFlowStep.quote),
             ),
           ),
           const SizedBox(height: 8),
@@ -374,7 +374,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '지사별 발행 요청',
             icon: Icons.receipt_long_outlined,
             onTap: () =>
-                openThenRefresh(() => _openStep(context, SupportFlowStep.tax)),
+                openThenRefresh(() => _openStep(context, ref, SupportFlowStep.tax)),
           ),
           const SizedBox(height: 8),
           SupportSectionCard(
@@ -400,7 +400,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '사인 · 금액 · 자재',
             icon: Icons.draw_outlined,
             onTap: () => openThenRefresh(
-              () => _openStep(context, SupportFlowStep.completion),
+              () => _openStep(context, ref, SupportFlowStep.completion),
             ),
           ),
           const SizedBox(height: 8),
@@ -409,7 +409,7 @@ class CustomerSupportHubScreen extends ConsumerWidget {
             subtitle: '자료 검색',
             icon: Icons.menu_book_outlined,
             onTap: () =>
-                openThenRefresh(() => _openStep(context, SupportFlowStep.faq)),
+                openThenRefresh(() => _openStep(context, ref, SupportFlowStep.faq)),
           ),
         ],
       ),
@@ -422,16 +422,21 @@ class CustomerSupportHubScreen extends ConsumerWidget {
     ).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
-  Future<void> _openIntake(BuildContext context) async {
+  Future<void> _openIntake(BuildContext context, WidgetRef ref) async {
     await openReceptionCreateHost(
       context,
+      ref,
       initialKind: ReceptionKind.afterSales,
     );
   }
 
-  Future<void> _openStep(BuildContext context, SupportFlowStep step) {
+  Future<void> _openStep(
+    BuildContext context,
+    WidgetRef ref,
+    SupportFlowStep step,
+  ) {
     if (step == SupportFlowStep.intake) {
-      return openSupportIntakeThenDetail(context);
+      return openSupportIntakeThenDetail(context, ref);
     }
     final screen = switch (step) {
       SupportFlowStep.siteSearch => const CustomerSupportSiteSearchScreen(),

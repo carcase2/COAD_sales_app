@@ -200,10 +200,10 @@ class SupportCallLogRepository {
     int? statusId,
   }) async {
     try {
-      final fromIso = fromYmd == null ? null : '${fromYmd}T00:00:00+09:00';
+      final fromIso = fromYmd == null ? null : seoulDayStartUtcIso(fromYmd);
       final toIso = toYmdInclusive == null
           ? null
-          : '${addDaysToYmd(toYmdInclusive, 1)}T00:00:00+09:00';
+          : seoulDayEndExclusiveUtcIso(toYmdInclusive);
       var query = supportSupabaseClient()
           .from('call_logs')
           .select(_supportCallLogSelect);
@@ -443,8 +443,8 @@ class SupportCallLogRepository {
     required String toYmdInclusive,
   }) async {
     try {
-      final fromIso = '${fromYmd}T00:00:00+09:00';
-      final toIso = '${addDaysToYmd(toYmdInclusive, 1)}T00:00:00+09:00';
+      final fromIso = seoulDayStartUtcIso(fromYmd);
+      final toIso = seoulDayEndExclusiveUtcIso(toYmdInclusive);
       final client = supportSupabaseClient();
       // `updated_at` 컬럼이 없는 Support DB가 있어 기본 select에 넣지 않는다.
       final createdRows = await client
@@ -522,11 +522,14 @@ class SupportCallLogRepository {
   }
 
   Future<SupportCallLog> create(SupportCallLogDraft draft) async {
+    final when = seoulNowCallDateTimeParts();
     final row = <String, dynamic>{
       'customer_name': draft.customerName,
       'customer_phone': draft.customerPhone,
       'issue': draft.issue,
       'address': draft.address,
+      // KST 벽시계 — UTC 자정으로 묶이면 새벽~오전 접수가 전일로 간다.
+      'call_date': '${when.ymd}T${when.hms}+09:00',
       'call_status_id': 1,
       'service_status_id': 4,
       'is_blacklisted': false,
@@ -974,7 +977,16 @@ class SupportCallLogRepository {
                 final visitYmd = report.visitYmd;
               if (visitYmd.compareTo(fromYmd) >= 0 &&
                   visitYmd.compareTo(toYmdInclusive) <= 0) {
-                final logStillOnSameDay = (log.visitDate ?? '') == visitYmd;
+                final scheduledYmd =
+                    (report.scheduledYmd ?? '').trim().isNotEmpty
+                    ? report.scheduledYmd!.trim()
+                    : visitYmd;
+                final scheduledTime =
+                    normalizeTime(report.scheduledTime) ??
+                    ((log.visitDate ?? '') == scheduledYmd
+                        ? normalizeTime(log.visitTime)
+                        : null) ??
+                    normalizeTime(report.visitTime);
                 addEvent(
                   SupportScheduleEvent(
                     kind: SupportScheduleKind.visit,
@@ -982,11 +994,8 @@ class SupportCallLogRepository {
                     log: log,
                     caption: report.completed ? '방문완료' : '방문',
                     visitReport: report,
-                    scheduledYmd: visitYmd,
-                    scheduledTime: logStillOnSameDay
-                        ? normalizeTime(log.visitTime) ??
-                              normalizeTime(report.visitTime)
-                        : normalizeTime(report.visitTime),
+                    scheduledYmd: scheduledYmd,
+                    scheduledTime: scheduledTime,
                     actualYmd: visitYmd,
                     actualTime: normalizeTime(report.visitTime),
                   ),

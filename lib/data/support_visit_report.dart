@@ -5,9 +5,9 @@ bool isSupportVisitReportText(String raw) =>
 
 /// 방문 기록 저장 전 검증. 완료+유상이면 금액·입금예정일이 필요하다.
 String? supportVisitReportIssue(SupportVisitReport report) {
-  if (report.visitYmd.trim().isEmpty) return '방문일을 선택해 주세요.';
+  if (report.visitYmd.trim().isEmpty) return '실제 방문일을 선택해 주세요.';
   if ((report.visitTime ?? '').trim().isEmpty) {
-    return '방문 시간을 선택해 주세요.';
+    return '실제 방문 시간을 선택해 주세요.';
   }
   if (report.notes.trim().isEmpty) return '방문 내용을 입력해 주세요.';
   if (!report.completed) {
@@ -36,6 +36,8 @@ class SupportVisitReport {
     this.id,
     required this.visitYmd,
     this.visitTime,
+    this.scheduledYmd,
+    this.scheduledTime,
     required this.completed,
     required this.paid,
     this.amount,
@@ -53,8 +55,14 @@ class SupportVisitReport {
   });
 
   final String? id;
+  /// 실제 방문일.
   final String visitYmd;
+  /// 실제 방문 시간.
   final String? visitTime;
+  /// 상담에서 잡은 방문예정일.
+  final String? scheduledYmd;
+  /// 상담에서 잡은 방문예정 시간.
+  final String? scheduledTime;
   final bool completed;
   final bool paid;
   final int? amount;
@@ -96,6 +104,8 @@ class SupportVisitReport {
       id: id,
       visitYmd: visitYmd,
       visitTime: visitTime,
+      scheduledYmd: scheduledYmd,
+      scheduledTime: scheduledTime,
       completed: completed,
       paid: paid,
       amount: amount,
@@ -120,6 +130,11 @@ String serializeSupportVisitReport(SupportVisitReport report) {
   final paid = report.isPaid;
   final time = (report.visitTime ?? '').trim();
   final timeLabel = time.length >= 5 ? time.substring(0, 5) : time;
+  final scheduled = (report.scheduledYmd ?? '').trim();
+  final scheduledTime = (report.scheduledTime ?? '').trim();
+  final scheduledTimeLabel = scheduledTime.length >= 5
+      ? scheduledTime.substring(0, 5)
+      : scheduledTime;
   final nextTime = (report.nextVisitTime ?? '').trim();
   final nextTimeLabel =
       nextTime.length >= 5 ? nextTime.substring(0, 5) : nextTime;
@@ -127,6 +142,8 @@ String serializeSupportVisitReport(SupportVisitReport report) {
     kSupportVisitReportMarker,
     '방문일: ${report.visitYmd}',
     if (timeLabel.isNotEmpty) '방문시간: $timeLabel',
+    if (scheduled.isNotEmpty) '예정일: $scheduled',
+    if (scheduledTimeLabel.isNotEmpty) '예정시간: $scheduledTimeLabel',
     '완료: ${report.completed ? '완료' : '미완료'}',
     '유상: ${paid ? '유상' : '무상'}',
     if (paid && report.amount != null) '금액: ${report.amount}',
@@ -196,6 +213,8 @@ SupportVisitReport? parseSupportVisitReport(
     id: id,
     visitYmd: fields['방문일'] ?? '',
     visitTime: _timeOrNull(fields['방문시간']),
+    scheduledYmd: _ymdOrNull(fields['예정일']),
+    scheduledTime: _timeOrNull(fields['예정시간']),
     completed: (fields['완료'] ?? '') == '완료',
     paid: paid,
     amount: paid ? amount : null,

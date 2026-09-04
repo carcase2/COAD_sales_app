@@ -453,7 +453,8 @@ class _CustomerSupportSiteDetailScreenState
           ),
           const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: () => openSupportIntakeThenDetail(context, site: site),
+            onPressed: () =>
+                openSupportIntakeThenDetail(context, ref, site: site),
             icon: const Icon(Icons.add_ic_call_rounded),
             label: const Text('이 현장 AS 접수'),
           ),

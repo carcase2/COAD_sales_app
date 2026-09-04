@@ -1791,7 +1791,12 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _jumpSectionPage(0);
-        final homeDept = _homeDeptPageForCurrentUser();
+        final pendingDept = ref.read(pendingHomeDeptPageIndexProvider);
+        final homeDept =
+            pendingDept ?? _homeDeptPageForCurrentUser();
+        if (pendingDept != null) {
+          ref.read(pendingHomeDeptPageIndexProvider.notifier).state = null;
+        }
         if (_deptPageController.hasClients) {
           _deptPageController.jumpToPage(homeDept);
         }
