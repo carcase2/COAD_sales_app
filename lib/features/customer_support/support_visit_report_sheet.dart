@@ -816,6 +816,9 @@ class _SupportVisitReportSheetState
                                       selectedYmd: _nextVisitYmd,
                                       selectedTeamId: _nextVisitTeamId,
                                       selectedTime: _nextVisitTime,
+                                      selectedTeamLabel: _nextVisitTeamLabel,
+                                      confirmChange:
+                                          (_nextVisitYmd ?? '').trim().isNotEmpty,
                                     );
                                 if (picked != null) {
                                   setState(() {

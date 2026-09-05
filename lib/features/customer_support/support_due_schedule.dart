@@ -1,6 +1,9 @@
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
+import 'package:coad_customer_calls/core/utils/support_visit_capacity.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
+import 'package:coad_customer_calls/features/customer_support/customer_support_intake_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_schedule_filters.dart';
 import 'package:coad_customer_calls/features/customer_support/support_today_desk.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/providers.dart';
@@ -205,17 +208,44 @@ final supportDeskCountsProvider = FutureProvider<SupportDeskCounts>((
     progress,
     SupportConsultOutcome.quoteSend,
   );
-  final verbalWait = await repo.filterLogsByLastConsultOutcome(
+  final verbalWaitRaw = await repo.filterLogsByLastConsultOutcome(
     progress,
     SupportConsultOutcome.verbalQuote,
   );
   var quoteSentWait = 0;
+  var verbalWait = verbalWaitRaw;
   try {
-    final snaps = await repo.lastConsultSnapshots(quoteWait.map((e) => e.id));
-    for (final s in snaps.values) {
-      if ((s.sentYmd ?? '').trim().isNotEmpty) quoteSentWait += 1;
-    }
-  } catch (_) {}
+    final snapsRaw = await repo.lastConsultSnapshots(progress.map((e) => e.id));
+    final sentByLog = await ref
+        .read(supportAsQuoteRepositoryProvider)
+        .sentYmdForCallLogs(
+          progress.map(
+            (e) => (
+              id: e.id,
+              phone: e.customerPhone,
+              customerName: e.customerName,
+            ),
+          ),
+        );
+    final snaps = enrichConsultSnapshotsWithQuoteSent(snapsRaw, sentByLog);
+    quoteSentWait = snaps.values
+        .where(
+          (s) =>
+              s.outcome == SupportConsultOutcome.quoteSend &&
+              (s.sentYmd ?? '').trim().isNotEmpty,
+        )
+        .length;
+    verbalWait = verbalWaitRaw
+        .where((e) => snaps[e.id]?.outcome == SupportConsultOutcome.verbalQuote)
+        .toList();
+  } catch (_) {
+    try {
+      final snaps = await repo.lastConsultSnapshots(quoteWait.map((e) => e.id));
+      for (final s in snaps.values) {
+        if ((s.sentYmd ?? '').trim().isNotEmpty) quoteSentWait += 1;
+      }
+    } catch (_) {}
+  }
   final todayVisitCompleted = await repo.list(
     visitOnly: true,
     fromYmd: today,
@@ -315,12 +345,13 @@ String supportFeedbackWaitNoticeBody(SupportCallLog log) {
   ].where((e) => e.isNotEmpty).join(' · ');
 }
 
-/// 로그인·재개·상담 저장 후 9/13/18 로컬 예약과 피드백 대기 2시간 알림을 맞춘다.
+/// 로그인·재개·상담 저장 후 9/13/18 로컬 예약, 피드백 대기, 방문 2시간 전 알림을 맞춘다.
 Future<void> refreshSupportDueReminders(WidgetRef ref) async {
   final user = ref.read(authControllerProvider);
   if (!canAccessCustomerSupport(user)) {
     await NotificationService.cancelAsDueReminders();
     await NotificationService.cancelFeedbackWaitReminders();
+    await NotificationService.cancelVisitSoonReminders();
     return;
   }
   final enabled =
@@ -332,6 +363,7 @@ Future<void> refreshSupportDueReminders(WidgetRef ref) async {
   if (!enabled) {
     await NotificationService.cancelAsDueReminders();
     await NotificationService.cancelFeedbackWaitReminders();
+    await NotificationService.cancelVisitSoonReminders();
     return;
   }
   try {
@@ -352,6 +384,11 @@ Future<void> refreshSupportDueReminders(WidgetRef ref) async {
     await _syncFeedbackWaitReminders(ref);
   } catch (e) {
     debugPrint('[as-feedback] reminder refresh failed: $e');
+  }
+  try {
+    await _syncVisitSoonReminders(ref);
+  } catch (e) {
+    debugPrint('[as-visit-soon] reminder refresh failed: $e');
   }
 }
 
@@ -379,4 +416,95 @@ Future<void> _syncFeedbackWaitReminders(WidgetRef ref) async {
     );
   }
   await NotificationService.syncFeedbackWaitReminders(notices);
+}
+
+/// 방문 예정(서울 벽시계) 시각. 시간 없으면 null.
+DateTime? supportVisitDateTimeSeoul({
+  required String ymd,
+  required String time,
+}) {
+  final day = ymd.trim();
+  final slot = normalizeSupportVisitTime(time);
+  if (day.length < 10 || slot.length < 4) return null;
+  final y = int.tryParse(day.substring(0, 4));
+  final m = int.tryParse(day.substring(5, 7));
+  final d = int.tryParse(day.substring(8, 10));
+  final hh = int.tryParse(slot.substring(0, 2));
+  final mm = slot.length >= 5 ? int.tryParse(slot.substring(3, 5)) ?? 0 : 0;
+  if (y == null || m == null || d == null || hh == null) return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31 || hh < 0 || hh > 23) return null;
+  return DateTime(y, m, d, hh, mm.clamp(0, 59));
+}
+
+/// 방문 2시간 전 알림 시각.
+DateTime? supportVisitSoonReminderAt({
+  required String ymd,
+  required String time,
+}) {
+  final visit = supportVisitDateTimeSeoul(ymd: ymd, time: time);
+  if (visit == null) return null;
+  return visit.subtract(const Duration(hours: 2));
+}
+
+String supportVisitSoonNoticeTitle(SupportCallLog log) {
+  final site = parseSupportIssueBody(log.issue).siteName.trim();
+  final name = log.customerName.trim();
+  final label = site.isNotEmpty ? site : (name.isEmpty ? '방문 예정' : name);
+  return '방문 2시간 전 · $label';
+}
+
+String supportVisitSoonNoticeBody({
+  required SupportCallLog log,
+  required String ymd,
+  required String time,
+}) {
+  final slot = normalizeSupportVisitTime(time);
+  String dayLabel = ymd;
+  if (ymd.length >= 10) {
+    final m = int.tryParse(ymd.substring(5, 7)) ?? 0;
+    final d = int.tryParse(ymd.substring(8, 10)) ?? 0;
+    dayLabel = '$m/$d';
+  }
+  return [
+    '$dayLabel $slot',
+    if (log.customerPhone.trim().isNotEmpty) log.customerPhone.trim(),
+    '방문 준비해 주세요',
+  ].where((e) => e.isNotEmpty).join(' · ');
+}
+
+Future<void> _syncVisitSoonReminders(WidgetRef ref) async {
+  final today = todayYmdSeoul();
+  final toYmd = addDaysToYmd(today, 21);
+  final events = await ref
+      .read(supportCallLogRepositoryProvider)
+      .listScheduleEvents(fromYmd: today, toYmdInclusive: toYmd);
+  final now = supportFeedbackWaitSeoulNow();
+  final notices = <SupportVisitSoonNotice>[];
+  final seen = <String>{};
+  for (final e in events) {
+    if (e.kind != SupportScheduleKind.visit) continue;
+    if (!isSupportVisitEventOpen(e)) continue;
+    final id = e.log.id.trim();
+    if (id.isEmpty || !seen.add(id)) continue;
+    final time = normalizeSupportVisitTime(
+      e.scheduledTime ?? e.log.visitTime,
+    );
+    if (time.isEmpty) continue;
+    final when = supportVisitSoonReminderAt(ymd: e.ymd, time: time);
+    if (when == null || !when.isAfter(now)) continue;
+    notices.add(
+      SupportVisitSoonNotice(
+        id: id,
+        title: supportVisitSoonNoticeTitle(e.log),
+        body: supportVisitSoonNoticeBody(
+          log: e.log,
+          ymd: e.ymd,
+          time: time,
+        ),
+        when: when,
+      ),
+    );
+    if (notices.length >= 80) break;
+  }
+  await NotificationService.syncVisitSoonReminders(notices);
 }

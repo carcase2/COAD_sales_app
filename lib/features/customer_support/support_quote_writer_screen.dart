@@ -160,13 +160,25 @@ class _SupportQuoteWriterScreenState
       return;
     }
     if (action != SupportQuoteViewAction.sent) return;
-    final marked = doc.copyWith(sentYmd: todayYmdSeoul());
+    final day = todayYmdSeoul();
+    final marked = doc.copyWith(
+      sentYmd: day,
+      callLogId: widget.callLogId ?? doc.callLogId,
+    );
     try {
       final user = ref.read(authControllerProvider);
       final stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(
         marked,
         editorName: user?.name ?? user?.id,
       );
+      final logId = (widget.callLogId ?? doc.callLogId ?? '').trim();
+      if (logId.isNotEmpty) {
+        await ref.read(supportCallLogRepositoryProvider).markLatestQuoteSentForCallLog(
+          logId,
+          sentYmd: day,
+          createdBy: user?.name ?? user?.id,
+        );
+      }
       final markedList = [..._items];
       final mi = markedList.indexWhere((e) => e.id == stored.id);
       if (mi >= 0) markedList[mi] = stored;

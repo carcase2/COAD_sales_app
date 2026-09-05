@@ -186,6 +186,102 @@ class SupportAsQuoteRepository {
     }
   }
 
+  /// 접수별 발송완료일. 상담이 구두로 남아 있어도 견적서 발송을 반영할 때 쓴다.
+  Future<Map<String, String>> sentYmdByCallLogIds(
+    Iterable<String> callLogIds,
+  ) async {
+    final ids = callLogIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return const {};
+    try {
+      final res = await _client
+          .from('support_as_quotes')
+          .select('call_log_id, sent_ymd')
+          .inFilter('call_log_id', ids)
+          .not('sent_ymd', 'is', null);
+      final out = <String, String>{};
+      for (final row in List<Map<String, dynamic>>.from(res)) {
+        final logId = (row['call_log_id'] ?? '').toString().trim();
+        final sent = _sentYmdFromRow(row['sent_ymd']);
+        if (logId.isEmpty || sent.isEmpty) continue;
+        final prev = out[logId];
+        if (prev == null || sent.compareTo(prev) > 0) out[logId] = sent;
+      }
+      return out;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  static String _sentYmdFromRow(Object? raw) {
+    return (raw ?? '')
+        .toString()
+        .split('T')
+        .first
+        .split(' ')
+        .first
+        .trim();
+  }
+
+  /// [call_log_id]가 비어 있어도 전화·현장명으로 발송 견적을 접수에 연결한다.
+  /// 상세 견적 목록은 현장 매칭을 쓰는데, 오늘 접수 리스트만 id로만 보면 구두로 남는다.
+  Future<Map<String, String>> sentYmdForCallLogs(
+    Iterable<({String id, String? phone, String? customerName})> logs,
+  ) async {
+    final items = [
+      for (final e in logs)
+        if (e.id.trim().isNotEmpty)
+          (
+            id: e.id.trim(),
+            phone: (e.phone ?? '').trim(),
+            customerName: (e.customerName ?? '').trim(),
+          ),
+    ];
+    if (items.isEmpty) return const {};
+    final byId = await sentYmdByCallLogIds(items.map((e) => e.id));
+    final missing = items.where((e) => !byId.containsKey(e.id)).toList();
+    if (missing.isEmpty) return byId;
+    try {
+      final res = await _client
+          .from('support_as_quotes')
+          .select('call_log_id, sent_ymd, phone, site, customer_name')
+          .not('sent_ymd', 'is', null)
+          .order('sent_ymd', ascending: false)
+          .limit(800);
+      final out = Map<String, String>.from(byId);
+      final rows = List<Map<String, dynamic>>.from(res);
+      for (final log in missing) {
+        for (final row in rows) {
+          final linked = (row['call_log_id'] ?? '').toString().trim();
+          if (linked.isNotEmpty && linked != log.id) continue;
+          final sent = _sentYmdFromRow(row['sent_ymd']);
+          if (sent.isEmpty) continue;
+          final matches = supportQuoteBelongsToSite(
+            SupportQuoteDocument(
+              id: '',
+              ymd: '',
+              customerName: (row['customer_name'] ?? '').toString(),
+              phone: (row['phone'] ?? '').toString(),
+              site: (row['site'] ?? '').toString(),
+            ),
+            phone: log.phone,
+            site: log.customerName,
+            customerName: log.customerName,
+          );
+          if (!matches) continue;
+          out[log.id] = sent;
+          break;
+        }
+      }
+      return out;
+    } catch (_) {
+      return byId;
+    }
+  }
+
   Future<List<SupportQuoteDocument>> listForSite({
     String? phone,
     String? site,

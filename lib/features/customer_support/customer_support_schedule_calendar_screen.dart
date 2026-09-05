@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/region_branch.dart';
+import 'package:coad_customer_calls/core/utils/support_visit_capacity.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/support_as_visit_team_repository.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
@@ -70,7 +71,10 @@ class _CustomerSupportScheduleCalendarScreenState
     }
     final today = todayYmdSeoul();
     final ymd = (widget.initialYmd ?? '').trim();
-    _focused = _fromYmd(ymd.length >= 10 ? ymd : today);
+    final raw = ymd.length >= 10 ? ymd : today;
+    // 주간표는 월~금만 보이므로 주말 진입 시 다음 월요일로.
+    final focus = supportVisitWeekFocusYmd(raw);
+    _focused = _fromYmd(focus);
     _selected = _focused;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_loadMonth());
@@ -96,9 +100,10 @@ class _CustomerSupportScheduleCalendarScreenState
       _error = null;
     });
     try {
+      final focusedYmd = _toYmd(_focused);
       final range = _weekMode
-          ? seoulSundayWeekRangeContaining(_toYmd(_focused))
-          : seoulMonthRangeContaining(_toYmd(_focused));
+          ? seoulWeekRangeContaining(supportVisitWeekFocusYmd(focusedYmd))
+          : seoulMonthRangeContaining(focusedYmd);
       final rowsFuture = ref
           .read(supportCallLogRepositoryProvider)
           .listScheduleEvents(fromYmd: range.$1, toYmdInclusive: range.$2);
@@ -531,8 +536,8 @@ class _CustomerSupportScheduleCalendarScreenState
     return '$d $t5';
   }
 
-  static const _satColor = Color(0xFF1565C0);
-  static const _sunColor = Color(0xFFC62828);
+  static const _satColor = kSupportVisitCalendarSaturday;
+  static const _sunColor = kSupportVisitCalendarSunday;
 
   static String _weekdayKo(int weekday) => switch (weekday) {
     DateTime.sunday => '일',
@@ -560,6 +565,8 @@ class _CustomerSupportScheduleCalendarScreenState
     bool selected = false,
     bool today = false,
   }) {
+    final isToday = today || _toYmd(day) == todayYmdSeoul();
+    final eventCount = outside ? 0 : _forDay(day).length;
     final weekend = switch (day.weekday) {
       DateTime.saturday => _satColor,
       DateTime.sunday => _sunColor,
@@ -577,26 +584,48 @@ class _CustomerSupportScheduleCalendarScreenState
     }
     return Center(
       child: Container(
-        width: 36,
-        height: 36,
-        alignment: const Alignment(0, -0.08),
-        decoration: selected
-            ? BoxDecoration(color: accent, shape: BoxShape.circle)
-            : today
-            ? BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: accent, width: 1.4),
-              )
-            : null,
-        child: Text(
-          '${day.day}',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: selected || today ? FontWeight.w800 : FontWeight.w600,
-            height: 1.0,
-            leadingDistribution: TextLeadingDistribution.even,
-            color: fg,
-          ),
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: selected
+              ? accent
+              : isToday
+              ? const Color(0xFFEFF6FF)
+              : null,
+          border: isToday
+              ? Border.all(color: kSupportVisitWeekTodayBorder, width: 2)
+              : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected || isToday
+                    ? FontWeight.w800
+                    : FontWeight.w600,
+                height: 1.0,
+                color: fg,
+              ),
+            ),
+            Text(
+              eventCount > 0 ? '$eventCount' : ' ',
+              style: TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w800,
+                height: 1.0,
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.9)
+                    : eventCount > 0
+                    ? accent
+                    : Colors.transparent,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -609,6 +638,9 @@ class _CustomerSupportScheduleCalendarScreenState
     final sendColor = const Color(0xFFD97706);
     final depositColor = const Color(0xFF059669);
     final selectedCount = _forDay(_selected).length;
+    final weekMon = seoulWeekRangeContaining(
+      supportVisitWeekFocusYmd(_toYmd(_focused)),
+    ).$1;
     return Scaffold(
       appBar: AppBar(
         title: Text(_weekMode ? '방문 주간표' : '방문 · 발송 달력'),
@@ -723,12 +755,30 @@ class _CustomerSupportScheduleCalendarScreenState
                   ),
                   Expanded(
                     child: Text(
-                      formatMonthDayRangeKo(
-                        seoulSundayWeekRangeContaining(_toYmd(_focused)).$1,
-                        seoulSundayWeekRangeContaining(_toYmd(_focused)).$2,
-                      ),
+                      formatMonthDayRangeKo(weekMon, addDaysToYmd(weekMon, 4)),
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      final today = supportVisitWeekFocusYmd(todayYmdSeoul());
+                      setState(() {
+                        _focused = _fromYmd(today);
+                        _selected = _focused;
+                      });
+                      unawaited(_loadMonth());
+                    },
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    child: Text(
+                      '오늘',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: accent,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -756,11 +806,18 @@ class _CustomerSupportScheduleCalendarScreenState
           Expanded(
             child: _weekMode
                 ? SupportVisitWeekBoard(
-                    anchorYmd: _toYmd(_focused),
+                    anchorYmd: supportVisitWeekFocusYmd(_toYmd(_focused)),
                     events: _events,
                     teams: _teamsById.values.toList(),
                     branch: _branchTab,
                     onReload: _loadMonth,
+                    onAnchorChanged: (ymd) {
+                      setState(() {
+                        _focused = _fromYmd(ymd);
+                        _selected = _focused;
+                      });
+                      unawaited(_loadMonth());
+                    },
                   )
                 : LayoutBuilder(
               builder: (context, constraints) {
@@ -774,7 +831,7 @@ class _CustomerSupportScheduleCalendarScreenState
                       focusedDay: _focused,
                       selectedDayPredicate: (d) => isSameDay(d, _selected),
                       calendarFormat: CalendarFormat.month,
-                      startingDayOfWeek: StartingDayOfWeek.sunday,
+                      startingDayOfWeek: StartingDayOfWeek.monday,
                       daysOfWeekHeight: 28,
                       rowHeight: 48,
                       headerStyle: const HeaderStyle(
@@ -801,6 +858,8 @@ class _CustomerSupportScheduleCalendarScreenState
                         if (!sameMonth) unawaited(_loadMonth());
                       },
                       calendarStyle: const CalendarStyle(
+                        isTodayHighlighted: false,
+                        todayDecoration: BoxDecoration(),
                         weekendTextStyle: TextStyle(fontSize: 0),
                         holidayTextStyle: TextStyle(fontSize: 0),
                       ),
@@ -839,12 +898,14 @@ class _CustomerSupportScheduleCalendarScreenState
                           accent: accent,
                           outside: false,
                           selected: true,
+                          today: _toYmd(day) == todayYmdSeoul(),
                         ),
                         outsideBuilder: (context, day, focused) => _dayCell(
                           day,
                           scheme: scheme,
                           accent: accent,
                           outside: true,
+                          today: _toYmd(day) == todayYmdSeoul(),
                         ),
                         markerBuilder: (context, day, events) {
                           if (events.isEmpty) return const SizedBox.shrink();

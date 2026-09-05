@@ -299,17 +299,22 @@ class SupportCallLogRepository {
       }
       final out = <String, SupportConsultSnapshot>{};
       for (final e in byLog.entries) {
+        final outcome = lastSupportConsultOutcome(e.value);
         String? ymd;
         String? sentYmd;
-        for (final raw in e.value) {
-          final parsed = parseSupportConsultation(raw);
-          if (parsed.outcome == SupportConsultOutcome.quoteSend) {
-            ymd = parsed.ymd;
-            sentYmd = parsed.sentYmd;
+        // 마지막 결과가 정식 견적일 때만 발송일을 붙인다.
+        // (이전 견적 발송일이 구두 스냅에 남으면 리스트 enrich가 막힌다)
+        if (outcome == SupportConsultOutcome.quoteSend) {
+          for (final raw in e.value) {
+            final parsed = parseSupportConsultation(raw);
+            if (parsed.outcome == SupportConsultOutcome.quoteSend) {
+              ymd = parsed.ymd;
+              sentYmd = parsed.sentYmd;
+            }
           }
         }
         out[e.key] = SupportConsultSnapshot(
-          outcome: lastSupportConsultOutcome(e.value),
+          outcome: outcome,
           ymd: ymd,
           sentYmd: sentYmd,
           count: e.value.length,
@@ -888,6 +893,62 @@ class SupportCallLogRepository {
     }
   }
 
+  /// 접수에 연결된 「정식 견적서」 상담을 발송완료로 맞춘다.
+  /// 홈·오늘 접수 리스트는 `support_as_quotes`가 아니라 마지막 상담 결과를 본다.
+  /// 구두 견적만 있고 정식 상담 줄이 없으면 발송완료 줄을 추가한다.
+  Future<bool> markLatestQuoteSentForCallLog(
+    String callLogId, {
+    String? sentYmd,
+    String? createdBy,
+  }) async {
+    final logId = callLogId.trim();
+    if (logId.isEmpty) return false;
+    final day = (sentYmd ?? '').trim().isEmpty
+        ? todayYmdSeoul()
+        : sentYmd!.trim();
+    final consults = await listConsultations(logId);
+
+    SupportConsultation? quoteTarget;
+    for (final c in consults.reversed) {
+      final parsed = parseSupportConsultation(c.description);
+      if (parsed.outcome == SupportConsultOutcome.quoteSend) {
+        quoteTarget = c;
+        break;
+      }
+    }
+    if (quoteTarget != null) {
+      final parsed = parseSupportConsultation(quoteTarget.description);
+      if ((parsed.sentYmd ?? '').trim().isNotEmpty) return true;
+      await markQuoteSent(
+        consultationId: quoteTarget.id,
+        description: quoteTarget.description,
+        sentYmd: day,
+      );
+      return true;
+    }
+
+    // 구두·피드백 대기만 있는 채로 PDF를 보낸 경우 → 발송완료 단계로 올린다.
+    final head = supportConsultOutcomeLine(
+      SupportConsultOutcome.quoteSend,
+      ymd: day,
+      sentYmd: day,
+    );
+    try {
+      await supportSupabaseClient().from('service_requests').insert({
+        'call_log_id': logId,
+        'description': '$head\n정식 견적서 발송',
+        if ((createdBy ?? '').trim().isNotEmpty) 'created_by': createdBy!.trim(),
+      });
+      await supportSupabaseClient()
+          .from('call_logs')
+          .update({'service_status_id': kSupportStatusInProgress})
+          .eq('id', logId);
+      return true;
+    } catch (e) {
+      throw ApiException('견적서 발송 여부를 접수에 반영하지 못했습니다. $e');
+    }
+  }
+
   Future<List<SupportScheduleEvent>> listScheduleEvents({
     required String fromYmd,
     required String toYmdInclusive,
@@ -943,14 +1004,16 @@ class SupportCallLogRepository {
           .limit(400);
       for (final row in List<Map<String, dynamic>>.from(visitRows)) {
         final log = SupportCallLog.fromJson(row);
-        final ymd = log.visitDate;
+        final ymd = _rowYmd(row['visit_date']) ?? log.visitDate;
         if (ymd == null || ymd.isEmpty) continue;
         final report = reportOnDay(log.id, ymd);
         addEvent(
           SupportScheduleEvent(
             kind: SupportScheduleKind.visit,
             ymd: ymd,
-            log: log,
+            log: log.visitDate == ymd
+                ? log
+                : log.copyWith(visitDate: ymd),
             caption: log.serviceStatusId == kSupportStatusCompleted
                 ? '방문완료'
                 : '방문예정',
@@ -1522,6 +1585,46 @@ class SupportConsultSnapshot {
   final int count;
 }
 
+/// 견적서 발송완료인데 마지막 상담이 구두/피드백/미발송 견적으로 남은 경우 표시를 맞춘다.
+/// 상세의 견적 카드는 `support_as_quotes.sent_ymd`를 보고, 목록은 이 스냅을 본다.
+Map<String, SupportConsultSnapshot> enrichConsultSnapshotsWithQuoteSent(
+  Map<String, SupportConsultSnapshot> snaps,
+  Map<String, String> sentByCallLogId,
+) {
+  if (sentByCallLogId.isEmpty) return snaps;
+  final out = Map<String, SupportConsultSnapshot>.from(snaps);
+  for (final e in sentByCallLogId.entries) {
+    final sent = e.value.trim();
+    if (sent.isEmpty) continue;
+    final snap = out[e.key];
+    if (snap == null) {
+      out[e.key] = SupportConsultSnapshot(
+        outcome: SupportConsultOutcome.quoteSend,
+        ymd: sent,
+        sentYmd: sent,
+      );
+      continue;
+    }
+    final outcome = snap.outcome;
+    final alreadySent =
+        outcome == SupportConsultOutcome.quoteSend &&
+        (snap.sentYmd ?? '').trim().isNotEmpty;
+    if (alreadySent) continue;
+    if (outcome == SupportConsultOutcome.verbalQuote ||
+        outcome == SupportConsultOutcome.feedbackWait ||
+        outcome == SupportConsultOutcome.quoteSend ||
+        outcome == null) {
+      out[e.key] = SupportConsultSnapshot(
+        outcome: SupportConsultOutcome.quoteSend,
+        ymd: (snap.ymd ?? '').trim().isEmpty ? sent : snap.ymd,
+        sentYmd: sent,
+        count: snap.count,
+      );
+    }
+  }
+  return out;
+}
+
 class SupportFlowCue {
   const SupportFlowCue({
     required this.action,
@@ -1545,6 +1648,7 @@ SupportFlowCue supportFlowCue({
   int consultationCount = 0,
   bool canAddVisit = false,
   String? visitDate,
+  String? visitTime,
   String? depositYmd,
   bool depositPaid = true,
   SupportConsultOutcome? lastOutcome,
@@ -1572,14 +1676,25 @@ SupportFlowCue supportFlowCue({
   }
   if (canAddVisit) {
     final day = (visitDate ?? '').trim();
+    final timeRaw = (visitTime ?? '').trim();
+    final time = timeRaw.length >= 5 ? timeRaw.substring(0, 5) : timeRaw;
+    String whenLabel = '';
+    if (day.length >= 10) {
+      final m = int.tryParse(day.substring(5, 7)) ?? 0;
+      final d = int.tryParse(day.substring(8, 10)) ?? 0;
+      whenLabel = '$m/$d';
+      if (time.isNotEmpty) whenLabel = '$whenLabel $time';
+    } else if (day.isNotEmpty) {
+      whenLabel = time.isEmpty ? day : '$day $time';
+    }
     return SupportFlowCue(
       action: SupportNextAction.visit,
       title: '다음: 방문 기록',
-      subtitle: day.isEmpty
-          ? '방문한 뒤에 완료·유무상을 남깁니다. 미완료면 다음 방문일을 잡습니다'
-          : '방문일 $day · 다녀온 뒤 방문 기록을 남깁니다',
+      subtitle: whenLabel.isEmpty
+          ? '방문한 뒤에 완료·유무상을 남깁니다'
+          : '방문 $whenLabel · 다녀오면 방문 기록',
       actionLabel: '방문 기록',
-      progressLabel: day.isEmpty ? '다음: 방문 기록' : '다음: 방문 $day',
+      progressLabel: whenLabel.isEmpty ? '다음: 방문 기록' : '방문 $whenLabel',
     );
   }
   if (consultationCount == 0 ||
@@ -1593,6 +1708,19 @@ SupportFlowCue supportFlowCue({
     );
   }
   final stage = consultationCount + 1;
+  final sentAlready = (quoteSentYmd ?? '').trim();
+  // 상세 견적서는 발송완료인데 상담 줄만 구두/피드백으로 남은 경우
+  if (sentAlready.isNotEmpty &&
+      (lastOutcome == SupportConsultOutcome.verbalQuote ||
+          lastOutcome == SupportConsultOutcome.feedbackWait)) {
+    return SupportFlowCue(
+      action: SupportNextAction.consult,
+      title: '견적서 발송 완료',
+      subtitle: '발송완료 $sentAlready. 고객이 다시 오면 방문일을 잡거나 마무리합니다',
+      actionLabel: '$stage차 상담',
+      progressLabel: '발송완료 $sentAlready',
+    );
+  }
   if (lastOutcome == SupportConsultOutcome.feedbackWait) {
     return SupportFlowCue(
       action: SupportNextAction.consult,
@@ -1613,7 +1741,7 @@ SupportFlowCue supportFlowCue({
     );
   }
   if (lastOutcome == SupportConsultOutcome.quoteSend) {
-    final sent = (quoteSentYmd ?? '').trim();
+    final sent = sentAlready;
     if (sent.isNotEmpty) {
       return SupportFlowCue(
         action: SupportNextAction.consult,
@@ -1655,6 +1783,7 @@ SupportFlowCue supportFlowCueFromLog(
       serviceStatusId: log.serviceStatusId,
     ),
     visitDate: log.visitDate,
+    visitTime: log.visitTime,
     lastOutcome: last?.outcome,
     quoteSendYmd: last?.ymd,
     quoteSentYmd: last?.sentYmd,

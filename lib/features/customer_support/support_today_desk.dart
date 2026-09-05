@@ -293,7 +293,22 @@ final supportTodayDeskProvider = FutureProvider<SupportTodayDesk>((ref) async {
       statusId: kSupportStatusInProgress,
       limit: 400,
     );
-    final snaps = await repo.lastConsultSnapshots(progress.map((e) => e.id));
+    final snapsRaw = await repo.lastConsultSnapshots(progress.map((e) => e.id));
+    Map<String, SupportConsultSnapshot> snaps = snapsRaw;
+    try {
+      final sentByLog = await ref
+          .read(supportAsQuoteRepositoryProvider)
+          .sentYmdForCallLogs(
+            progress.map(
+              (e) => (
+                id: e.id,
+                phone: e.customerPhone,
+                customerName: e.customerName,
+              ),
+            ),
+          );
+      snaps = enrichConsultSnapshotsWithQuoteSent(snapsRaw, sentByLog);
+    } catch (_) {}
     for (final s in snaps.values) {
       if (s.outcome == SupportConsultOutcome.feedbackWait) {
         feedbackWait += 1;

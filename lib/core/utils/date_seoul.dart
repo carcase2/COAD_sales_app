@@ -421,6 +421,15 @@ String previousWorkdayYmd(String ymd) =>
     addDaysToYmdSkippingWeekends(ymd, -1);
 String nextWorkdayYmd(String ymd) => addDaysToYmdSkippingWeekends(ymd, 1);
 
+/// 방문 주간표 기준일. 토·일이면 다음 월요일 — 지난주 빈 칸만 보이던 문제 방지.
+String supportVisitWeekFocusYmd(String ymd) {
+  final day = _parseYmdLocal(ymd);
+  if (day == null) return ymd;
+  if (day.weekday == DateTime.saturday) return addDaysToYmd(ymd, 2);
+  if (day.weekday == DateTime.sunday) return addDaysToYmd(ymd, 1);
+  return ymd;
+}
+
 /// [anyYmd]가 속한 주의 **월요일~일요일**(포함) 구간. `weekday`는 `DateTime` 규약(월=1).
 (String mondayYmd, String sundayYmd) seoulWeekRangeContaining(String anyYmd) {
   final parts = anyYmd.split('-');
@@ -454,6 +463,12 @@ String nextWorkdayYmd(String ymd) => addDaysToYmdSkippingWeekends(ymd, 1);
 /// 일요일부터 토요일까지 7일 `yyyy-MM-dd`.
 List<String> seoulSundayWeekDays(String anyYmd) {
   final range = seoulSundayWeekRangeContaining(anyYmd);
+  return List.generate(7, (i) => addDaysToYmd(range.$1, i));
+}
+
+/// 월요일부터 일요일까지 7일 `yyyy-MM-dd`.
+List<String> seoulMondayWeekDays(String anyYmd) {
+  final range = seoulWeekRangeContaining(anyYmd);
   return List.generate(7, (i) => addDaysToYmd(range.$1, i));
 }
 

@@ -274,6 +274,26 @@ void main() {
       supportFlowCue(
         serviceStatusId: kSupportStatusInProgress,
         consultationCount: 1,
+        lastOutcome: SupportConsultOutcome.verbalQuote,
+        quoteSentYmd: '2026-08-23',
+      ).progressLabel,
+      '발송완료 2026-08-23',
+    );
+    final enriched = enrichConsultSnapshotsWithQuoteSent(
+      {
+        'a': const SupportConsultSnapshot(
+          outcome: SupportConsultOutcome.verbalQuote,
+          count: 1,
+        ),
+      },
+      {'a': '2026-08-23'},
+    )['a'];
+    expect(enriched?.outcome, SupportConsultOutcome.quoteSend);
+    expect(enriched?.sentYmd, '2026-08-23');
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusInProgress,
+        consultationCount: 1,
         lastOutcome: SupportConsultOutcome.quoteSend,
         quoteSendYmd: '2026-08-22',
       ).progressLabel,
@@ -295,7 +315,16 @@ void main() {
         canAddVisit: true,
         visitDate: '2026-08-25',
       ).progressLabel,
-      '다음: 방문 2026-08-25',
+      '방문 8/25',
+    );
+    expect(
+      supportFlowCue(
+        serviceStatusId: kSupportStatusVisitScheduled,
+        canAddVisit: true,
+        visitDate: '2026-08-25',
+        visitTime: '10:00',
+      ).progressLabel,
+      '방문 8/25 10:00',
     );
     expect(
       supportFlowCue(
@@ -344,6 +373,18 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('방문 2시간 전 알림 시각', () {
+    expect(
+      supportVisitSoonReminderAt(ymd: '2026-09-08', time: '14:00'),
+      DateTime(2026, 9, 8, 12, 0),
+    );
+    expect(
+      supportVisitSoonReminderAt(ymd: '2026-09-08', time: '09:00:00'),
+      DateTime(2026, 9, 8, 7, 0),
+    );
+    expect(supportVisitSoonReminderAt(ymd: '2026-09-08', time: ''), isNull);
   });
 
   test('naive support timestamps are UTC shown as KST', () {

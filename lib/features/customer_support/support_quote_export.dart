@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_paper.dart';
+import 'package:coad_customer_calls/features/customer_support/support_today_desk.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -287,6 +291,40 @@ class _SupportQuoteExportSheetState
         );
     if (!mounted) return;
     setState(() => _doc = saved);
+    if (markSent) {
+      await _syncReceptionQuoteSent(sentYmd: saved.sentYmd ?? todayYmdSeoul());
+    }
+  }
+
+  /// 홈 미발송은 접수 상담 문구를 보므로, 견적서 발송 시 같이 맞춘다.
+  Future<void> _syncReceptionQuoteSent({required String sentYmd}) async {
+    final logId = (_doc.callLogId ?? '').trim();
+    if (logId.isEmpty) return;
+    try {
+      final user = ref.read(authControllerProvider);
+      await ref.read(supportCallLogRepositoryProvider).markLatestQuoteSentForCallLog(
+        logId,
+        sentYmd: sentYmd,
+        createdBy: user?.name ?? user?.id,
+      );
+      unawaited(refreshSupportDueReminders(ref));
+      ref.invalidate(supportTodayDeskProvider);
+    } catch (_) {}
+  }
+
+  Future<void> _markSentAndClose() async {
+    final day = todayYmdSeoul();
+    try {
+      final user = ref.read(authControllerProvider);
+      final stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(
+        _doc.copyWith(sentYmd: day),
+        editorName: user?.name ?? user?.id,
+      );
+      if (mounted) setState(() => _doc = stored);
+      await _syncReceptionQuoteSent(sentYmd: day);
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context).pop(SupportQuoteViewAction.sent);
   }
 
   Future<void> _openCloudPdf() async {
@@ -462,11 +500,15 @@ class _SupportQuoteExportSheetState
                     TextButton(
                       onPressed: _busy
                           ? null
-                          : () => Navigator.of(context).pop(
-                              _doc.isSent
-                                  ? SupportQuoteViewAction.unsent
-                                  : SupportQuoteViewAction.sent,
-                            ),
+                          : () {
+                              if (_doc.isSent) {
+                                Navigator.of(context).pop(
+                                  SupportQuoteViewAction.unsent,
+                                );
+                              } else {
+                                _markSentAndClose();
+                              }
+                            },
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                         minimumSize: const Size(0, 30),

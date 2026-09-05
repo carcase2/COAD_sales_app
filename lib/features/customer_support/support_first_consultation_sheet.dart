@@ -101,6 +101,8 @@ class _SupportFirstConsultationSheetState
         selectedYmd: _visitYmd,
         selectedTeamId: _visitTeamId,
         selectedTime: _visitTime,
+        selectedTeamLabel: _visitTeamLabel,
+        confirmChange: (_visitYmd ?? '').trim().isNotEmpty,
       );
       if (picked == null || !mounted) return;
       setState(() {
@@ -201,12 +203,21 @@ class _SupportFirstConsultationSheetState
       return;
     }
     if (action != SupportQuoteViewAction.sent) return;
-    final marked = doc.copyWith(sentYmd: todayYmdSeoul());
+    final day = todayYmdSeoul();
+    final marked = doc.copyWith(
+      sentYmd: day,
+      callLogId: widget.log.id,
+    );
     try {
       final stored = await ref.read(supportAsQuoteRepositoryProvider).upsert(
         marked,
         editorName: ref.read(authControllerProvider)?.name ??
             ref.read(authControllerProvider)?.id,
+      );
+      await ref.read(supportCallLogRepositoryProvider).markLatestQuoteSentForCallLog(
+        widget.log.id,
+        sentYmd: day,
+        createdBy: ref.read(authControllerProvider)?.name,
       );
       if (!mounted) return;
       setState(() => _quoteDoc = stored);

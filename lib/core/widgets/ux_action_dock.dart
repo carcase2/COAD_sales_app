@@ -256,8 +256,8 @@ class UxStatusHeroBanner extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
                           height: 1.3,
                           color: fg.withValues(alpha: 0.82),
                         ),

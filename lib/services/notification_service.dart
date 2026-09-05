@@ -74,6 +74,21 @@ class SupportFeedbackWaitNotice {
   final DateTime when;
 }
 
+/// 방문 예정 시각 2시간 전 로컬 알림.
+class SupportVisitSoonNotice {
+  const SupportVisitSoonNotice({
+    required this.id,
+    required this.title,
+    required this.body,
+    required this.when,
+  });
+
+  final String id;
+  final String title;
+  final String body;
+  final DateTime when;
+}
+
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -83,6 +98,8 @@ class NotificationService {
   static const String _androidChannelAsDueId = 'as_due_notifications';
   static const String _androidChannelAsFeedbackId =
       'as_feedback_wait_notifications';
+  static const String _androidChannelAsVisitSoonId =
+      'as_visit_soon_notifications';
   static const String _androidChannelGeneralId = 'general_notifications';
 
   static const String _androidChannelCallName = '새 접수 알림';
@@ -90,6 +107,7 @@ class NotificationService {
   static const String _androidChannelScheduleName = '일정 알림';
   static const String _androidChannelAsDueName = 'A/S 방문·발송 예정';
   static const String _androidChannelAsFeedbackName = 'A/S 피드백 대기';
+  static const String _androidChannelAsVisitSoonName = 'A/S 방문 2시간 전';
   static const String _androidChannelGeneralName = '일반 알림';
 
   static const String _androidChannelCallDesc = '새 통화 접수 알림';
@@ -99,6 +117,8 @@ class NotificationService {
       '매일 오전 9시·오후 1시·오후 6시 오늘·지난 방문/발송 예정';
   static const String _androidChannelAsFeedbackDesc =
       '피드백 대기 2시간 뒤 재알림. 19시 이후는 다음날 오전 9시';
+  static const String _androidChannelAsVisitSoonDesc =
+      '방문 예정 시각 2시간 전 알림';
   static const String _androidChannelGeneralDesc = '앱 업데이트 등 일반 알림';
 
   static const int _asDueNotifIdMorning = 91009;
@@ -112,6 +132,7 @@ class NotificationService {
   ];
   static const String _asDueCalendarRouteName = 'AsDueCalendar';
   static const String _asFeedbackTag = 'as_feedback_wait';
+  static const String _asVisitSoonTag = 'as_visit_soon';
 
   /// Navigation key to support navigation without context
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -162,7 +183,8 @@ class NotificationService {
     } else if (_isGeneralScheduleNotification(data)) {
       key = prefKeyNotifyGeneralSchedule;
     } else if (_isAsDueScheduleNotification(data) ||
-        _isAsFeedbackWaitNotification(data)) {
+        _isAsFeedbackWaitNotification(data) ||
+        _isAsVisitSoonNotification(data)) {
       key = prefKeyNotifyAsDue;
     } else if (_isGosuReceptionNotification(data) ||
         _extractCallIdFromData(data) != null) {
@@ -187,6 +209,9 @@ class NotificationService {
     }
     if (_isAsFeedbackWaitNotification(data)) {
       return _androidChannelAsFeedbackId;
+    }
+    if (_isAsVisitSoonNotification(data)) {
+      return _androidChannelAsVisitSoonId;
     }
     if (_isIssuanceCompletedNotification(data) ||
         _isIssuanceRequestNotification(data)) {
@@ -214,6 +239,8 @@ class NotificationService {
         return _androidChannelAsDueName;
       case _androidChannelAsFeedbackId:
         return _androidChannelAsFeedbackName;
+      case _androidChannelAsVisitSoonId:
+        return _androidChannelAsVisitSoonName;
       default:
         return _androidChannelGeneralName;
     }
@@ -231,6 +258,8 @@ class NotificationService {
         return _androidChannelAsDueDesc;
       case _androidChannelAsFeedbackId:
         return _androidChannelAsFeedbackDesc;
+      case _androidChannelAsVisitSoonId:
+        return _androidChannelAsVisitSoonDesc;
       default:
         return _androidChannelGeneralDesc;
     }
@@ -347,6 +376,7 @@ class NotificationService {
         _androidChannelScheduleId,
         _androidChannelAsDueId,
         _androidChannelAsFeedbackId,
+        _androidChannelAsVisitSoonId,
         _androidChannelGeneralId,
       ];
       for (final id in ids) {
@@ -835,6 +865,7 @@ class NotificationService {
       return;
     }
     if (_isAsFeedbackWaitNotification(data) ||
+        _isAsVisitSoonNotification(data) ||
         _isAsReceptionNotification(data)) {
       final asId = _extractAsReceptionId(data);
       if (asId == null) {
@@ -887,6 +918,14 @@ class NotificationService {
         .trim()
         .toLowerCase();
     return type == 'as_feedback_wait' || type == 'as-feedback-wait';
+  }
+
+  static bool _isAsVisitSoonNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return type == 'as_visit_soon' || type == 'as-visit-soon';
   }
 
   static bool _isAsDueScheduleNotification(Map<String, dynamic> data) {
@@ -1683,6 +1722,106 @@ class NotificationService {
     var id = 'as_feedback_wait:$logId'.hashCode & 0x7fffffff;
     if (_asDueNotifIds.contains(id) || id == 0) {
       id = (id + 17) & 0x7fffffff;
+    }
+    return id;
+  }
+
+  static Future<void> syncVisitSoonReminders(
+    List<SupportVisitSoonNotice> items,
+  ) async {
+    await cancelVisitSoonReminders();
+    if (items.isEmpty) return;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _androidChannelAsVisitSoonId,
+        _androidChannelAsVisitSoonName,
+        channelDescription: _androidChannelAsVisitSoonDesc,
+        importance: Importance.max,
+        priority: Priority.high,
+        category: AndroidNotificationCategory.reminder,
+        tag: _asVisitSoonTag,
+        autoCancel: true,
+      ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
+    );
+    final now = tz.TZDateTime.now(tz.local);
+    for (final item in items) {
+      final when = tz.TZDateTime(
+        tz.local,
+        item.when.year,
+        item.when.month,
+        item.when.day,
+        item.when.hour,
+        item.when.minute,
+        item.when.second,
+      );
+      if (!when.isAfter(now)) continue;
+      final id = _visitSoonNotifId(item.id);
+      final payload = jsonEncode({
+        'type': 'as_visit_soon',
+        'as_id': item.id,
+      });
+      try {
+        await _localNotifications.zonedSchedule(
+          id: id,
+          title: item.title,
+          body: item.body,
+          scheduledDate: when,
+          notificationDetails: details,
+          payload: payload,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
+      } catch (e) {
+        _log('exact visit-soon schedule failed id=$id: $e');
+        try {
+          await _localNotifications.zonedSchedule(
+            id: id,
+            title: item.title,
+            body: item.body,
+            scheduledDate: when,
+            notificationDetails: details,
+            payload: payload,
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          );
+        } catch (e2) {
+          _log('inexact visit-soon schedule failed id=$id: $e2');
+        }
+      }
+    }
+    _log('synced visit-soon reminders n=${items.length}');
+  }
+
+  static Future<void> cancelVisitSoonReminders() async {
+    try {
+      final pending = await _localNotifications.pendingNotificationRequests();
+      for (final p in pending) {
+        final payload = p.payload ?? '';
+        if (!payload.contains('as_visit_soon')) continue;
+        try {
+          await _localNotifications.cancel(id: p.id, tag: _asVisitSoonTag);
+        } catch (_) {
+          try {
+            await _localNotifications.cancel(id: p.id);
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      _log('cancel visit-soon reminders failed: $e');
+    }
+  }
+
+  static int _visitSoonNotifId(String logId) {
+    var id = 'as_visit_soon:$logId'.hashCode & 0x7fffffff;
+    if (_asDueNotifIds.contains(id) || id == 0) {
+      id = (id + 31) & 0x7fffffff;
+    }
+    final feedbackId = _feedbackWaitNotifId(logId);
+    if (id == feedbackId) {
+      id = (id + 53) & 0x7fffffff;
     }
     return id;
   }

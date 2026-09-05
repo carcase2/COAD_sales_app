@@ -67,64 +67,75 @@ class SupportTodayDeskCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (headerAlert != null) ...[headerAlert!, SizedBox(height: gap)],
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _DeskCountTile(
-                    icon: Icons.inbox_rounded,
-                    label: '접수',
-                    count: desk.todayReception,
-                    color: accent,
-                    alert: desk.todayPending > 0,
-                    badge: desk.todayPending > 0
-                        ? '미처리 ${desk.todayPending}'
-                        : null,
-                    onTap: onTapReception,
-                  ),
+          Column(
+            children: [
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _DeskCountTile(
+                        icon: Icons.inbox_rounded,
+                        label: '접수',
+                        count: desk.todayReception,
+                        color: accent,
+                        alert: desk.todayPending > 0,
+                        badge: desk.todayPending > 0
+                            ? '미처리 ${desk.todayPending}'
+                            : null,
+                        onTap: onTapReception,
+                      ),
+                    ),
+                    const SizedBox(width: gap),
+                    Expanded(
+                      child: _DeskCountTile(
+                        icon: Icons.event_available_rounded,
+                        label: '방문',
+                        count: desk.todayVisit,
+                        color: scheme.tertiary,
+                        alert: desk.overdueVisit > 0,
+                        badge: desk.overdueVisit > 0
+                            ? '지난 ${desk.overdueVisit}'
+                            : null,
+                        onTap: onTapVisit,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: gap),
-                Expanded(
-                  child: _DeskCountTile(
-                    icon: Icons.event_available_rounded,
-                    label: '방문',
-                    count: desk.todayVisit,
-                    color: scheme.tertiary,
-                    alert: desk.overdueVisit > 0,
-                    badge: desk.overdueVisit > 0
-                        ? '지난 ${desk.overdueVisit}'
-                        : null,
-                    onTap: onTapVisit,
-                  ),
+              ),
+              const SizedBox(height: gap),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _DeskCountTile(
+                        icon: Icons.payments_outlined,
+                        label: '수금',
+                        count: desk.depositDue,
+                        color: const Color(0xFF059669),
+                        alert: desk.overdueDeposit > 0,
+                        badge: desk.overdueDeposit > 0
+                            ? '지난 ${desk.overdueDeposit}'
+                            : null,
+                        onTap: onTapDeposit,
+                      ),
+                    ),
+                    const SizedBox(width: gap),
+                    Expanded(
+                      child: _DeskCountTile(
+                        icon: Icons.request_quote_outlined,
+                        label: '미발송',
+                        count: desk.unsentQuote,
+                        color: const Color(0xFFD97706),
+                        alert: desk.unsentQuote > 0,
+                        onTap: onTapQuote,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: gap),
-                Expanded(
-                  child: _DeskCountTile(
-                    icon: Icons.payments_outlined,
-                    label: '수금',
-                    count: desk.depositDue,
-                    color: const Color(0xFF059669),
-                    alert: desk.overdueDeposit > 0,
-                    badge: desk.overdueDeposit > 0
-                        ? '지난 ${desk.overdueDeposit}'
-                        : null,
-                    onTap: onTapDeposit,
-                  ),
-                ),
-                const SizedBox(width: gap),
-                Expanded(
-                  child: _DeskCountTile(
-                    icon: Icons.request_quote_outlined,
-                    label: '미발송',
-                    count: desk.unsentQuote,
-                    color: const Color(0xFFD97706),
-                    alert: desk.unsentQuote > 0,
-                    onTap: onTapQuote,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
@@ -605,6 +616,7 @@ Future<void> _openReceptionToday(BuildContext context, WidgetRef ref) {
           title: '오늘 접수',
           fromYmd: today,
           toYmdInclusive: today,
+          initialStatusTab: '미처리',
         ),
       ),
     ),

@@ -199,10 +199,43 @@ class _CustomerSupportReceptionListScreenState
       try {
         last = await repo.lastConsultSnapshots(rows.map((e) => e.id));
       } catch (_) {}
+      try {
+        final raw = last;
+        final sentByLog = await ref
+            .read(supportAsQuoteRepositoryProvider)
+            .sentYmdForCallLogs(
+              rows.map(
+                (e) => (
+                  id: e.id,
+                  phone: e.customerPhone,
+                  customerName: e.customerName,
+                ),
+              ),
+            );
+        last = enrichConsultSnapshotsWithQuoteSent(raw, sentByLog);
+        for (final e in sentByLog.entries) {
+          final before = raw[e.key];
+          final needsHeal =
+              before == null ||
+              before.outcome == SupportConsultOutcome.verbalQuote ||
+              before.outcome == SupportConsultOutcome.feedbackWait ||
+              (before.outcome == SupportConsultOutcome.quoteSend &&
+                  (before.sentYmd ?? '').trim().isEmpty);
+          if (!needsHeal) continue;
+          unawaited(
+            repo.markLatestQuoteSentForCallLog(e.key, sentYmd: e.value),
+          );
+        }
+      } catch (_) {}
       var visible = rows;
       if (widget.quoteSentOnly) {
         visible = rows
             .where((e) => (last[e.id]?.sentYmd ?? '').trim().isNotEmpty)
+            .toList();
+      } else if (widget.consultOutcome == SupportConsultOutcome.verbalQuote ||
+          widget.consultOutcome == SupportConsultOutcome.feedbackWait) {
+        visible = rows
+            .where((e) => last[e.id]?.outcome == widget.consultOutcome)
             .toList();
       }
       if (!mounted) return;
@@ -260,43 +293,52 @@ class _CustomerSupportReceptionListScreenState
     final counts = _branchCounts();
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            widget.title,
+            maxLines: 1,
+            softWrap: false,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'A/S 단가표',
             onPressed: () => openSupportUnitPriceLookup(context),
             icon: const Icon(Icons.grid_on_rounded),
           ),
-          IconButton(
-            tooltip: '현장 지도',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => SupportSitesMapScreen(
-                    pendingOnly: widget.pendingOnly,
-                    initialBranch: _branchTab,
-                  ),
-                ),
-              );
+          PopupMenuButton<String>(
+            tooltip: '더보기',
+            onSelected: (value) async {
+              switch (value) {
+                case 'map':
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SupportSitesMapScreen(
+                        pendingOnly: widget.pendingOnly,
+                        initialBranch: _branchTab,
+                      ),
+                    ),
+                  );
+                case 'calendar':
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          const CustomerSupportScheduleCalendarScreen(),
+                    ),
+                  );
+                  if (mounted) unawaited(_reload());
+                case 'refresh':
+                  if (!_loading) unawaited(_reload());
+              }
             },
-            icon: const Icon(Icons.map_rounded),
-          ),
-          IconButton(
-            tooltip: '방문·발송 달력',
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const CustomerSupportScheduleCalendarScreen(),
-                ),
-              );
-              if (mounted) unawaited(_reload());
-            },
-            icon: const Icon(Icons.calendar_month_rounded),
-          ),
-          IconButton(
-            tooltip: '새로고침',
-            onPressed: _loading ? null : () => unawaited(_reload()),
-            icon: const Icon(Icons.refresh_rounded),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'map', child: Text('현장 지도')),
+              PopupMenuItem(value: 'calendar', child: Text('방문·발송 달력')),
+              PopupMenuItem(value: 'refresh', child: Text('새로고침')),
+            ],
           ),
         ],
       ),
@@ -574,10 +616,39 @@ class _CustomerSupportReceptionListScreenState
                                                       kSupportStatusCompleted)
                                                 _ListChip(
                                                   label: [
-                                                    '방문 ${log.visitDate}',
+                                                    () {
+                                                      final day =
+                                                          log.visitDate!.trim();
+                                                      if (day.length >= 10) {
+                                                        final m = int.tryParse(
+                                                              day.substring(
+                                                                5,
+                                                                7,
+                                                              ),
+                                                            ) ??
+                                                            0;
+                                                        final d = int.tryParse(
+                                                              day.substring(
+                                                                8,
+                                                                10,
+                                                              ),
+                                                            ) ??
+                                                            0;
+                                                        return '방문 $m/$d';
+                                                      }
+                                                      return '방문 $day';
+                                                    }(),
                                                     if ((log.visitTime ?? '')
+                                                        .trim()
                                                         .isNotEmpty)
-                                                      log.visitTime!,
+                                                      () {
+                                                        final t = log
+                                                            .visitTime!
+                                                            .trim();
+                                                        return t.length >= 5
+                                                            ? t.substring(0, 5)
+                                                            : t;
+                                                      }(),
                                                   ].join(' '),
                                                   color: scheme.tertiary,
                                                 ),
@@ -877,14 +948,41 @@ class _CustomerSupportReceptionDetailScreenState
         sentYmd = parsed.sentYmd;
       }
     }
+    // 상담 문구에 발송일이 없어도 견적서 카드가 발송완료면 목록과 같이 맞춘다.
+    if ((sentYmd ?? '').trim().isEmpty) {
+      final logId = (_log?.id ?? '').trim();
+      for (final q in _quotes) {
+        if (!q.isSent) continue;
+        final qLog = (q.callLogId ?? '').trim();
+        if (qLog.isNotEmpty && logId.isNotEmpty && qLog != logId) continue;
+        if (qLog.isEmpty &&
+            !supportQuoteBelongsToSite(
+              q,
+              phone: _log?.customerPhone,
+              site: _log?.customerName,
+              customerName: _log?.customerName,
+            )) {
+          continue;
+        }
+        sentYmd = q.sentYmd;
+        break;
+      }
+    }
+    var outcome = last;
+    if ((sentYmd ?? '').trim().isNotEmpty &&
+        (outcome == SupportConsultOutcome.verbalQuote ||
+            outcome == SupportConsultOutcome.feedbackWait)) {
+      outcome = SupportConsultOutcome.quoteSend;
+    }
     return supportFlowCue(
       serviceStatusId: _log?.serviceStatusId,
       consultationCount: _consults.length,
       canAddVisit: _canAddVisitRecord,
       visitDate: _log?.visitDate,
+      visitTime: _log?.visitTime,
       depositYmd: unpaid?.depositYmd,
       depositPaid: unpaid == null,
-      lastOutcome: last,
+      lastOutcome: outcome,
       quoteSendYmd: sendYmd,
       quoteSentYmd: sentYmd,
     );
@@ -899,6 +997,8 @@ class _CustomerSupportReceptionDetailScreenState
       selectedYmd: log.visitDate,
       selectedTeamId: log.visitTeamId,
       selectedTime: log.visitTime,
+      selectedTeamLabel: _visitTeamLabel,
+      confirmChange: true,
     );
     if (picked == null || !mounted) return;
     setState(() => _busy = true);
@@ -1034,22 +1134,23 @@ class _CustomerSupportReceptionDetailScreenState
       if (!mounted) return;
       final action = await showSupportQuoteExportSheet(context, doc: stored);
       if (action == SupportQuoteViewAction.sent) {
-        await _load();
-        consult = _lastQuoteConsult;
-        if (consult != null) {
-          try {
-            await ref
-                .read(supportCallLogRepositoryProvider)
-                .markQuoteSent(
-                  consultationId: consult.id,
-                  description: consult.description,
-                  sentYmd: todayYmdSeoul(),
-                );
-            await ref
-                .read(supportAsQuoteRepositoryProvider)
-                .upsert(stored.copyWith(sentYmd: todayYmdSeoul()));
-          } catch (_) {}
-        }
+        final day = todayYmdSeoul();
+        try {
+          await ref
+              .read(supportAsQuoteRepositoryProvider)
+              .upsert(
+                stored.copyWith(sentYmd: day, callLogId: log.id),
+                editorName: ref.read(authControllerProvider)?.name ??
+                    ref.read(authControllerProvider)?.id,
+              );
+          await ref
+              .read(supportCallLogRepositoryProvider)
+              .markLatestQuoteSentForCallLog(
+                log.id,
+                sentYmd: day,
+                createdBy: ref.read(authControllerProvider)?.name,
+              );
+        } catch (_) {}
       }
     }
     if (!mounted) return;
@@ -1318,15 +1419,31 @@ class _CustomerSupportReceptionDetailScreenState
                               return;
                             }
                             if (action == SupportQuoteViewAction.sent) {
+                              final day = todayYmdSeoul();
                               try {
                                 await ref
                                     .read(supportAsQuoteRepositoryProvider)
                                     .upsert(
-                                      q.copyWith(sentYmd: todayYmdSeoul()),
+                                      q.copyWith(
+                                        sentYmd: day,
+                                        callLogId: _log?.id ?? q.callLogId,
+                                      ),
                                       editorName:
                                           ref.read(authControllerProvider)?.name ??
                                           ref.read(authControllerProvider)?.id,
                                     );
+                                final logId = (_log?.id ?? '').trim();
+                                if (logId.isNotEmpty) {
+                                  await ref
+                                      .read(supportCallLogRepositoryProvider)
+                                      .markLatestQuoteSentForCallLog(
+                                        logId,
+                                        sentYmd: day,
+                                        createdBy: ref
+                                            .read(authControllerProvider)
+                                            ?.name,
+                                      );
+                                }
                               } catch (_) {}
                               unawaited(_load());
                             }
@@ -1407,21 +1524,32 @@ class _CustomerSupportReceptionDetailScreenState
       return;
     }
     if (action != SupportQuoteViewAction.sent) return;
+    final day = todayYmdSeoul();
     try {
       await ref
           .read(supportAsQuoteRepositoryProvider)
           .upsert(
-            quote.copyWith(sentYmd: todayYmdSeoul()),
+            quote.copyWith(
+              sentYmd: day,
+              callLogId: _log?.id ?? quote.callLogId,
+            ),
             editorName: ref.read(authControllerProvider)?.name ??
                 ref.read(authControllerProvider)?.id,
           );
-      await ref
-          .read(supportCallLogRepositoryProvider)
-          .markQuoteSent(
-            consultationId: consult.id,
-            description: consult.description,
-            sentYmd: todayYmdSeoul(),
-          );
+      final logId = (_log?.id ?? '').trim();
+      if (logId.isNotEmpty) {
+        await ref.read(supportCallLogRepositoryProvider).markLatestQuoteSentForCallLog(
+          logId,
+          sentYmd: day,
+          createdBy: ref.read(authControllerProvider)?.name,
+        );
+      } else {
+        await ref.read(supportCallLogRepositoryProvider).markQuoteSent(
+          consultationId: consult.id,
+          description: consult.description,
+          sentYmd: day,
+        );
+      }
       unawaited(refreshSupportDueReminders(ref));
     } catch (_) {}
     if (!mounted) return;
@@ -1533,6 +1661,26 @@ class _CustomerSupportReceptionDetailScreenState
         context,
       ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
     }
+  }
+
+  String _visitScheduleLabel() {
+    final day = (_log?.visitDate ?? '').trim();
+    if (day.isEmpty) return '아직 없음';
+    final parts = <String>[];
+    if (day.length >= 10) {
+      final m = int.tryParse(day.substring(5, 7)) ?? 0;
+      final d = int.tryParse(day.substring(8, 10)) ?? 0;
+      parts.add('$m월 $d일');
+    } else {
+      parts.add(day);
+    }
+    final time = (_log?.visitTime ?? '').trim();
+    if (time.isNotEmpty) {
+      parts.add(time.length >= 5 ? time.substring(0, 5) : time);
+    }
+    final team = (_visitTeamLabel ?? '').trim();
+    if (team.isNotEmpty) parts.add(team);
+    return parts.join(' · ');
   }
 
   SupportIssueFields get _parsed => parseSupportIssueBody(_log?.issue ?? '');
@@ -1852,20 +2000,12 @@ class _CustomerSupportReceptionDetailScreenState
                                 children: [
                                   _label(scheme, '방문예정일'),
                                   Text(
-                                    (_log?.visitDate ?? '').trim().isEmpty
-                                        ? '아직 없음'
-                                        : [
-                                            _log!.visitDate!,
-                                            if ((_log!.visitTime ?? '')
-                                                .isNotEmpty)
-                                              _log!.visitTime!,
-                                            if ((_visitTeamLabel ?? '')
-                                                .isNotEmpty)
-                                              _visitTeamLabel!,
-                                          ].join(' · '),
+                                    _visitScheduleLabel(),
+                                    softWrap: true,
                                     style: const TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w900,
+                                      height: 1.25,
                                     ),
                                   ),
                                 ],
