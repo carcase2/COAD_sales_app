@@ -422,8 +422,11 @@ class _SupportVisitWeekBoardState extends ConsumerState<SupportVisitWeekBoard> {
     final selectedTeam = _selectedTeam;
     final bookingTeam = selectedTeam ?? teams.first;
     final mondays = _weekMondays();
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
-    return Column(
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
@@ -514,6 +517,7 @@ class _SupportVisitWeekBoardState extends ConsumerState<SupportVisitWeekBoard> {
           ),
         ),
       ],
+      ),
     );
   }
 }
