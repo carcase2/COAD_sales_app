@@ -187,7 +187,7 @@ class _SupportVisitWeekBoardState extends ConsumerState<SupportVisitWeekBoard> {
   Color _barColorFor(SupportScheduleEvent? e, SupportAsVisitTeam? fallback) {
     final team = _teamById(e?.log.visitTeamId) ?? fallback;
     if (team != null) return _teamBarColor(team);
-    return const Color(0xFF2563EB);
+    return kSupportVisitTeamPalette.first;
   }
 
   String _site(SupportCallLog log) {
@@ -197,19 +197,25 @@ class _SupportVisitWeekBoardState extends ConsumerState<SupportVisitWeekBoard> {
     return name.isEmpty ? '(현장 없음)' : name;
   }
 
+  /// 칸·칩에 쓰는 짧은 팀명 (예: 1팀).
+  String _teamShort(SupportAsVisitTeam? team) {
+    if (team == null) return '';
+    final n = team.name.trim();
+    if (n.isNotEmpty) return n;
+    final label = team.label.trim();
+    if (label.isEmpty) return '';
+    return label.split('·').first.trim();
+  }
+
+  String _teamShortOfEvent(SupportScheduleEvent? e) {
+    if (e == null) return '';
+    return _teamShort(_teamById(e.log.visitTeamId));
+  }
+
   Color _teamBarColor(SupportAsVisitTeam team) {
-    const palette = [
-      Color(0xFF2563EB),
-      Color(0xFF059669),
-      Color(0xFFD97706),
-      Color(0xFF7C3AED),
-      Color(0xFFDB2777),
-      Color(0xFF0D9488),
-      Color(0xFFEA580C),
-      Color(0xFF4F46E5),
-    ];
-    final i = team.id.hashCode.abs() % palette.length;
-    return palette[i];
+    final all = widget.teams.where((t) => t.active).toList();
+    final i = all.indexWhere((t) => t.id == team.id);
+    return supportVisitTeamColor(team.id, index: i < 0 ? null : i);
   }
 
   Future<void> _onEmpty({
@@ -446,11 +452,34 @@ class _SupportVisitWeekBoardState extends ConsumerState<SupportVisitWeekBoard> {
               for (final t in teams)
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    label: Text(t.label),
-                    selected: _teamId == t.id,
-                    selectedColor: _teamBarColor(t).withValues(alpha: 0.22),
-                    onSelected: (_) => setState(() => _teamId = t.id),
+                  child: Builder(
+                    builder: (_) {
+                      final short =
+                          _teamShort(t).isEmpty ? t.label : _teamShort(t);
+                      final color = _teamBarColor(t);
+                      final initial =
+                          short.isEmpty ? '·' : short.substring(0, 1);
+                      return ChoiceChip(
+                        avatar: CircleAvatar(
+                          backgroundColor: color,
+                          radius: 8,
+                          child: Text(
+                            initial,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                        label: Text(short),
+                        selected: _teamId == t.id,
+                        selectedColor: color.withValues(alpha: 0.22),
+                        side: BorderSide(color: color.withValues(alpha: 0.55)),
+                        onSelected: (_) => setState(() => _teamId = t.id),
+                      );
+                    },
                   ),
                 ),
             ],
@@ -490,6 +519,7 @@ class _SupportVisitWeekBoardState extends ConsumerState<SupportVisitWeekBoard> {
                         eventAt: (ymd, time) => _at(ymd, time, _teamId),
                         barColorOf: (e) => _barColorFor(e, bookingTeam),
                         siteOf: _site,
+                        teamShortOf: _teamShortOfEvent,
                         onDaySelected: (ymd) {
                           HapticFeedback.selectionClick();
                           widget.onAnchorChanged?.call(ymd);
@@ -529,6 +559,7 @@ class _WeekTable extends StatelessWidget {
     required this.eventAt,
     required this.barColorOf,
     required this.siteOf,
+    required this.teamShortOf,
     required this.onDaySelected,
     required this.onEmptyTap,
     required this.onFilledTap,
@@ -539,6 +570,7 @@ class _WeekTable extends StatelessWidget {
   final SupportScheduleEvent? Function(String ymd, String time) eventAt;
   final Color Function(SupportScheduleEvent? event) barColorOf;
   final String Function(SupportCallLog) siteOf;
+  final String Function(SupportScheduleEvent? event) teamShortOf;
   final ValueChanged<String> onDaySelected;
   final void Function(String ymd, String time) onEmptyTap;
   final ValueChanged<SupportScheduleEvent> onFilledTap;
@@ -578,6 +610,7 @@ class _WeekTable extends StatelessWidget {
                     eventAt: eventAt,
                     barColorOf: barColorOf,
                     siteOf: siteOf,
+                    teamShortOf: teamShortOf,
                     onDaySelected: onDaySelected,
                     onEmptyTap: onEmptyTap,
                     onFilledTap: onFilledTap,
@@ -599,6 +632,7 @@ class _WeekDayColumn extends StatelessWidget {
     required this.eventAt,
     required this.barColorOf,
     required this.siteOf,
+    required this.teamShortOf,
     required this.onDaySelected,
     required this.onEmptyTap,
     required this.onFilledTap,
@@ -610,6 +644,7 @@ class _WeekDayColumn extends StatelessWidget {
   final SupportScheduleEvent? Function(String ymd, String time) eventAt;
   final Color Function(SupportScheduleEvent? event) barColorOf;
   final String Function(SupportCallLog) siteOf;
+  final String Function(SupportScheduleEvent? event) teamShortOf;
   final ValueChanged<String> onDaySelected;
   final void Function(String ymd, String time) onEmptyTap;
   final ValueChanged<SupportScheduleEvent> onFilledTap;
@@ -651,6 +686,7 @@ class _WeekDayColumn extends StatelessWidget {
                     event: event,
                     barColor: barColorOf(event),
                     siteOf: siteOf,
+                    teamShort: teamShortOf(event),
                     allowEmptyTap: true,
                     onTapEmpty: () => onEmptyTap(ymd, time),
                     onTapFilled: onFilledTap,
@@ -670,6 +706,7 @@ class _WeekSlotBar extends StatelessWidget {
     required this.event,
     required this.barColor,
     required this.siteOf,
+    required this.teamShort,
     required this.allowEmptyTap,
     required this.onTapEmpty,
     required this.onTapFilled,
@@ -679,6 +716,7 @@ class _WeekSlotBar extends StatelessWidget {
   final SupportScheduleEvent? event;
   final Color barColor;
   final String Function(SupportCallLog) siteOf;
+  final String teamShort;
   final bool allowEmptyTap;
   final VoidCallback onTapEmpty;
   final ValueChanged<SupportScheduleEvent> onTapFilled;
@@ -689,6 +727,7 @@ class _WeekSlotBar extends StatelessWidget {
     final filled = e != null;
     final fill = filled ? barColor : const Color(0xFFFFFFFF);
     final site = filled ? siteOf(e.log) : '';
+    final team = teamShort.trim();
     final borderColor = filled
         ? Color.lerp(fill, const Color(0xFF111827), 0.38)!
         : allowEmptyTap
@@ -715,25 +754,65 @@ class _WeekSlotBar extends StatelessWidget {
             border: Border.all(color: borderColor, width: filled ? 1.3 : 1.1),
           ),
           child: filled
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Center(
-                    child: Text(
-                      site.isEmpty ? time : site,
-                      maxLines: 1,
-                      overflow: TextOverflow.clip,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        height: 1.05,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(color: Color(0x66000000), blurRadius: 1.4),
-                        ],
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(width: 3.5, color: Colors.white.withValues(alpha: 0.92)),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(3, 1, 2, 1),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (team.isNotEmpty)
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 3,
+                                    vertical: 0.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.95),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Text(
+                                    team,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.clip,
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      height: 1.05,
+                                      fontWeight: FontWeight.w900,
+                                      color: fill,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Text(
+                              site.isEmpty ? time : site,
+                              maxLines: 1,
+                              overflow: TextOverflow.clip,
+                              textAlign: TextAlign.left,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                height: 1.05,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                shadows: [
+                                  Shadow(
+                                    color: Color(0x66000000),
+                                    blurRadius: 1.4,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 )
               : const SizedBox.expand(),
         ),

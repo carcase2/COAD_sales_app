@@ -139,6 +139,7 @@ class _CustomerSupportReceptionListScreenState
     final q = _query.trim().toLowerCase();
     var source = _branchSource;
     final statusFilterActive =
+        !_waitOutcomeLocked &&
         !widget.pendingOnly &&
         !widget.visitOnly &&
         widget.statusId == null &&
@@ -165,6 +166,20 @@ class _CustomerSupportReceptionListScreenState
         .toList(growable: false);
   }
 
+  /// 고객 대기(피드백·구두·발송 후) — 홈 건수와 같은 스냅 기준.
+  bool get _waitOutcomeLocked =>
+      widget.consultOutcome != null || widget.quoteSentOnly;
+
+  String get _waitFilterLabel {
+    if (widget.quoteSentOnly) return '발송 후 대기';
+    return switch (widget.consultOutcome) {
+      SupportConsultOutcome.feedbackWait => '피드백 대기',
+      SupportConsultOutcome.verbalQuote => '구두 견적',
+      SupportConsultOutcome.quoteSend => '정식 견적서',
+      _ => widget.title,
+    };
+  }
+
   Map<String, int> _statusCounts() {
     final source = _branchSource;
     final counts = <String, int>{'전체': source.length};
@@ -182,10 +197,11 @@ class _CustomerSupportReceptionListScreenState
     });
     try {
       final repo = ref.read(supportCallLogRepositoryProvider);
-      final rows = widget.consultOutcome != null
-          ? await repo.listByLastConsultOutcome(
-              widget.consultOutcome!,
-              limit: 200,
+      // 고객 대기 카드: 진행중 전체 → 상담·발송 enrich → 카드 조건으로 필터.
+      final rows = _waitOutcomeLocked
+          ? await repo.list(
+              statusId: kSupportStatusInProgress,
+              limit: 400,
             )
           : await repo.list(
               fromYmd: widget.fromYmd,
@@ -231,10 +247,13 @@ class _CustomerSupportReceptionListScreenState
       var visible = rows;
       if (widget.quoteSentOnly) {
         visible = rows
-            .where((e) => (last[e.id]?.sentYmd ?? '').trim().isNotEmpty)
+            .where((e) {
+              final s = last[e.id];
+              return s?.outcome == SupportConsultOutcome.quoteSend &&
+                  (s?.sentYmd ?? '').trim().isNotEmpty;
+            })
             .toList();
-      } else if (widget.consultOutcome == SupportConsultOutcome.verbalQuote ||
-          widget.consultOutcome == SupportConsultOutcome.feedbackWait) {
+      } else if (widget.consultOutcome != null) {
         visible = rows
             .where((e) => last[e.id]?.outcome == widget.consultOutcome)
             .toList();
@@ -355,7 +374,44 @@ class _CustomerSupportReceptionListScreenState
             counts: counts,
             onSelected: (tab) => setState(() => _branchTab = tab),
           ),
-          if (!widget.pendingOnly &&
+          if (_waitOutcomeLocked)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Material(
+                color: AppTokens.customerSupportAccent(
+                  scheme,
+                ).withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.filter_alt_rounded,
+                        size: 16,
+                        color: AppTokens.customerSupportAccent(scheme),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '필터 · $_waitFilterLabel · ${_items.length}건',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppTokens.customerSupportAccent(scheme),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (!_waitOutcomeLocked &&
+              !widget.pendingOnly &&
               !widget.visitOnly &&
               widget.statusId == null)
             SupportStatusFilterBar(
