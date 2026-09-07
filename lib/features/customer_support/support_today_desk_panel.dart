@@ -80,9 +80,8 @@ class SupportTodayDeskCard extends StatelessWidget {
                         count: desk.todayReception,
                         color: accent,
                         alert: desk.todayPending > 0,
-                        badge: desk.todayPending > 0
-                            ? '미처리 ${desk.todayPending}'
-                            : null,
+                        secondaryLabel: '미처리',
+                        secondaryCount: desk.todayPending,
                         onTap: onTapReception,
                       ),
                     ),
@@ -236,6 +235,8 @@ class _DeskCountTile extends StatelessWidget {
     required this.onTap,
     this.alert = false,
     this.badge,
+    this.secondaryLabel,
+    this.secondaryCount,
   });
 
   final IconData icon;
@@ -245,11 +246,15 @@ class _DeskCountTile extends StatelessWidget {
   final VoidCallback onTap;
   final bool alert;
   final String? badge;
+  final String? secondaryLabel;
+  final int? secondaryCount;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tone = alert ? scheme.error : color;
+    final hasSecondary =
+        (secondaryLabel ?? '').isNotEmpty && secondaryCount != null;
     return Material(
       color: tone.withValues(alpha: alert ? 0.12 : 0.06),
       shape: RoundedRectangleBorder(
@@ -284,11 +289,31 @@ class _DeskCountTile extends StatelessWidget {
                       color: tone,
                     ),
                   ),
+                  if (hasSecondary) ...[
+                    Text(
+                      ' · ',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                        color: tone.withValues(alpha: 0.55),
+                      ),
+                    ),
+                    Text(
+                      '${secondaryCount!}',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                        color: secondaryCount! > 0 ? scheme.error : tone,
+                      ),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 3),
               Text(
-                label,
+                hasSecondary ? '$label · $secondaryLabel' : label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

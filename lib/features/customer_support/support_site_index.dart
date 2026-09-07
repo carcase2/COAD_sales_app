@@ -45,7 +45,7 @@ class SupportIndexedSite {
 
   SupportSiteSample toSiteSample() {
     final history = [
-      ...logs.map(_logHistoryLine),
+      ...logs.map(supportCallLogHistoryLine),
       ...quotes.map(supportQuoteHistoryLine),
     ];
     return SupportSiteSample(
@@ -256,7 +256,7 @@ String _logYmd(SupportCallLog log) {
   return ymdSeoulFromDateTime(dt);
 }
 
-String _logHistoryLine(SupportCallLog log) {
+String supportCallLogHistoryLine(SupportCallLog log) {
   final when = _logYmd(log);
   final status = supportCallLogProgressLabel(log.serviceStatusId);
   final parsed = parseSupportIssueBody(log.issue);

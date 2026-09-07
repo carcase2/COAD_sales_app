@@ -23,6 +23,7 @@ import 'package:coad_customer_calls/features/customer_support/support_unit_price
 import 'package:coad_customer_calls/features/customer_support/support_quote_document.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_export.dart';
 import 'package:coad_customer_calls/features/customer_support/support_quote_writer_screen.dart';
+import 'package:coad_customer_calls/features/customer_support/support_site_index.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_flow.dart';
 import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
@@ -735,6 +736,8 @@ class _CustomerSupportReceptionDetailScreenState
   List<SupportConsultation> _consults = const [];
   List<SupportVisitReport> _visits = const [];
   List<SupportQuoteDocument> _quotes = const [];
+  /// 같은 주소의 이전 접수(현재 건 제외).
+  List<SupportCallLog> _priorLogs = const [];
   Object? _loadError;
   bool _loading = false;
   bool _changed = false;
@@ -794,13 +797,25 @@ class _CustomerSupportReceptionDetailScreenState
       try {
         quotes = await ref
             .read(supportAsQuoteRepositoryProvider)
-            .listForSite(
-              phone: log.customerPhone,
-              site: log.customerName,
-              customerName: log.customerName,
+            .listForReception(
               callLogId: log.id,
+              address: log.address,
             );
       } catch (_) {}
+      var priorLogs = <SupportCallLog>[];
+      final addr = (log.address ?? '').trim();
+      if (normalizeSupportAddress(addr).length >= 10) {
+        try {
+          final recent = await repo.list(limit: 250);
+          priorLogs = recent
+              .where(
+                (e) =>
+                    e.id != log.id &&
+                    supportAddressesMatch(addr, e.address),
+              )
+              .toList();
+        } catch (_) {}
+      }
       String? teamLabel;
       final teamId = (log.visitTeamId ?? '').trim();
       if (teamId.isNotEmpty) {
@@ -822,6 +837,7 @@ class _CustomerSupportReceptionDetailScreenState
         _consults = consults;
         _visits = visits;
         _quotes = quotes;
+        _priorLogs = priorLogs;
         _visitTeamLabel = teamLabel;
         _loading = false;
         _consultPage = consults.isEmpty ? 0 : consults.length - 1;
@@ -948,22 +964,13 @@ class _CustomerSupportReceptionDetailScreenState
         sentYmd = parsed.sentYmd;
       }
     }
-    // 상담 문구에 발송일이 없어도 견적서 카드가 발송완료면 목록과 같이 맞춘다.
+    // 상담 문구에 발송일이 없어도, 이 접수에 연결된 견적서가 발송완료면 맞춘다.
     if ((sentYmd ?? '').trim().isEmpty) {
       final logId = (_log?.id ?? '').trim();
       for (final q in _quotes) {
         if (!q.isSent) continue;
         final qLog = (q.callLogId ?? '').trim();
-        if (qLog.isNotEmpty && logId.isNotEmpty && qLog != logId) continue;
-        if (qLog.isEmpty &&
-            !supportQuoteBelongsToSite(
-              q,
-              phone: _log?.customerPhone,
-              site: _log?.customerName,
-              customerName: _log?.customerName,
-            )) {
-          continue;
-        }
+        if (logId.isEmpty || qLog != logId) continue;
         sentYmd = q.sentYmd;
         break;
       }
@@ -1265,12 +1272,133 @@ class _CustomerSupportReceptionDetailScreenState
   String _siteQuotesCardSubtitle() {
     final ordered = _siteQuotesOldestFirst;
     if (ordered.isEmpty) return '없음';
+    final logId = (_log?.id ?? '').trim();
+    final linked = ordered
+        .where((e) => (e.callLogId ?? '').trim() == logId)
+        .length;
+    final byAddr = ordered.length - linked;
     final unsent = ordered.where((e) => !e.isSent).length;
-    if (unsent > 0) {
-      return '미발송 $unsent건 · 전체 ${ordered.length}건';
+    final parts = <String>[];
+    if (linked > 0) parts.add('이 접수 $linked건');
+    if (byAddr > 0) parts.add('같은 주소 $byAddr건');
+    if (unsent > 0) parts.add('미발송 $unsent');
+    if (parts.isEmpty) return '전체 ${ordered.length}건';
+    return parts.join(' · ');
+  }
+
+  String _priorHistoryCardSubtitle() {
+    final addr = (_log?.address ?? '').trim();
+    if (normalizeSupportAddress(addr).length < 10) {
+      return '주소가 짧아 이전 접수를 찾지 않습니다';
     }
-    final last = ordered.last;
-    return '모두 발송 · ${_siteQuoteLineLabel(last, _siteQuoteStage(last))}';
+    if (_priorLogs.isEmpty) return '같은 주소 이전 접수 없음';
+    return '${_priorLogs.length}건 · ${supportCallLogHistoryLine(_priorLogs.first)}';
+  }
+
+  Future<void> _openPriorHistorySheet() async {
+    final logs = List<SupportCallLog>.from(_priorLogs);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: false,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        final media = MediaQuery.of(ctx);
+        final bottomInset = media.viewPadding.bottom;
+        final maxH = media.size.height * 0.62;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxH),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '같은 주소 이전 접수',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  logs.isEmpty
+                      ? '같은 주소로 남은 이전 접수가 없습니다'
+                      : '탭하면 해당 접수 상세로 이동합니다',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (logs.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Text(
+                      '새로 접수된 현장이거나, 주소 표기가 달라 못 찾은 경우입니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: logs.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final log = logs[i];
+                        final site =
+                            parseSupportIssueBody(log.issue).siteName.trim();
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.history_rounded,
+                            color: AppTokens.customerSupportAccent(scheme),
+                          ),
+                          title: Text(
+                            [
+                              if (site.isNotEmpty) site,
+                              log.customerName.trim(),
+                            ].where((e) => e.isNotEmpty).join(' · '),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            supportCallLogHistoryLine(log),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right_rounded,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            Navigator.of(this.context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    CustomerSupportReceptionDetailScreen(
+                                      log: log,
+                                    ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _openSiteQuotesSheet() async {
@@ -1299,13 +1427,13 @@ class _CustomerSupportReceptionDetailScreenState
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  '이 현장 견적서',
+                  '이 주소 견적서',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   ordered.isEmpty
-                      ? '등록된 견적서가 없습니다'
+                      ? '이 접수·같은 주소 견적이 없습니다'
                       : unsentCount > 0
                       ? '미발송 $unsentCount건 · 탭하면 상세 · 이미지/PDF/이메일'
                       : '모두 발송 완료 · 탭하면 상세',
@@ -1320,7 +1448,7 @@ class _CustomerSupportReceptionDetailScreenState
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     child: Text(
-                      '이 현장의 견적서가 아직 없습니다.',
+                      '이 접수에 연결됐거나, 주소가 같은 견적서가 없습니다.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -2034,6 +2162,72 @@ class _CustomerSupportReceptionDetailScreenState
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
+                        onTap: _openPriorHistorySheet,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.history_rounded,
+                                color: AppTokens.customerSupportAccent(scheme),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '같은 주소 이전 접수',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    Text(
+                                      _priorHistoryCardSubtitle(),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: _priorLogs.isEmpty
+                                            ? scheme.onSurfaceVariant
+                                            : scheme.onSurface,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_priorLogs.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 4),
+                                  child: Text(
+                                    '${_priorLogs.length}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppTokens.customerSupportAccent(
+                                        scheme,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _DetailCard(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
                         onTap: _openSiteQuotesSheet,
                         borderRadius: BorderRadius.circular(14),
                         child: Padding(
@@ -2050,7 +2244,7 @@ class _CustomerSupportReceptionDetailScreenState
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Text(
-                                      '이 현장 견적서',
+                                      '이 주소 견적서',
                                       style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w800,

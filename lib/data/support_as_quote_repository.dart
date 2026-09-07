@@ -305,6 +305,27 @@ class SupportAsQuoteRepository {
         .toList();
   }
 
+  /// 접수 상세용 — 이 접수에 연결된 견적 + 주소가 같은 견적.
+  Future<List<SupportQuoteDocument>> listForReception({
+    required String callLogId,
+    String? address,
+  }) async {
+    final all = await list();
+    return all
+        .where(
+          (doc) => supportQuoteBelongsToReception(
+            doc,
+            callLogId: callLogId,
+            address: address,
+          ),
+        )
+        .toList();
+  }
+
+  @Deprecated('Use listForReception')
+  Future<List<SupportQuoteDocument>> listForCallLog(String callLogId) =>
+      listForReception(callLogId: callLogId);
+
   Future<String> nextQuoteNo({String? ymd}) async {
     final day = _quoteNoDayKey(ymd);
     final prefix = 'COAD$day-';

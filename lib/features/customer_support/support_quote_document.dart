@@ -459,6 +459,36 @@ bool supportQuoteBelongsToSite(
   return false;
 }
 
+/// 주소 비교용: 공백·구두점 제거, 소문자.
+String normalizeSupportAddress(String? raw) {
+  final s = (raw ?? '').trim().toLowerCase();
+  if (s.isEmpty) return '';
+  return s.replaceAll(RegExp(r'[\s\-·.,_/()（）\[\]【】#]+'), '');
+}
+
+/// 둘 다 의미 있는 주소일 때만 같음(정규화 후 동일, 또는 긴 쪽이 짧은 쪽을 포함).
+bool supportAddressesMatch(String? a, String? b, {int minLen = 10}) {
+  final na = normalizeSupportAddress(a);
+  final nb = normalizeSupportAddress(b);
+  if (na.length < minLen || nb.length < minLen) return false;
+  if (na == nb) return true;
+  final shorter = na.length <= nb.length ? na : nb;
+  final longer = na.length <= nb.length ? nb : na;
+  // 짧은 쪽이 충분히 길 때만 포함 매칭 (동·호수 차이 허용).
+  return shorter.length >= minLen && longer.contains(shorter);
+}
+
+/// 접수 상세: 이 접수 연결이거나, 주소가 같으면 같은 현장 견적으로 본다.
+bool supportQuoteBelongsToReception(
+  SupportQuoteDocument doc, {
+  required String callLogId,
+  String? address,
+}) {
+  final id = callLogId.trim();
+  if (id.isNotEmpty && (doc.callLogId ?? '').trim() == id) return true;
+  return supportAddressesMatch(address, doc.address);
+}
+
 bool supportQuoteBelongsToSample(
   SupportQuoteDocument doc,
   SupportSiteSample site,

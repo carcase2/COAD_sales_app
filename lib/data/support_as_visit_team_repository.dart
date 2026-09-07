@@ -170,6 +170,7 @@ class SupportAsVisitTeamRepository {
     bool activeOnly = true,
   }) {
     final b = branch.trim().isEmpty ? '기타' : branch.trim();
+    if (b == '전체') return list(activeOnly: activeOnly);
     final known = kSupportBranchTabOrder.where((e) => e != '전체').contains(b)
         ? b
         : '기타';

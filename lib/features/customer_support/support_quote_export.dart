@@ -127,8 +127,18 @@ class _SupportQuotePreviewSheet extends StatelessWidget {
                   flex: 2,
                   child: FilledButton.icon(
                     onPressed: () => Navigator.of(context).pop(true),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
                     icon: const Icon(Icons.send_rounded, size: 18),
-                    label: const Text('저장하고 보내기'),
+                    label: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '저장하고 보내기',
+                        maxLines: 1,
+                        softWrap: false,
+                      ),
+                    ),
                   ),
                 ),
               ],

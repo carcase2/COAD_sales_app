@@ -37,6 +37,50 @@ void main() {
     );
   });
 
+  test('본인 현재 슬롯은 선택 가능·표시는 잡힌 상태', () {
+    const day = SupportVisitDayBookings(
+      timesByTeamId: {
+        'a': {'09:00'},
+      },
+      totalCount: 1,
+    );
+    expect(
+      supportVisitSlotBlockedForPick(
+        bookings: day,
+        ymd: '2026-09-10',
+        teamId: 'a',
+        time: '09:00',
+        ownVisitDate: '2026-09-10',
+        ownVisitTeamId: 'a',
+        ownVisitTime: '09:00',
+      ),
+      isFalse,
+    );
+    expect(
+      supportVisitSlotBlockedForPick(
+        bookings: day,
+        ymd: '2026-09-10',
+        teamId: 'a',
+        time: '09:00',
+        ownVisitDate: '2026-09-10',
+        ownVisitTeamId: 'a',
+        ownVisitTime: '11:00',
+      ),
+      isTrue,
+    );
+    expect(
+      supportVisitFreeTimesForTeam(
+        teamId: 'a',
+        bookings: day,
+        ymd: '2026-09-10',
+        ownVisitDate: '2026-09-10',
+        ownVisitTeamId: 'a',
+        ownVisitTime: '09:00',
+      ),
+      contains('09:00'),
+    );
+  });
+
   test('날짜 선택: 남는 시간이 있으면 가능', () {
     expect(
       supportVisitDaySelectable(

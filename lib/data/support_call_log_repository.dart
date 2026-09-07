@@ -1182,7 +1182,7 @@ class SupportCallLogRepository {
     return listScheduleEvents(fromYmd: '2020-01-01', toYmdInclusive: todayYmd);
   }
 
-  /// 완료되지 않은 방문예정만 날짜별 건수. 같은 지점만.
+  /// 완료되지 않은 방문예정만 날짜별 건수. [branch]가 `전체`면 전 지점.
   Future<Map<String, int>> countScheduledVisitsByYmd({
     required String fromYmd,
     required String toYmdInclusive,
@@ -1202,7 +1202,8 @@ class SupportCallLogRepository {
     };
   }
 
-  /// 완료되지 않은 방문예정 — 날짜별 팀 배정·총 건수. 같은 지점만.
+  /// 완료되지 않은 방문예정 — 날짜별 팀 배정·총 건수.
+  /// [branch]가 `전체`(또는 빈 값)이면 주소 지점 필터를 쓰지 않는다.
   Future<Map<String, SupportVisitDayBookings>> listScheduledVisitsByYmd({
     required String fromYmd,
     required String toYmdInclusive,
@@ -1221,6 +1222,9 @@ class SupportCallLogRepository {
           .limit(800);
       final counts = <String, SupportVisitDayBookings>{};
       final skip = (excludeLogId ?? '').trim();
+      final branchFilter = branch.trim();
+      final allBranches =
+          branchFilter.isEmpty || branchFilter == '전체';
       for (final row in List<Map<String, dynamic>>.from(rows)) {
         final id = (row['id'] ?? '').toString();
         if (skip.isNotEmpty && id == skip) continue;
@@ -1228,11 +1232,13 @@ class SupportCallLogRepository {
         if (status == kSupportStatusCompleted) continue;
         final ymd = _rowYmd(row['visit_date']);
         if (ymd == null || ymd.isEmpty) continue;
-        final matched = matchSupportBranchType(
-          (row['address'] ?? '').toString(),
-          regions,
-        );
-        if (matched != branch) continue;
+        if (!allBranches) {
+          final matched = matchSupportBranchType(
+            (row['address'] ?? '').toString(),
+            regions,
+          );
+          if (matched != branchFilter) continue;
+        }
         final prev = counts[ymd] ?? const SupportVisitDayBookings();
         final teamId = (row['visit_team_id'] ?? '').toString().trim();
         final timeRaw = (row['visit_time'] ?? '').toString().trim();

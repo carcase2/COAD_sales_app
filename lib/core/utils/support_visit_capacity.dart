@@ -378,18 +378,72 @@ bool supportVisitTeamTimeFree({
   return !bookings.teamTimeTaken(teamId: id, time: slot);
 }
 
+/// 현재 접수 건이 이미 잡아 둔 슬롯이면 true (표시는 예약, 재선택은 허용).
+bool isSupportVisitOwnCurrentSlot({
+  required String ymd,
+  required String teamId,
+  required String time,
+  String? ownVisitDate,
+  String? ownVisitTeamId,
+  String? ownVisitTime,
+}) {
+  final ownYmd = (ownVisitDate ?? '').trim();
+  final ownTeam = (ownVisitTeamId ?? '').trim();
+  final ownTime = normalizeSupportVisitTime(ownVisitTime);
+  if (ownYmd.isEmpty || ownTeam.isEmpty || ownTime.isEmpty) return false;
+  return ymd.trim() == ownYmd &&
+      teamId.trim() == ownTeam &&
+      normalizeSupportVisitTime(time) == ownTime;
+}
+
+/// 다른 건이 잡은 슬롯만 막음. 본인 현재 예약은 선택 가능.
+bool supportVisitSlotBlockedForPick({
+  required SupportVisitDayBookings bookings,
+  required String ymd,
+  required String teamId,
+  required String time,
+  String? ownVisitDate,
+  String? ownVisitTeamId,
+  String? ownVisitTime,
+}) {
+  if (!bookings.teamTimeTaken(teamId: teamId, time: time)) return false;
+  return !isSupportVisitOwnCurrentSlot(
+    ymd: ymd,
+    teamId: teamId,
+    time: time,
+    ownVisitDate: ownVisitDate,
+    ownVisitTeamId: ownVisitTeamId,
+    ownVisitTime: ownVisitTime,
+  );
+}
+
 List<String> supportVisitFreeTimesForTeam({
   required String teamId,
   required SupportVisitDayBookings bookings,
+  String? ymd,
+  String? ownVisitDate,
+  String? ownVisitTeamId,
+  String? ownVisitTime,
 }) {
   return kSupportVisitTimeSlots
-      .where(
-        (t) => supportVisitTeamTimeFree(
+      .where((t) {
+        if (supportVisitTeamTimeFree(
           teamId: teamId,
           time: t,
           bookings: bookings,
-        ),
-      )
+        )) {
+          return true;
+        }
+        if ((ymd ?? '').trim().isEmpty) return false;
+        return isSupportVisitOwnCurrentSlot(
+          ymd: ymd!,
+          teamId: teamId,
+          time: t,
+          ownVisitDate: ownVisitDate,
+          ownVisitTeamId: ownVisitTeamId,
+          ownVisitTime: ownVisitTime,
+        );
+      })
       .toList();
 }
 
@@ -398,11 +452,21 @@ bool supportVisitDaySelectable({
   required SupportVisitDayBookings bookings,
   required int activeTeamCount,
   required Iterable<String> activeTeamIds,
+  String? ymd,
+  String? ownVisitDate,
+  String? ownVisitTeamId,
+  String? ownVisitTime,
 }) {
   if (activeTeamCount <= 0) return false;
   for (final id in activeTeamIds) {
-    if (supportVisitFreeTimesForTeam(teamId: id, bookings: bookings)
-        .isNotEmpty) {
+    if (supportVisitFreeTimesForTeam(
+      teamId: id,
+      bookings: bookings,
+      ymd: ymd,
+      ownVisitDate: ownVisitDate,
+      ownVisitTeamId: ownVisitTeamId,
+      ownVisitTime: ownVisitTime,
+    ).isNotEmpty) {
       return true;
     }
   }

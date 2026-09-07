@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
-import 'package:coad_customer_calls/core/utils/region_branch.dart';
 import 'package:coad_customer_calls/core/utils/support_visit_capacity.dart';
 import 'package:coad_customer_calls/data/support_as_visit_team_repository.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
@@ -165,7 +164,7 @@ class _SupportVisitDatePickerSheetState
   /// null이면 주간표에 지사 팀 전체. 값이 있으면 그 팀만.
   String? _filterTeamId;
   String? _time;
-  String _branch = '본사';
+  String _branch = '전체';
   bool _branchReady = false;
   CalendarFormat _calendarFormat = CalendarFormat.week;
   List<SupportAsVisitTeam> _teams = const [];
@@ -173,7 +172,7 @@ class _SupportVisitDatePickerSheetState
   bool _loading = true;
   Object? _error;
 
-  static const _branchChoices = ['본사', '대구', '대전', '전남', '기타'];
+  static const _branchChoices = ['전체', '본사', '대구', '대전', '전남', '기타'];
 
   @override
   void initState() {
@@ -207,11 +206,6 @@ class _SupportVisitDatePickerSheetState
   String _toYmd(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  String get _addressBranch {
-    final regions = ref.read(regionsRawProvider).valueOrNull ?? const [];
-    return matchSupportBranchType(widget.log.address ?? '', regions);
-  }
-
   int get _slotCap => supportVisitDaySlotCapacity(_teams.length);
 
   Iterable<String> get _teamIds => _teams.map((t) => t.id);
@@ -233,6 +227,10 @@ class _SupportVisitDatePickerSheetState
       bookings: _dayBookings(ymd),
       activeTeamCount: _teams.length,
       activeTeamIds: _teamIds,
+      ymd: ymd,
+      ownVisitDate: widget.log.visitDate,
+      ownVisitTeamId: widget.log.visitTeamId,
+      ownVisitTime: widget.log.visitTime,
     );
   }
 
@@ -250,7 +248,8 @@ class _SupportVisitDatePickerSheetState
       final regions = ref.read(regionsRawProvider).valueOrNull ?? const [];
       final repo = ref.read(supportAsVisitTeamRepositoryProvider);
       if (!_branchReady) {
-        var branch = _addressBranch;
+        // 캘린더와 같이 기본은 전체. 기존 팀이 있으면 그 지사로 좁힌다.
+        var branch = '전체';
         final preferTeam = (_teamId ?? '').trim();
         if (preferTeam.isNotEmpty) {
           final all = await repo.list(activeOnly: true);
@@ -261,7 +260,7 @@ class _SupportVisitDatePickerSheetState
             }
           }
         }
-        if (!_branchChoices.contains(branch)) branch = '기타';
+        if (!_branchChoices.contains(branch)) branch = '전체';
         _branch = branch;
         _branchReady = true;
       }
@@ -273,7 +272,6 @@ class _SupportVisitDatePickerSheetState
             toYmdInclusive: addDaysToYmd(today, 120),
             branch: _branch,
             regions: regions,
-            excludeLogId: widget.log.id,
           );
       if (!mounted) return;
       setState(() {
@@ -340,7 +338,15 @@ class _SupportVisitDatePickerSheetState
       }
     }
     if (team == null) return;
-    if (_dayBookings(ymd).teamTimeTaken(teamId: teamId, time: time)) {
+    if (supportVisitSlotBlockedForPick(
+      bookings: _dayBookings(ymd),
+      ymd: ymd,
+      teamId: teamId,
+      time: time,
+      ownVisitDate: widget.log.visitDate,
+      ownVisitTeamId: widget.log.visitTeamId,
+      ownVisitTime: widget.log.visitTime,
+    )) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$time 은 이미 예약되어 있습니다.')),
@@ -1254,7 +1260,7 @@ class _SupportVisitDaySlotSheet extends ConsumerStatefulWidget {
 
 class _SupportVisitDaySlotSheetState
     extends ConsumerState<_SupportVisitDaySlotSheet> {
-  static const _branchChoices = ['본사', '대구', '대전', '전남', '기타'];
+  static const _branchChoices = ['전체', '본사', '대구', '대전', '전남', '기타'];
 
   late String _branch;
   String? _teamId;
@@ -1269,7 +1275,7 @@ class _SupportVisitDaySlotSheetState
     super.initState();
     _branch = _branchChoices.contains(widget.initialBranch)
         ? widget.initialBranch
-        : '본사';
+        : '전체';
     _teamId = (widget.initialTeamId ?? '').trim().isEmpty
         ? null
         : widget.initialTeamId!.trim();
@@ -1297,7 +1303,6 @@ class _SupportVisitDaySlotSheetState
             toYmdInclusive: widget.ymd,
             branch: _branch,
             regions: regions,
-            excludeLogId: widget.log.id,
           );
       if (!mounted) return;
       setState(() {
@@ -1311,6 +1316,10 @@ class _SupportVisitDaySlotSheetState
           final free = supportVisitFreeTimesForTeam(
             teamId: _teamId!,
             bookings: _bookings,
+            ymd: widget.ymd,
+            ownVisitDate: widget.log.visitDate,
+            ownVisitTeamId: widget.log.visitTeamId,
+            ownVisitTime: widget.log.visitTime,
           );
           if (_time == null || !free.contains(_time)) {
             _time = free.isEmpty ? null : free.first;
@@ -1343,6 +1352,16 @@ class _SupportVisitDaySlotSheetState
     for (final team in _teams) {
       final times = _bookings.timesForTeam(team.id).toList()..sort();
       for (final t in times) {
+        if (isSupportVisitOwnCurrentSlot(
+          ymd: widget.ymd,
+          teamId: team.id,
+          time: t,
+          ownVisitDate: widget.log.visitDate,
+          ownVisitTeamId: widget.log.visitTeamId,
+          ownVisitTime: widget.log.visitTime,
+        )) {
+          continue;
+        }
         out.add((teamLabel: team.label, time: t));
       }
     }
@@ -1369,10 +1388,14 @@ class _SupportVisitDaySlotSheetState
       ).showSnackBar(const SnackBar(content: Text('방문 시간을 선택해 주세요.')));
       return;
     }
-    if (!supportVisitTeamTimeFree(
+    if (supportVisitSlotBlockedForPick(
+      bookings: _bookings,
+      ymd: widget.ymd,
       teamId: teamId,
       time: time,
-      bookings: _bookings,
+      ownVisitDate: widget.log.visitDate,
+      ownVisitTeamId: widget.log.visitTeamId,
+      ownVisitTime: widget.log.visitTime,
     )) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('이 팀은 그 시간에 이미 일정이 있습니다.')),
@@ -1540,6 +1563,10 @@ class _SupportVisitDaySlotSheetState
                                 final free = supportVisitFreeTimesForTeam(
                                   teamId: team.id,
                                   bookings: _bookings,
+                                  ymd: widget.ymd,
+                                  ownVisitDate: widget.log.visitDate,
+                                  ownVisitTeamId: widget.log.visitTeamId,
+                                  ownVisitTime: widget.log.visitTime,
                                 );
                                 if (_time == null || !free.contains(_time)) {
                                   _time = free.isEmpty ? null : free.first;
@@ -1567,14 +1594,24 @@ class _SupportVisitDaySlotSheetState
                             _TimeChip(
                               time: slot,
                               selected: _time == slot,
-                              taken: _bookings.teamTimeTaken(
+                              taken: supportVisitSlotBlockedForPick(
+                                bookings: _bookings,
+                                ymd: widget.ymd,
                                 teamId: _teamId!,
                                 time: slot,
+                                ownVisitDate: widget.log.visitDate,
+                                ownVisitTeamId: widget.log.visitTeamId,
+                                ownVisitTime: widget.log.visitTime,
                               ),
                               accent: accent,
-                              onTap: _bookings.teamTimeTaken(
+                              onTap: supportVisitSlotBlockedForPick(
+                                    bookings: _bookings,
+                                    ymd: widget.ymd,
                                     teamId: _teamId!,
                                     time: slot,
+                                    ownVisitDate: widget.log.visitDate,
+                                    ownVisitTeamId: widget.log.visitTeamId,
+                                    ownVisitTime: widget.log.visitTime,
                                   )
                                   ? null
                                   : () => setState(() => _time = slot),

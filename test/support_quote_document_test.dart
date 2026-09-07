@@ -228,6 +228,47 @@ void main() {
     );
   });
 
+  test('접수 견적은 주소가 같으면 묶고 이름만으로는 안 묶는다', () {
+    const quote = SupportQuoteDocument(
+      id: 'a1',
+      customerName: '홍길동',
+      phone: '010-1111-2222',
+      site: '다른표기',
+      address: '대구 수성구 동대구로 123',
+      ymd: '2026-08-01',
+      callLogId: 'old-log',
+    );
+    expect(
+      supportQuoteBelongsToReception(
+        quote,
+        callLogId: 'new-log',
+        address: '대구수성구동대구로123',
+      ),
+      isTrue,
+    );
+    expect(
+      supportQuoteBelongsToReception(
+        quote,
+        callLogId: 'new-log',
+        address: '서울 강남구 테헤란로 1',
+      ),
+      isFalse,
+    );
+    expect(
+      supportQuoteBelongsToReception(
+        quote,
+        callLogId: 'old-log',
+        address: '',
+      ),
+      isTrue,
+    );
+    expect(
+      supportAddressesMatch('대구 수성구 동대구로 123', '대구 수성구 동대구로 123 101호'),
+      isTrue,
+    );
+    expect(supportAddressesMatch('서울', '서울시'), isFalse);
+  });
+
   test('고객·현장·품목으로 검색한다', () {
     expect(supportQuoteMatches(doc(), ''), isTrue);
     expect(supportQuoteMatches(doc(), '김현장'), isTrue);
