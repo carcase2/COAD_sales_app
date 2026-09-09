@@ -66,8 +66,7 @@ COMMENT ON TABLE public.standard_unit_price_quotes IS
 
 CREATE TABLE IF NOT EXISTS public.standard_unit_price_promo_images (
   id text PRIMARY KEY,
-  model_id text NOT NULL REFERENCES public.standard_unit_price_models(id)
-    ON DELETE CASCADE,
+  model_id text NOT NULL,
   title text NOT NULL DEFAULT '',
   storage_path text NOT NULL,
   sort_order integer NOT NULL DEFAULT 0,
