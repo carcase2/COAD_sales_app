@@ -153,6 +153,11 @@ const List<String> appUsageKnownTabKeys = [
   'checksheet_search',
   'checksheet_view',
   'checksheet_download',
+  'install_after_photos',
+  'install_after',
+  'install_after_search',
+  'install_after_view',
+  'install_after_download',
 ];
 
 /// 체크시트 기능 사용 집계 키 (메뉴 진입 제외·포함 모두).
@@ -197,6 +202,15 @@ String appUsageTabLabel(String key) {
       return '체크시트 열람';
     case 'checksheet_download':
       return '체크시트 저장';
+    case 'install_after_photos':
+    case 'install_after':
+      return '시공 사진 열기';
+    case 'install_after_search':
+      return '시공 사진 검색';
+    case 'install_after_view':
+      return '시공 사진 열람';
+    case 'install_after_download':
+      return '시공 사진 저장';
     default:
       return key.isEmpty ? '—' : key;
   }

@@ -5,16 +5,38 @@ import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const kSizeQuotesBucket = 'standard-unit-price-quotes';
 const kSizeQuotePromoBucket = 'standard-unit-price-promo';
 
+bool sizeQuoteRelationMissing(Object e) {
+  final s = e.toString().toLowerCase();
+  return (s.contains('standard_unit_price_quotes') ||
+          s.contains('standard_unit_price_promo')) &&
+      (s.contains('does not exist') ||
+          s.contains('could not find the table') ||
+          s.contains('schema cache') ||
+          s.contains('pgrst205') ||
+          s.contains('42p01'));
+}
+
 class SizeQuoteRepository {
-  SizeQuoteRepository({SupabaseClient? client})
-    : _client = client ?? Supabase.instance.client;
+  SizeQuoteRepository({SupabaseClient? client, SharedPreferences? prefs})
+    : _client = client ?? Supabase.instance.client,
+      _prefs = prefs;
 
   final SupabaseClient _client;
+  final SharedPreferences? _prefs;
+  SizeQuoteStore? _storeCache;
+
+  Future<SizeQuoteStore> _store() async {
+    final cached = _storeCache;
+    if (cached != null) return cached;
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    return _storeCache = SizeQuoteStore(prefs);
+  }
 
   StorageFileApi get _pdfStorage => _client.storage.from(kSizeQuotesBucket);
   StorageFileApi get _promoStorage =>
@@ -128,12 +150,20 @@ class SizeQuoteRepository {
           .maybeSingle();
       if (res == null) return null;
       return _fromRow(Map<String, dynamic>.from(res));
-    } catch (_) {
+    } catch (e) {
+      if (sizeQuoteRelationMissing(e)) {
+        final local = (await _store()).load();
+        for (final doc in local) {
+          if (doc.id == id) return doc;
+        }
+      }
       return null;
     }
   }
 
   Future<List<SizeQuoteDocument>> list({int limit = 400}) async {
+    final store = await _store();
+    final local = store.load();
     try {
       final res = await _client
           .from('standard_unit_price_quotes')
@@ -141,11 +171,15 @@ class SizeQuoteRepository {
           .order('ymd', ascending: false)
           .order('created_at', ascending: false)
           .limit(limit);
-      return List<Map<String, dynamic>>.from(res)
+      final remote = List<Map<String, dynamic>>.from(res)
           .map(_fromRow)
           .where((e) => e.id.isNotEmpty)
           .toList();
+      await store.save(remote);
+      return remote;
     } catch (e) {
+      if (sizeQuoteRelationMissing(e)) return local;
+      if (local.isNotEmpty) return local;
       throw ApiException('표준단가 견적서를 불러오지 못했습니다. $e');
     }
   }
@@ -189,7 +223,19 @@ class SizeQuoteRepository {
         limit: limit,
       );
     } catch (e) {
-      throw ApiException('비슷한 사이즈 견적을 불러오지 못했습니다. $e');
+      if (sizeQuoteRelationMissing(e)) {
+        final local = (await _store()).load();
+        return sizeQuoteSimilarOf(
+          all: local,
+          modelId: id,
+          widthMm: widthMm,
+          heightMm: heightMm,
+          excludeId: excludeId,
+          toleranceMm: toleranceMm,
+          limit: limit,
+        );
+      }
+      return const [];
     }
   }
 
@@ -230,78 +276,88 @@ class SizeQuoteRepository {
     if (doc.customerName.trim().isEmpty) {
       throw ApiException('고객명을 입력해 주세요.');
     }
-    try {
-      var quoteNo = doc.quoteNo.trim();
-      if (quoteNo.isEmpty || quoteNo == '미리보기') {
-        quoteNo = await nextQuoteNo(ymd: doc.ymd);
-      }
-      final previous = await _findById(doc.id);
-      final now = DateTime.now().toUtc().toIso8601String();
-      final editor = (editorName ?? doc.updatedBy ?? doc.createdBy ?? '')
-          .trim();
-      final withNo = doc.copyWith(quoteNo: quoteNo);
+    var quoteNo = doc.quoteNo.trim();
+    if (quoteNo.isEmpty || quoteNo == '미리보기') {
+      quoteNo = await nextQuoteNo(ymd: doc.ymd);
+    }
+    final previous = await _findById(doc.id);
+    final now = DateTime.now().toUtc().toIso8601String();
+    final editor = (editorName ?? doc.updatedBy ?? doc.createdBy ?? '').trim();
+    final withNo = doc.copyWith(quoteNo: quoteNo);
 
-      late final SizeQuoteDocument saved;
-      if (previous == null) {
-        final createdBy = (doc.createdBy ?? '').trim().isNotEmpty
-            ? doc.createdBy!.trim()
-            : editor;
-        final createdAt = (doc.createdAt ?? '').trim().isNotEmpty
-            ? doc.createdAt!
-            : now;
-        saved = withNo.copyWith(
-          createdBy: createdBy,
-          createdAt: createdAt,
-          updatedBy: editor.isEmpty ? createdBy : editor,
-          updatedAt: now,
-          editHistory: sizeQuoteAppendEditHistory(
-            previous: doc.editHistory,
-            at: now,
-            by: editor,
-            summary: '최초 작성 · ${sizeQuoteSnapshotSummary(withNo)}',
-          ),
-        );
-      } else {
-        final createdBy = (previous.createdBy ?? '').trim().isNotEmpty
-            ? previous.createdBy!.trim()
-            : editor;
-        final createdAt = (previous.createdAt ?? '').trim().isNotEmpty
-            ? previous.createdAt!
-            : (doc.createdAt ?? now);
-        saved = withNo.copyWith(
-          createdBy: createdBy,
-          createdAt: createdAt,
-          updatedBy: editor.isEmpty ? createdBy : editor,
-          updatedAt: now,
-          editHistory: sizeQuoteAppendEditHistory(
-            previous: previous.editHistory,
-            at: now,
-            by: editor,
-            summary: sizeQuoteEditDiffSummary(previous, withNo),
-          ),
-          pdfPath: (withNo.pdfPath ?? '').trim().isNotEmpty
-              ? withNo.pdfPath
-              : previous.pdfPath,
-          pdfUploadedAt: (withNo.pdfUploadedAt ?? '').trim().isNotEmpty
-              ? withNo.pdfUploadedAt
-              : previous.pdfUploadedAt,
-          pdfUploadedBy: (withNo.pdfUploadedBy ?? '').trim().isNotEmpty
-              ? withNo.pdfUploadedBy
-              : previous.pdfUploadedBy,
-        );
-      }
+    late final SizeQuoteDocument saved;
+    if (previous == null) {
+      final createdBy = (doc.createdBy ?? '').trim().isNotEmpty
+          ? doc.createdBy!.trim()
+          : editor;
+      final createdAt = (doc.createdAt ?? '').trim().isNotEmpty
+          ? doc.createdAt!
+          : now;
+      saved = withNo.copyWith(
+        createdBy: createdBy,
+        createdAt: createdAt,
+        updatedBy: editor.isEmpty ? createdBy : editor,
+        updatedAt: now,
+        editHistory: sizeQuoteAppendEditHistory(
+          previous: doc.editHistory,
+          at: now,
+          by: editor,
+          summary: '최초 작성 · ${sizeQuoteSnapshotSummary(withNo)}',
+        ),
+      );
+    } else {
+      final createdBy = (previous.createdBy ?? '').trim().isNotEmpty
+          ? previous.createdBy!.trim()
+          : editor;
+      final createdAt = (previous.createdAt ?? '').trim().isNotEmpty
+          ? previous.createdAt!
+          : (doc.createdAt ?? now);
+      saved = withNo.copyWith(
+        createdBy: createdBy,
+        createdAt: createdAt,
+        updatedBy: editor.isEmpty ? createdBy : editor,
+        updatedAt: now,
+        editHistory: sizeQuoteAppendEditHistory(
+          previous: previous.editHistory,
+          at: now,
+          by: editor,
+          summary: sizeQuoteEditDiffSummary(previous, withNo),
+        ),
+        pdfPath: (withNo.pdfPath ?? '').trim().isNotEmpty
+            ? withNo.pdfPath
+            : previous.pdfPath,
+        pdfUploadedAt: (withNo.pdfUploadedAt ?? '').trim().isNotEmpty
+            ? withNo.pdfUploadedAt
+            : previous.pdfUploadedAt,
+        pdfUploadedBy: (withNo.pdfUploadedBy ?? '').trim().isNotEmpty
+            ? withNo.pdfUploadedBy
+            : previous.pdfUploadedBy,
+      );
+    }
+
+    try {
       await _client.from('standard_unit_price_quotes').upsert(_rowOf(saved));
-      return saved;
     } catch (e) {
       if (e is ApiException) rethrow;
-      throw ApiException('표준단가 견적서를 저장하지 못했습니다. $e');
+      if (!sizeQuoteRelationMissing(e)) {
+        throw ApiException('표준단가 견적서를 저장하지 못했습니다. $e');
+      }
+      // 마이그레이션 전: 기기 로컬에만 보관.
     }
+    await (await _store()).upsert(saved);
+    return saved;
   }
 
   Future<void> delete(String id) async {
+    final store = await _store();
     try {
       await _client.from('standard_unit_price_quotes').delete().eq('id', id);
+      await store.remove(id);
     } catch (e) {
+      if (sizeQuoteRelationMissing(e)) {
+        await store.remove(id);
+        return;
+      }
       throw ApiException('표준단가 견적서를 삭제하지 못했습니다. $e');
     }
   }
@@ -381,9 +437,20 @@ class SizeQuoteRepository {
         ),
       );
       await _client.from('standard_unit_price_quotes').upsert(_rowOf(saved));
+      await (await _store()).upsert(saved);
       return saved;
     } catch (e) {
       if (e is ApiException) rethrow;
+      if (sizeQuoteRelationMissing(e)) {
+        final local = doc.copyWith(
+          sentYmd: markSent ? (doc.sentYmd ?? todayYmdSeoul()) : doc.sentYmd,
+          emailSentYmd: markEmail
+              ? (doc.emailSentYmd ?? todayYmdSeoul())
+              : doc.emailSentYmd,
+        );
+        await (await _store()).upsert(local);
+        return local;
+      }
       throw ApiException('견적서 PDF를 클라우드에 올리지 못했습니다. $e');
     }
   }
@@ -403,6 +470,7 @@ class SizeQuoteRepository {
           .where((e) => e.id.isNotEmpty && e.storagePath.isNotEmpty)
           .toList();
     } catch (e) {
+      if (sizeQuoteRelationMissing(e)) return const [];
       throw ApiException('홍보 이미지를 불러오지 못했습니다. $e');
     }
   }

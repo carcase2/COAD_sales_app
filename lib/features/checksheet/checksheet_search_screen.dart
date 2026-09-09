@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
+import 'package:coad_customer_calls/features/checksheet/install_after_usage_screen.dart';
 import 'package:coad_customer_calls/models/checksheet_archive.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/usage_service.dart';
@@ -17,9 +18,86 @@ import 'package:gal/gal.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
-/// MES 아카이브 체크시트(TP1) 검색 · 조회 (읽기 전용).
+String _archiveSanitizeFilePart(String raw) {
+  var s = raw.trim();
+  s = s.replaceAll(RegExp(r'[\\/:*?"<>|\n\r\t]+'), '_');
+  s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  s = s.replaceAll(RegExp(r'_+'), '_');
+  if (s.isEmpty) return '현장';
+  if (s.length > 60) s = s.substring(0, 60);
+  return s;
+}
+
+/// 파일명: `날짜_현장명` (+ 모델) (+ 복수 시 `_2`)
+String archivePhotoDownloadBaseName({
+  required ChecksheetSite site,
+  required ChecksheetAttachment att,
+  required int index,
+  required int total,
+}) {
+  final dateFmt = DateFormat('yyyy-MM-dd');
+  String datePart;
+  if (att.uploadedAt != null) {
+    datePart = dateFmt.format(att.uploadedAt!.toLocal());
+  } else if (site.regDate != null && site.regDate!.trim().isNotEmpty) {
+    final rd = site.regDate!.trim();
+    datePart = rd.length >= 10 ? rd.substring(0, 10) : rd;
+  } else if (site.year != null && site.month != null) {
+    datePart =
+        '${site.year}-${site.month!.toString().padLeft(2, '0')}-01';
+  } else {
+    datePart = dateFmt.format(DateTime.now());
+  }
+
+  final sitePart = _archiveSanitizeFilePart(site.siteName);
+  final model = (site.modelName ?? '').trim();
+  final modelPart =
+      model.isEmpty ? '' : '_${_archiveSanitizeFilePart(model)}';
+  final base = '${datePart}_$sitePart$modelPart';
+  if (total <= 1) return base;
+  return '${base}_${index + 1}';
+}
+
+Future<bool> _ensureGalleryAccess(BuildContext context) async {
+  if (await Gal.hasAccess()) return true;
+  final granted = await Gal.requestAccess();
+  if (!granted && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('갤러리 접근 권한이 필요합니다.')),
+    );
+  }
+  return granted;
+}
+
+Future<void> _saveArchivePhotoBytes({
+  required Uint8List bytes,
+  required String baseName,
+}) {
+  return Gal.putImageBytes(bytes, name: baseName);
+}
+
+Future<Uint8List> _fetchArchivePhotoBytes({
+  required String url,
+  Map<String, String>? headers,
+}) async {
+  final res = await http
+      .get(Uri.parse(url), headers: headers ?? const {})
+      .timeout(const Duration(seconds: 60));
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw Exception('download failed ${res.statusCode}');
+  }
+  if (res.bodyBytes.isEmpty) throw Exception('empty body');
+  return Uint8List.fromList(res.bodyBytes);
+}
+
+/// MES 아카이브 체크시트(TP1) · 시공후 사진(TP3) 검색 · 조회 (읽기 전용).
 class ChecksheetSearchScreen extends ConsumerStatefulWidget {
-  const ChecksheetSearchScreen({super.key});
+  const ChecksheetSearchScreen({
+    super.key,
+    this.kind = MesArchiveKind.checksheet,
+  });
+
+  final MesArchiveKind kind;
 
   @override
   ConsumerState<ChecksheetSearchScreen> createState() =>
@@ -40,8 +118,31 @@ class _ChecksheetSearchScreenState
 
   int? _year;
   int? _month;
+  String? _selectedModelCode;
+  List<InstallAfterModelOption> _models = const [];
+  bool _modelsLoading = false;
 
   static const _pageSize = 30;
+
+  bool get _isAfter => widget.kind == MesArchiveKind.installAfter;
+  String get _title => _isAfter ? '시공 사진' : '체크시트 검색';
+  String get _photoLabel => _isAfter ? '시공후 사진' : '체크시트';
+  String get _hint =>
+      _isAfter ? '현장명 (선택 · 예: 화성)' : '현장명 (예: 화성)';
+  String get _subtitle =>
+      _isAfter ? '모델 선택 후 검색 · 시공후 사진만' : '체크시트(TP1) · MES 아카이브';
+  String get _emptyHint => _isAfter
+      ? '모델을 고른 뒤 검색하세요.\n현장명을 같이 넣으면 더 정확합니다.'
+      : '현장명을 입력하고 검색하세요.\n예: 화성, 삼성전자';
+
+  String? get _selectedModelLabel {
+    final code = _selectedModelCode;
+    if (code == null) return null;
+    for (final m in _models) {
+      if (m.code == code) return m.label;
+    }
+    return code;
+  }
 
   @override
   void initState() {
@@ -51,18 +152,67 @@ class _ChecksheetSearchScreenState
       final user = ref.read(authControllerProvider);
       if (user == null) return;
       unawaited(
-        UsageService.recordChecksheet(
-          userId: user.id,
-          userName: user.name,
-          action: 'open',
-        ),
+        _isAfter
+            ? UsageService.recordInstallAfter(
+                userId: user.id,
+                userName: user.name,
+                action: 'open',
+              )
+            : UsageService.recordChecksheet(
+                userId: user.id,
+                userName: user.name,
+                action: 'open',
+              ),
       );
+      if (_isAfter) unawaited(_loadModels());
     });
   }
 
-  void _track(String action) {
+  Future<void> _loadModels() async {
+    setState(() => _modelsLoading = true);
+    try {
+      final models = await ref
+          .read(checksheetArchiveRepositoryProvider)
+          .fetchInstallAfterModels();
+      if (!mounted) return;
+      setState(() {
+        _models = models;
+        _modelsLoading = false;
+        if (_selectedModelCode == null && models.isNotEmpty) {
+          _selectedModelCode = models.first.code;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _models = const [];
+        _modelsLoading = false;
+      });
+    }
+  }
+
+  void _track(
+    String action, {
+    String? siteName,
+    int? resultCount,
+  }) {
     final user = ref.read(authControllerProvider);
     if (user == null) return;
+    if (_isAfter) {
+      unawaited(
+        UsageService.recordInstallAfter(
+          userId: user.id,
+          userName: user.name,
+          action: action,
+          modelCode: _selectedModelCode,
+          modelLabel: _selectedModelLabel,
+          query: action == 'search' ? _queryCtrl.text.trim() : _activeQuery,
+          resultCount: resultCount,
+          siteName: siteName,
+        ),
+      );
+      return;
+    }
     unawaited(
       UsageService.recordChecksheet(
         userId: user.id,
@@ -103,15 +253,27 @@ class _ChecksheetSearchScreenState
     }
 
     try {
+      if (_isAfter && (_selectedModelCode ?? '').trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('모델을 선택해 주세요.')),
+        );
+        setState(() {
+          _searched = false;
+          _data = const AsyncData(ChecksheetSearchResult.empty);
+        });
+        return;
+      }
       final result = await ref.read(checksheetArchiveRepositoryProvider).search(
             query: q,
-            year: _year,
-            month: _month,
+            year: _isAfter ? null : _year,
+            month: _isAfter ? null : _month,
+            modelName: _isAfter ? _selectedModelCode : null,
             limit: _pageSize,
             offset: 0,
             userId: user?.id,
+            kind: widget.kind,
           );
-      _track('search');
+      _track('search', resultCount: result.totalSites);
       if (!mounted) return;
       setState(() {
         _activeQuery = q;
@@ -133,11 +295,13 @@ class _ChecksheetSearchScreenState
     try {
       final next = await ref.read(checksheetArchiveRepositoryProvider).search(
             query: _queryCtrl.text.trim(),
-            year: _year,
-            month: _month,
+            year: _isAfter ? null : _year,
+            month: _isAfter ? null : _month,
+            modelName: _isAfter ? _selectedModelCode : null,
             limit: _pageSize,
             offset: current.nextOffset ?? current.sites.length,
             userId: user?.id,
+            kind: widget.kind,
           );
       if (!mounted) return;
       setState(() {
@@ -164,16 +328,17 @@ class _ChecksheetSearchScreenState
   void _openSite(ChecksheetSite site) {
     final user = ref.read(authControllerProvider);
     final repo = ref.read(checksheetArchiveRepositoryProvider);
-    _track('view');
+    _track('view', siteName: site.siteName);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => _ChecksheetGalleryScreen(
           site: site,
+          photoLabel: _photoLabel,
           highlightQuery: _activeQuery,
           resolveUrl: (path) =>
               repo.absoluteMediaUrl(path, userId: user?.id),
           headersForUrl: repo.mediaHttpHeadersForUrl,
-          onDownload: () => _track('download'),
+          onDownload: () => _track('download', siteName: site.siteName),
         ),
       ),
     );
@@ -215,15 +380,17 @@ class _ChecksheetSearchScreenState
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        title: const Text('체크시트 검색'),
+        title: Text(_title),
         actions: [
           if (isAdminGroup(ref.watch(authControllerProvider)))
             IconButton(
-              tooltip: '사용 내역',
+              tooltip: _isAfter ? '검색 기록' : '사용 내역',
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => const ChecksheetUsageScreen(),
+                    builder: (_) => _isAfter
+                        ? const InstallAfterUsageScreen()
+                        : const ChecksheetUsageScreen(),
                   ),
                 );
               },
@@ -249,7 +416,7 @@ class _ChecksheetSearchScreenState
                     textInputAction: TextInputAction.search,
                     onSubmitted: (_) => unawaited(_search()),
                     decoration: InputDecoration(
-                      hintText: '현장명 (예: 화성)',
+                      hintText: _hint,
                       isDense: true,
                       prefixIcon: const Icon(Icons.search_rounded, size: 22),
                       suffixIcon: _queryCtrl.text.isEmpty
@@ -273,89 +440,140 @@ class _ChecksheetSearchScreenState
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<int?>(
-                          isExpanded: true,
-                          isDense: true,
-                          // ignore: deprecated_member_use
-                          value: _year,
-                          decoration: _dropdownDeco('연도'),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('전체', overflow: TextOverflow.ellipsis),
+                  if (_isAfter) ...[
+                    if (_modelsLoading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: LinearProgressIndicator(minHeight: 2),
+                      )
+                    else
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        isDense: true,
+                        // ignore: deprecated_member_use
+                        value: _selectedModelCode != null &&
+                                _models.any((m) => m.code == _selectedModelCode)
+                            ? _selectedModelCode
+                            : null,
+                        decoration: _dropdownDeco('모델'),
+                        items: [
+                          for (final m in _models)
+                            DropdownMenuItem<String>(
+                              value: m.code,
+                              child: Text(
+                                m.label,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            ...years.map(
-                              (y) => DropdownMenuItem<int?>(
-                                value: y,
+                        ],
+                        onChanged: (v) {
+                          HapticFeedback.selectionClick();
+                          setState(() => _selectedModelCode = v);
+                        },
+                      ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () => unawaited(_search()),
+                      icon: const Icon(Icons.search_rounded),
+                      label: Text(
+                        (_selectedModelLabel ?? '').isEmpty
+                            ? '모델 선택 후 검색'
+                            : '${_selectedModelLabel!} 검색',
+                      ),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(44),
+                      ),
+                    ),
+                  ] else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int?>(
+                            isExpanded: true,
+                            isDense: true,
+                            // ignore: deprecated_member_use
+                            value: _year,
+                            decoration: _dropdownDeco('연도'),
+                            items: [
+                              const DropdownMenuItem<int?>(
+                                value: null,
                                 child: Text(
-                                  '$y',
+                                  '전체',
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _year = v;
-                            if (v == null) _month = null;
-                          }),
+                              ...years.map(
+                                (y) => DropdownMenuItem<int?>(
+                                  value: y,
+                                  child: Text(
+                                    '$y',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) => setState(() {
+                              _year = v;
+                              if (v == null) _month = null;
+                            }),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButtonFormField<int?>(
-                          isExpanded: true,
-                          isDense: true,
-                          // ignore: deprecated_member_use
-                          value: _month,
-                          decoration: _dropdownDeco('월'),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('전체', overflow: TextOverflow.ellipsis),
-                            ),
-                            ...List.generate(
-                              12,
-                              (i) => DropdownMenuItem<int?>(
-                                value: i + 1,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<int?>(
+                            isExpanded: true,
+                            isDense: true,
+                            // ignore: deprecated_member_use
+                            value: _month,
+                            decoration: _dropdownDeco('월'),
+                            items: [
+                              const DropdownMenuItem<int?>(
+                                value: null,
                                 child: Text(
-                                  '${i + 1}월',
+                                  '전체',
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              ...List.generate(
+                                12,
+                                (i) => DropdownMenuItem<int?>(
+                                  value: i + 1,
+                                  child: Text(
+                                    '${i + 1}월',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            onChanged: _year == null
+                                ? null
+                                : (v) => setState(() => _month = v),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () => unawaited(_search()),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 14,
                             ),
-                          ],
-                          onChanged: _year == null
-                              ? null
-                              : (v) => setState(() => _month = v),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () => unawaited(_search()),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 14,
+                            minimumSize: const Size(64, 44),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          minimumSize: const Size(64, 44),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text(
-                          '검색',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
+                          child: const Text(
+                            '검색',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                   const SizedBox(height: 6),
                   Text(
-                    '체크시트(TP1) · MES 아카이브',
+                    _subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -378,9 +596,9 @@ class _ChecksheetSearchScreenState
 
   Widget _buildBody(ColorScheme scheme) {
     if (!_searched) {
-      return const _ScrollableMessage(
+      return _ScrollableMessage(
         child: AppEmpty(
-          message: '현장명을 입력하고 검색하세요.\n예: 화성, 삼성전자',
+          message: _emptyHint,
           icon: Icons.image_search_rounded,
         ),
       );
@@ -417,7 +635,11 @@ class _ChecksheetSearchScreenState
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
                   child: Text(
-                    _activeQuery.isEmpty
+                    _isAfter && (_selectedModelLabel ?? '').isNotEmpty
+                        ? '${_selectedModelLabel!}'
+                              '${_activeQuery.isEmpty ? '' : ' · ‘$_activeQuery’'}'
+                              ' · 현장 ${result.totalSites}곳'
+                        : _activeQuery.isEmpty
                         ? '현장 ${result.totalSites}곳'
                         : '‘$_activeQuery’ · 현장 ${result.totalSites}곳',
                     maxLines: 1,
@@ -446,6 +668,7 @@ class _ChecksheetSearchScreenState
               final thumb = _thumb(site);
               return _SiteCard(
                 site: site,
+                photoLabel: _photoLabel,
                 highlightQuery: _activeQuery,
                 thumbUrl: thumb.url,
                 thumbHeaders: thumb.headers,
@@ -483,6 +706,7 @@ class _ScrollableMessage extends StatelessWidget {
 class _SiteCard extends StatelessWidget {
   const _SiteCard({
     required this.site,
+    required this.photoLabel,
     required this.highlightQuery,
     required this.thumbUrl,
     this.thumbHeaders,
@@ -490,6 +714,7 @@ class _SiteCard extends StatelessWidget {
   });
 
   final ChecksheetSite site;
+  final String photoLabel;
   final String highlightQuery;
   final String? thumbUrl;
   final Map<String, String>? thumbHeaders;
@@ -566,6 +791,24 @@ class _SiteCard extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
+                    if ((site.modelName ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      SearchHighlightText(
+                        text: '모델 ${site.modelName!.trim()}',
+                        query: highlightQuery,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: lineStyle.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        highlightStyle: TextStyle(
+                          backgroundColor: scheme.tertiaryContainer,
+                          color: scheme.onTertiaryContainer,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text('등록일 $reg', style: lineStyle),
                     Text(
@@ -577,7 +820,7 @@ class _SiteCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '체크시트 ${site.checksheetCount}장',
+                      '$photoLabel ${site.photoCount}장',
                       style: lineStyle,
                     ),
                   ],
@@ -595,6 +838,7 @@ class _SiteCard extends StatelessWidget {
 class _ChecksheetGalleryScreen extends StatefulWidget {
   const _ChecksheetGalleryScreen({
     required this.site,
+    required this.photoLabel,
     required this.highlightQuery,
     required this.resolveUrl,
     required this.headersForUrl,
@@ -602,6 +846,7 @@ class _ChecksheetGalleryScreen extends StatefulWidget {
   });
 
   final ChecksheetSite site;
+  final String photoLabel;
   final String highlightQuery;
   final String Function(String mediaPath) resolveUrl;
   final Map<String, String>? Function(String absoluteUrl) headersForUrl;
@@ -613,6 +858,11 @@ class _ChecksheetGalleryScreen extends StatefulWidget {
 }
 
 class _ChecksheetGalleryScreenState extends State<_ChecksheetGalleryScreen> {
+  bool _downloadingAll = false;
+  int? _downloadingIndex;
+  int _bulkDone = 0;
+  int _bulkTotal = 0;
+
   void _openFull(int index) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -629,10 +879,99 @@ class _ChecksheetGalleryScreenState extends State<_ChecksheetGalleryScreen> {
     );
   }
 
+  Future<void> _downloadOne(int index, {bool silent = false}) async {
+    if (_downloadingAll || _downloadingIndex != null) return;
+    final atts = widget.site.attachments;
+    if (index < 0 || index >= atts.length) return;
+    setState(() => _downloadingIndex = index);
+    HapticFeedback.selectionClick();
+    try {
+      if (!await _ensureGalleryAccess(context)) return;
+      final att = atts[index];
+      final url = widget.resolveUrl(att.mediaPath);
+      final headers = widget.headersForUrl(url);
+      final bytes = await _fetchArchivePhotoBytes(url: url, headers: headers);
+      final baseName = archivePhotoDownloadBaseName(
+        site: widget.site,
+        att: att,
+        index: index,
+        total: atts.length,
+      );
+      await _saveArchivePhotoBytes(bytes: bytes, baseName: baseName);
+      widget.onDownload?.call();
+      if (!mounted || silent) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('저장했습니다: $baseName.jpg')),
+      );
+    } catch (_) {
+      if (!mounted || silent) rethrow;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이미지 저장에 실패했습니다.')),
+      );
+    } finally {
+      if (mounted) setState(() => _downloadingIndex = null);
+    }
+  }
+
+  Future<void> _downloadAll() async {
+    final atts = widget.site.attachments;
+    if (atts.isEmpty || _downloadingAll || _downloadingIndex != null) return;
+    HapticFeedback.selectionClick();
+    if (!await _ensureGalleryAccess(context)) return;
+
+    setState(() {
+      _downloadingAll = true;
+      _bulkDone = 0;
+      _bulkTotal = atts.length;
+    });
+
+    var ok = 0;
+    var fail = 0;
+    try {
+      for (var i = 0; i < atts.length; i++) {
+        if (!mounted) return;
+        setState(() => _bulkDone = i);
+        try {
+          final att = atts[i];
+          final url = widget.resolveUrl(att.mediaPath);
+          final headers = widget.headersForUrl(url);
+          final bytes =
+              await _fetchArchivePhotoBytes(url: url, headers: headers);
+          final baseName = archivePhotoDownloadBaseName(
+            site: widget.site,
+            att: att,
+            index: i,
+            total: atts.length,
+          );
+          await _saveArchivePhotoBytes(bytes: bytes, baseName: baseName);
+          ok++;
+          widget.onDownload?.call();
+        } catch (_) {
+          fail++;
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadingAll = false;
+          _bulkDone = 0;
+          _bulkTotal = 0;
+        });
+      }
+    }
+
+    if (!mounted) return;
+    final msg = fail == 0
+        ? '전체 $ok장을 앨범에 저장했습니다.'
+        : '저장 $ok장 · 실패 $fail장';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final atts = widget.site.attachments;
     final scheme = Theme.of(context).colorScheme;
+    final busy = _downloadingAll || _downloadingIndex != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -648,19 +987,46 @@ class _ChecksheetGalleryScreenState extends State<_ChecksheetGalleryScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          if (atts.isNotEmpty)
+            TextButton.icon(
+              onPressed: busy ? null : () => unawaited(_downloadAll()),
+              icon: _downloadingAll
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: scheme.primary,
+                      ),
+                    )
+                  : const Icon(Icons.download_rounded, size: 20),
+              label: Text(
+                _downloadingAll && _bulkTotal > 0
+                    ? '${_bulkDone + 1}/$_bulkTotal'
+                    : '전체 저장',
+              ),
+            ),
+        ],
       ),
       body: atts.isEmpty
-          ? const AppEmpty(
-              message: '이 현장의 체크시트 이미지가 없습니다.',
+          ? AppEmpty(
+              message: '이 현장의 ${widget.photoLabel} 이미지가 없습니다.',
               icon: Icons.image_not_supported_outlined,
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (_downloadingAll)
+                  LinearProgressIndicator(
+                    value: _bulkTotal <= 0
+                        ? null
+                        : ((_bulkDone + 1) / _bulkTotal).clamp(0.0, 1.0),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
                   child: Text(
-                    '체크시트 ${atts.length}장 · 탭하면 확대 · 다운로드',
+                    '${widget.photoLabel} ${atts.length}장 · 탭하면 확대 · 개별/전체 저장',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -684,12 +1050,13 @@ class _ChecksheetGalleryScreenState extends State<_ChecksheetGalleryScreen> {
                       final a = atts[i];
                       final url = widget.resolveUrl(a.mediaPath);
                       final headers = widget.headersForUrl(url);
+                      final savingThis = _downloadingIndex == i;
                       return Material(
                         color: scheme.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(12),
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
-                          onTap: () => _openFull(i),
+                          onTap: busy ? null : () => _openFull(i),
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
@@ -719,6 +1086,40 @@ class _ChecksheetGalleryScreenState extends State<_ChecksheetGalleryScreen> {
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
                                     ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 4,
+                                bottom: 4,
+                                child: Material(
+                                  color: Colors.black54,
+                                  shape: const CircleBorder(),
+                                  child: IconButton(
+                                    tooltip: '이 사진 저장',
+                                    visualDensity: VisualDensity.compact,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 36,
+                                      minHeight: 36,
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    onPressed: busy
+                                        ? null
+                                        : () => unawaited(_downloadOne(i)),
+                                    icon: savingThis
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.download_rounded,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
                                   ),
                                 ),
                               ),
@@ -787,38 +1188,13 @@ class _ChecksheetFullscreenViewerState
     );
   }
 
-  String _sanitizeFilePart(String raw) {
-    var s = raw.trim();
-    s = s.replaceAll(RegExp(r'[\\/:*?"<>|\n\r\t]+'), '_');
-    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
-    s = s.replaceAll(RegExp(r'_+'), '_');
-    if (s.isEmpty) return '현장';
-    if (s.length > 60) s = s.substring(0, 60);
-    return s;
-  }
-
-  /// 파일명: `날짜_현장명` (+ 복수 시 `_2`)
   String _downloadBaseName(int index) {
-    final att = widget.attachments[index];
-    final dateFmt = DateFormat('yyyy-MM-dd');
-    String datePart;
-    if (att.uploadedAt != null) {
-      datePart = dateFmt.format(att.uploadedAt!.toLocal());
-    } else if (widget.site.regDate != null &&
-        widget.site.regDate!.trim().isNotEmpty) {
-      final rd = widget.site.regDate!.trim();
-      datePart = rd.length >= 10 ? rd.substring(0, 10) : rd;
-    } else if (widget.site.year != null && widget.site.month != null) {
-      datePart =
-          '${widget.site.year}-${widget.site.month.toString().padLeft(2, '0')}-01';
-    } else {
-      datePart = dateFmt.format(DateTime.now());
-    }
-
-    final sitePart = _sanitizeFilePart(widget.site.siteName);
-    final base = '${datePart}_$sitePart';
-    if (widget.attachments.length <= 1) return base;
-    return '${base}_${index + 1}';
+    return archivePhotoDownloadBaseName(
+      site: widget.site,
+      att: widget.attachments[index],
+      index: index,
+      total: widget.attachments.length,
+    );
   }
 
   Future<void> _downloadCurrent() async {
@@ -829,34 +1205,13 @@ class _ChecksheetFullscreenViewerState
     final index = _index;
     final att = widget.attachments[index];
     final url = widget.resolveUrl(att.mediaPath);
-    final headers = widget.headersForUrl(url) ?? const <String, String>{};
+    final headers = widget.headersForUrl(url);
     final baseName = _downloadBaseName(index);
 
     try {
-      final res = await http
-          .get(Uri.parse(url), headers: headers)
-          .timeout(const Duration(seconds: 60));
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw Exception('download failed ${res.statusCode}');
-      }
-      final bytes = res.bodyBytes;
-      if (bytes.isEmpty) throw Exception('empty body');
-
-      if (!await Gal.hasAccess()) {
-        final granted = await Gal.requestAccess();
-        if (!granted) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('갤러리 접근 권한이 필요합니다.')),
-          );
-          return;
-        }
-      }
-
-      await Gal.putImageBytes(
-        Uint8List.fromList(bytes),
-        name: baseName,
-      );
+      if (!await _ensureGalleryAccess(context)) return;
+      final bytes = await _fetchArchivePhotoBytes(url: url, headers: headers);
+      await _saveArchivePhotoBytes(bytes: bytes, baseName: baseName);
       widget.onDownload?.call();
 
       if (!mounted) return;
@@ -919,7 +1274,7 @@ class _ChecksheetFullscreenViewerState
             icon: const Icon(Icons.zoom_out_map_rounded),
           ),
           IconButton(
-            tooltip: '다운로드',
+            tooltip: '이 사진 저장',
             onPressed: _downloading ? null : () => unawaited(_downloadCurrent()),
             icon: _downloading
                 ? const SizedBox(

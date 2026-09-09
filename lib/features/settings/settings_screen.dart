@@ -7,6 +7,8 @@ import 'package:coad_customer_calls/features/customer_support/support_due_schedu
 import 'package:coad_customer_calls/features/customer_support/support_visit_teams_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
+import 'package:coad_customer_calls/features/checksheet/install_after_usage_screen.dart';
+import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
@@ -243,6 +245,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               );
             },
           ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.photo_library_outlined, color: scheme.primary),
+            title: const Text('시공 사진'),
+            subtitle: const Text('MES 아카이브 · 시공후 사진 · 모델명·현장명'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ChecksheetSearchScreen(
+                    kind: MesArchiveKind.installAfter,
+                  ),
+                ),
+              );
+            },
+          ),
           if (isAdminGroup(user))
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -254,6 +272,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const ChecksheetUsageScreen(),
+                  ),
+                );
+              },
+            ),
+          if (isAdminGroup(user))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.insights_rounded, color: scheme.primary),
+              title: const Text('시공 사진 검색 기록'),
+              subtitle: const Text('누가 얼마나 · 기간별 · 검색 내역'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const InstallAfterUsageScreen(),
                   ),
                 );
               },

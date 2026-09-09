@@ -9,10 +9,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// MES 아카이브 체크시트(TP1) 읽기 전용 저장소.
+/// MES 아카이브 사진 종류.
+enum MesArchiveKind {
+  checksheet,
+  installAfter,
+}
+
+/// MES 아카이브 체크시트(TP1) · 시공후 사진(TP3) 읽기 전용 저장소.
 ///
-/// 1) `BASE_URL` 있으면 Next `/api/archive/*`
-/// 2) 없으면 Supabase Edge Function `archive-checksheets` / `archive-media`
+/// 1) `BASE_URL` 있으면 Next `/api/archive/*` (체크시트만)
+/// 2) 없으면 Supabase Edge Function
 ///
 /// service role · R2 시크릿은 서버(Edge/Next)에만 둔다.
 class ChecksheetArchiveRepository {
@@ -91,16 +97,44 @@ class ChecksheetArchiveRepository {
     return '$base$path';
   }
 
+  /// 시공후 사진 모델. 사양서(`spec_sheet_models`) 전체 이름.
+  Future<List<InstallAfterModelOption>> fetchInstallAfterModels() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('spec_sheet_models')
+          .select('name')
+          .order('sort_order')
+          .order('name');
+      final byCode = <String, InstallAfterModelOption>{};
+      for (final row in res) {
+        if (row is! Map) continue;
+        final name = (row['name'] ?? '').toString().trim();
+        if (name.isEmpty) continue;
+        final code = _cSeriesCodeFromName(name);
+        byCode.putIfAbsent(
+          code,
+          () => InstallAfterModelOption(code: code, label: name),
+        );
+      }
+      final list = byCode.values.toList()
+        ..sort((a, b) => _compareCSeriesCodes(a.code, b.code));
+      if (list.isNotEmpty) return list;
+    } catch (_) {}
+    return List<InstallAfterModelOption>.from(_fallbackInstallAfterModels);
+  }
+
   Future<ChecksheetSearchResult> search({
     required String query,
     int? year,
     int? month,
+    String? modelName,
     int limit = 50,
     int offset = 0,
     String? userId,
+    MesArchiveKind kind = MesArchiveKind.checksheet,
   }) async {
     final base = _baseUrl;
-    if (base != null) {
+    if (base != null && kind == MesArchiveKind.checksheet) {
       try {
         return await _searchViaNext(
           baseUrl: base,
@@ -118,8 +152,10 @@ class ChecksheetArchiveRepository {
             query: query,
             year: year,
             month: month,
+            modelName: modelName,
             limit: limit,
             offset: offset,
+            kind: kind,
           );
         }
         // BASE_URL 이 잘못된 경우 등 — Edge 시도
@@ -128,8 +164,10 @@ class ChecksheetArchiveRepository {
             query: query,
             year: year,
             month: month,
+            modelName: modelName,
             limit: limit,
             offset: offset,
+            kind: kind,
           );
         } catch (_) {
           rethrow;
@@ -141,8 +179,10 @@ class ChecksheetArchiveRepository {
       query: query,
       year: year,
       month: month,
+      modelName: modelName,
       limit: limit,
       offset: offset,
+      kind: kind,
     );
   }
 
@@ -182,8 +222,10 @@ class ChecksheetArchiveRepository {
     required String query,
     int? year,
     int? month,
+    String? modelName,
     int limit = 50,
     int offset = 0,
+    MesArchiveKind kind = MesArchiveKind.checksheet,
   }) async {
     final anon = _supabaseAnonKey;
     if (anon.isEmpty) {
@@ -193,13 +235,22 @@ class ChecksheetArchiveRepository {
     }
 
     final q = query.trim();
+    final model = (modelName ?? '').trim();
     final params = <String, String>{
       'limit': '$limit',
       'offset': '$offset',
     };
     if (q.isNotEmpty) params['q'] = q;
-    if (year != null && year > 0) params['year'] = '$year';
-    if (month != null && month >= 1 && month <= 12) params['month'] = '$month';
+    if (model.isNotEmpty) params['model'] = model;
+    // 시공후는 이미 배포된 archive-checksheets 에 kind 로 합침.
+    if (kind == MesArchiveKind.installAfter) {
+      params['kind'] = 'install_after';
+    } else {
+      if (year != null && year > 0) params['year'] = '$year';
+      if (month != null && month >= 1 && month <= 12) {
+        params['month'] = '$month';
+      }
+    }
 
     final uri = Uri.parse('$_supabaseUrl/functions/v1/archive-checksheets')
         .replace(queryParameters: params);
@@ -215,17 +266,22 @@ class ChecksheetArchiveRepository {
 
     if (res.statusCode == 404) {
       throw ApiException(
-        'Edge Function이 배포되지 않았습니다. archive-checksheets 배포가 필요합니다.',
+        'Edge Function이 배포되지 않았습니다. archive-checksheets 재배포가 필요합니다.',
         statusCode: 404,
       );
     }
 
-    return _parseSearchBody(res.statusCode, res.body);
+    return _parseSearchBody(res.statusCode, res.body, kind: kind);
   }
 
-  ChecksheetSearchResult _parseSearchBody(int statusCode, String body) {
+  ChecksheetSearchResult _parseSearchBody(
+    int statusCode,
+    String body, {
+    MesArchiveKind kind = MesArchiveKind.checksheet,
+  }) {
+    final label = kind == MesArchiveKind.installAfter ? '시공후 사진' : '체크시트';
     if (statusCode == 403) {
-      throw ApiException('체크시트 조회 권한이 없습니다.', statusCode: 403);
+      throw ApiException('$label 조회 권한이 없습니다.', statusCode: 403);
     }
     if (statusCode == 503) {
       throw ApiException(
@@ -234,7 +290,7 @@ class ChecksheetArchiveRepository {
       );
     }
     if (statusCode < 200 || statusCode >= 300) {
-      String msg = '체크시트 검색에 실패했습니다.';
+      String msg = '$label 검색에 실패했습니다.';
       try {
         final decoded = jsonDecode(body);
         if (decoded is Map && decoded['error'] != null) {
@@ -254,7 +310,7 @@ class ChecksheetArchiveRepository {
     }
     if (decoded['success'] == false) {
       throw ApiException(
-        '${decoded['error'] ?? '체크시트 검색에 실패했습니다.'}',
+        '${decoded['error'] ?? '$label 검색에 실패했습니다.'}',
       );
     }
     return ChecksheetSearchResult.fromJson(decoded);
@@ -265,3 +321,41 @@ final checksheetArchiveRepositoryProvider =
     Provider<ChecksheetArchiveRepository>((ref) {
   return ChecksheetArchiveRepository(ref.watch(appDependenciesProvider));
 });
+
+/// 사양서 모델명에서 검색용 코드만 추출 (C-1 Standard → C-1).
+String _cSeriesCodeFromName(String name) {
+  final m = RegExp(r'^C-(\d+)', caseSensitive: false).firstMatch(name.trim());
+  if (m == null) return name.trim();
+  return 'C-${m.group(1)!}';
+}
+
+int _compareCSeriesCodes(String a, String b) {
+  final ra = RegExp(r'^C-(\d+)(.*)$', caseSensitive: false).firstMatch(a);
+  final rb = RegExp(r'^C-(\d+)(.*)$', caseSensitive: false).firstMatch(b);
+  if (ra != null && rb != null) {
+    final na = int.parse(ra.group(1)!);
+    final nb = int.parse(rb.group(1)!);
+    if (na != nb) return na.compareTo(nb);
+    return (ra.group(2) ?? '').compareTo(rb.group(2) ?? '');
+  }
+  return a.toLowerCase().compareTo(b.toLowerCase());
+}
+
+const _fallbackInstallAfterModels = [
+  InstallAfterModelOption(code: 'C-1', label: 'C-1 Standard'),
+  InstallAfterModelOption(code: 'C-2', label: 'C-2 Deluxe'),
+  InstallAfterModelOption(code: 'C-3', label: 'C-3 Premium'),
+  InstallAfterModelOption(code: 'C-5', label: 'C-5 Snail Door'),
+  InstallAfterModelOption(code: 'C-20', label: 'C-20 Stacking Door'),
+  InstallAfterModelOption(code: 'C-30', label: 'C-30 Overhead Door'),
+  InstallAfterModelOption(code: 'C-40', label: 'C-40 차고문'),
+  InstallAfterModelOption(code: 'C-50', label: 'C-50 내풍압셔터'),
+  InstallAfterModelOption(code: 'C-51', label: 'C-51 내풍압단열셔터'),
+  InstallAfterModelOption(code: 'C-52', label: 'C-52 철재방화셔터'),
+  InstallAfterModelOption(code: 'C-53', label: 'C-53 스크린방화셔터'),
+  InstallAfterModelOption(code: 'C-54', label: 'C-54 AL 이중압출셔터'),
+  InstallAfterModelOption(code: 'C-55', label: 'C-55 AL 이중압출단열셔터'),
+  InstallAfterModelOption(code: 'C-56', label: 'C-56 AL 고속셔터'),
+  InstallAfterModelOption(code: 'C-57', label: 'C-57 방범셔터'),
+  InstallAfterModelOption(code: 'C-60', label: 'C-60 유리자동문'),
+];

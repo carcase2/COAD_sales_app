@@ -8,7 +8,7 @@ const cors = {
     'authorization, x-client-info, apikey, content-type',
 }
 
-function isChecksheet(row: {
+function isAllowedArchiveMedia(row: {
   type_code?: string | null
   stage?: string | null
   r2_key?: string | null
@@ -17,8 +17,28 @@ function isChecksheet(row: {
 }): boolean {
   const code = (row.type_code || row.stage || '').toUpperCase()
   if (code === 'TP1') return true
+  if (
+    code === 'TP3' ||
+    code === 'TP3_INSTALL_AFTER' ||
+    code.includes('INSTALL_AFTER')
+  ) {
+    return true
+  }
   const path = `${row.r2_key || ''}|${row.local_path || ''}|${row.original_name || ''}`
-  return path.includes('04_체크시트') || /TP1[_/\\-]/i.test(path)
+  if (path.includes('04_체크시트') || /TP1[_/\\-]/i.test(path)) return true
+  if (
+    path.includes('시공전') ||
+    path.includes('시공_전') ||
+    /TP[26][_/\\-]/i.test(path)
+  ) {
+    return false
+  }
+  return (
+    path.includes('시공후') ||
+    path.includes('시공_후') ||
+    path.includes('INSTALL_AFTER') ||
+    /TP3[_/\\-]/i.test(path)
+  )
 }
 
 serve(async (req) => {
@@ -68,8 +88,8 @@ serve(async (req) => {
       })
     }
 
-    if (!isChecksheet(row)) {
-      return new Response(JSON.stringify({ error: '체크시트(TP1)만 조회할 수 있습니다.' }), {
+    if (!isAllowedArchiveMedia(row)) {
+      return new Response(JSON.stringify({ error: '허용되지 않은 아카이브 미디어입니다.' }), {
         status: 403,
         headers: { ...cors, 'Content-Type': 'application/json' },
       })

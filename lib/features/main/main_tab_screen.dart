@@ -35,8 +35,9 @@ import 'package:coad_customer_calls/features/customer_support/reception_kind_she
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
+import 'package:coad_customer_calls/features/checksheet/install_after_usage_screen.dart';
+import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
-import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
@@ -1207,29 +1208,12 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'tools',
           icon: Icons.calculate_rounded,
           title: '셔터 견적기',
-          subtitle: 'COAD_home과 동일 계산 · 견적서 작성',
+          subtitle: '견적 탭 · 셔터 · 표준단가 · 견적서',
           quickAccess: true,
           quickLabel: '견적',
           keywords: const ['견적', '셔터', '견적기', 'estimator', '단가', '모터', '슬라트'],
           onTap: () => closeDrawerThen(_selectQuoterTab),
         ),
-        if (canViewStandardUnitPrice(user))
-          AppMenuEntry(
-            id: 'standard_unit_price',
-            sectionId: 'tools',
-            icon: Icons.grid_on_rounded,
-            title: '사이즈 표준단가',
-            subtitle: '셔터 단가와 별개 · 폭×높이·모델 표준단가',
-            keywords: const ['단가', '표준단가', '사이즈', '폭', '높이', '모델', '인상'],
-            onTap: () => closeDrawerThen(() {
-              _trackTab(user, 'standard_unit_price');
-              Navigator.of(hostContext).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const StandardUnitPriceScreen(),
-                ),
-              );
-            }),
-          ),
         if (canAccessBusinessCards(user))
           AppMenuEntry(
             id: 'business_cards',
@@ -1341,6 +1325,35 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             );
           }),
         ),
+        AppMenuEntry(
+          id: 'install_after_photos',
+          sectionId: 'tools',
+          icon: Icons.photo_library_outlined,
+          title: '시공 사진',
+          subtitle: '모델명·현장명으로 시공후 사진 조회',
+          quickAccess: true,
+          quickLabel: '시공사진',
+          keywords: const [
+            '시공후',
+            '시공',
+            '사진',
+            'TP3',
+            '아카이브',
+            '현장',
+            '모델',
+            'MES',
+          ],
+          onTap: () => closeDrawerThen(() {
+            _trackTab(user, 'install_after_photos');
+            Navigator.of(hostContext).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ChecksheetSearchScreen(
+                  kind: MesArchiveKind.installAfter,
+                ),
+              ),
+            );
+          }),
+        ),
         if (isAdminGroup(user))
           AppMenuEntry(
             id: 'checksheet_usage',
@@ -1354,6 +1367,30 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               Navigator.of(hostContext).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const ChecksheetUsageScreen(),
+                ),
+              );
+            }),
+          ),
+        if (isAdminGroup(user))
+          AppMenuEntry(
+            id: 'install_after_usage',
+            sectionId: 'tools',
+            icon: Icons.insights_rounded,
+            title: '시공 사진 검색 기록',
+            subtitle: '누가 많이 검색하는지 · 기간별',
+            keywords: const [
+              '시공',
+              '사진',
+              '검색',
+              '기록',
+              '사용량',
+              '통계',
+              '관리',
+            ],
+            onTap: () => closeDrawerThen(() {
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const InstallAfterUsageScreen(),
                 ),
               );
             }),

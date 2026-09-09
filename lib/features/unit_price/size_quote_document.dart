@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const kSizeQuoteKindMain = 'main';
 const kSizeQuoteKindAccessory = 'accessory';
@@ -1105,4 +1108,90 @@ List<SizeQuoteSiteGroup> sizeQuoteSiteGroups(List<SizeQuoteDocument> items) {
     return by.compareTo(ay);
   });
   return groups;
+}
+
+/// 기존 견적서를 새 초안으로 복제(발송·PDF·이력 초기화).
+SizeQuoteDocument sizeQuoteReuseAsNew(
+  SizeQuoteDocument src, {
+  required String newId,
+  required String ymd,
+}) {
+  return SizeQuoteDocument(
+    id: newId,
+    customerName: src.customerName,
+    phone: src.phone,
+    email: src.email,
+    site: src.site,
+    address: src.address,
+    workName: src.workName,
+    quoteNo: '',
+    ymd: ymd,
+    categoryId: src.categoryId,
+    categoryName: src.categoryName,
+    modelId: src.modelId,
+    modelName: src.modelName,
+    widthMm: src.widthMm,
+    heightMm: src.heightMm,
+    quantity: src.quantity,
+    standardPrice: src.standardPrice,
+    markupType: src.markupType,
+    markupValue: src.markupValue,
+    lines: src.lines,
+    promoImageIds: src.promoImageIds,
+    note: src.note,
+    negoAmount: src.negoAmount,
+    negoPercent: src.negoPercent,
+    targetTotal: src.targetTotal,
+  );
+}
+
+const _kSizeQuoteLocalPrefs = 'standard_unit_price_quotes_local_v1';
+
+/// 서버 테이블이 없을 때 기기 로컬에 견적서를 보관한다.
+class SizeQuoteStore {
+  SizeQuoteStore(this._prefs);
+
+  final SharedPreferences _prefs;
+
+  List<SizeQuoteDocument> load() {
+    final raw = _prefs.getString(_kSizeQuoteLocalPrefs);
+    if (raw == null || raw.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((e) => SizeQuoteDocument.fromJson(Map<String, dynamic>.from(e)))
+          .where((e) => e.id.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> save(List<SizeQuoteDocument> items) async {
+    await _prefs.setString(
+      _kSizeQuoteLocalPrefs,
+      jsonEncode(items.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  Future<void> upsert(SizeQuoteDocument doc) async {
+    final next = [
+      doc,
+      ...load().where((e) => e.id != doc.id),
+    ];
+    next.sort((a, b) {
+      final byYmd = b.ymd.compareTo(a.ymd);
+      if (byYmd != 0) return byYmd;
+      return (b.updatedAt ?? b.createdAt ?? '').compareTo(
+        a.updatedAt ?? a.createdAt ?? '',
+      );
+    });
+    await save(next);
+  }
+
+  Future<void> remove(String id) async {
+    await save(load().where((e) => e.id != id).toList());
+  }
 }

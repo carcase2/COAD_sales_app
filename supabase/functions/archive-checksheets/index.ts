@@ -30,6 +30,51 @@ function isChecksheet(row: Row): boolean {
   return path.includes('04_체크시트') || /TP1[_/\\-]/i.test(path)
 }
 
+function isInstallAfter(row: Row): boolean {
+  const path = `${row.r2_key || ''}|${row.local_path || ''}|${row.original_name || ''}`
+  if (
+    path.includes('시공전') ||
+    path.includes('시공_전') ||
+    /\/0[12]_시공전/i.test(path) ||
+    /TP[26][_/\\-]/i.test(path)
+  ) {
+    return false
+  }
+  const code = (row.type_code || row.stage || '').toUpperCase()
+  if (
+    code === 'TP3' ||
+    code === 'TP3_INSTALL_AFTER' ||
+    code.includes('INSTALL_AFTER')
+  ) {
+    return true
+  }
+  return (
+    path.includes('시공후') ||
+    path.includes('시공_후') ||
+    path.includes('INSTALL_AFTER') ||
+    /TP3[_/\\-]/i.test(path)
+  )
+}
+
+function guessModel(row: Row): string | null {
+  const path = `${row.r2_key || ''}|${row.local_path || ''}|${row.original_name || ''}`
+  const folder = path.match(
+    /\/([^\/]+)\/(?:\d*_?시공후|시공_후|INSTALL_AFTER|TP3)/i,
+  )
+  if (
+    folder &&
+    folder[1] &&
+    !/^\d{4}$/.test(folder[1]) &&
+    folder[1].length < 40
+  ) {
+    const name = folder[1].trim()
+    if (name && !name.includes('sites') && name !== (row.site_name || '').trim()) {
+      return name
+    }
+  }
+  return null
+}
+
 /** 경로 data/sites/YYYY/MM/DD/... 에서 날짜·연·월 추출 */
 function parsePathDate(r2Key: string | null, localPath: string | null) {
   const path = r2Key || localPath || ''
@@ -117,6 +162,95 @@ function lookupInstall(
   return null
 }
 
+const ATT_COLS =
+  'id, site_key, site_name, type_code, stage, original_name, mime, file_size, local_path, r2_key, r2_bucket, uploaded_at, created_at'
+
+const TP3_OR =
+  'type_code.eq.TP3,type_code.eq.TP3_INSTALL_AFTER,type_code.ilike.%INSTALL_AFTER%,r2_key.ilike.%시공후%,r2_key.ilike.%/TP3_%'
+
+/** C-1 ↔ COAD-1. `%C-1%` 는 C-10 과 섞이고, 최근 인쿼리는 COAD-1 만 있음. */
+function modelTokens(model: string): string[] {
+  const raw = model.trim()
+  if (!raw) return []
+  const tokens = new Set<string>()
+  tokens.add(raw)
+  const c = raw.match(/^C-(\d+)/i)
+  if (c) {
+    tokens.add(`C-${c[1]}`)
+    tokens.add(`COAD-${c[1]}`)
+  }
+  const coad = raw.match(/^COAD-([A-Z0-9]+)/i)
+  if (coad) {
+    tokens.add(`COAD-${coad[1]}`)
+    if (/^\d+$/.test(coad[1])) tokens.add(`C-${coad[1]}`)
+  }
+  return Array.from(tokens)
+}
+
+function itemCdMatchesModel(itemCd: string, tokens: string[]): boolean {
+  const parts = itemCd
+    .split(/[,/|]/)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean)
+  const wants = tokens.map((t) => t.toUpperCase())
+  return parts.some((p) => {
+    const compact = p.replace(/\s+/g, '')
+    return wants.some((w) => {
+      if (compact === w) return true
+      // COAD-1S · COAD-1 STANDARD. COAD-10 은 제외
+      if (compact.startsWith(w) && compact.length > w.length) {
+        return !/^\d/.test(compact.slice(w.length))
+      }
+      return false
+    })
+  })
+}
+
+/**
+ * C-1 이 C-10 에 포함되지 않게 토큰 경계로 매칭.
+ * 뒤가 숫자가 아니기만 하면 UUID `6C-50E6` 도 C-50 으로 오인하므로
+ * 앞·뒤 모두 비알파벳숫자여야 한다.
+ */
+function hayHasModel(hay: string, tokens: string[]): boolean {
+  const s = hay.toUpperCase()
+  for (const t of tokens) {
+    const u = t.toUpperCase()
+    if (u.length < 3) continue
+    let from = 0
+    while (from <= s.length) {
+      const i = s.indexOf(u, from)
+      if (i < 0) break
+      const before = i === 0 ? '' : s[i - 1]
+      const after = s[i + u.length] || ''
+      const beforeOk = i === 0 || /[^A-Z0-9]/.test(before)
+      const afterOk = after === '' || /[^A-Z0-9]/.test(after)
+      if (beforeOk && afterOk) return true
+      from = i + 1
+    }
+  }
+  return false
+}
+
+function mesSiteName(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return ''
+  const o = raw as Record<string, unknown>
+  return String(o.SITE_NM || o.site_nm || o.SITE || '').trim()
+}
+
+function mesItemCd(itemCd: unknown, raw: unknown): string {
+  const col = String(itemCd || '').trim()
+  if (col) return col
+  if (!raw || typeof raw !== 'object') return ''
+  const o = raw as Record<string, unknown>
+  return String(o.ITEM_CD || o.item_cd || '').trim()
+}
+
+function preferredModelLabel(itemCd: string, tokens: string[]): string | null {
+  const parts = itemCd.split(/[,/|]/).map((s) => s.trim()).filter(Boolean)
+  const hit = parts.find((p) => itemCdMatchesModel(p, tokens))
+  return hit || null
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: cors })
@@ -124,9 +258,21 @@ serve(async (req) => {
 
   try {
     const url = new URL(req.url)
+    const kindRaw = (url.searchParams.get('kind') || url.searchParams.get('type') || '').trim().toLowerCase()
+    const installAfter =
+      kindRaw === 'install_after' ||
+      kindRaw === 'install-after' ||
+      kindRaw === 'tp3' ||
+      kindRaw === 'after'
     const qRaw = (url.searchParams.get('q') || url.searchParams.get('query') || '').trim()
-    const cleaned = qRaw.replace(/\s*체크시트\s*/gi, ' ').trim()
+    const modelRaw = (url.searchParams.get('model') || url.searchParams.get('model_name') || '').trim()
+    const cleaned = qRaw
+      .replace(/\s*체크시트\s*/gi, ' ')
+      .replace(/\s*시공후\s*/gi, ' ')
+      .replace(/\s*시공\s*후\s*/gi, ' ')
+      .trim()
     const q = cleaned || qRaw
+    const model = modelRaw
     const year = Number(url.searchParams.get('year') || '') || null
     const month = Number(url.searchParams.get('month') || '') || null
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50) || 50, 1), 100)
@@ -146,43 +292,135 @@ serve(async (req) => {
     })
 
     const fetchCap = Math.min(Math.max((offset + limit) * 40, 200), 2000)
-    let query = admin
-      .from('archive_attachments')
-      .select(
-        'id, site_key, site_name, type_code, stage, original_name, mime, file_size, local_path, r2_key, r2_bucket, uploaded_at, created_at',
-      )
-      .eq('type_code', 'TP1')
-      .order('uploaded_at', { ascending: false })
-      .limit(fetchCap)
+    const tokens = installAfter && model ? modelTokens(model) : []
+    const modelSiteNames = new Set<string>()
+    const modelBySiteExact = new Map<string, string>()
+    const modelBySiteNorm = new Map<string, string>()
+    const putSiteModel = (siteName: string, itemCd: string) => {
+      const n = (siteName || '').trim()
+      if (!n) return
+      const label = preferredModelLabel(itemCd, tokens) || itemCd.trim()
+      if (!label) return
+      modelSiteNames.add(n)
+      if (!modelBySiteExact.has(n)) modelBySiteExact.set(n, label)
+      const nk = normSite(n)
+      if (nk && !modelBySiteNorm.has(nk)) modelBySiteNorm.set(nk, label)
+    }
 
-    if (q) query = query.ilike('site_name', `%${q}%`)
-    if (year && year >= 2000 && year <= 2100) {
-      if (month && month >= 1 && month <= 12) {
-        const mm = String(month).padStart(2, '0')
-        query = query.ilike('r2_key', `data/sites/${year}/${mm}/%`)
-      } else {
-        query = query.ilike('r2_key', `data/sites/${year}/%`)
+    if (tokens.length > 0) {
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data: inqRows } = await admin
+          .from('inquiries')
+          .select('site_nm, item_cd')
+          .range(from, from + 999)
+        if (!inqRows || inqRows.length === 0) break
+        for (const r of inqRows) {
+          const cd = String(r.item_cd || '')
+          if (!itemCdMatchesModel(cd, tokens)) continue
+          putSiteModel(String(r.site_nm || ''), cd)
+        }
+        if (inqRows.length < 1000) break
+      }
+      // MES 원본 인쿼리(2025 포함). home inquiries 는 최근분만 있어
+      // C-50 계열이 2024 경로 오탐만 남거나 2025가 빠지던 원인.
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data: mesRows } = await admin
+          .from('mes_inquiries')
+          .select('item_cd, raw_data')
+          .range(from, from + 999)
+        if (!mesRows || mesRows.length === 0) break
+        for (const r of mesRows) {
+          const cd = mesItemCd(r.item_cd, r.raw_data)
+          if (!itemCdMatchesModel(cd, tokens)) continue
+          putSiteModel(mesSiteName(r.raw_data), cd)
+        }
+        if (mesRows.length < 1000) break
       }
     }
 
-    const { data, error } = await query
-    if (error) {
-      console.error('archive-checksheets query', error.message)
-      return new Response(
-        JSON.stringify({ success: false, error: '체크시트 조회에 실패했습니다.' }),
-        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } },
-      )
+    const byId = new Map<string, Row>()
+    const pushRows = (list: Row[] | null | undefined) => {
+      for (const r of list || []) {
+        if (r?.id) byId.set(r.id, r)
+      }
     }
 
-    const rows = (data || []) as Row[]
+    if (installAfter && tokens.length > 0) {
+      const names = Array.from(modelSiteNames)
+      const chunkSize = 40
+      for (let i = 0; i < names.length; i += chunkSize) {
+        const chunk = names.slice(i, i + chunkSize)
+        for (const col of ['site_name', 'site_key'] as const) {
+          for (let from = 0; from < 4000; from += 1000) {
+            const { data, error: attErr } = await admin
+              .from('archive_attachments')
+              .select(ATT_COLS)
+              .or(TP3_OR)
+              .in(col, chunk)
+              .order('uploaded_at', { ascending: false })
+              .range(from, from + 999)
+            if (attErr) {
+              console.error('archive-checksheets att', col, attErr.message)
+              break
+            }
+            pushRows((data || []) as Row[])
+            if (!data || data.length < 1000) break
+          }
+        }
+      }
+    } else {
+      let query = admin
+        .from('archive_attachments')
+        .select(ATT_COLS)
+        .order('uploaded_at', { ascending: false })
+        .limit(fetchCap)
+
+      if (installAfter) {
+        query = query.or(TP3_OR)
+        if (q) {
+          const like = `%${q.replace(/%/g, '')}%`
+          query = query.or(
+            `site_name.ilike.${like},original_name.ilike.${like},r2_key.ilike.${like},local_path.ilike.${like}`,
+          )
+        }
+      } else {
+        query = query.eq('type_code', 'TP1')
+        if (q) query = query.ilike('site_name', `%${q}%`)
+        if (year && year >= 2000 && year <= 2100) {
+          if (month && month >= 1 && month <= 12) {
+            const mm = String(month).padStart(2, '0')
+            query = query.ilike('r2_key', `data/sites/${year}/${mm}/%`)
+          } else {
+            query = query.ilike('r2_key', `data/sites/${year}/%`)
+          }
+        }
+      }
+
+      const { data, error } = await query
+      if (error) {
+        console.error('archive-checksheets query', error.message)
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: installAfter ? '시공후 사진 조회에 실패했습니다.' : '체크시트 조회에 실패했습니다.',
+          }),
+          { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } },
+        )
+      }
+      pushRows((data || []) as Row[])
+    }
+
+    const rows = Array.from(byId.values())
     type Site = {
       site_key: string
       site_name: string
+      model_name?: string | null
       reg_date: string | null
       install_completed_date: string | null
       year: number | null
       month: number | null
       checksheet_count: number
+      photo_count?: number
       thumbnail_media_path: string | null
       attachments: Array<{
         id: string
@@ -197,7 +435,7 @@ serve(async (req) => {
 
     const map = new Map<string, Site>()
     for (const row of rows) {
-      if (!isChecksheet(row)) continue
+      if (installAfter ? !isInstallAfter(row) : !isChecksheet(row)) continue
       if (!row.r2_key && !row.local_path) continue
       const siteName = (row.site_name || row.site_key || '').trim()
       if (!siteName) continue
@@ -213,22 +451,35 @@ serve(async (req) => {
         uploaded_at: row.uploaded_at || row.created_at,
         media_path: mediaPath,
       }
+      const guessed = installAfter ? guessModel(row) : null
+      const fromInq =
+        modelBySiteExact.get(siteName) ||
+        modelBySiteExact.get(siteKey) ||
+        modelBySiteNorm.get(normSite(siteName)) ||
+        modelBySiteNorm.get(normSite(siteKey)) ||
+        null
       const existing = map.get(siteKey)
       if (!existing) {
         map.set(siteKey, {
           site_key: siteKey,
           site_name: siteName,
+          model_name: fromInq || guessed,
           reg_date: ym.reg_date,
           install_completed_date: null,
           year: ym.year,
           month: ym.month,
           checksheet_count: 1,
+          photo_count: 1,
           thumbnail_media_path: mediaPath,
           attachments: [att],
         })
       } else {
         existing.attachments.push(att)
         existing.checksheet_count = existing.attachments.length
+        existing.photo_count = existing.attachments.length
+        if (!existing.model_name && (fromInq || guessed)) {
+          existing.model_name = fromInq || guessed
+        }
         if (!existing.reg_date && ym.reg_date) existing.reg_date = ym.reg_date
         if (existing.year == null && ym.year != null) existing.year = ym.year
         if (existing.month == null && ym.month != null) existing.month = ym.month
@@ -239,6 +490,26 @@ serve(async (req) => {
     for (const s of sites) {
       s.attachments.sort((a, b) => (b.uploaded_at || '').localeCompare(a.uploaded_at || ''))
       s.thumbnail_media_path = s.attachments[0]?.media_path ?? null
+      s.photo_count = s.attachments.length
+    }
+    if (installAfter && q) {
+      const qq = q.toLowerCase()
+      sites = sites.filter((s) => {
+        const hay = `${s.site_name}|${s.site_key}|${s.model_name || ''}`.toLowerCase()
+        return hay.includes(qq)
+      })
+    }
+    if (installAfter && tokens.length > 0) {
+      sites = sites.filter((s) => {
+        const inqHit =
+          modelBySiteExact.has(s.site_name) ||
+          modelBySiteExact.has(s.site_key) ||
+          modelBySiteNorm.has(normSite(s.site_name)) ||
+          modelBySiteNorm.has(normSite(s.site_key))
+        if (inqHit) return true
+        const hay = `${s.model_name || ''}|${s.site_name}|${s.attachments.map((a) => a.r2_key || a.original_name || '').join('|')}`
+        return hayHasModel(hay, tokens)
+      })
     }
     sites.sort((a, b) => {
       const ta = a.attachments[0]?.uploaded_at || a.reg_date || ''
@@ -304,7 +575,7 @@ serve(async (req) => {
         addReg(String(r.site_key || ''), ymdOnly(r.reg_date))
       }
 
-      // 2) inquiries 전체(최대 1000) — 정규화 매칭 포함
+      // 2) inquiries + mes_inquiries 등록일 (archive_sites 2024 로 덮어쓰지 않게 이후 날짜 우선)
       const { data: inqAll } = await admin
         .from('inquiries')
         .select('site_nm, inq_dt, instal_dt, install_dt_act')
@@ -313,6 +584,18 @@ serve(async (req) => {
         const name = String(r.site_nm || '').trim()
         addInstall(name, ymdOnly(r.install_dt_act) || ymdOnly(r.instal_dt))
         addReg(name, ymdOnly(r.inq_dt))
+      }
+      for (let from = 0; from < 5000; from += 1000) {
+        const { data: mesInq } = await admin
+          .from('mes_inquiries')
+          .select('inq_dt, in_date, raw_data')
+          .range(from, from + 999)
+        if (!mesInq || mesInq.length === 0) break
+        for (const r of mesInq) {
+          const name = mesSiteName(r.raw_data)
+          addReg(name, ymdOnly(r.inq_dt) || ymdOnly(r.in_date))
+        }
+        if (mesInq.length < 1000) break
       }
 
       // 3) mes_unpaid_receivables 전체 페이지네이션
@@ -348,17 +631,20 @@ serve(async (req) => {
       }
 
       for (const s of page) {
-        const fromArchive =
+        const fromReg =
           regExact.get(s.site_name) || regExact.get(s.site_key)
-        if (fromArchive) {
-          s.reg_date = fromArchive
-          s.year = Number(fromArchive.slice(0, 4)) || s.year
-          s.month = Number(fromArchive.slice(5, 7)) || s.month
-        } else if (!s.reg_date) {
-          // 경로 날짜 유지, 없으면 인쿼리 등록일
-          const fromInq =
-            regExact.get(s.site_name) || regExact.get(s.site_key)
-          if (fromInq) s.reg_date = fromInq
+        if (fromReg) {
+          const y = Number(fromReg.slice(0, 4)) || 0
+          // 사진 경로 연도보다 오래된 archive_sites.reg_date 로 덮지 않음
+          if (s.year == null || y >= s.year) {
+            s.reg_date = fromReg
+            if (y) {
+              s.year = y
+              s.month = Number(fromReg.slice(5, 7)) || s.month
+            }
+          } else if (!s.reg_date) {
+            s.reg_date = fromReg
+          }
         }
 
         s.install_completed_date =
@@ -375,6 +661,8 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         query: q,
+        kind: installAfter ? 'install_after' : 'checksheet',
+        model: model || null,
         year,
         month,
         total_sites: totalSites,
@@ -390,7 +678,7 @@ serve(async (req) => {
     const msg = e instanceof Error ? e.message : 'unknown'
     console.error('archive-checksheets', msg.slice(0, 120))
     return new Response(
-      JSON.stringify({ success: false, error: '체크시트 조회 중 오류가 발생했습니다.' }),
+      JSON.stringify({ success: false, error: '아카이브 조회 중 오류가 발생했습니다.' }),
       { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } },
     )
   }

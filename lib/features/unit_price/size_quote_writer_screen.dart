@@ -73,11 +73,15 @@ class SizeQuoteWriterScreen extends ConsumerStatefulWidget {
     this.seed,
     this.startNew = false,
     this.openDoc,
+    this.embedded = false,
   });
 
   final SizeQuoteSeed? seed;
   final bool startNew;
   final SizeQuoteDocument? openDoc;
+
+  /// 견적 탭 안: AppBar 생략, 검색·재사용 목록 중심.
+  final bool embedded;
 
   @override
   ConsumerState<SizeQuoteWriterScreen> createState() =>
@@ -166,6 +170,15 @@ class _SizeQuoteWriterScreenState extends ConsumerState<SizeQuoteWriterScreen> {
     }
   }
 
+  Future<void> _reuse(SizeQuoteDocument doc) async {
+    final draft = sizeQuoteReuseAsNew(
+      doc,
+      newId: SizeQuoteRepository.newId(),
+      ymd: todayYmdSeoul(),
+    );
+    await _edit(existing: draft);
+  }
+
   Future<void> _delete(SizeQuoteDocument doc) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -202,11 +215,13 @@ class _SizeQuoteWriterScreenState extends ConsumerState<SizeQuoteWriterScreen> {
     final rows = _visible;
     final groups = sizeQuoteSiteGroups(rows);
     return Scaffold(
-      appBar: AppBar(title: const Text('표준단가 견적서')),
+      appBar: widget.embedded
+          ? null
+          : AppBar(title: const Text('견적서')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => unawaited(_edit(seed: widget.seed)),
         icon: const Icon(Icons.edit_document),
-        label: const Text('견적서 작성'),
+        label: const Text('새로 작성'),
       ),
       body: Column(
         children: [
@@ -214,7 +229,7 @@ class _SizeQuoteWriterScreenState extends ConsumerState<SizeQuoteWriterScreen> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: SearchBar(
               controller: _queryCtrl,
-              hintText: '현장 · 날짜 · 모델 · 금액 · 작성자',
+              hintText: '현장 · 날짜 · 모델 · 사이즈 · 금액 · 작성자',
               leading: const Icon(Icons.search_rounded, size: 20),
               onChanged: (v) => setState(() => _query = v),
               padding: const WidgetStatePropertyAll(
@@ -226,6 +241,21 @@ class _SizeQuoteWriterScreenState extends ConsumerState<SizeQuoteWriterScreen> {
               ),
             ),
           ),
+          if (!_loading && _error == null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '작성한 견적서를 검색·열어 재사용할 수 있습니다',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: _loading
                 ? const AppLoading(message: '견적 기록 불러오는 중…')
@@ -238,9 +268,9 @@ class _SizeQuoteWriterScreenState extends ConsumerState<SizeQuoteWriterScreen> {
                 ? AppEmpty(
                     icon: Icons.request_quote_outlined,
                     message: _query.trim().isEmpty
-                        ? '작성한 견적서가 없습니다'
+                        ? '작성한 견적서가 없습니다\n셔터 견적기·표준단가에서 견적서를 만들 수 있습니다'
                         : '검색 결과가 없습니다',
-                    actionLabel: '견적서 작성',
+                    actionLabel: '새로 작성',
                     onAction: () => unawaited(_edit(seed: widget.seed)),
                   )
                 : RefreshIndicator(
@@ -270,6 +300,7 @@ class _SizeQuoteWriterScreenState extends ConsumerState<SizeQuoteWriterScreen> {
                                 won: _won,
                                 onOpen: () => unawaited(_viewQuote(doc)),
                                 onEdit: () => unawaited(_edit(existing: doc)),
+                                onReuse: () => unawaited(_reuse(doc)),
                                 onDelete: () => unawaited(_delete(doc)),
                               ),
                           ],
@@ -290,6 +321,7 @@ class _QuoteTile extends StatelessWidget {
     required this.won,
     required this.onOpen,
     required this.onEdit,
+    required this.onReuse,
     required this.onDelete,
   });
 
@@ -297,6 +329,7 @@ class _QuoteTile extends StatelessWidget {
   final NumberFormat won;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
+  final VoidCallback onReuse;
   final VoidCallback onDelete;
 
   @override
@@ -326,9 +359,11 @@ class _QuoteTile extends StatelessWidget {
         trailing: PopupMenuButton<String>(
           onSelected: (v) {
             if (v == 'edit') onEdit();
+            if (v == 'reuse') onReuse();
             if (v == 'delete') onDelete();
           },
           itemBuilder: (_) => const [
+            PopupMenuItem(value: 'reuse', child: Text('다시 작성')),
             PopupMenuItem(value: 'edit', child: Text('수정')),
             PopupMenuItem(value: 'delete', child: Text('삭제')),
           ],
@@ -700,7 +735,7 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      useSafeArea: true,
+      useSafeArea: false,
       builder: (_) => _SizeQuoteLineSheet(kind: kind),
     );
     if (line == null || !mounted) return;
@@ -713,7 +748,7 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      useSafeArea: true,
+      useSafeArea: false,
       builder: (_) => _SizeQuoteLineSheet(existing: current[index]),
     );
     if (line == null || !mounted) return;
@@ -899,18 +934,35 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
                   ),
                   const SizedBox(height: 10),
                   SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     segments: const [
                       ButtonSegment(
                         value: kSizeQuoteMarkupNone,
-                        label: Text('그대로'),
+                        label: Text(
+                          '그대로',
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
                       ),
                       ButtonSegment(
                         value: kSizeQuoteMarkupPercent,
-                        label: Text('+%'),
+                        label: Text(
+                          '+%',
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
                       ),
                       ButtonSegment(
                         value: kSizeQuoteMarkupAmount,
-                        label: Text('+금액'),
+                        label: Text(
+                          '+금액',
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
                       ),
                     ],
                     selected: {_markupType},
@@ -1363,116 +1415,182 @@ class _SizeQuoteLineSheetState extends State<_SizeQuoteLineSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottom),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              widget.existing == null ? '품목 추가' : '품목 수정',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 10),
-            SegmentedButton<String>(
-              segments: [
-                for (final kind in kSizeQuoteKindOrder)
-                  ButtonSegment(
-                    value: kind,
-                    label: Text(sizeQuoteKindLabel(kind)),
-                  ),
-              ],
-              selected: {_kind},
-              onSelectionChanged: (s) => setState(() => _kind = s.first),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _nameCtrl,
-              autofocus: widget.existing == null,
-              decoration: const InputDecoration(labelText: '품명', filled: true),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _specCtrl,
-              decoration: const InputDecoration(labelText: '규격', filled: true),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: kSizeQuoteUnits.contains(_unitCtrl.text)
-                        ? _unitCtrl.text
-                        : 'EA',
-                    items: [
-                      for (final u in kSizeQuoteUnits)
-                        DropdownMenuItem(value: u, child: Text(u)),
-                    ],
-                    onChanged: (v) {
-                      if (v == null) return;
-                      _unitCtrl.text = v;
-                      setState(() {});
-                    },
-                    decoration: const InputDecoration(
-                      labelText: '단위',
-                      filled: true,
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = MediaQuery.sizeOf(context);
+            final pad = MediaQuery.paddingOf(context);
+            final sheetH = constraints.maxHeight.isFinite &&
+                    constraints.maxHeight > 0
+                ? constraints.maxHeight
+                : ((size.height - keyboard - pad.bottom) * 0.9)
+                    .clamp(280.0, size.height);
+            return SizedBox(
+              height: sheetH,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.existing == null ? '품목 추가' : '품목 수정',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _qtyCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '수량',
-                      filled: true,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _priceCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '단가',
-                suffixText: '원',
-                filled: true,
-              ),
-              onChanged: (v) {
-                final digits = v.replaceAll(RegExp(r'[^0-9]'), '');
-                final n = int.tryParse(digits);
-                if (n != null && n > 0) {
-                  final formatted = _won.format(n);
-                  if (formatted != v) {
-                    _priceCtrl.value = TextEditingValue(
-                      text: formatted,
-                      selection: TextSelection.collapsed(
-                        offset: formatted.length,
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SegmentedButton<String>(
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            segments: [
+                              for (final kind in kSizeQuoteKindOrder)
+                                ButtonSegment(
+                                  value: kind,
+                                  label: Text(
+                                    sizeQuoteKindLabel(kind),
+                                    maxLines: 1,
+                                    softWrap: false,
+                                  ),
+                                ),
+                            ],
+                            selected: {_kind},
+                            onSelectionChanged: (s) =>
+                                setState(() => _kind = s.first),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _nameCtrl,
+                            autofocus: widget.existing == null,
+                            decoration: const InputDecoration(
+                              labelText: '품명',
+                              filled: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _specCtrl,
+                            decoration: const InputDecoration(
+                              labelText: '규격',
+                              filled: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  initialValue:
+                                      kSizeQuoteUnits.contains(_unitCtrl.text)
+                                      ? _unitCtrl.text
+                                      : 'EA',
+                                  items: [
+                                    for (final u in kSizeQuoteUnits)
+                                      DropdownMenuItem(
+                                        value: u,
+                                        child: Text(u),
+                                      ),
+                                  ],
+                                  onChanged: (v) {
+                                    if (v == null) return;
+                                    _unitCtrl.text = v;
+                                    setState(() {});
+                                  },
+                                  decoration: const InputDecoration(
+                                    labelText: '단위',
+                                    filled: true,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: _qtyCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: '수량',
+                                    filled: true,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _priceCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: '단가',
+                              suffixText: '원',
+                              filled: true,
+                            ),
+                            onChanged: (v) {
+                              final digits =
+                                  v.replaceAll(RegExp(r'[^0-9]'), '');
+                              final n = int.tryParse(digits);
+                              if (n != null && n > 0) {
+                                final formatted = _won.format(n);
+                                if (formatted != v) {
+                                  _priceCtrl.value = TextEditingValue(
+                                    text: formatted,
+                                    selection: TextSelection.collapsed(
+                                      offset: formatted.length,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _noteCtrl,
+                            decoration: const InputDecoration(
+                              labelText: '비고',
+                              filled: true,
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  }
-                }
-              },
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _noteCtrl,
-              decoration: const InputDecoration(labelText: '비고', filled: true),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _submit,
-              child: Text(widget.existing == null ? '추가' : '저장'),
-            ),
-          ],
+                    ),
+                  ),
+                  Material(
+                    elevation: 2,
+                    color: Theme.of(context).colorScheme.surface,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                      child: FilledButton(
+                        onPressed: _submit,
+                        child: Text(
+                          widget.existing == null ? '추가' : '저장',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
   }
+
 }
 
 extension on String {

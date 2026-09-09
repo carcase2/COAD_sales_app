@@ -1,5 +1,16 @@
 // MES 아카이브 체크시트(TP1) 검색 결과 모델.
 
+/// 시공후 사진 모델 필터. [code]는 검색(C-1), [label]은 화면(C-1 Standard).
+class InstallAfterModelOption {
+  const InstallAfterModelOption({
+    required this.code,
+    required this.label,
+  });
+
+  final String code;
+  final String label;
+}
+
 class ChecksheetAttachment {
   const ChecksheetAttachment({
     required this.id,
@@ -42,6 +53,7 @@ class ChecksheetSite {
   const ChecksheetSite({
     required this.siteKey,
     required this.siteName,
+    this.modelName,
     this.regDate,
     this.installCompletedDate,
     this.year,
@@ -53,6 +65,8 @@ class ChecksheetSite {
 
   final String siteKey;
   final String siteName;
+  /// 모델명 (시공후 사진 등)
+  final String? modelName;
   /// 등록일 (yyyy-MM-dd)
   final String? regDate;
   /// 시공완료일 (yyyy-MM-dd)
@@ -62,6 +76,8 @@ class ChecksheetSite {
   final int checksheetCount;
   final String? thumbnailMediaPath;
   final List<ChecksheetAttachment> attachments;
+
+  int get photoCount => checksheetCount;
 
   factory ChecksheetSite.fromJson(Map<String, dynamic> json) {
     final atts = (json['attachments'] as List?)
@@ -82,6 +98,10 @@ class ChecksheetSite {
     return ChecksheetSite(
       siteKey: '${json['site_key'] ?? ''}',
       siteName: '${json['site_name'] ?? ''}',
+      modelName: () {
+        final m = (json['model_name'] ?? json['modelName'] ?? '').toString().trim();
+        return m.isEmpty ? null : m;
+      }(),
       regDate: ymd(json['reg_date']),
       installCompletedDate: ymd(
         json['install_completed_date'] ??
@@ -90,7 +110,9 @@ class ChecksheetSite {
       ),
       year: (json['year'] as num?)?.toInt(),
       month: (json['month'] as num?)?.toInt(),
-      checksheetCount: (json['checksheet_count'] as num?)?.toInt() ?? atts.length,
+      checksheetCount: (json['photo_count'] as num?)?.toInt() ??
+          (json['checksheet_count'] as num?)?.toInt() ??
+          atts.length,
       thumbnailMediaPath: json['thumbnail_media_path']?.toString(),
       attachments: atts,
     );

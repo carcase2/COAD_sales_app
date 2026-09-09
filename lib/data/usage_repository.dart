@@ -2,6 +2,7 @@ import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/app_usage_summary.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
+import 'package:coad_customer_calls/models/install_after_usage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UsageRepository {
@@ -59,6 +60,37 @@ class UsageRepository {
           });
 
     return summaries;
+  }
+
+  /// 시공 사진 검색 기록 · 기간 합산 (관리자 화면).
+  Future<InstallAfterUsageReport> fetchInstallAfterUsage({
+    required String startYmd,
+    required String endYmd,
+  }) async {
+    final startIso = '${startYmd}T00:00:00+09:00';
+    final endExclusive = addDaysToYmd(endYmd, 1);
+    final endIso = '${endExclusive}T00:00:00+09:00';
+
+    final logs = <InstallAfterSearchLog>[];
+    for (var from = 0; from < 8000; from += 1000) {
+      final res = await _client
+          .from('install_after_search_logs')
+          .select(
+            'id, user_id, user_name, action, model_code, model_label, query, result_count, site_name, created_at',
+          )
+          .gte('created_at', startIso)
+          .lt('created_at', endIso)
+          .order('created_at', ascending: false)
+          .range(from, from + 999);
+      final page = List<Map<String, dynamic>>.from(res as List)
+          .map(InstallAfterSearchLog.fromJson)
+          .toList();
+      logs.addAll(page);
+      if (page.length < 1000) break;
+    }
+
+    final adminIds = await _fetchAdminUserIds();
+    return buildInstallAfterUsageReport(logs, adminIds: adminIds);
   }
 
   Future<Set<String>> _fetchAdminUserIds() async {
