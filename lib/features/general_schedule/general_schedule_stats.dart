@@ -161,8 +161,7 @@ Color? parseGeneralScheduleUserColor(String? raw, {Color? fallback}) {
   return fallback;
 }
 
-/// 담당자별 달력 색 — 서로 잘 구분되도록 채도·명도를 맞춘 고정 팔레트.
-/// (DB `users.color`가 비슷하거나 비어 있어도 칸·필터 칩이 섞이지 않게 한다.)
+/// DB에 색이 없을 때 쓰는 이름 해시 팔레트.
 const List<Color> kGeneralScheduleAssigneePalette = <Color>[
   Color(0xFF1D4ED8), // blue
   Color(0xFFDC2626), // red
@@ -190,37 +189,24 @@ int _stableAssigneePaletteIndex(String name) {
   return hash;
 }
 
-/// 담당자 표시색. [orderedAssignees]가 있으면 가나다·등록 순으로 팔레트를 나눠
-/// 같은 달력 안의 담당자가 최대한 다른 색을 쓰게 한다.
+/// 담당자 표시색. DB `users.color`를 우선하고, 없으면 이름 해시로 고정한다.
+/// [orderedAssignees]는 하위 호환용으로 받되 색 계산에는 쓰지 않는다.
 Color generalScheduleAssigneeAccent({
   required String name,
   String? userColor,
   List<String>? orderedAssignees,
   Color? fallback,
 }) {
+  final _ = orderedAssignees;
   final n = name.trim();
   if (n.isEmpty || n == '미지정' || n == '전체') {
     return fallback ?? kGeneralScheduleAssigneeUnset;
   }
 
-  final ordered = (orderedAssignees ?? const <String>[])
-      .map((e) => e.trim())
-      .where((e) => e.isNotEmpty && e != '전체' && e != '미지정')
-      .toList();
-  // 중복 이름 제거·순서 유지
-  final unique = <String>[];
-  final seen = <String>{};
-  for (final e in ordered) {
-    if (seen.add(e)) unique.add(e);
-  }
+  final fromDb = parseGeneralScheduleUserColor(userColor);
+  if (fromDb != null) return fromDb;
 
-  final index = unique.isEmpty
-      ? _stableAssigneePaletteIndex(n)
-      : (() {
-          final i = unique.indexOf(n);
-          return i >= 0 ? i : _stableAssigneePaletteIndex(n);
-        })();
-
+  final index = _stableAssigneePaletteIndex(n);
   return kGeneralScheduleAssigneePalette[
       index % kGeneralScheduleAssigneePalette.length];
 }

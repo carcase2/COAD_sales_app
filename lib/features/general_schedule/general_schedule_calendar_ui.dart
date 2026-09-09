@@ -714,13 +714,12 @@ class GeneralScheduleMonthCellSiteList extends StatelessWidget {
     }
 
     final name = generalScheduleAssigneeLabel(cell);
-    final accent = colorForAssignee?.call(name) ??
-        generalScheduleAssigneeAccent(
-          name: name,
-          userColor: cell.userColor,
-          orderedAssignees: orderedAssignees,
-          fallback: scheme.primary,
-        );
+    final accent = generalScheduleAssigneeAccent(
+      name: name,
+      userColor: cell.userColor,
+      orderedAssignees: orderedAssignees,
+      fallback: colorForAssignee?.call(name) ?? scheme.primary,
+    );
     final site = cell.site.trim();
     final textStyle = generalScheduleSlotLabelStyle(
       fontSize: siteFontSize,
@@ -807,13 +806,12 @@ class GeneralScheduleStripSlotDots extends StatelessWidget {
         final accent = filled
             ? (onPrimary
                 ? scheme.onPrimary
-                : (colorForAssignee?.call(name) ??
-                    generalScheduleAssigneeAccent(
-                      name: name,
-                      userColor: active?.userColor,
-                      orderedAssignees: orderedAssignees,
-                      fallback: scheme.primary,
-                    )))
+                : generalScheduleAssigneeAccent(
+                    name: name,
+                    userColor: active?.userColor,
+                    orderedAssignees: orderedAssignees,
+                    fallback: colorForAssignee?.call(name) ?? scheme.primary,
+                  ))
             : null;
         return Expanded(
           child: Container(
@@ -890,13 +888,12 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
           final accent = filled
               ? (onPrimary
                   ? scheme.onPrimary
-                  : (colorForAssignee?.call(name) ??
-                      generalScheduleAssigneeAccent(
-                        name: name,
-                        userColor: active?.userColor,
-                        orderedAssignees: orderedAssignees,
-                        fallback: scheme.primary,
-                      )))
+                  : generalScheduleAssigneeAccent(
+                      name: name,
+                      userColor: active?.userColor,
+                      orderedAssignees: orderedAssignees,
+                      fallback: colorForAssignee?.call(name) ?? scheme.primary,
+                    ))
               : scheme.outlineVariant;
 
           final radius = BorderRadius.circular(compact ? 2 : 4);

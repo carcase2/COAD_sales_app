@@ -597,14 +597,14 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     GeneralScheduleMonthStats monthStats,
     ColorScheme scheme,
   ) {
-    final ordered = monthStats.byUser.map((u) => u.name).toList();
+    final colors = {for (final u in monthStats.byUser) u.name: u.color};
     return (name) {
       if (name == kGeneralScheduleAllAssignees) {
         return scheme.onSurfaceVariant;
       }
       return generalScheduleAssigneeAccent(
         name: name,
-        orderedAssignees: ordered,
+        userColor: colors[name],
         fallback: scheme.outline,
       );
     };

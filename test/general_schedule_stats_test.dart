@@ -141,7 +141,7 @@ void main() {
         fallback: const Color(0xFF2563EB),
         orderedAssignees: const ['김경덕', '이상수'],
       ),
-      kGeneralScheduleAssigneePalette[0],
+      const Color(0xFFF59E0B),
     );
     expect(
       generalScheduleBarColor(
@@ -153,17 +153,33 @@ void main() {
     );
   });
 
-  test('generalScheduleAssigneeAccent — 담당자마다 다른 팔레트 색', () {
-    const names = ['갑', '을', '병', '정'];
-    final colors = [
-      for (final n in names)
-        generalScheduleAssigneeAccent(
-          name: n,
-          orderedAssignees: names,
-        ),
-    ];
-    expect(colors.toSet().length, names.length);
-    expect(colors[0], isNot(colors[1]));
+  test('generalScheduleAssigneeAccent — DB 색을 우선하고 달이 바뀌어도 유지', () {
+    final fromDb = generalScheduleAssigneeAccent(
+      name: '김경덕',
+      userColor: '#1D4ED8',
+      orderedAssignees: const ['김경덕', '이상수'],
+    );
+    expect(fromDb, const Color(0xFF1D4ED8));
+    expect(
+      generalScheduleAssigneeAccent(
+        name: '김경덕',
+        userColor: '#1D4ED8',
+        orderedAssignees: const ['이상수', '홍길동', '김경덕'],
+      ),
+      fromDb,
+    );
+
+    final hashed = generalScheduleAssigneeAccent(
+      name: '김경덕',
+      orderedAssignees: const ['김경덕', '이상수'],
+    );
+    final hashedLater = generalScheduleAssigneeAccent(
+      name: '김경덕',
+      orderedAssignees: const ['이상수', '홍길동', '김경덕'],
+    );
+    expect(hashed, hashedLater);
+    expect(hashed, isNot(generalScheduleAssigneeAccent(name: '이상수')));
+    expect(hashed, isNot(fromDb));
   });
 
   test('seoulSundayWeekRangeContaining — 일~토', () {
