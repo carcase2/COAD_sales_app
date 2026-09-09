@@ -5,6 +5,11 @@ import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/data/size_quote_repository.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_export.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_promo_screen.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_models.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_repository.dart';
@@ -57,6 +62,8 @@ class _StandardUnitPriceScreenState
   String? _openAdjustmentId;
   final _won = NumberFormat('#,###');
   final _dt = DateFormat('yyyy.MM.dd HH:mm');
+  List<SizeQuoteDocument> _similarQuotes = const [];
+  Timer? _similarDebounce;
 
   List<StandardUnitPriceRow> get _cells =>
       _cellsByModel[_modelId] ?? const [];
@@ -75,6 +82,7 @@ class _StandardUnitPriceScreenState
     _heightCtrl.dispose();
     _adjustValueCtrl.dispose();
     _adjustReasonCtrl.dispose();
+    _similarDebounce?.cancel();
     super.dispose();
   }
 
@@ -160,6 +168,7 @@ class _StandardUnitPriceScreenState
         _logs = logs;
         _loading = false;
       });
+      _scheduleSimilarQuotes();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -179,12 +188,14 @@ class _StandardUnitPriceScreenState
       _modelId = modelId;
     });
     _persistLookup();
+    _scheduleSimilarQuotes();
     if (modelId != null) await _ensureCells(modelId);
   }
 
   Future<void> _selectModel(String id) async {
     setState(() => _modelId = id);
     _persistLookup();
+    _scheduleSimilarQuotes();
     await _ensureCells(id);
   }
 
@@ -267,6 +278,102 @@ class _StandardUnitPriceScreenState
     }
     setState(() {});
     _persistLookup();
+    _scheduleSimilarQuotes();
+  }
+
+  void _scheduleSimilarQuotes() {
+    _similarDebounce?.cancel();
+    _similarDebounce = Timer(const Duration(milliseconds: 280), () {
+      unawaited(_loadSimilarQuotes());
+    });
+  }
+
+  Future<void> _loadSimilarQuotes() async {
+    final modelId = _modelId;
+    if (!_hasSize || modelId == null) {
+      if (mounted) setState(() => _similarQuotes = const []);
+      return;
+    }
+    try {
+      final rows = await ref.read(sizeQuoteRepositoryProvider).listSimilar(
+            modelId: modelId,
+            widthMm: _widthMm,
+            heightMm: _heightMm,
+          );
+      if (!mounted) return;
+      setState(() => _similarQuotes = rows);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _similarQuotes = const []);
+    }
+  }
+
+  SizeQuoteSeed? get _quoteSeed {
+    final cat = _selectedCategory;
+    final model = _selectedModel;
+    if (cat == null || model == null || !_hasSize) return null;
+    final price = _inference.estimatedPrice ?? 0;
+    if (price <= 0 || _inference.outOfRange) return null;
+    return SizeQuoteSeed(
+      categoryId: cat.id,
+      categoryName: cat.name,
+      modelId: model.id,
+      modelName: model.name,
+      widthMm: _widthMm,
+      heightMm: _heightMm,
+      standardPrice: price,
+    );
+  }
+
+  Future<void> _openQuoteWriter({SizeQuoteDocument? existing}) async {
+    final seed = _quoteSeed;
+    if (existing == null && seed == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('사이즈와 단가를 먼저 확인한 뒤 견적서를 작성하세요.')),
+      );
+      return;
+    }
+    await pushSizeQuoteEditor(
+      context,
+      existing: existing,
+      seed: seed,
+    );
+    if (mounted) unawaited(_loadSimilarQuotes());
+  }
+
+  Future<void> _openQuoteHistory() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SizeQuoteWriterScreen(seed: _quoteSeed),
+      ),
+    );
+    if (mounted) unawaited(_loadSimilarQuotes());
+  }
+
+  Future<void> _openPromoImages() async {
+    final catalog = _catalog;
+    if (catalog == null) return;
+    await pushSizeQuotePromoScreen(
+      context,
+      catalog: catalog,
+      modelId: _selectedModel?.id,
+      modelName: _selectedModel?.name,
+    );
+  }
+
+  Future<void> _openSimilarQuotes() async {
+    await showSizeQuoteSimilarSheet(
+      context,
+      items: _similarQuotes,
+      modelName: _selectedModel?.name ?? '',
+      widthMm: _widthMm,
+      heightMm: _heightMm,
+      onOpen: (doc) => unawaited(
+        showSizeQuoteExportSheet(context, doc: doc).then((_) {
+          if (mounted) unawaited(_loadSimilarQuotes());
+        }),
+      ),
+    );
   }
 
   void _persistLookup() {
@@ -697,6 +804,13 @@ class _StandardUnitPriceScreenState
         title: const Text('표준단가'),
         actions: [
           IconButton(
+            tooltip: '홍보 이미지',
+            onPressed: _loading || _error != null || _catalog == null
+                ? null
+                : () => unawaited(_openPromoImages()),
+            icon: const Icon(Icons.collections_outlined),
+          ),
+          IconButton(
             tooltip: '단가표',
             onPressed: _loading || _error != null ? null : _openGridSheet,
             icon: const Icon(Icons.grid_on_rounded),
@@ -761,9 +875,15 @@ class _StandardUnitPriceScreenState
                   );
                 case 'export':
                   unawaited(_exportExcel());
+                case 'quotes':
+                  unawaited(_openQuoteHistory());
+                case 'promo':
+                  unawaited(_openPromoImages());
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(value: 'quotes', child: Text('견적 기록')),
+              const PopupMenuItem(value: 'promo', child: Text('홍보 이미지')),
               if (editable)
                 const PopupMenuItem(value: 'adjust', child: Text('일괄 조정')),
               const PopupMenuItem(value: 'history', child: Text('변경 이력')),
@@ -812,6 +932,11 @@ class _StandardUnitPriceScreenState
                   onCopyPrice: () => unawaited(_copyQuote()),
                   onSharePrice: () => unawaited(_copyQuote(share: true)),
                   onShowGrid: _openGridSheet,
+                  similarCount: _similarQuotes.length,
+                  onWriteQuote: () => unawaited(_openQuoteWriter()),
+                  onOpenSimilar: _similarQuotes.isEmpty
+                      ? null
+                      : () => unawaited(_openSimilarQuotes()),
                 ),
     );
   }
@@ -844,6 +969,9 @@ class _LookupTab extends StatelessWidget {
     required this.onCopyPrice,
     required this.onSharePrice,
     required this.onShowGrid,
+    required this.similarCount,
+    required this.onWriteQuote,
+    this.onOpenSimilar,
   });
 
   final StandardUnitPriceCatalog catalog;
@@ -871,6 +999,9 @@ class _LookupTab extends StatelessWidget {
   final VoidCallback onCopyPrice;
   final VoidCallback onSharePrice;
   final VoidCallback onShowGrid;
+  final int similarCount;
+  final VoidCallback onWriteQuote;
+  final VoidCallback? onOpenSimilar;
 
 
   @override
@@ -917,6 +1048,7 @@ class _LookupTab extends StatelessWidget {
           onCopyPrice: onCopyPrice,
           onSharePrice: onSharePrice,
           onShowGrid: onShowGrid,
+          onWriteQuote: onWriteQuote,
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -993,6 +1125,18 @@ class _LookupTab extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(12, 6, 12, 6 + bottomInset),
             child: Column(
               children: [
+                if (similarCount > 0 && onOpenSimilar != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ActionChip(
+                        avatar: const Icon(Icons.history_rounded, size: 16),
+                        label: Text('비슷한 사이즈 견적 $similarCount건'),
+                        onPressed: onOpenSimilar,
+                      ),
+                    ),
+                  ),
                 _LabeledChipRow(
                   label: editingWidth ? '폭' : '높이',
                   color: editingWidth
@@ -1029,6 +1173,7 @@ class _LookupTab extends StatelessWidget {
                     onClear: onClearCurrent,
                     onToggleAxis: () => onEditWidth(!editingWidth),
                     onCopy: onCopyPrice,
+                    onWriteQuote: onWriteQuote,
                   ),
                 ),
               ],
@@ -1052,6 +1197,7 @@ class _PriceHeader extends StatefulWidget {
     required this.onCopyPrice,
     required this.onSharePrice,
     required this.onShowGrid,
+    required this.onWriteQuote,
   });
 
   final Color color;
@@ -1063,6 +1209,7 @@ class _PriceHeader extends StatefulWidget {
   final VoidCallback onCopyPrice;
   final VoidCallback onSharePrice;
   final VoidCallback onShowGrid;
+  final VoidCallback onWriteQuote;
 
   @override
   State<_PriceHeader> createState() => _PriceHeaderState();
@@ -1130,7 +1277,7 @@ class _PriceHeaderState extends State<_PriceHeader> {
                   Padding(
                     padding: const EdgeInsets.only(left: 4),
                     child: FilledButton(
-                      onPressed: widget.onCopyPrice,
+                      onPressed: widget.onWriteQuote,
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: widget.color,
@@ -1142,7 +1289,7 @@ class _PriceHeaderState extends State<_PriceHeader> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      child: const Text('복사'),
+                      child: const Text('견적서'),
                     ),
                   ),
                 TextButton(
@@ -1364,6 +1511,7 @@ class _InlineKeypad extends StatelessWidget {
     required this.onClear,
     required this.onToggleAxis,
     required this.onCopy,
+    required this.onWriteQuote,
   });
 
   final bool editingWidth;
@@ -1373,6 +1521,7 @@ class _InlineKeypad extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback onToggleAxis;
   final VoidCallback onCopy;
+  final VoidCallback onWriteQuote;
 
   @override
   Widget build(BuildContext context) {
@@ -1431,7 +1580,9 @@ class _InlineKeypad extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: editingWidth || !canCopy ? onClear : onToggleAxis,
+                  onPressed: editingWidth
+                      ? onClear
+                      : (canCopy ? onCopy : onClear),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1443,7 +1594,7 @@ class _InlineKeypad extends StatelessWidget {
                   child: Text(
                     editingWidth
                         ? '폭 지움'
-                        : (canCopy ? '폭으로' : '높이 지움'),
+                        : (canCopy ? '복사' : '높이 지움'),
                   ),
                 ),
               ),
@@ -1452,7 +1603,7 @@ class _InlineKeypad extends StatelessWidget {
                 child: FilledButton(
                   onPressed: editingWidth
                       ? onToggleAxis
-                      : (canCopy ? onCopy : onToggleAxis),
+                      : (canCopy ? onWriteQuote : onToggleAxis),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1464,7 +1615,7 @@ class _InlineKeypad extends StatelessWidget {
                   child: Text(
                     editingWidth
                         ? '다음 · 높이'
-                        : (canCopy ? '복사' : '폭으로'),
+                        : (canCopy ? '견적서' : '폭으로'),
                   ),
                 ),
               ),

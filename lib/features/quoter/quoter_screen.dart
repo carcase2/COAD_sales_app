@@ -15,6 +15,8 @@ import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimate_notice.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_size_quote.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/quoter/widgets/quoter_out_of_table_warning.dart';
 import 'package:coad_customer_calls/features/quoter/widgets/quoter_size_keypad.dart';
 import 'package:coad_customer_calls/features/quoter/widgets/quoter_type_selector.dart';
@@ -1840,6 +1842,38 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 ),
               ),
             ),
+            if (_result != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => unawaited(_openSizeQuoteWriter()),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_document, size: 18),
+                      SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          '견적서',
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -2030,17 +2064,34 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    onPressed: _copyEstimateToClipboard,
-                    icon: const Icon(Icons.copy_rounded, size: 16),
-                    label: const Text('견적 복사'),
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _copyEstimateToClipboard,
+                        icon: const Icon(Icons.copy_rounded, size: 16),
+                        label: const Text('견적 복사'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
                       ),
-                    ),
+                      FilledButton.icon(
+                        onPressed: () => unawaited(_openSizeQuoteWriter()),
+                        icon: const Icon(Icons.edit_document, size: 16),
+                        label: const Text('견적서 작성'),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -2260,6 +2311,18 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                       onTap: () => _showSpecsSheet(scheme),
                       scheme: scheme,
                     ),
+                    const SizedBox(width: 6),
+                    FilledButton(
+                      onPressed: () => unawaited(_openSizeQuoteWriter()),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                      child: const Text(
+                        '견적서',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -2424,14 +2487,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 ),
               ],
               const SizedBox(height: 12),
-              Text(
-                '방화 모델은 스라트·모터 합산 견적이 아닌 격자 시공비·유사 사례 중심입니다.',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
-                ),
+              FilledButton.icon(
+                onPressed: () => unawaited(_openSizeQuoteWriter()),
+                icon: const Icon(Icons.edit_document, size: 18),
+                label: const Text('견적서 작성'),
               ),
             ],
           ),
@@ -2469,6 +2528,15 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   onTap: () {
                     Navigator.of(ctx).pop();
                     _showSpecsSheet(scheme);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.edit_document),
+                  title: const Text('견적서 작성'),
+                  subtitle: const Text('종류·규격·금액을 견적서에 넣습니다'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    unawaited(_openSizeQuoteWriter());
                   },
                 ),
               ],
@@ -3313,6 +3381,37 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  String? get _selectedCompanyName {
+    for (final row in _companyComparisons) {
+      if (row.company.id == _selectedCompanyId) {
+        return row.company.companyName;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _openSizeQuoteWriter() async {
+    final result = _result;
+    if (result == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('먼저 규격을 넣어 견적을 산출해 주세요.')),
+      );
+      return;
+    }
+    HapticFeedback.selectionClick();
+    final draft = sizeQuoteDraftFromShutter(
+      result: result,
+      companyName: _selectedCompanyName,
+    );
+    await pushSizeQuoteEditor(
+      context,
+      seed: draft.seed,
+      extraLines: draft.extraLines,
+      initialNote: draft.note,
+      initialQuantity: draft.quantity,
     );
   }
 

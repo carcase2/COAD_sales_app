@@ -1,5 +1,5 @@
-import 'package:coad_customer_calls/features/quoter/estimate_writer_screen.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -39,34 +39,9 @@ class QuoterHubScreen extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
-              tabs: [
-                const Tab(height: 40, text: '셔터 견적기'),
-                Tab(
-                  height: 40,
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        const TextSpan(
-                          text: '견적서 작성 ',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        TextSpan(
-                          text: '(테스트중)',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: scheme.tertiary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+              tabs: const [
+                Tab(height: 40, text: '셔터 견적기'),
+                Tab(height: 40, text: '견적서'),
               ],
             ),
           ),
@@ -74,7 +49,7 @@ class QuoterHubScreen extends StatelessWidget {
             child: TabBarView(
               children: [
                 QuoterScreen(showQuickActions: false),
-                EstimateWriterScreen(),
+                SizeQuoteWriterScreen(),
               ],
             ),
           ),
