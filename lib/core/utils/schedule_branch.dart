@@ -45,7 +45,8 @@ extension ScheduleBranchX on ScheduleBranch {
 
   String get accessDeniedMessage => switch (this) {
         ScheduleBranch.headOffice => '본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.',
-        ScheduleBranch.daegu => '대구지사 일정은 대구지사장·관리자 부서만 이용할 수 있습니다.',
+        ScheduleBranch.daegu =>
+          '대구지사 일정은 대구지사장·관리자, 또는 영업 대구 지사장만 이용할 수 있습니다.',
       };
 
   /// FCM Edge Function 이름. null 이면 푸시 생략.
@@ -73,6 +74,9 @@ extension ScheduleBranchX on ScheduleBranch {
       };
 
   bool canAccess(AppUser user) {
+    if (this == ScheduleBranch.daegu && user.isSalesDaeguBranchManager) {
+      return true;
+    }
     final group = user.groupName?.trim();
     if (group == null || group.isEmpty) return false;
     return allowedGroupNames.contains(group);

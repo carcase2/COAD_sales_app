@@ -1551,8 +1551,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   ) {
     return AppMenuDrawer(
       catalog: _buildMenuCatalog(context, updateStatus, user),
-      accountName: '${user?.name ?? '사용자'} 님',
-      accountSubtitle: '사번/ID: ${user?.id ?? '-'}',
+      accountName: '${user?.name ?? '사용자'}님',
+      accountSubtitle: user?.branchTitleLabel ?? '지사 미지정, 팀원',
       headerDecoration: BoxDecoration(
         color: scheme.primary,
         // 외부 텍스처 URL 제거 — 오프라인·지연 방지, 단색 + 은은한 그라데이션.

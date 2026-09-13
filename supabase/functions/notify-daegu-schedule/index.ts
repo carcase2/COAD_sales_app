@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
 
-/** 앱 권한과 동일: 대구지사장·관리자 그룹 (+ role=admin) */
+/** 앱 권한과 동일: 대구지사장·관리자 그룹, 영업+대구+지사장 (+ role=admin) */
 const ALLOWED_GROUP_NAMES = ['대구지사장', '관리자']
 
 type PushUser = {
@@ -61,7 +61,7 @@ function buildDataBody(body: string): string {
 }
 
 /**
- * 대구지사 FCM — 대구지사장·관리자 그룹 + role=admin
+ * 대구지사 FCM — 대구지사장·관리자 그룹, 영업+대구+지사장, role=admin
  * users.fcm_token 유무와 무관 (기기별 토큰은 user_push_tokens에서 조회)
  */
 async function resolveDaeguSchedulePushRecipients(
@@ -69,7 +69,7 @@ async function resolveDaeguSchedulePushRecipients(
 ): Promise<PushUser[]> {
   const { data, error } = await supabaseAdmin
     .from('users')
-    .select('id, name, role, fcm_token, is_active, groups(name)')
+    .select('id, name, role, fcm_token, is_active, title, groups(name), coad_branch(name, code)')
     .eq('is_active', true)
 
   if (error) throw error
@@ -78,10 +78,20 @@ async function resolveDaeguSchedulePushRecipients(
   for (const raw of data ?? []) {
     const row = raw as Record<string, unknown>
     const groups = row.groups as { name?: string } | null
+    const branch = row.coad_branch as { name?: string; code?: string } | null
     const groupName = (groups?.name ?? '').toString().trim()
     const role = (row.role ?? '').toString().trim()
+    const title = (row.title ?? '').toString().trim()
+    const branchCode = (branch?.code ?? '').toString().trim()
+    const branchName = (branch?.name ?? '').toString().trim()
+    const isSalesDaeguManager =
+      groupName === '영업' &&
+      title === '지사장' &&
+      (branchCode === 'daegu' || branchName.includes('대구'))
     const allowed =
-      role === 'admin' || ALLOWED_GROUP_NAMES.includes(groupName)
+      role === 'admin' ||
+      ALLOWED_GROUP_NAMES.includes(groupName) ||
+      isSalesDaeguManager
     if (!allowed) continue
 
     const id = (row.id ?? '').toString()

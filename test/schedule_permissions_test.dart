@@ -3,12 +3,20 @@ import 'package:coad_customer_calls/core/utils/schedule_permissions.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-AppUser _user({String? groupName, String role = 'user'}) => AppUser(
+AppUser _user({
+  String? groupName,
+  String role = 'user',
+  String? title,
+  String? branchName,
+}) =>
+    AppUser(
       id: '1',
       name: '테스트',
       role: role,
       permissions: const [],
       groupName: groupName,
+      title: title,
+      branchName: branchName,
     );
 
 void main() {
@@ -47,6 +55,33 @@ void main() {
     expect(canAccessDaeguSchedule(_user(groupName: '대구지사장')), isTrue);
     expect(canAccessDaeguSchedule(_user(groupName: '관리자')), isTrue);
     expect(canAccessDaeguSchedule(_user(groupName: ' 대구지사장 ')), isTrue);
+  });
+
+  test('canAccessDaeguSchedule — 영업+대구+지사장 허용', () {
+    expect(
+      canAccessDaeguSchedule(
+        _user(groupName: '영업', title: '지사장', branchName: '대구지사'),
+      ),
+      isTrue,
+    );
+    expect(
+      canAccessDaeguSchedule(
+        _user(groupName: '영업', title: '지사장', branchName: '대구'),
+      ),
+      isTrue,
+    );
+    expect(
+      canAccessDaeguSchedule(
+        _user(groupName: '영업', title: '팀원', branchName: '대구지사'),
+      ),
+      isFalse,
+    );
+    expect(
+      canAccessDaeguSchedule(
+        _user(groupName: '영업', title: '지사장', branchName: '본사'),
+      ),
+      isFalse,
+    );
   });
 
   test('canAccessDaeguSchedule — 그 외 그룹 거부', () {

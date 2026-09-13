@@ -43,7 +43,7 @@ class AuthRepository {
   Future<AppUser> login({required String id, required String password}) async {
     final res = await Supabase.instance.client
         .from('users')
-        .select('*, groups(name, permissions)')
+        .select('*, groups(name, permissions), coad_branch(name)')
         .eq('id', id)
         .eq('password', password)
         .maybeSingle();
@@ -78,10 +78,17 @@ class AuthRepository {
     addPerms(res['permissions']);
     addPerms(groupMap?['permissions']);
 
+    String? branchName;
+    final branch = res['coad_branch'];
+    if (branch is Map) {
+      branchName = branch['name']?.toString();
+    }
+
     final Map<String, dynamic> userMap = {
       ...res,
       'groupName': groupMap?['name'] ?? res['groups']?['name'],
       'permissions': mergedPerms,
+      if (branchName != null) 'branch_name': branchName,
     };
 
     final u = AppUser.fromJson(userMap);
