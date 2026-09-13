@@ -26,6 +26,31 @@ void main() {
     expect(canAccessGeneralSchedule(_user(groupName: ' 본사영업 ')), isTrue);
   });
 
+  test('canAccessGeneralSchedule — 영업+본사 허용, 지사 영업 지사장은 거부', () {
+    expect(
+      canAccessGeneralSchedule(
+        _user(groupName: '영업', title: '팀원', branchName: '본사'),
+      ),
+      isTrue,
+    );
+    expect(
+      canAccessGeneralSchedule(
+        _user(groupName: '영업', title: '지사장', branchName: '대구지사'),
+      ),
+      isFalse,
+    );
+    expect(
+      canAccessGeneralSchedule(
+        _user(groupName: '영업', title: '지사장', branchName: '대전지사'),
+      ),
+      isFalse,
+    );
+    expect(
+      canAccessGeneralSchedule(_user(groupName: '영업', title: '팀원')),
+      isFalse,
+    );
+  });
+
   test('canAccessGeneralSchedule — 그 외 그룹·권한 거부', () {
     expect(canAccessGeneralSchedule(_user(groupName: '지점영업')), isFalse);
     expect(canAccessGeneralSchedule(_user(groupName: null)), isFalse);

@@ -1,7 +1,7 @@
 import 'package:coad_customer_calls/core/utils/schedule_branch.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 
-/// 본사일반 메뉴 — [AppUser.groupName]이 허용 그룹일 때만 접근.
+/// 본사일반 메뉴 — 본사영업·관리자, 또는 영업+본사.
 const kGeneralScheduleAllowedGroupNames = ['본사영업', '관리자'];
 
 /// 대구지사 일정 메뉴 — 대구지사장·관리자, 또는 영업+대구+지사장.

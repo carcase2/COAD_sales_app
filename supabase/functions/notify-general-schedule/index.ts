@@ -58,7 +58,7 @@ function buildDataBody(body: string): string {
 }
 
 /**
- * 본사일반 FCM — 본사영업·관리자·총무부 그룹 + role=admin
+ * 본사일반 FCM — 본사영업·관리자·총무부, 영업+본사, role=admin
  * users.fcm_token 유무와 무관 (기기별 토큰은 user_push_tokens에서 조회)
  */
 async function resolveGeneralSchedulePushRecipients(
@@ -66,7 +66,7 @@ async function resolveGeneralSchedulePushRecipients(
 ): Promise<PushUser[]> {
   const { data, error } = await supabaseAdmin
     .from('users')
-    .select('id, name, role, fcm_token, is_active, groups(name)')
+    .select('id, name, role, fcm_token, is_active, groups(name), coad_branch(name, code)')
     .eq('is_active', true)
 
   if (error) throw error
@@ -75,10 +75,18 @@ async function resolveGeneralSchedulePushRecipients(
   for (const raw of data ?? []) {
     const row = raw as Record<string, unknown>
     const groups = row.groups as { name?: string } | null
+    const branch = row.coad_branch as { name?: string; code?: string } | null
     const groupName = (groups?.name ?? '').toString().trim()
     const role = (row.role ?? '').toString().trim()
+    const branchCode = (branch?.code ?? '').toString().trim()
+    const branchName = (branch?.name ?? '').toString().trim()
+    const isHqSales =
+      groupName === '영업' &&
+      (branchCode === 'hq' || branchName === '본사')
     const allowed =
-      role === 'admin' || ALLOWED_GROUP_NAMES.includes(groupName)
+      role === 'admin' ||
+      ALLOWED_GROUP_NAMES.includes(groupName) ||
+      isHqSales
     if (!allowed) continue
 
     const id = (row.id ?? '').toString()

@@ -21,9 +21,26 @@ class AppUser {
   final String? branchId;
   final String? branchName;
 
+  static const _hqBranchId = '6d13d1d1-50a8-47da-b127-40298b0f8aaf';
+  static const _daeguBranchId = 'a34901c1-99c6-4142-a92c-128d82d06181';
+
+  bool get isHqBranch {
+    if ((branchId ?? '').trim() == _hqBranchId) return true;
+    final n = (branchName ?? '').trim();
+    return n == '본사' || n.toLowerCase() == 'hq';
+  }
+
   bool get isDaeguBranch {
+    if ((branchId ?? '').trim() == _daeguBranchId) return true;
     final n = (branchName ?? '').trim();
     return n == '대구지사' || n == '대구' || n.contains('대구');
+  }
+
+  /// 부서 영업 + 지사 본사 (박정훈·김인엽·이상호·이상수)
+  bool get isHqSales {
+    final group = groupName?.trim();
+    if (group == '본사영업') return true;
+    return group == '영업' && isHqBranch;
   }
 
   /// 부서 영업 + 지사 대구 + 직책 지사장

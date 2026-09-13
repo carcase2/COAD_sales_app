@@ -44,7 +44,8 @@ extension ScheduleBranchX on ScheduleBranch {
       };
 
   String get accessDeniedMessage => switch (this) {
-        ScheduleBranch.headOffice => '본사일반은 본사영업·관리자 부서만 이용할 수 있습니다.',
+        ScheduleBranch.headOffice =>
+          '본사일반은 본사 영업·관리자만 이용할 수 있습니다.',
         ScheduleBranch.daegu =>
           '대구지사 일정은 대구지사장·관리자, 또는 영업 대구 지사장만 이용할 수 있습니다.',
       };
@@ -74,6 +75,9 @@ extension ScheduleBranchX on ScheduleBranch {
       };
 
   bool canAccess(AppUser user) {
+    if (this == ScheduleBranch.headOffice && user.isHqSales) {
+      return true;
+    }
     if (this == ScheduleBranch.daegu && user.isSalesDaeguBranchManager) {
       return true;
     }
