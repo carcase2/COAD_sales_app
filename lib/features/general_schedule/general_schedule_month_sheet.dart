@@ -22,6 +22,7 @@ class GeneralScheduleMonthCalendar extends StatefulWidget {
     this.padding = const EdgeInsets.fromLTRB(12, 0, 12, 16),
     this.orderedAssignees = const [],
     this.colorForAssignee,
+    this.onRefresh,
   });
 
   final GeneralScheduleDayGrid grid;
@@ -36,6 +37,7 @@ class GeneralScheduleMonthCalendar extends StatefulWidget {
   final EdgeInsets padding;
   final List<String> orderedAssignees;
   final Color Function(String assignee)? colorForAssignee;
+  final Future<void> Function()? onRefresh;
 
   @override
   State<GeneralScheduleMonthCalendar> createState() =>
@@ -99,8 +101,9 @@ class _GeneralScheduleMonthCalendarState
     final isCurrentMonth =
         _focusedMonth.year == today.year && _focusedMonth.month == today.month;
 
-    return ListView(
+    final list = ListView(
       controller: widget.scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: widget.padding,
       children: [
         if (widget.showHeader) ...[
@@ -238,6 +241,11 @@ class _GeneralScheduleMonthCalendarState
           margin: EdgeInsets.zero,
         ),
       ],
+    );
+    if (widget.onRefresh == null) return list;
+    return RefreshIndicator(
+      onRefresh: widget.onRefresh!,
+      child: list,
     );
   }
 

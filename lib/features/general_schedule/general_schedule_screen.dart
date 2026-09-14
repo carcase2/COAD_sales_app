@@ -916,6 +916,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                         colorForAssignee: colorForAssignee,
                         loginUserName: user.name,
                         showTableHeader: false,
+                        onRefresh: _reload,
                         onFocusedMonthChanged: (month) => setState(() {
                           _monthFocusedDay = DateTime(
                             month.year,
