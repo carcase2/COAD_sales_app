@@ -60,6 +60,16 @@ void main() {
     expect(overdueInstallParseDone(0), isFalse);
   });
 
+  test('수금 잔금 키를 raw에서 읽는다', () {
+    expect(
+      overdueInstallMoneyFromRaw(
+        {'REMAIN_PAY_COST': '1,100,000'},
+        const ['REMAIN_PAY_COST', 'remain_pay_cost'],
+      ),
+      1100000,
+    );
+  });
+
   test('수주금액에서 공급가액·세액을 나눈다', () {
     expect(
       overdueInstallOrderPriceFromRaw({'ORDER_PRICE': '5,500,000'}),
@@ -70,6 +80,76 @@ void main() {
     expect(vat?.tax, 500000);
     expect(vat?.supply, 5000000);
     expect(overdueInstallVatSplit(null), isNull);
+  });
+
+  test('담당자 묶음은 나 먼저, 그다음 건수', () {
+    final groups = overdueInstallGroupByAssignee(
+      [
+        ('홍길동', '2026-09-10'),
+        ('김경덕', '2026-09-12'),
+        ('홍길동', '2026-09-11'),
+        ('박영업', '2026-09-09'),
+        ('박영업', '2026-09-08'),
+        ('박영업', '2026-09-07'),
+      ],
+      assigneeOf: (row) => row.$1,
+      dateOf: (row) => row.$2,
+      userName: '김경덕',
+    );
+    expect(groups.map((e) => e.$1).toList(), ['김경덕', '박영업', '홍길동']);
+    expect(groups[1].$2.map((e) => e.$2).toList(), [
+      '2026-09-07',
+      '2026-09-08',
+      '2026-09-09',
+    ]);
+  });
+
+  test('R2 경로는 시공후·계약완료·체크시트로 나눈다', () {
+    expect(
+      overdueInstallArchiveKind(
+        typeCode: 'TP3',
+        stage: '',
+        r2Key: 'data/sites/2024/02/13/광양/03_시공후사진/a.jpg',
+        originalName: 'a.jpg',
+      ),
+      OverdueInstallArchiveKind.installAfter,
+    );
+    expect(
+      overdueInstallArchiveKind(
+        typeCode: 'TP4',
+        stage: '',
+        r2Key: 'data/sites/2024/02/13/광양/05_계약완료보고서/b.jpg',
+        originalName: 'b.jpg',
+      ),
+      OverdueInstallArchiveKind.contract,
+    );
+    expect(
+      overdueInstallArchiveKind(
+        typeCode: '',
+        stage: '05_계약완료보고서',
+        r2Key: r'data\sites\2024\02\13\광양\05_계약완료보고서\b.jpg',
+        originalName: 'b.jpg',
+      ),
+      OverdueInstallArchiveKind.contract,
+    );
+    expect(
+      overdueInstallArchiveKind(
+        typeCode: 'TP1',
+        stage: '',
+        r2Key: 'data/sites/2024/02/13/광양/04_체크시트/c.jpg',
+        originalName: 'c.jpg',
+      ),
+      OverdueInstallArchiveKind.checksheet,
+    );
+    expect(
+      overdueInstallArchiveKind(
+        typeCode: 'TP2',
+        stage: '',
+        r2Key: 'data/sites/2024/02/13/광양/02_시공전사진/d.jpg',
+        originalName: 'd.jpg',
+      ),
+      OverdueInstallArchiveKind.other,
+    );
   });
 
   test('달력용 담당자 이름은 중복을 뺀다', () {

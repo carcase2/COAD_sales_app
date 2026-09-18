@@ -15,6 +15,12 @@ class OverdueInstallSite {
     this.itemQty,
     this.inqStatus,
     this.orderTotal,
+    this.orderNo,
+    this.paidSum,
+    this.remainPay,
+    this.initialPay,
+    this.receivedStatus,
+    this.hasUnpaidCache = false,
     this.ourUserNames = const [],
   });
 
@@ -33,6 +39,12 @@ class OverdueInstallSite {
 
   /// 부가세 포함 수주금액.
   final int? orderTotal;
+  final String? orderNo;
+  final int? paidSum;
+  final int? remainPay;
+  final int? initialPay;
+  final String? receivedStatus;
+  final bool hasUnpaidCache;
   final Iterable<String> ourUserNames;
 
   String get assigneeKey => overdueInstallAssigneeKey(
@@ -54,6 +66,12 @@ class OverdueInstallSite {
 
   OverdueInstallSite copyWith({
     int? orderTotal,
+    String? orderNo,
+    int? paidSum,
+    int? remainPay,
+    int? initialPay,
+    String? receivedStatus,
+    bool? hasUnpaidCache,
     Iterable<String>? ourUserNames,
   }) {
     return OverdueInstallSite(
@@ -70,7 +88,41 @@ class OverdueInstallSite {
       itemQty: itemQty,
       inqStatus: inqStatus,
       orderTotal: orderTotal ?? this.orderTotal,
+      orderNo: orderNo ?? this.orderNo,
+      paidSum: paidSum ?? this.paidSum,
+      remainPay: remainPay ?? this.remainPay,
+      initialPay: initialPay ?? this.initialPay,
+      receivedStatus: receivedStatus ?? this.receivedStatus,
+      hasUnpaidCache: hasUnpaidCache ?? this.hasUnpaidCache,
       ourUserNames: ourUserNames ?? this.ourUserNames,
     );
   }
+}
+
+class OverdueInstallArchivePhoto {
+  const OverdueInstallArchivePhoto({
+    required this.id,
+    required this.kind,
+    required this.mediaPath,
+    this.originalName,
+  });
+
+  final String id;
+  final OverdueInstallArchiveKind kind;
+  final String mediaPath;
+  final String? originalName;
+}
+
+class OverdueInstallArchive {
+  const OverdueInstallArchive({
+    this.installAfter = const [],
+    this.contracts = const [],
+    this.checksheets = const [],
+  });
+
+  final List<OverdueInstallArchivePhoto> installAfter;
+  final List<OverdueInstallArchivePhoto> contracts;
+  final List<OverdueInstallArchivePhoto> checksheets;
+
+  bool get isEmpty => contracts.isEmpty && checksheets.isEmpty;
 }

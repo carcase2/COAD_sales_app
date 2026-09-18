@@ -108,18 +108,29 @@ int? overdueInstallParseMoney(dynamic raw) {
   return n.round();
 }
 
-int? overdueInstallOrderPriceFromRaw(dynamic raw) {
-  Map<dynamic, dynamic>? map;
-  if (raw is Map) {
-    map = raw;
-  } else if (raw is String && raw.trim().startsWith('{')) {
+Map<dynamic, dynamic>? overdueInstallAsMap(dynamic raw) {
+  if (raw is Map) return raw;
+  if (raw is String && raw.trim().startsWith('{')) {
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is Map) map = decoded;
+      if (decoded is Map) return decoded;
     } catch (_) {}
   }
+  return null;
+}
+
+int? overdueInstallMoneyFromRaw(dynamic raw, List<String> keys) {
+  final map = overdueInstallAsMap(raw);
   if (map == null) return null;
-  const keys = [
+  for (final key in keys) {
+    final n = overdueInstallParseMoney(map[key]);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+int? overdueInstallOrderPriceFromRaw(dynamic raw) {
+  return overdueInstallMoneyFromRaw(raw, const [
     'order_price',
     'ORDER_PRICE',
     'AMT',
@@ -128,12 +139,7 @@ int? overdueInstallOrderPriceFromRaw(dynamic raw) {
     'SO_AMT',
     'order_price_num',
     'LINE_AMT',
-  ];
-  for (final key in keys) {
-    final n = overdueInstallParseMoney(map[key]);
-    if (n != null) return n;
-  }
-  return null;
+  ]);
 }
 
 /// MES 수주금액은 부가세 포함. 세금계산서와 같이 합계÷11 = 세액.
@@ -141,6 +147,74 @@ int? overdueInstallOrderPriceFromRaw(dynamic raw) {
   if (total == null || total <= 0) return null;
   final tax = total ~/ 11;
   return (supply: total - tax, tax: tax, total: total);
+}
+
+/// 나 → 건수 많은 순 → 이름.
+List<String> overdueInstallAssigneeOrder(
+  Map<String, int> counts,
+  String? userName,
+) {
+  final keys = counts.keys.toList();
+  keys.sort((a, b) {
+    final aMine = overdueInstallIsMine(a, userName);
+    final bMine = overdueInstallIsMine(b, userName);
+    if (aMine != bMine) return aMine ? -1 : 1;
+    final byCount = (counts[b] ?? 0).compareTo(counts[a] ?? 0);
+    if (byCount != 0) return byCount;
+    return a.compareTo(b);
+  });
+  return keys;
+}
+
+List<(String, List<T>)> overdueInstallGroupByAssignee<T>(
+  List<T> rows, {
+  required String Function(T row) assigneeOf,
+  required String Function(T row) dateOf,
+  String? userName,
+}) {
+  final by = <String, List<T>>{};
+  for (final row in rows) {
+    (by[assigneeOf(row)] ??= []).add(row);
+  }
+  for (final list in by.values) {
+    list.sort((a, b) => dateOf(a).compareTo(dateOf(b)));
+  }
+  final keys = overdueInstallAssigneeOrder({
+    for (final e in by.entries) e.key: e.value.length,
+  }, userName);
+  return [for (final k in keys) (k, by[k]!)];
+}
+
+enum OverdueInstallArchiveKind { installAfter, contract, checksheet, other }
+
+OverdueInstallArchiveKind overdueInstallArchiveKind({
+  required String typeCode,
+  required String stage,
+  required String r2Key,
+  required String originalName,
+}) {
+  final blob = '$typeCode|$stage|$r2Key|$originalName'.toUpperCase();
+  if (blob.contains('TP4') ||
+      blob.contains('계약완료') ||
+      blob.contains('계약완') ||
+      blob.contains('05_계약') ||
+      blob.contains('/05_')) {
+    return OverdueInstallArchiveKind.contract;
+  }
+  if (blob.contains('시공전') ||
+      blob.contains('TP2') ||
+      blob.contains('TP6') ||
+      blob.contains('01_시공전') ||
+      blob.contains('02_시공전')) {
+    return OverdueInstallArchiveKind.other;
+  }
+  if (blob.contains('TP3') || blob.contains('시공후')) {
+    return OverdueInstallArchiveKind.installAfter;
+  }
+  if (blob.contains('TP1') || blob.contains('체크시트')) {
+    return OverdueInstallArchiveKind.checksheet;
+  }
+  return OverdueInstallArchiveKind.other;
 }
 
 List<String> overdueInstallUniqueNames(Iterable<String> names) {

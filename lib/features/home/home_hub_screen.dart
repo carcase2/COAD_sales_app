@@ -18,6 +18,8 @@ import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
 import 'package:coad_customer_calls/features/home/home_flow_stats.dart';
+import 'package:coad_customer_calls/features/issuance/overdue_install_home_card.dart';
+import 'package:coad_customer_calls/features/issuance/overdue_install_provider.dart';
 import 'package:coad_customer_calls/features/sales_calls/master_data_provider.dart';
 import 'package:coad_customer_calls/features/home/home_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_day_follow_pager_screen.dart';
@@ -1792,8 +1794,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         if (!mounted) return;
         _jumpSectionPage(0);
         final pendingDept = ref.read(pendingHomeDeptPageIndexProvider);
-        final homeDept =
-            pendingDept ?? _homeDeptPageForCurrentUser();
+        final homeDept = pendingDept ?? _homeDeptPageForCurrentUser();
         if (pendingDept != null) {
           ref.read(pendingHomeDeptPageIndexProvider.notifier).state = null;
         }
@@ -1869,6 +1870,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   Future<void> _onRefresh() async {
     _invalidateSegmentBadges();
+    ref.invalidate(overduePendingRowsProvider);
     switch (_section) {
       case HomeHubSection.flow:
         await _refreshActiveFlowPeriod();
@@ -2720,6 +2722,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             salesCard,
+            const SizedBox(height: 10),
+            const HomeOverdueInstallCard(),
             if (scope == HubPeriod.day) ...[
               const SizedBox(height: 10),
               const SalesTodayDeskHost(),

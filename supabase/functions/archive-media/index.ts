@@ -17,6 +17,7 @@ function isAllowedArchiveMedia(row: {
 }): boolean {
   const code = (row.type_code || row.stage || '').toUpperCase()
   if (code === 'TP1') return true
+  if (code === 'TP4' || code.includes('CONTRACT')) return true
   if (
     code === 'TP3' ||
     code === 'TP3_INSTALL_AFTER' ||
@@ -26,6 +27,15 @@ function isAllowedArchiveMedia(row: {
   }
   const path = `${row.r2_key || ''}|${row.local_path || ''}|${row.original_name || ''}`
   if (path.includes('04_체크시트') || /TP1[_/\\-]/i.test(path)) return true
+  if (
+    path.includes('계약완료') ||
+    path.includes('계약완') ||
+    path.includes('05_계약') ||
+    /\/05_/.test(path) ||
+    /TP4[_/\\-]/i.test(path)
+  ) {
+    return true
+  }
   if (
     path.includes('시공전') ||
     path.includes('시공_전') ||
