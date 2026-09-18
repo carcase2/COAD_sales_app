@@ -71,154 +71,221 @@ class _OverdueInstallDetailSheetState
     final vat = widget.site.vatSplit;
     final site = widget.site;
     final bottom = MediaQuery.paddingOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 4, 20, 20 + bottom),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              site.displayName,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '시공완료 안 됨',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: Colors.deepOrange.shade700,
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(12, 0, 12, 12 + bottom),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  IconButton(
+                    tooltip: '닫기',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            site.displayName,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '시공완료 안 됨',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.deepOrange.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '닫기',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            if (site.hasTaxRequest)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  '발행요청 ${site.taxRequestCount}건 있음. 같은 현장은 추가로 요청할 수 있습니다.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.teal.shade800,
-                    height: 1.35,
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (site.hasTaxRequest)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            '발행요청 ${site.taxRequestCount}건 있음. 같은 현장은 추가로 요청할 수 있습니다.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.teal.shade800,
+                              height: 1.35,
+                            ),
+                          ),
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            '아직 발행요청이 없습니다.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.deepOrange.shade800,
+                            ),
+                          ),
+                        ),
+                      FilledButton.icon(
+                        onPressed: () => _openTaxRequest(site),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(
+                            AppTokens.primaryCtaHeight,
+                          ),
+                        ),
+                        icon: const Icon(Icons.receipt_long_rounded),
+                        label: Text(
+                          site.hasTaxRequest ? '세금계산서 추가 요청' : '세금계산서 발행 요청',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _kv('담당자', site.assigneeKey),
+                      _kv('시공예정일', site.instalDt),
+                      if (site.custNm.isNotEmpty && site.custNm != site.siteNm)
+                        _kv('고객', site.custNm),
+                      _kv('인쿼리', site.inqNo),
+                      _kv(
+                        '지점',
+                        site.plantNm.isEmpty ? site.plantCd : site.plantNm,
+                      ),
+                      if (site.itemCd.isNotEmpty) _kv('품목', site.itemCd),
+                      if ((site.itemQty ?? '').isNotEmpty)
+                        _kv('수량', site.itemQty!),
+                      if ((site.inqStatus ?? '').isNotEmpty)
+                        _kv('상태', site.inqStatus!),
+                      const Divider(height: 28),
+                      Text(
+                        '금액',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (vat == null)
+                        Text(
+                          '수주금액 정보가 없습니다.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        )
+                      else ...[
+                        _kv('공급가액', _won(vat.supply)),
+                        _kv('세액', _won(vat.tax)),
+                        _kv('합계 (부가세 포함)', _won(vat.total)),
+                      ],
+                      const Divider(height: 28),
+                      Text(
+                        '수금',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if ((site.orderNo ?? '').isNotEmpty)
+                        _kv('수주번호', site.orderNo!),
+                      if (site.initialPay != null)
+                        _kv('계약금', _won(site.initialPay!)),
+                      if (site.paidSum != null)
+                        _kv('입금합계', _won(site.paidSum!)),
+                      if (site.remainPay != null)
+                        _kv('잔금', _won(site.remainPay!)),
+                      if ((site.receivedStatus ?? '').isNotEmpty)
+                        _kv('수금상태', site.receivedStatus!),
+                      if (site.paidSum == null &&
+                          site.remainPay == null &&
+                          site.initialPay == null)
+                        Text(
+                          site.hasUnpaidCache
+                              ? '수금 금액이 없습니다.'
+                              : 'MES 수금 캐시 없음 (시공완료 전). 시공완료되면 잔금·입금이 들어옵니다.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      const Divider(height: 28),
+                      Text(
+                        '현장 자료 (R2)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_archiveLoading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: LinearProgressIndicator(minHeight: 2),
+                        )
+                      else if (_archive == null || _archive!.isEmpty)
+                        Text(
+                          '이 현장의 계약완료보고서·체크시트가 없습니다.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        )
+                      else ...[
+                        if (_archive!.contracts.isNotEmpty)
+                          _photoStrip('계약완료보고서', _archive!.contracts),
+                        if (_archive!.checksheets.isNotEmpty)
+                          _photoStrip('체크시트', _archive!.checksheets),
+                      ],
+                    ],
                   ),
                 ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  '아직 발행요청이 없습니다.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.deepOrange.shade800,
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(
+                    AppTokens.primaryCtaHeight,
                   ),
                 ),
-              ),
-            FilledButton.icon(
-              onPressed: () => _openTaxRequest(site),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(AppTokens.primaryCtaHeight),
-              ),
-              icon: const Icon(Icons.receipt_long_rounded),
-              label: Text(
-                site.hasTaxRequest ? '세금계산서 추가 요청' : '세금계산서 발행 요청',
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _kv('담당자', site.assigneeKey),
-            _kv('시공예정일', site.instalDt),
-            if (site.custNm.isNotEmpty && site.custNm != site.siteNm)
-              _kv('고객', site.custNm),
-            _kv('인쿼리', site.inqNo),
-            _kv('지점', site.plantNm.isEmpty ? site.plantCd : site.plantNm),
-            if (site.itemCd.isNotEmpty) _kv('품목', site.itemCd),
-            if ((site.itemQty ?? '').isNotEmpty) _kv('수량', site.itemQty!),
-            if ((site.inqStatus ?? '').isNotEmpty) _kv('상태', site.inqStatus!),
-            const Divider(height: 28),
-            Text(
-              '금액',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: scheme.primary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (vat == null)
-              Text(
-                '수주금액 정보가 없습니다.',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
+                child: const Text(
+                  '닫기',
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
-              )
-            else ...[
-              _kv('공급가액', _won(vat.supply)),
-              _kv('세액', _won(vat.tax)),
-              _kv('합계 (부가세 포함)', _won(vat.total)),
+              ),
             ],
-            const Divider(height: 28),
-            Text(
-              '수금',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: scheme.primary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if ((site.orderNo ?? '').isNotEmpty) _kv('수주번호', site.orderNo!),
-            if (site.initialPay != null) _kv('계약금', _won(site.initialPay!)),
-            if (site.paidSum != null) _kv('입금합계', _won(site.paidSum!)),
-            if (site.remainPay != null) _kv('잔금', _won(site.remainPay!)),
-            if ((site.receivedStatus ?? '').isNotEmpty)
-              _kv('수금상태', site.receivedStatus!),
-            if (site.paidSum == null &&
-                site.remainPay == null &&
-                site.initialPay == null)
-              Text(
-                site.hasUnpaidCache
-                    ? '수금 금액이 없습니다.'
-                    : 'MES 수금 캐시 없음 (시공완료 전). 시공완료되면 잔금·입금이 들어옵니다.',
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            const Divider(height: 28),
-            Text(
-              '현장 자료 (R2)',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: scheme.primary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (_archiveLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: LinearProgressIndicator(minHeight: 2),
-              )
-            else if (_archive == null || _archive!.isEmpty)
-              Text(
-                '이 현장의 계약완료보고서·체크시트가 없습니다.',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
-                ),
-              )
-            else ...[
-              if (_archive!.contracts.isNotEmpty)
-                _photoStrip('계약완료보고서', _archive!.contracts),
-              if (_archive!.checksheets.isNotEmpty)
-                _photoStrip('체크시트', _archive!.checksheets),
-            ],
-          ],
+          ),
         ),
       ),
     );
