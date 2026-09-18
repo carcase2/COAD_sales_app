@@ -71,7 +71,8 @@ class OverdueInstallRepository {
       );
     }
     final withUnpaid = await _mergeUnpaid(sites);
-    return _fillMissingAmounts(withUnpaid);
+    final withAmounts = await _fillMissingAmounts(withUnpaid);
+    return _mergeTaxRequests(withAmounts);
   }
 
   Future<Set<String>> _fetchOurUserNames() async {
@@ -260,6 +261,67 @@ class OverdueInstallRepository {
                 initialPay: extras[site.inqNo]!['initial'] ?? site.initialPay,
               )
             : site,
+    ];
+  }
+
+  Future<List<OverdueInstallSite>> _mergeTaxRequests(
+    List<OverdueInstallSite> sites,
+  ) async {
+    final names = <String>{};
+    for (final site in sites) {
+      if (site.siteNm.isNotEmpty) names.add(site.siteNm);
+      if (site.custNm.isNotEmpty) names.add(site.custNm);
+    }
+    if (names.isEmpty) return sites;
+
+    final total = <String, int>{};
+    final pending = <String, int>{};
+    try {
+      final nameList = names.toList();
+      for (var i = 0; i < nameList.length; i += _inqChunk) {
+        final end = i + _inqChunk > nameList.length
+            ? nameList.length
+            : i + _inqChunk;
+        final chunk = nameList.sublist(i, end);
+        final rows = await _client
+            .from('tax_invoices')
+            .select('customer_name, status')
+            .inFilter('customer_name', chunk)
+            .not('status', 'in', const [
+              'cancelled',
+              'canceled',
+              'cancel',
+              '취소',
+            ]);
+        for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+          final name = (row['customer_name'] ?? '').toString().trim();
+          if (name.isEmpty) continue;
+          total[name] = (total[name] ?? 0) + 1;
+          final status = (row['status'] ?? '').toString().toLowerCase();
+          if (status == 'pending' || status == 'draft') {
+            pending[name] = (pending[name] ?? 0) + 1;
+          }
+        }
+      }
+    } catch (_) {
+      return sites;
+    }
+    if (total.isEmpty) return sites;
+
+    int countFor(OverdueInstallSite site, Map<String, int> map) {
+      var n = map[site.siteNm] ?? 0;
+      if (site.custNm.isNotEmpty && site.custNm != site.siteNm) {
+        n += map[site.custNm] ?? 0;
+      }
+      return n;
+    }
+
+    return [
+      for (final site in sites)
+        site.copyWith(
+          taxRequestCount: countFor(site, total),
+          taxPendingCount: countFor(site, pending),
+        ),
     ];
   }
 

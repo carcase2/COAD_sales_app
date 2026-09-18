@@ -1,4 +1,5 @@
 import 'package:coad_customer_calls/features/issuance/overdue_install_logic.dart';
+import 'package:coad_customer_calls/models/overdue_install_site.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -68,6 +69,49 @@ void main() {
       ),
       1100000,
     );
+  });
+
+  test('발행요청 여부 필터', () {
+    expect(
+      overdueInstallMatchesRequestFilter(
+        taxRequestCount: 0,
+        filter: OverdueInstallRequestFilter.notRequested,
+      ),
+      isTrue,
+    );
+    expect(
+      overdueInstallMatchesRequestFilter(
+        taxRequestCount: 2,
+        filter: OverdueInstallRequestFilter.requested,
+      ),
+      isTrue,
+    );
+    expect(overdueInstallRequestBadge(taxRequestCount: 0), '미요청');
+    expect(overdueInstallRequestBadge(taxRequestCount: 2), '요청 2건');
+  });
+
+  test('세금계산서 초안은 잔금이면 잔금, 품목·지사를 채운다', () {
+    const site = OverdueInstallSite(
+      inqNo: 'SI260101001',
+      instalDt: '2026-09-10',
+      siteNm: '삼성현장',
+      custNm: '삼성',
+      plantCd: '1002',
+      plantNm: '대구지사',
+      itemCd: '스피드도어 SD',
+      managerNm: '김경덕',
+      regUsr: '김경덕',
+      installDone: false,
+      remainPay: 2200000,
+      orderTotal: 5500000,
+    );
+    final prefill = site.toTaxPrefill();
+    expect(prefill.customerName, '삼성현장');
+    expect(prefill.totalAmount, 2200000);
+    expect(prefill.itemType, '잔금');
+    expect(prefill.itemName, '스피드도어');
+    expect(prefill.branch, '대구');
+    expect(prefill.mesRegistered, isTrue);
   });
 
   test('수주금액에서 공급가액·세액을 나눈다', () {

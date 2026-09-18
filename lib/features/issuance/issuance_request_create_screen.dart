@@ -9,6 +9,7 @@ import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
+import 'package:coad_customer_calls/models/overdue_install_site.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
@@ -22,9 +23,14 @@ import 'package:mime/mime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class IssuanceRequestCreateScreen extends ConsumerStatefulWidget {
-  const IssuanceRequestCreateScreen({super.key, required this.initialDomain});
+  const IssuanceRequestCreateScreen({
+    super.key,
+    required this.initialDomain,
+    this.taxPrefill,
+  });
 
   final IssuanceDomain initialDomain;
+  final TaxInvoicePrefill? taxPrefill;
 
   @override
   ConsumerState<IssuanceRequestCreateScreen> createState() =>
@@ -57,6 +63,7 @@ class _IssuanceRequestCreateScreenState
   bool _taxMesRegistered = false;
   bool _taxUrgent = false;
   String? _taxBranch;
+  String? _pendingPrefillBranch;
   List<PlatformFile> _taxBizFiles = [];
   List<String> _branchOptions = [];
   String? _taxReusedBizUrl;
@@ -91,14 +98,44 @@ class _IssuanceRequestCreateScreenState
     _taxIssueDate.text = _nowYmdHm();
     _bondContractDate.text = _todayYmd();
     _bondConstructionEndDate.text = _todayYmd();
+    final prefill = widget.taxPrefill;
+    if (prefill != null) {
+      _applyTaxPrefill(prefill);
+    }
     _taxTotalAmount.addListener(_onMoneyFieldChanged);
     _bondContractAmount.addListener(_onMoneyFieldChanged);
     _taxCustomerName.addListener(_onSiteNameChanged);
     _bondCompanyName.addListener(_onSiteNameChanged);
     _loadBranches();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_loadRecentSites(''));
+      unawaited(_loadRecentSites(prefill?.customerName ?? ''));
     });
+  }
+
+  void _applyTaxPrefill(TaxInvoicePrefill prefill) {
+    _taxCustomerName.text = prefill.customerName;
+    if (prefill.totalAmount != null && prefill.totalAmount! > 0) {
+      _taxTotalAmount.text = _formatAmountInput(prefill.totalAmount!);
+    }
+    _taxItemType = prefill.itemType;
+    _taxMesRegistered = prefill.mesRegistered;
+    final item = (prefill.itemName ?? '').trim();
+    if (item.isNotEmpty) {
+      _taxItemName.text = item;
+      _taxItemNameChoice = _taxItemNameOptions.contains(item) ? item : '기타';
+    }
+    _pendingPrefillBranch = prefill.branch;
+  }
+
+  String _formatAmountInput(int amount) {
+    final s = amount.toString();
+    final chars = <String>[];
+    for (var i = 0; i < s.length; i++) {
+      final idx = s.length - i;
+      chars.add(s[i]);
+      if (idx > 1 && idx % 3 == 1) chars.add(',');
+    }
+    return chars.join();
   }
 
   void _onMoneyFieldChanged() {
@@ -179,9 +216,9 @@ class _IssuanceRequestCreateScreenState
       _bondBizFiles = [];
     }
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${row.title} 정보를 불러왔습니다.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('${row.title} 정보를 불러왔습니다.')));
   }
 
   List<String> _bondBusinessUrlsFromRow(IssuanceRequestRow row) {
@@ -191,7 +228,10 @@ class _IssuanceRequestCreateScreenState
       if (raw is Map) {
         final business = raw['business'];
         if (business is List) {
-          return business.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+          return business
+              .map((e) => e.toString())
+              .where((s) => s.isNotEmpty)
+              .toList();
         }
       }
       final decoded = jsonDecode(raw.toString());
@@ -253,7 +293,12 @@ class _IssuanceRequestCreateScreenState
                             borderRadius: BorderRadius.circular(12),
                             onTap: () => _applyRecentSite(row),
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                              padding: const EdgeInsets.fromLTRB(
+                                10,
+                                10,
+                                10,
+                                10,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -408,7 +453,12 @@ class _IssuanceRequestCreateScreenState
       if (!mounted) return;
       setState(() {
         _branchOptions = list;
-        _taxBranch ??= list.isNotEmpty ? list.first : null;
+        final wanted = _pendingPrefillBranch?.trim();
+        if (wanted != null && wanted.isNotEmpty && list.contains(wanted)) {
+          _taxBranch = wanted;
+        } else {
+          _taxBranch ??= list.isNotEmpty ? list.first : null;
+        }
       });
     } catch (_) {}
   }
@@ -514,9 +564,7 @@ class _IssuanceRequestCreateScreenState
         }
         return [];
       }
-      return [
-        PlatformFile(name: shot.name, path: shot.path, size: size),
-      ];
+      return [PlatformFile(name: shot.name, path: shot.path, size: size)];
     }
     final result = await FilePicker.pickFiles(
       allowMultiple: true,
@@ -552,9 +600,9 @@ class _IssuanceRequestCreateScreenState
       if (ok) accepted.add(f);
     }
     if (rejected && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('10MB를 넘는 파일은 제외했습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('10MB를 넘는 파일은 제외했습니다.')));
     }
     return accepted;
   }
@@ -817,9 +865,7 @@ class _IssuanceRequestCreateScreenState
         rows: [
           (
             '종류',
-            _selectedBondTypes.isEmpty
-                ? '-'
-                : _selectedBondTypes.join(' · '),
+            _selectedBondTypes.isEmpty ? '-' : _selectedBondTypes.join(' · '),
           ),
         ],
       ),
@@ -836,20 +882,14 @@ class _IssuanceRequestCreateScreenState
             '계약금액(부가세 포함)',
             _formatWonDisplay(_parseMoney(_bondContractAmount.text)),
           ),
-          (
-            '한글 금액',
-            koreanWonInWords(_parseMoney(_bondContractAmount.text)),
-          ),
+          ('한글 금액', koreanWonInWords(_parseMoney(_bondContractAmount.text))),
         ],
       ),
       _ReviewSection(
         title: '보증/기간',
         rows: [
           for (final type in _selectedBondTypes) ...[
-            (
-              '$type 보증금율',
-              '${_bondTerms[type]!.rate.text.trim()}%',
-            ),
+            ('$type 보증금율', '${_bondTerms[type]!.rate.text.trim()}%'),
             (
               '$type 보증기간',
               '${_bondTerms[type]!.period.text.trim()}${_bondPeriodUnit(type)}',
@@ -935,7 +975,9 @@ class _IssuanceRequestCreateScreenState
       }
       invalidateIssuanceCore(ref);
       await Future.wait([
-        ref.read(issuancePendingCountProvider(IssuanceDomain.taxInvoice).future),
+        ref.read(
+          issuancePendingCountProvider(IssuanceDomain.taxInvoice).future,
+        ),
         ref.read(
           issuancePendingCountProvider(IssuanceDomain.performanceBond).future,
         ),
@@ -949,9 +991,9 @@ class _IssuanceRequestCreateScreenState
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final ctx = NotificationService.navigatorKey.currentContext;
         if (ctx == null) return;
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text('$snackName 발급요청이 등록되었습니다.')),
-        );
+        ScaffoldMessenger.of(
+          ctx,
+        ).showSnackBar(SnackBar(content: Text('$snackName 발급요청이 등록되었습니다.')));
       });
     } catch (e) {
       if (!mounted) return;
@@ -1127,7 +1169,9 @@ class _IssuanceRequestCreateScreenState
   }) async {
     final terms = _bondTerms[type]!;
     final guaranteeRate = double.tryParse(terms.rate.text.trim()) ?? 0;
-    final guaranteePeriod = _parseGuaranteePeriodValue(terms.period.text.trim());
+    final guaranteePeriod = _parseGuaranteePeriodValue(
+      terms.period.text.trim(),
+    );
     final bondNumber = await _generateBondNumber();
 
     final inserted = await _client
@@ -1229,157 +1273,157 @@ class _IssuanceRequestCreateScreenState
         }
       },
       child: Scaffold(
-      appBar: AppBar(
-        title: const Text('발급요청 등록'),
-        backgroundColor: accent,
-        foregroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w800,
-          fontSize: 18,
+        appBar: AppBar(
+          title: const Text('발급요청 등록'),
+          backgroundColor: accent,
+          foregroundColor: Colors.white,
+          iconTheme: const IconThemeData(color: Colors.white),
+          titleTextStyle: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
+          ),
         ),
-      ),
-      body: Stack(
-        children: [
-          SafeArea(
-            // 키보드가 떠도 전체 화면을 폼 스크롤에 쓸 수 있도록
-            // 헤더·전환 버튼·항목 구분도 스크롤 영역 안에 둔다.
-            child: Theme(
-              data: Theme.of(
-                context,
-              ).copyWith(inputDecorationTheme: inputTheme),
-              child: SingleChildScrollView(
-                controller: _formScrollController,
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 120),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.09),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: accent.withValues(alpha: 0.25),
+        body: Stack(
+          children: [
+            SafeArea(
+              // 키보드가 떠도 전체 화면을 폼 스크롤에 쓸 수 있도록
+              // 헤더·전환 버튼·항목 구분도 스크롤 영역 안에 둔다.
+              child: Theme(
+                data: Theme.of(
+                  context,
+                ).copyWith(inputDecorationTheme: inputTheme),
+                child: SingleChildScrollView(
+                  controller: _formScrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isTax
-                                ? Icons.receipt_long_rounded
-                                : Icons.gavel_rounded,
-                            color: accent,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.09),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.25),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              isTax ? '세금계산서 발급요청 작성' : '이행증권 발급요청 작성',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: accent,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isTax
+                                  ? Icons.receipt_long_rounded
+                                  : Icons.gavel_rounded,
+                              color: accent,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                isTax ? '세금계산서 발급요청 작성' : '이행증권 발급요청 작성',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: accent,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: IssuanceDomainTab(
-                              label: '세금계산서',
-                              selected: isTax,
-                              accent: accent,
-                              count: taxCount,
-                              onTap: () {
-                                if (_domain == IssuanceDomain.taxInvoice) {
-                                  return;
-                                }
-                                setState(
-                                  () => _domain = IssuanceDomain.taxInvoice,
-                                );
-                                unawaited(_loadRecentSites(''));
-                              },
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: IssuanceDomainTab(
+                                label: '세금계산서',
+                                selected: isTax,
+                                accent: accent,
+                                count: taxCount,
+                                onTap: () {
+                                  if (_domain == IssuanceDomain.taxInvoice) {
+                                    return;
+                                  }
+                                  setState(
+                                    () => _domain = IssuanceDomain.taxInvoice,
+                                  );
+                                  unawaited(_loadRecentSites(''));
+                                },
+                              ),
                             ),
-                          ),
-                          Expanded(
-                            child: IssuanceDomainTab(
-                              label: '이행증권',
-                              selected: !isTax,
-                              accent: accent,
-                              count: bondCount,
-                              onTap: () {
-                                if (_domain ==
-                                    IssuanceDomain.performanceBond) {
-                                  return;
-                                }
-                                setState(
-                                  () => _domain =
-                                      IssuanceDomain.performanceBond,
-                                );
-                                unawaited(_loadRecentSites(''));
-                              },
+                            Expanded(
+                              child: IssuanceDomainTab(
+                                label: '이행증권',
+                                selected: !isTax,
+                                accent: accent,
+                                count: bondCount,
+                                onTap: () {
+                                  if (_domain ==
+                                      IssuanceDomain.performanceBond) {
+                                    return;
+                                  }
+                                  setState(
+                                    () => _domain =
+                                        IssuanceDomain.performanceBond,
+                                  );
+                                  unawaited(_loadRecentSites(''));
+                                },
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (isTax) _buildTaxItemTypeSelector(accent),
-                    if (!isTax) _buildBondTypeSelector(accent),
-                    const SizedBox(height: 8),
-                    _domain == IssuanceDomain.taxInvoice
-                        ? _buildTaxForm()
-                        : _buildBondForm(),
-                  ],
+                      const SizedBox(height: 10),
+                      if (isTax) _buildTaxItemTypeSelector(accent),
+                      if (!isTax) _buildBondTypeSelector(accent),
+                      const SizedBox(height: 8),
+                      _domain == IssuanceDomain.taxInvoice
+                          ? _buildTaxForm()
+                          : _buildBondForm(),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            right: 16,
-            bottom: actionsBottom,
-            child: FloatingActionButton.extended(
-              onPressed: _saving
-                  ? null
-                  : () {
-                      HapticFeedback.mediumImpact();
-                      _onSavePressed();
-                    },
-              backgroundColor: accent,
-              foregroundColor: Colors.white,
-              extendedPadding: const EdgeInsets.symmetric(horizontal: 22),
-              icon: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.save_rounded),
-              label: Text(
-                _saving ? '저장 중...' : '저장',
-                style: const TextStyle(fontWeight: FontWeight.w900),
+            Positioned(
+              right: 16,
+              bottom: actionsBottom,
+              child: FloatingActionButton.extended(
+                onPressed: _saving
+                    ? null
+                    : () {
+                        HapticFeedback.mediumImpact();
+                        _onSavePressed();
+                      },
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+                extendedPadding: const EdgeInsets.symmetric(horizontal: 22),
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save_rounded),
+                label: Text(
+                  _saving ? '저장 중...' : '저장',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1426,9 +1470,7 @@ class _IssuanceRequestCreateScreenState
     final urgentColor = Colors.red.shade600;
     return Container(
       decoration: BoxDecoration(
-        color: _taxUrgent
-            ? urgentColor.withValues(alpha: 0.08)
-            : Colors.white,
+        color: _taxUrgent ? urgentColor.withValues(alpha: 0.08) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _taxUrgent
@@ -1457,10 +1499,7 @@ class _IssuanceRequestCreateScreenState
             const SizedBox(width: 6),
             if (_taxUrgent)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: urgentColor,
                   borderRadius: BorderRadius.circular(20),
@@ -1733,17 +1772,17 @@ class _IssuanceRequestCreateScreenState
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (_taxReusedBizUrl != null && _taxReusedBizUrl!.isNotEmpty)
+                    if (_taxReusedBizUrl != null &&
+                        _taxReusedBizUrl!.isNotEmpty)
                       Chip(
                         backgroundColor: Colors.teal.withValues(alpha: 0.12),
                         label: const Text('이전 사업자등록증 재사용'),
-                        onDeleted: () => setState(() => _taxReusedBizUrl = null),
+                        onDeleted: () =>
+                            setState(() => _taxReusedBizUrl = null),
                       ),
                     ..._taxBizFiles.map(
                       (f) => Chip(
-                        backgroundColor: Colors.indigo.withValues(
-                          alpha: 0.08,
-                        ),
+                        backgroundColor: Colors.indigo.withValues(alpha: 0.08),
                         side: BorderSide(
                           color: Colors.indigo.withValues(alpha: 0.25),
                         ),
@@ -2073,8 +2112,9 @@ class _IssuanceRequestCreateScreenState
                 child: labeledField(
                   label: '보증금율(%)',
                   controller: terms.rate,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   suffixText: '%',
                   validator: (v) {
                     final n = double.tryParse((v ?? '').trim()) ?? 0;
@@ -2125,7 +2165,8 @@ class _IssuanceRequestCreateScreenState
             ),
             const SizedBox(height: 4),
             Material(
-              color: Theme.of(context).inputDecorationTheme.fillColor ??
+              color:
+                  Theme.of(context).inputDecorationTheme.fillColor ??
                   Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
               child: InkWell(
@@ -2145,10 +2186,9 @@ class _IssuanceRequestCreateScreenState
                     border: Border.all(
                       color: state.hasError
                           ? Theme.of(context).colorScheme.error
-                          : Theme.of(context)
-                              .colorScheme
-                              .outlineVariant
-                              .withValues(alpha: 0.6),
+                          : Theme.of(
+                              context,
+                            ).colorScheme.outlineVariant.withValues(alpha: 0.6),
                     ),
                   ),
                   child: Row(
@@ -2173,9 +2213,9 @@ class _IssuanceRequestCreateScreenState
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                               color: controller.text.trim().isEmpty
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant
                                   : Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
@@ -2267,9 +2307,9 @@ class _IssuanceRequestCreateScreenState
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -2324,20 +2364,21 @@ class _IssuanceRequestCreateScreenState
                         label: '시작일 *',
                         controller: _bondContractDate,
                         onPick: () => _pickDate(_bondContractDate),
-                        validator: (v) => (v == null || v.trim().isEmpty)
-                            ? '시작일'
-                            : null,
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? '시작일' : null,
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(left: 6, right: 6, top: 28),
+                      padding: const EdgeInsets.only(
+                        left: 6,
+                        right: 6,
+                        top: 28,
+                      ),
                       child: Text(
                         '~',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -2351,9 +2392,8 @@ class _IssuanceRequestCreateScreenState
                             _bondContractDate.text.trim(),
                           ),
                         ),
-                        validator: (v) => (v == null || v.trim().isEmpty)
-                            ? '종료일'
-                            : null,
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? '종료일' : null,
                       ),
                     ),
                   ],
@@ -2575,7 +2615,9 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
     required String labelPrefix,
   }) {
     if (files.isEmpty) return const SizedBox.shrink();
-    final valid = files.where((f) => f.path != null && f.path!.trim().isNotEmpty).toList();
+    final valid = files
+        .where((f) => f.path != null && f.path!.trim().isNotEmpty)
+        .toList();
     if (valid.isEmpty) return const SizedBox.shrink();
     final imagePaths = valid
         .map((f) => f.path!)
@@ -2590,7 +2632,9 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
         color: Theme.of(context).colorScheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4),
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.4),
         ),
       ),
       child: Column(
@@ -2613,7 +2657,9 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
               final path = f.path!;
               final isImage = _isImagePath(path);
               return Material(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(10),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(10),
@@ -2621,7 +2667,11 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
                       ? null
                       : () {
                           final idx = imagePaths.indexOf(path);
-                          _openLocalImagePreview(context, imagePaths, idx < 0 ? 0 : idx);
+                          _openLocalImagePreview(
+                            context,
+                            imagePaths,
+                            idx < 0 ? 0 : idx,
+                          );
                         },
                   child: SizedBox(
                     width: 112,
@@ -2646,13 +2696,18 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
                                     const Icon(Icons.picture_as_pdf, size: 28),
                                     const SizedBox(height: 6),
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                      ),
                                       child: Text(
                                         f.name,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         textAlign: TextAlign.center,
-                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -2665,7 +2720,10 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
@@ -2861,7 +2919,8 @@ class _LocalImagePreviewScreen extends StatefulWidget {
   final int initialIndex;
 
   @override
-  State<_LocalImagePreviewScreen> createState() => _LocalImagePreviewScreenState();
+  State<_LocalImagePreviewScreen> createState() =>
+      _LocalImagePreviewScreenState();
 }
 
 class _LocalImagePreviewScreenState extends State<_LocalImagePreviewScreen> {
@@ -2896,7 +2955,10 @@ class _LocalImagePreviewScreenState extends State<_LocalImagePreviewScreen> {
             child: Center(
               child: Text(
                 '${_currentIndex + 1}/$total',
-                style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -2954,4 +3016,3 @@ class _BondTypeTerms {
     period.dispose();
   }
 }
-

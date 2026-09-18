@@ -21,6 +21,8 @@ class OverdueInstallSite {
     this.initialPay,
     this.receivedStatus,
     this.hasUnpaidCache = false,
+    this.taxRequestCount = 0,
+    this.taxPendingCount = 0,
     this.ourUserNames = const [],
   });
 
@@ -45,7 +47,11 @@ class OverdueInstallSite {
   final int? initialPay;
   final String? receivedStatus;
   final bool hasUnpaidCache;
+  final int taxRequestCount;
+  final int taxPendingCount;
   final Iterable<String> ourUserNames;
+
+  bool get hasTaxRequest => taxRequestCount > 0;
 
   String get assigneeKey => overdueInstallAssigneeKey(
     managerNm: managerNm,
@@ -64,6 +70,20 @@ class OverdueInstallSite {
   ({int supply, int tax, int total})? get vatSplit =>
       overdueInstallVatSplit(orderTotal);
 
+  TaxInvoicePrefill toTaxPrefill() {
+    return TaxInvoicePrefill(
+      customerName: displayName,
+      totalAmount: overdueInstallSuggestedAmount(
+        remain: remainPay,
+        orderPrice: orderTotal,
+      ),
+      itemType: overdueInstallSuggestedItemType(remain: remainPay),
+      itemName: overdueInstallItemNameFromCode(itemCd),
+      branch: overdueInstallBranchFromPlant(plantCd: plantCd, plantNm: plantNm),
+      mesRegistered: true,
+    );
+  }
+
   OverdueInstallSite copyWith({
     int? orderTotal,
     String? orderNo,
@@ -72,6 +92,8 @@ class OverdueInstallSite {
     int? initialPay,
     String? receivedStatus,
     bool? hasUnpaidCache,
+    int? taxRequestCount,
+    int? taxPendingCount,
     Iterable<String>? ourUserNames,
   }) {
     return OverdueInstallSite(
@@ -94,9 +116,29 @@ class OverdueInstallSite {
       initialPay: initialPay ?? this.initialPay,
       receivedStatus: receivedStatus ?? this.receivedStatus,
       hasUnpaidCache: hasUnpaidCache ?? this.hasUnpaidCache,
+      taxRequestCount: taxRequestCount ?? this.taxRequestCount,
+      taxPendingCount: taxPendingCount ?? this.taxPendingCount,
       ourUserNames: ourUserNames ?? this.ourUserNames,
     );
   }
+}
+
+class TaxInvoicePrefill {
+  const TaxInvoicePrefill({
+    required this.customerName,
+    this.totalAmount,
+    this.itemType = '선급금',
+    this.itemName,
+    this.branch,
+    this.mesRegistered = true,
+  });
+
+  final String customerName;
+  final int? totalAmount;
+  final String itemType;
+  final String? itemName;
+  final String? branch;
+  final bool mesRegistered;
 }
 
 class OverdueInstallArchivePhoto {

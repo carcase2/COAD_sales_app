@@ -1,16 +1,20 @@
 import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_create_screen.dart';
+import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/overdue_install_provider.dart';
 import 'package:coad_customer_calls/models/overdue_install_site.dart';
+import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-Future<void> showOverdueInstallDetailSheet({
+Future<IssuanceCreateResult?> showOverdueInstallDetailSheet({
   required BuildContext context,
   required OverdueInstallSite site,
 }) {
-  return showModalBottomSheet<void>(
+  return showModalBottomSheet<IssuanceCreateResult>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -84,6 +88,43 @@ class _OverdueInstallDetailSheetState
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 color: Colors.deepOrange.shade700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (site.hasTaxRequest)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '발행요청 ${site.taxRequestCount}건 있음. 같은 현장은 추가로 요청할 수 있습니다.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.teal.shade800,
+                    height: 1.35,
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '아직 발행요청이 없습니다.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.deepOrange.shade800,
+                  ),
+                ),
+              ),
+            FilledButton.icon(
+              onPressed: () => _openTaxRequest(site),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(AppTokens.primaryCtaHeight),
+              ),
+              icon: const Icon(Icons.receipt_long_rounded),
+              label: Text(
+                site.hasTaxRequest ? '세금계산서 추가 요청' : '세금계산서 발행 요청',
+                style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
             const SizedBox(height: 16),
@@ -181,6 +222,20 @@ class _OverdueInstallDetailSheetState
         ),
       ),
     );
+  }
+
+  Future<void> _openTaxRequest(OverdueInstallSite site) async {
+    HapticFeedback.mediumImpact();
+    final created = await Navigator.of(context).push<IssuanceCreateResult?>(
+      MaterialPageRoute(
+        builder: (_) => IssuanceRequestCreateScreen(
+          initialDomain: IssuanceDomain.taxInvoice,
+          taxPrefill: site.toTaxPrefill(),
+        ),
+      ),
+    );
+    if (!mounted || created == null) return;
+    Navigator.of(context).pop(created);
   }
 
   Widget _photoStrip(String title, List<OverdueInstallArchivePhoto> photos) {

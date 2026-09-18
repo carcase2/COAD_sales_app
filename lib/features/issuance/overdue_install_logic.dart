@@ -217,6 +217,65 @@ OverdueInstallArchiveKind overdueInstallArchiveKind({
   return OverdueInstallArchiveKind.other;
 }
 
+String? overdueInstallItemNameFromCode(String itemCd) {
+  final s = itemCd.trim();
+  if (s.isEmpty) return null;
+  if (s.contains('스피드')) return '스피드도어';
+  if (s.contains('오버헤드') || s.contains('오버 헤드')) return '오버헤드도어';
+  if (s.contains('차고')) return '차고문';
+  if (s.contains('셔터')) return '셔터';
+  return null;
+}
+
+String? overdueInstallBranchFromPlant({
+  required String plantCd,
+  required String plantNm,
+}) {
+  const byCode = <String, String>{
+    '1000': '본사',
+    '1001': '대전',
+    '1002': '대구',
+    '1006': '전남',
+  };
+  final code = plantCd.trim();
+  if (byCode.containsKey(code)) return byCode[code];
+  final nm = plantNm.trim();
+  if (nm.contains('본사')) return '본사';
+  if (nm.contains('대전')) return '대전';
+  if (nm.contains('대구')) return '대구';
+  if (nm.contains('전남')) return '전남';
+  return null;
+}
+
+int? overdueInstallSuggestedAmount({int? remain, int? orderPrice}) {
+  if (remain != null && remain > 0) return remain;
+  if (orderPrice != null && orderPrice > 0) return orderPrice;
+  return null;
+}
+
+String overdueInstallSuggestedItemType({int? remain}) {
+  if (remain != null && remain > 0) return '잔금';
+  return '선급금';
+}
+
+enum OverdueInstallRequestFilter { all, notRequested, requested }
+
+bool overdueInstallMatchesRequestFilter({
+  required int taxRequestCount,
+  required OverdueInstallRequestFilter filter,
+}) {
+  return switch (filter) {
+    OverdueInstallRequestFilter.all => true,
+    OverdueInstallRequestFilter.notRequested => taxRequestCount <= 0,
+    OverdueInstallRequestFilter.requested => taxRequestCount > 0,
+  };
+}
+
+String overdueInstallRequestBadge({required int taxRequestCount}) {
+  if (taxRequestCount <= 0) return '미요청';
+  return '요청 ${taxRequestCount}건';
+}
+
 List<String> overdueInstallUniqueNames(Iterable<String> names) {
   final seen = <String>{};
   final out = <String>[];

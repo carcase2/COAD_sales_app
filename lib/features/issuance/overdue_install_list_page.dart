@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/auth_controller.dart';
@@ -37,6 +39,7 @@ class _OverdueInstallListPageState
   String? _namedAssignee;
   bool _calendarView = true;
   bool _allDates = false;
+  OverdueInstallRequestFilter _requestFilter = OverdueInstallRequestFilter.all;
   CalendarFormat _format = CalendarFormat.month;
   late DateTime _focused;
   late DateTime _selected;
@@ -93,6 +96,34 @@ class _OverdueInstallListPageState
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
             child: Row(
               children: [
+                ChoiceChip(
+                  label: const Text('미요청'),
+                  selected:
+                      _requestFilter ==
+                      OverdueInstallRequestFilter.notRequested,
+                  onSelected: (_) => setState(
+                    () => _requestFilter =
+                        OverdueInstallRequestFilter.notRequested,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                ChoiceChip(
+                  label: const Text('요청함'),
+                  selected:
+                      _requestFilter == OverdueInstallRequestFilter.requested,
+                  onSelected: (_) => setState(
+                    () =>
+                        _requestFilter = OverdueInstallRequestFilter.requested,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                ChoiceChip(
+                  label: const Text('모두'),
+                  selected: _requestFilter == OverdueInstallRequestFilter.all,
+                  onSelected: (_) => setState(
+                    () => _requestFilter = OverdueInstallRequestFilter.all,
+                  ),
+                ),
                 const Spacer(),
                 ChoiceChip(
                   label: const Text('달력'),
@@ -142,11 +173,16 @@ class _OverdueInstallListPageState
 
     final filtered = rows.where((row) {
       final named = _namedAssignee;
-      if (named != null && named.isNotEmpty) {
-        return row.assigneeKey == named;
-      }
-      if (!_mineOnly) return true;
-      return overdueInstallIsMine(row.assigneeKey, userName);
+      final assigneeOk = named != null && named.isNotEmpty
+          ? row.assigneeKey == named
+          : !_mineOnly
+          ? true
+          : overdueInstallIsMine(row.assigneeKey, userName);
+      if (!assigneeOk) return false;
+      return overdueInstallMatchesRequestFilter(
+        taxRequestCount: row.taxRequestCount,
+        filter: _requestFilter,
+      );
     }).toList();
     final byDay = <String, List<OverdueInstallSite>>{};
     for (final row in filtered) {
@@ -199,6 +235,18 @@ class _OverdueInstallListPageState
         Expanded(child: content),
       ],
     );
+  }
+
+  Future<void> _openDetail(OverdueInstallSite site) async {
+    final created = await showOverdueInstallDetailSheet(
+      context: context,
+      site: site,
+    );
+    if (!mounted || created == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${created.displayName} 발급요청이 등록되었습니다.')),
+    );
+    await _reload();
   }
 
   Widget _assigneeFilterBar(
@@ -416,7 +464,7 @@ class _OverdueInstallListPageState
         });
         final events = byDay[overdueInstallYmd(selected)] ?? const [];
         if (events.length == 1) {
-          showOverdueInstallDetailSheet(context: context, site: events.first);
+          unawaited(_openDetail(events.first));
         }
       },
       onPageChanged: (focusedDay) => setState(() => _focused = focusedDay),
@@ -648,10 +696,7 @@ class _OverdueInstallListPageState
                           site: rows[j],
                           showAssignee: false,
                           accent: color,
-                          onTap: () => showOverdueInstallDetailSheet(
-                            context: context,
-                            site: rows[j],
-                          ),
+                          onTap: () => unawaited(_openDetail(rows[j])),
                         ),
                       ],
                     ],
@@ -659,6 +704,33 @@ class _OverdueInstallListPageState
                 );
               },
             ),
+    );
+  }
+}
+
+class _RequestBadge extends StatelessWidget {
+  const _RequestBadge({required this.site});
+
+  final OverdueInstallSite site;
+
+  @override
+  Widget build(BuildContext context) {
+    final requested = site.hasTaxRequest;
+    final color = requested ? Colors.teal : Colors.deepOrange;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        overdueInstallRequestBadge(taxRequestCount: site.taxRequestCount),
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w800,
+          color: color.shade800,
+        ),
+      ),
     );
   }
 }
@@ -722,6 +794,8 @@ class _PendingCard extends StatelessWidget {
                       ),
                     ),
                   ],
+                  const SizedBox(width: 8),
+                  _RequestBadge(site: site),
                 ],
               ),
               const SizedBox(height: 6),
