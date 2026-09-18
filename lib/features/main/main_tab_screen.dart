@@ -1307,6 +1307,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               );
             }),
           ),
+        if (isAppAdmin(user) ||
+            (user?.permissions.contains('mes_images_checksheet') ?? false))
         AppMenuEntry(
           id: 'checksheet_search',
           sectionId: 'tools',
@@ -1325,6 +1327,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             );
           }),
         ),
+        if (isAppAdmin(user) ||
+            (user?.permissions.contains('mes_images_site') ?? false))
         AppMenuEntry(
           id: 'install_after_photos',
           sectionId: 'tools',

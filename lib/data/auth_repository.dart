@@ -78,6 +78,28 @@ class AuthRepository {
     addPerms(res['permissions']);
     addPerms(groupMap?['permissions']);
 
+    final groupId = res['group_id']?.toString();
+    final branchId = res['branch_id']?.toString();
+    final title = (res['title']?.toString() ?? '').trim();
+    if (groupId != null && groupId.isNotEmpty) {
+      try {
+        final rules = await Supabase.instance.client
+            .from('access_rules')
+            .select('group_id, branch_id, title, permissions')
+            .eq('group_id', groupId);
+        final picked = _pickAccessPermissions(
+          rules is List ? rules : const [],
+          branchId,
+          title.isEmpty ? '팀원' : title,
+        );
+        if (picked.isNotEmpty) {
+          mergedPerms
+            ..clear()
+            ..addAll(picked);
+        }
+      } catch (_) {}
+    }
+
     String? branchName;
     final branch = res['coad_branch'];
     if (branch is Map) {
@@ -127,4 +149,69 @@ class AuthRepository {
     await _deps.secure.write(key: StorageKeys.autoLoginEnabled, value: 'false');
     await _deps.secure.delete(key: StorageKeys.savedLoginPassword);
   }
+}
+
+int _ruleScore(Map rule, String? branchId, String? title) {
+  final rb = rule['branch_id']?.toString();
+  final rt = rule['title']?.toString();
+  if (rb != null && rb.isNotEmpty && branchId != null && rb != branchId) {
+    return -1;
+  }
+  if (rb != null && rb.isNotEmpty && (branchId == null || branchId.isEmpty)) {
+    return -1;
+  }
+  if (rt != null && rt.isNotEmpty && title != null && rt != title) return -1;
+  if (rt != null && rt.isNotEmpty && (title == null || title.isEmpty)) {
+    return -1;
+  }
+  var score = 0;
+  if (rb != null && rb.isNotEmpty && rb == branchId) {
+    score += 4;
+  } else if (rb == null || rb.isEmpty) {
+    score += 1;
+  }
+  if (rt != null && rt.isNotEmpty && rt == title) {
+    score += 4;
+  } else if (rt == null || rt.isEmpty) {
+    score += 1;
+  }
+  return score;
+}
+
+List<String> _pickAccessPermissions(
+  List<dynamic> rules,
+  String? branchId,
+  String? title,
+) {
+  var best = -1;
+  final matched = <List<String>>[];
+  for (final raw in rules) {
+    if (raw is! Map) continue;
+    final score = _ruleScore(Map<String, dynamic>.from(raw), branchId, title);
+    if (score < 0) continue;
+    final perms = <String>[];
+    final p = raw['permissions'];
+    if (p is List) {
+      for (final e in p) {
+        final s = e.toString().trim();
+        if (s.isNotEmpty) perms.add(s);
+      }
+    }
+    if (score > best) {
+      best = score;
+      matched
+        ..clear()
+        ..add(perms);
+    } else if (score == best) {
+      matched.add(perms);
+    }
+  }
+  if (matched.isEmpty) return const [];
+  final out = <String>[];
+  for (final list in matched) {
+    for (final p in list) {
+      if (!out.contains(p)) out.add(p);
+    }
+  }
+  return out;
 }

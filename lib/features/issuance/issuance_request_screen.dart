@@ -13,6 +13,9 @@ import 'package:coad_customer_calls/features/issuance/issuance_request_detail.da
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_tax_issue_sheet.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_theme.dart';
+import 'package:coad_customer_calls/features/issuance/overdue_install_list_page.dart';
+import 'package:coad_customer_calls/features/issuance/overdue_install_logic.dart';
+import 'package:coad_customer_calls/features/issuance/overdue_install_provider.dart';
 import 'package:coad_customer_calls/services/notification_service.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -59,6 +62,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
   Future<void> _reloadIssuanceData() async {
     invalidateIssuanceCore(ref);
+    ref.invalidate(overduePendingRowsProvider);
     await refreshIssuanceHubSummary(ref);
     if (_hubDetailReady) {
       await Future.wait([
@@ -190,6 +194,15 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     await _refreshIssuanceData();
   }
 
+  Future<void> _openOverdueInstallPage() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const OverdueInstallListPage()),
+    );
+    if (!mounted) return;
+    ref.invalidate(overduePendingRowsProvider);
+    await _refreshIssuanceData();
+  }
+
   Future<void> _openCreateForCurrentDomain() async {
     final selected = _domain;
     final created = await Navigator.of(context).push<IssuanceCreateResult?>(
@@ -227,6 +240,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     }
 
     final scheme = Theme.of(context).colorScheme;
+    final user = ref.watch(authControllerProvider);
     final taxPendingCountAsync = ref.watch(
       issuancePendingCountProvider(IssuanceDomain.taxInvoice),
     );
@@ -325,6 +339,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
         : todayTaxIssued + todayBondIssued;
     final isTax = _domain == IssuanceDomain.taxInvoice;
     final accent = IssuanceVisual.domainAccent(_domain, scheme);
+    final overdueAsync = ref.watch(overduePendingRowsProvider);
+    final overdueMineCount = overdueAsync.valueOrNull
+        ?.where((r) => overdueInstallIsMine(r.assigneeKey, user?.name))
+        .length;
 
     int? countRows(AsyncValue<List<IssuanceRequestRow>> async) {
       if (!_hubDetailReady) return null;
@@ -454,6 +472,19 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
+                  _HubMenuTile(
+                    icon: Icons.event_busy_rounded,
+                    title: '시공완료 안 된 건',
+                    count: overdueMineCount,
+                    subtitle: '오늘이 지났고 시공완료가 안 된 내 현장',
+                    accent: IssuanceVisual.partialTileAccent(scheme),
+                    large: true,
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      unawaited(_openOverdueInstallPage());
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   if ((myPendingCount ?? 0) > 0) ...[
                     UxStatusHeroBanner(
                       icon: Icons.hourglass_top_rounded,
