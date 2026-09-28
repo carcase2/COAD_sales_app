@@ -20,6 +20,7 @@ const kSizeQuoteUnits = ['SET', 'EA', '식', '장', 'M'];
 const kSizeQuoteMarkupNone = 'none';
 const kSizeQuoteMarkupPercent = 'percent';
 const kSizeQuoteMarkupAmount = 'amount';
+const kSizeQuoteMarkupBoth = 'both';
 
 const kSizeQuoteFitLineName = '금액 조정';
 
@@ -56,47 +57,108 @@ String normalizeSizeQuoteMarkup(String? raw) {
     case kSizeQuoteMarkupAmount:
     case '금액':
       return kSizeQuoteMarkupAmount;
+    case kSizeQuoteMarkupBoth:
+      return kSizeQuoteMarkupBoth;
     default:
       return kSizeQuoteMarkupNone;
   }
 }
 
+num readSizeQuoteMarkupPercent(Map<String, dynamic> json) {
+  final raw = json['markupPercent'] ?? json['markup_percent'];
+  if (raw != null && '$raw'.trim().isNotEmpty) {
+    return num.tryParse('$raw') ?? 0;
+  }
+  final type = normalizeSizeQuoteMarkup(
+    '${json['markupType'] ?? json['markup_type'] ?? ''}',
+  );
+  if (type == kSizeQuoteMarkupPercent) {
+    return num.tryParse('${json['markupValue'] ?? json['markup_value'] ?? 0}') ??
+        0;
+  }
+  return 0;
+}
+
+int readSizeQuoteMarkupAmount(Map<String, dynamic> json) {
+  final raw = json['markupAmount'] ?? json['markup_amount'];
+  if (raw != null && '$raw'.trim().isNotEmpty) {
+    return int.tryParse('$raw') ?? 0;
+  }
+  final type = normalizeSizeQuoteMarkup(
+    '${json['markupType'] ?? json['markup_type'] ?? ''}',
+  );
+  if (type == kSizeQuoteMarkupAmount) {
+    return num.tryParse('${json['markupValue'] ?? json['markup_value'] ?? 0}')
+            ?.round() ??
+        0;
+  }
+  return 0;
+}
+
 int sizeQuoteApplyMarkup({
   required int standardPrice,
-  required String markupType,
-  required num markupValue,
+  String markupType = kSizeQuoteMarkupNone,
+  num markupValue = 0,
+  num percent = 0,
+  int amount = 0,
 }) {
   if (standardPrice <= 0) return 0;
-  final type = normalizeSizeQuoteMarkup(markupType);
-  if (type == kSizeQuoteMarkupPercent && markupValue != 0) {
-    final next = (standardPrice * (1 + markupValue / 100)).round();
-    return next < 0 ? 0 : next;
-  }
-  if (type == kSizeQuoteMarkupAmount && markupValue != 0) {
-    final next = standardPrice + markupValue.round();
-    return next < 0 ? 0 : next;
-  }
-  return standardPrice;
+  final parts = _sizeQuoteMarkupParts(
+    markupType: markupType,
+    markupValue: markupValue,
+    percent: percent,
+    amount: amount,
+  );
+  var next = (standardPrice * (1 + parts.percent / 100)).round();
+  next += parts.amount;
+  return next < 0 ? 0 : next;
 }
 
 String sizeQuoteMarkupSummary({
+  String markupType = kSizeQuoteMarkupNone,
+  num markupValue = 0,
+  num percent = 0,
+  int amount = 0,
+}) {
+  final parts = _sizeQuoteMarkupParts(
+    markupType: markupType,
+    markupValue: markupValue,
+    percent: percent,
+    amount: amount,
+  );
+  final bits = <String>[];
+  if (parts.percent != 0) {
+    final p = parts.percent == parts.percent.roundToDouble()
+        ? '${parts.percent.round()}'
+        : parts.percent.toStringAsFixed(1);
+    final sign = parts.percent > 0 ? '+' : '';
+    bits.add('$sign$p%');
+  }
+  if (parts.amount != 0) {
+    final won = NumberFormat('#,###');
+    final sign = parts.amount > 0 ? '+' : '';
+    bits.add('$sign${won.format(parts.amount)}원');
+  }
+  return bits.join(' ');
+}
+
+({num percent, int amount}) _sizeQuoteMarkupParts({
   required String markupType,
   required num markupValue,
+  required num percent,
+  required int amount,
 }) {
+  if (percent != 0 || amount != 0) {
+    return (percent: percent, amount: amount);
+  }
   final type = normalizeSizeQuoteMarkup(markupType);
-  final won = NumberFormat('#,###');
-  if (type == kSizeQuoteMarkupPercent && markupValue != 0) {
-    final p = markupValue == markupValue.roundToDouble()
-        ? '${markupValue.round()}'
-        : markupValue.toStringAsFixed(1);
-    return '+$p%';
+  if (type == kSizeQuoteMarkupPercent) {
+    return (percent: markupValue, amount: 0);
   }
-  if (type == kSizeQuoteMarkupAmount && markupValue != 0) {
-    final n = markupValue.round();
-    final sign = n >= 0 ? '+' : '';
-    return '$sign${won.format(n)}원';
+  if (type == kSizeQuoteMarkupAmount) {
+    return (percent: 0, amount: markupValue.round());
   }
-  return '';
+  return (percent: 0, amount: 0);
 }
 
 class SizeQuoteLine {
@@ -275,6 +337,8 @@ class SizeQuoteDocument {
     this.standardPrice = 0,
     this.markupType = kSizeQuoteMarkupNone,
     this.markupValue = 0,
+    this.markupPercent = 0,
+    this.markupAmount = 0,
     this.lines = const [],
     this.promoImageIds = const [],
     this.note = '',
@@ -312,6 +376,8 @@ class SizeQuoteDocument {
   final int standardPrice;
   final String markupType;
   final num markupValue;
+  final num markupPercent;
+  final int markupAmount;
   final List<SizeQuoteLine> lines;
   final List<String> promoImageIds;
   final String note;
@@ -335,6 +401,8 @@ class SizeQuoteDocument {
     standardPrice: standardPrice,
     markupType: markupType,
     markupValue: markupValue,
+    percent: markupPercent,
+    amount: markupAmount,
   );
 
   String get sizeLabel {
@@ -379,9 +447,38 @@ class SizeQuoteDocument {
     return '−${won.format(negoOff)}원';
   }
 
+  /// 마진·네고·금액조정 전의 기준 합계. 제품은 표준단가×수량이다.
+  int get baselineTotal {
+    var sum = 0;
+    for (final line in lines) {
+      if (_isFitLine(line)) continue;
+      if (line.isProduct && standardPrice > 0) {
+        final qty = line.qty <= 0 ? 1 : line.qty;
+        sum += standardPrice * qty;
+      } else {
+        sum += line.amount;
+      }
+    }
+    return sum;
+  }
+
+  /// 최종 금액이 기준 합계에서 움직인 차액. 0이면 변경 없음.
+  int get finalDelta => total - baselineTotal;
+
+  bool get finalUnchanged => finalDelta == 0;
+
+  String get finalChangeLabel {
+    if (finalUnchanged) return '변경 없음';
+    final won = NumberFormat('#,###');
+    if (finalDelta > 0) return '변경 +${won.format(finalDelta)}원';
+    return '변경 −${won.format(-finalDelta)}원';
+  }
+
   String get markupSummary => sizeQuoteMarkupSummary(
     markupType: markupType,
     markupValue: markupValue,
+    percent: markupPercent,
+    amount: markupAmount,
   );
 
   bool get isSent => (sentYmd ?? '').trim().isNotEmpty;
@@ -423,6 +520,8 @@ class SizeQuoteDocument {
     'standardPrice': standardPrice,
     'markupType': markupType,
     'markupValue': markupValue,
+    'markupPercent': markupPercent,
+    'markupAmount': markupAmount,
     'lines': lines.map((e) => e.toJson()).toList(),
     'promoImageIds': promoImageIds,
     'note': note,
@@ -494,6 +593,8 @@ class SizeQuoteDocument {
             '${json['markupValue'] ?? json['markup_value'] ?? 0}',
           ) ??
           0,
+      markupPercent: readSizeQuoteMarkupPercent(json),
+      markupAmount: readSizeQuoteMarkupAmount(json),
       lines: rawLines is List
           ? rawLines
                 .whereType<Map>()
@@ -569,6 +670,8 @@ class SizeQuoteDocument {
     int? standardPrice,
     String? markupType,
     num? markupValue,
+    num? markupPercent,
+    int? markupAmount,
     List<SizeQuoteLine>? lines,
     List<String>? promoImageIds,
     String? note,
@@ -609,6 +712,8 @@ class SizeQuoteDocument {
       standardPrice: standardPrice ?? this.standardPrice,
       markupType: markupType ?? this.markupType,
       markupValue: markupValue ?? this.markupValue,
+      markupPercent: markupPercent ?? this.markupPercent,
+      markupAmount: markupAmount ?? this.markupAmount,
       lines: lines ?? this.lines,
       promoImageIds: promoImageIds ?? this.promoImageIds,
       note: note ?? this.note,
@@ -656,16 +761,22 @@ SizeQuoteLine sizeQuoteProductLine({
   int quantity = 1,
   String markupType = kSizeQuoteMarkupNone,
   num markupValue = 0,
+  num markupPercent = 0,
+  int markupAmount = 0,
 }) {
   final selling = sizeQuoteApplyMarkup(
     standardPrice: seed.standardPrice,
     markupType: markupType,
     markupValue: markupValue,
+    percent: markupPercent,
+    amount: markupAmount,
   );
   final won = NumberFormat('#,###');
   final markup = sizeQuoteMarkupSummary(
     markupType: markupType,
     markupValue: markupValue,
+    percent: markupPercent,
+    amount: markupAmount,
   );
   return SizeQuoteLine(
     name: seed.modelName,
@@ -680,6 +791,60 @@ SizeQuoteLine sizeQuoteProductLine({
       if (markup.isNotEmpty) markup,
     ].join(' '),
   );
+}
+
+/// 공사명 기본값. 모델 코드(PREMIUM)가 아니라 상위 분류(스피드도어)를 쓴다.
+String sizeQuoteDefaultWorkName({
+  required String categoryName,
+  required String modelName,
+}) {
+  final category = categoryName.trim();
+  final model = modelName.trim();
+  final head = category.isNotEmpty ? category : model;
+  if (head.isEmpty) return '설치 공사';
+  return '$head 설치 공사';
+}
+
+/// 비어 있거나 예전 자동값(`PREMIUM 설치 공사`)이면 상위 분류 공사명으로 바꾼다.
+String sizeQuoteResolvedWorkName({
+  required String workName,
+  required String categoryName,
+  required String modelName,
+}) {
+  final stored = workName.trim();
+  final model = modelName.trim();
+  final legacy = model.isEmpty ? '' : '$model 설치 공사';
+  if (stored.isEmpty || (legacy.isNotEmpty && stored == legacy)) {
+    return sizeQuoteDefaultWorkName(
+      categoryName: categoryName,
+      modelName: modelName,
+    );
+  }
+  return stored;
+}
+
+/// 견적서에 찍을 로그인 담당자. 이름이 있으면 이름, 직책이 있으면 뒤에 붙인다.
+String sizeQuoteStaffLabel({
+  required String name,
+  String? title,
+  String fallback = '',
+}) {
+  final who = name.trim().isNotEmpty ? name.trim() : fallback.trim();
+  if (who.isEmpty) return '';
+  final job = (title ?? '').trim();
+  if (job.isEmpty || job == '팀원' || who.contains(job)) return who;
+  return '$who $job';
+}
+
+/// 담당자 이름 뒤에 ` (H.P 010-0000-0000)` 을 붙인다.
+String sizeQuoteManagerLine(String name, String? phone) {
+  final who = name.trim();
+  if (who.contains('H.P')) return who;
+  final digits = normalizePhoneDigits(phone ?? '');
+  if (digits.length < 9) return who;
+  final hp = formatKoreanPhoneHyphenated(digits);
+  if (who.isEmpty) return '(H.P $hp)';
+  return '$who (H.P $hp)';
 }
 
 SizeQuoteDocument sizeQuoteFromSeed({
@@ -700,7 +865,10 @@ SizeQuoteDocument sizeQuoteFromSeed({
     heightMm: seed.heightMm,
     quantity: 1,
     standardPrice: seed.standardPrice,
-    workName: '${seed.modelName} 설치 공사',
+    workName: sizeQuoteDefaultWorkName(
+      categoryName: seed.categoryName,
+      modelName: seed.modelName,
+    ),
     createdBy: createdBy,
     lines: [sizeQuoteProductLine(seed: seed)],
   );
@@ -713,12 +881,16 @@ List<SizeQuoteLine> sizeQuoteSyncProductLine({
   required int quantity,
   required String markupType,
   required num markupValue,
+  num markupPercent = 0,
+  int markupAmount = 0,
 }) {
   final product = sizeQuoteProductLine(
     seed: seed,
     quantity: quantity,
     markupType: markupType,
     markupValue: markupValue,
+    markupPercent: markupPercent,
+    markupAmount: markupAmount,
   );
   final next = <SizeQuoteLine>[];
   var replaced = false;
@@ -731,6 +903,27 @@ List<SizeQuoteLine> sizeQuoteSyncProductLine({
     }
   }
   if (!replaced) next.insert(0, product);
+  return next;
+}
+
+/// 퍼센트를 [delta]만큼 올리고 내린다.
+int sizeQuoteStepPercent(
+  num current,
+  int delta, {
+  int min = 0,
+  int max = 100,
+}) {
+  final next = current.round() + delta;
+  if (next < min) return min;
+  if (next > max) return max;
+  return next;
+}
+
+/// 금액을 [delta]만큼 올리고 내린다.
+int sizeQuoteStepAmount(int current, int delta, {int min = 0, int? max}) {
+  var next = current + delta;
+  if (next < min) next = min;
+  if (max != null && next > max) next = max;
   return next;
 }
 
@@ -1136,6 +1329,8 @@ SizeQuoteDocument sizeQuoteReuseAsNew(
     standardPrice: src.standardPrice,
     markupType: src.markupType,
     markupValue: src.markupValue,
+    markupPercent: src.markupPercent,
+    markupAmount: src.markupAmount,
     lines: src.lines,
     promoImageIds: src.promoImageIds,
     note: src.note,

@@ -9,6 +9,7 @@ class AppUser {
     this.title,
     this.branchId,
     this.branchName,
+    this.phone,
   });
 
   final String id;
@@ -20,6 +21,7 @@ class AppUser {
   final String? title;
   final String? branchId;
   final String? branchName;
+  final String? phone;
 
   static const _hqBranchId = '6d13d1d1-50a8-47da-b127-40298b0f8aaf';
   static const _daeguBranchId = 'a34901c1-99c6-4142-a92c-128d82d06181';
@@ -69,6 +71,7 @@ class AppUser {
         if (title != null) 'title': title,
         if (branchId != null) 'branch_id': branchId,
         if (branchName != null) 'branch_name': branchName,
+        if (phone != null && phone!.trim().isNotEmpty) 'phone': phone,
       };
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
@@ -92,6 +95,14 @@ class AppUser {
       title: _str(json, const ['title']),
       branchId: _str(json, const ['branch_id', 'branchId']),
       branchName: branchName,
+      phone: _str(json, const [
+        'phone',
+        'mobile_phone',
+        'cell_phone',
+        'tel',
+        'telephone',
+        'contact_phone',
+      ]),
     );
   }
 }

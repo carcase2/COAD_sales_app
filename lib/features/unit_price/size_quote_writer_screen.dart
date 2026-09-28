@@ -8,6 +8,8 @@ import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:coad_customer_calls/data/size_quote_repository.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_export.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_note_screen.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_office_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_promo_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -491,21 +493,20 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
   late final TextEditingController _noteCtrl;
   late final TextEditingController _workCtrl;
   late final TextEditingController _qtyCtrl;
-  late final TextEditingController _markupValueCtrl;
+  late final TextEditingController _markupPercentCtrl;
+  late final TextEditingController _markupAmountCtrl;
   late final TextEditingController _targetCtrl;
-  late final TextEditingController _negoPercentCtrl;
-  late final TextEditingController _negoAmountCtrl;
+
   late String _ymd;
   late String _quoteNo;
   late String _id;
   bool _quoteNoAuto = true;
-  late String _markupType;
+
   List<SizeQuoteLine> _lines = [];
   List<String> _promoIds = [];
   List<SizeQuotePromoImage> _promoCatalog = const [];
   List<SizeQuoteDocument> _similar = const [];
   final _won = NumberFormat('#,###');
-  int _negoMode = 0;
   late SizeQuoteSeed _seed;
 
   SizeQuoteRepository get _repo => ref.read(sizeQuoteRepositoryProvider);
@@ -534,13 +535,34 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       text: e?.note ?? widget.initialNote ?? '',
     );
     _workCtrl = TextEditingController(
-      text: e?.workName ?? '${seed.modelName} 설치 공사',
+      text: sizeQuoteResolvedWorkName(
+        workName: e?.workName ?? '',
+        categoryName: seed.categoryName,
+        modelName: seed.modelName,
+      ),
     );
     final qty = e?.quantity ?? widget.initialQuantity ?? 1;
     _qtyCtrl = TextEditingController(text: '${qty <= 0 ? 1 : qty}');
-    _markupType = e?.markupType ?? kSizeQuoteMarkupNone;
-    _markupValueCtrl = TextEditingController(
-      text: e == null || e.markupValue == 0 ? '' : '${e.markupValue}',
+    final savedPercent = e == null
+        ? 0
+        : (e.markupPercent != 0
+              ? e.markupPercent
+              : (e.markupType == kSizeQuoteMarkupPercent ||
+                      e.markupType == kSizeQuoteMarkupBoth
+                  ? e.markupValue
+                  : 0));
+    final savedAmount = e == null
+        ? 0
+        : (e.markupAmount != 0
+              ? e.markupAmount
+              : (e.markupType == kSizeQuoteMarkupAmount
+                    ? e.markupValue.round()
+                    : 0));
+    _markupPercentCtrl = TextEditingController(
+      text: _signedPercentText(savedPercent),
+    );
+    _markupAmountCtrl = TextEditingController(
+      text: savedAmount == 0 ? '' : _won.format(savedAmount),
     );
     _targetCtrl = TextEditingController(
       text: e?.targetTotal == null ? '' : '${e!.targetTotal}',
@@ -558,21 +580,6 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       ];
     }
     _promoIds = List.of(e?.promoImageIds ?? const []);
-    if (e == null) {
-      _negoMode = 0;
-    } else if (e.negoPercent > 0) {
-      _negoMode = 1;
-    } else if (e.negoAmount > 0) {
-      _negoMode = 2;
-    } else {
-      _negoMode = 0;
-    }
-    _negoPercentCtrl = TextEditingController(
-      text: e != null && e.negoPercent > 0 ? '${e.negoPercent}' : '',
-    );
-    _negoAmountCtrl = TextEditingController(
-      text: e != null && e.negoAmount > 0 ? _won.format(e.negoAmount) : '',
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_ensureQuoteNo());
@@ -591,27 +598,30 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
     _noteCtrl.dispose();
     _workCtrl.dispose();
     _qtyCtrl.dispose();
-    _markupValueCtrl.dispose();
+    _markupPercentCtrl.dispose();
+    _markupAmountCtrl.dispose();
     _targetCtrl.dispose();
-    _negoPercentCtrl.dispose();
-    _negoAmountCtrl.dispose();
     super.dispose();
   }
 
   int get _qty => int.tryParse(_qtyCtrl.text.replaceAll(RegExp(r'\D'), '')) ?? 1;
 
-  num get _markupValue {
-    final raw = _markupValueCtrl.text.replaceAll(',', '').trim();
-    return num.tryParse(raw) ?? 0;
+  num get _markupPercent =>
+      num.tryParse(_markupPercentCtrl.text.replaceAll(',', '').trim()) ?? 0;
+
+  int get _markupAmount =>
+      int.tryParse(_markupAmountCtrl.text.replaceAll(RegExp(r'[^0-9-]'), '')) ??
+      0;
+
+  String get _markupType {
+    if (_markupPercent != 0 && _markupAmount != 0) return kSizeQuoteMarkupBoth;
+    if (_markupPercent != 0) return kSizeQuoteMarkupPercent;
+    if (_markupAmount != 0) return kSizeQuoteMarkupAmount;
+    return kSizeQuoteMarkupNone;
   }
 
-  int get _negoAmountValue {
-    final raw = _negoAmountCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
-    return int.tryParse(raw) ?? 0;
-  }
-
-  double get _negoPercentValue =>
-      double.tryParse(_negoPercentCtrl.text.replaceAll(',', '').trim()) ?? 0;
+  num get _markupValue =>
+      _markupType == kSizeQuoteMarkupAmount ? _markupAmount : _markupPercent;
 
   int? get _targetValue {
     final raw = _targetCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
@@ -619,10 +629,20 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
     return int.tryParse(raw);
   }
 
+  String _staffName() =>
+      sizeQuoteLoginStaffLabel(ref.read(authControllerProvider));
+
+  String _createdBy(String staff) {
+    final existingName = (widget.existing?.createdBy ?? '').trim();
+    final id = ref.read(authControllerProvider)?.id.trim() ?? '';
+    if (existingName.isEmpty) return staff;
+    if (id.isNotEmpty && existingName == id && staff.isNotEmpty) return staff;
+    return existingName;
+  }
+
   SizeQuoteDocument _draft({String? userName}) {
-    final user = userName ??
-        ref.read(authControllerProvider)?.name ??
-        ref.read(authControllerProvider)?.id;
+    final named = (userName ?? '').trim();
+    final user = named.isNotEmpty ? named : _staffName();
     final existing = widget.existing;
     return SizeQuoteDocument(
       id: _id,
@@ -644,19 +664,19 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       standardPrice: _seed.standardPrice,
       markupType: _markupType,
       markupValue: _markupValue,
+      markupPercent: _markupPercent,
+      markupAmount: _markupAmount,
       lines: List.of(_syncedLines()),
       promoImageIds: List.of(_promoIds),
       note: _noteCtrl.text.trim(),
-      createdBy: (existing?.createdBy ?? '').trim().isNotEmpty
-          ? existing!.createdBy
-          : user,
+      createdBy: _createdBy(user),
       createdAt: existing?.createdAt ?? DateTime.now().toUtc().toIso8601String(),
       updatedBy: user,
       updatedAt: existing?.updatedAt,
       sentYmd: existing?.sentYmd,
       emailSentYmd: existing?.emailSentYmd,
-      negoAmount: _negoMode == 2 ? _negoAmountValue : 0,
-      negoPercent: _negoMode == 1 ? _negoPercentValue : 0,
+      negoAmount: 0,
+      negoPercent: 0,
       targetTotal: _targetValue,
       editHistory: existing?.editHistory ?? const [],
       pdfPath: existing?.pdfPath,
@@ -672,6 +692,8 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       quantity: _qty,
       markupType: _markupType,
       markupValue: _markupValue,
+      markupPercent: _markupPercent,
+      markupAmount: _markupAmount,
     );
   }
 
@@ -792,10 +814,10 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       return;
     }
     try {
-      final user = ref.read(authControllerProvider);
+      final staff = _staffName();
       final stored = await _repo.upsert(
-        _draft(userName: user?.name ?? user?.id),
-        editorName: user?.name ?? user?.id,
+        _draft(userName: staff),
+        editorName: staff,
       );
       if (!mounted) return;
       if (!send) {
@@ -833,6 +855,28 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       appBar: AppBar(
         title: Text(widget.existing == null ? '견적서 작성' : '견적서 수정'),
         actions: [
+          IconButton(
+            tooltip: '지사 주소',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SizeQuoteOfficeScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.domain_rounded),
+          ),
+          IconButton(
+            tooltip: '노트 관리',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SizeQuoteNoteScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.notes_rounded),
+          ),
           IconButton(
             tooltip: '미리보기',
             onPressed: () => unawaited(_preview()),
@@ -933,73 +977,37 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
                     style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 10),
-                  SegmentedButton<String>(
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    segments: const [
-                      ButtonSegment(
-                        value: kSizeQuoteMarkupNone,
-                        label: Text(
-                          '그대로',
-                          maxLines: 1,
-                          softWrap: false,
-                        ),
-                      ),
-                      ButtonSegment(
-                        value: kSizeQuoteMarkupPercent,
-                        label: Text(
-                          '+%',
-                          maxLines: 1,
-                          softWrap: false,
-                        ),
-                      ),
-                      ButtonSegment(
-                        value: kSizeQuoteMarkupAmount,
-                        label: Text(
-                          '+금액',
-                          maxLines: 1,
-                          softWrap: false,
-                        ),
-                      ),
-                    ],
-                    selected: {_markupType},
-                    onSelectionChanged: (s) {
-                      setState(() {
-                        _markupType = s.first;
-                        if (_markupType == kSizeQuoteMarkupNone) {
-                          _markupValueCtrl.clear();
-                        }
-                      });
-                      _syncProduct();
-                    },
+                  _markupLine(
+                    label: '가산율',
+                    value: _markupPercent == 0
+                        ? '0%'
+                        : '${_signedPercentText(_markupPercent)}%',
+                    minusLabel: '−5%',
+                    plusLabel: '+5%',
+                    onMinus: () => _stepMarkupPercent(-5),
+                    onPlus: () => _stepMarkupPercent(5),
                   ),
-                  if (_markupType != kSizeQuoteMarkupNone) ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _markupValueCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: _markupType == kSizeQuoteMarkupPercent
-                            ? '가산율'
-                            : '가산 금액',
-                        suffixText: _markupType == kSizeQuoteMarkupPercent
-                            ? '%'
-                            : '원',
-                        filled: true,
-                      ),
-                      onChanged: (_) {
-                        setState(() {});
-                        _syncProduct();
-                      },
-                    ),
-                  ],
                   const SizedBox(height: 8),
+                  _markupLine(
+                    label: '가산 금액',
+                    value: _markupAmount == 0
+                        ? '0원'
+                        : '${_won.format(_markupAmount)}원',
+                    minusLabel: '−20만',
+                    plusLabel: '+20만',
+                    onMinus: () => _stepMarkupAmount(-200000),
+                    onPlus: () => _stepMarkupAmount(200000),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _markupPercent == 0 && _markupAmount == 0
+                          ? null
+                          : _resetMarkup,
+                      icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                      label: const Text('가산 초기화'),
+                    ),
+                  ),
                   TextField(
                     controller: _qtyCtrl,
                     keyboardType: TextInputType.number,
@@ -1017,9 +1025,16 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      '판매단가 ${_won.format(doc.sellingUnitPrice)}원'
-                      '${doc.markupSummary.isEmpty ? '' : ' (${doc.markupSummary})'}',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
+                      doc.sellingUnitPrice == _seed.standardPrice
+                          ? '판매단가 ${_won.format(doc.sellingUnitPrice)}원 · 변경 없음'
+                          : '판매단가 ${_won.format(doc.sellingUnitPrice)}원'
+                                '${doc.markupSummary.isEmpty ? '' : ' (${doc.markupSummary})'}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: doc.sellingUnitPrice == _seed.standardPrice
+                            ? const Color(0xFFDC2626)
+                            : const Color(0xFF047857),
+                      ),
                     ),
                   ),
                 ],
@@ -1167,81 +1182,23 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
             ],
           ),
           const SizedBox(height: 16),
-          _sectionTitle('네고'),
-          SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 0, label: Text('없음')),
-              ButtonSegment(value: 1, label: Text('%')),
-              ButtonSegment(value: 2, label: Text('금액')),
-            ],
-            selected: {_negoMode},
-            onSelectionChanged: (s) {
-              setState(() {
-                _negoMode = s.first;
-                if (_negoMode != 1) _negoPercentCtrl.clear();
-                if (_negoMode != 2) _negoAmountCtrl.clear();
-              });
-            },
-          ),
-          if (_negoMode == 1) ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _negoPercentCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: '네고 할인율',
-                suffixText: '%',
-                filled: true,
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ],
-          if (_negoMode == 2) ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _negoAmountCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '네고 금액',
-                suffixText: '원',
-                filled: true,
-              ),
-              onChanged: (v) {
-                final digits = v.replaceAll(RegExp(r'[^0-9]'), '');
-                final n = int.tryParse(digits);
-                if (n != null && n > 0) {
-                  final formatted = _won.format(n);
-                  if (formatted != v) {
-                    _negoAmountCtrl.value = TextEditingValue(
-                      text: formatted,
-                      selection: TextSelection.collapsed(
-                        offset: formatted.length,
-                      ),
-                    );
-                  }
-                }
-                setState(() {});
-              },
-            ),
-          ],
-          if (doc.hasNego) ...[
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                '네고 −${_won.format(doc.negoOff)}원 ${doc.negoSummary}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFFDC2626),
-                ),
-              ),
-            ),
-          ],
           Align(
             alignment: Alignment.centerRight,
             child: Text(
               '최종 ${doc.total <= 0 ? '-' : '${_won.format(doc.total)}원'}',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              doc.finalChangeLabel,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: doc.finalUnchanged
+                    ? const Color(0xFFDC2626)
+                    : scheme.onSurface,
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -1310,9 +1267,26 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
             controller: _noteCtrl,
             minLines: 2,
             maxLines: 4,
-            decoration: const InputDecoration(labelText: '비고', filled: true),
+            decoration: const InputDecoration(
+              labelText: '비고',
+              helperText: '공통 노트와 모델 사양은 견적서에 자동으로 붙습니다. 추가 메모만 적으세요.',
+              helperMaxLines: 2,
+              filled: true,
+            ),
           ),
           const SizedBox(height: 12),
+          if (doc.finalUnchanged)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '최종 금액 변경 없음',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: scheme.error,
+                ),
+              ),
+            ),
           OutlinedButton.icon(
             onPressed: () => unawaited(_preview()),
             icon: const Icon(Icons.visibility_outlined),
@@ -1326,6 +1300,88 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
           ),
         ],
       ),
+    );
+  }
+
+  void _resetMarkup() {
+    setState(() {
+      _markupPercentCtrl.clear();
+      _markupAmountCtrl.clear();
+    });
+    _syncProduct();
+  }
+
+  void _stepMarkupPercent(int delta) {
+    final next = sizeQuoteStepPercent(_markupPercent, delta, min: -100, max: 300);
+    setState(() {
+      _markupPercentCtrl.text = _signedPercentText(next);
+    });
+    _syncProduct();
+  }
+
+  String _signedPercentText(num value) {
+    if (value == 0) return '';
+    final body = value == value.roundToDouble()
+        ? '${value.round()}'
+        : '$value';
+    return value > 0 ? '+$body' : body;
+  }
+
+  void _stepMarkupAmount(int delta) {
+    final next = sizeQuoteStepAmount(
+      _markupAmount,
+      delta,
+      min: -_seed.standardPrice,
+    );
+    setState(() {
+      _markupAmountCtrl.text = next == 0 ? '' : _won.format(next);
+    });
+    _syncProduct();
+  }
+
+  Widget _markupLine({
+    required String label,
+    required String value,
+    required String minusLabel,
+    required String plusLabel,
+    required VoidCallback onMinus,
+    required VoidCallback onPlus,
+  }) {
+    const buttonStyle = ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+      minimumSize: WidgetStatePropertyAll(Size(0, 36)),
+    );
+    return Row(
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        OutlinedButton(
+          style: buttonStyle,
+          onPressed: onMinus,
+          child: Text(minusLabel),
+        ),
+        const SizedBox(width: 4),
+        OutlinedButton(
+          style: buttonStyle,
+          onPressed: onPlus,
+          child: Text(plusLabel),
+        ),
+      ],
     );
   }
 

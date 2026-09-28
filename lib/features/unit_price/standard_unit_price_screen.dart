@@ -8,6 +8,8 @@ import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/size_quote_repository.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_export.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_note_screen.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_office_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_promo_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price.dart';
@@ -808,6 +810,28 @@ class _StandardUnitPriceScreenState
         toolbarHeight: widget.showAppBar ? kToolbarHeight : 44,
         automaticallyImplyLeading: widget.showAppBar,
         actions: [
+          IconButton(
+            tooltip: '지사 주소',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SizeQuoteOfficeScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.domain_rounded),
+          ),
+          IconButton(
+            tooltip: '견적 노트',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SizeQuoteNoteScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.notes_rounded),
+          ),
           IconButton(
             tooltip: '홍보 이미지',
             onPressed: _loading || _error != null || _catalog == null

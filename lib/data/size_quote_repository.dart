@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_paper.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_spec_note.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -83,6 +85,8 @@ class SizeQuoteRepository {
       'standard_price': doc.standardPrice,
       'markup_type': normalizeSizeQuoteMarkup(doc.markupType),
       'markup_value': doc.markupValue,
+      'markup_percent': doc.markupPercent,
+      'markup_amount': doc.markupAmount,
       'lines': doc.lines.map((e) => e.toJson()).toList(),
       'promo_image_ids': doc.promoImageIds,
       'note': doc.note,
@@ -611,6 +615,180 @@ class SizeQuoteRepository {
     if (lower.endsWith('.png')) return 'png';
     if (lower.endsWith('.webp')) return 'webp';
     return 'jpg';
+  }
+
+  SizeQuoteNoteBook? _noteBook;
+
+  bool _noteTableMissing(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('standard_unit_price_quote_notes') &&
+        (s.contains('does not exist') ||
+            s.contains('could not find the table') ||
+            s.contains('schema cache') ||
+            s.contains('pgrst205') ||
+            s.contains('42p01'));
+  }
+
+  /// 공통 노트와 모델별 노트. 표가 비어 있으면 기본 문구를 한 번 넣는다.
+  Future<SizeQuoteNoteBook> loadQuoteNotes({bool refresh = false}) async {
+    final cached = _noteBook;
+    if (!refresh && cached != null) return cached;
+    try {
+      var rows = await _fetchQuoteNoteRows();
+      if (rows.isEmpty) {
+        await _seedQuoteNotes();
+        rows = await _fetchQuoteNoteRows();
+      }
+      return _noteBook = _noteBookFrom(rows);
+    } catch (e) {
+      if (_noteTableMissing(e)) return const SizeQuoteNoteBook();
+      throw ApiException('견적 노트를 불러오지 못했습니다. $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchQuoteNoteRows() async {
+    final res = await _client
+        .from('standard_unit_price_quote_notes')
+        .select('scope, category_name, model_name, body')
+        .order('scope')
+        .order('category_name')
+        .order('model_name');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  SizeQuoteNoteBook _noteBookFrom(List<Map<String, dynamic>> rows) {
+    var hasCommon = false;
+    var common = '';
+    final models = <String, String>{};
+    for (final row in rows) {
+      final scope = '${row['scope'] ?? ''}';
+      final category = '${row['category_name'] ?? ''}';
+      final model = '${row['model_name'] ?? ''}';
+      final body = '${row['body'] ?? ''}';
+      if (scope == 'common') {
+        hasCommon = true;
+        common = body;
+      } else if (scope == 'model') {
+        models[SizeQuoteNoteBook.key(category, model)] = body;
+      }
+    }
+    return SizeQuoteNoteBook(
+      hasCommon: hasCommon,
+      common: common,
+      models: models,
+    );
+  }
+
+  Future<void> _seedQuoteNotes() async {
+    final rows = <Map<String, dynamic>>[
+      {
+        'scope': 'common',
+        'category_name': '',
+        'model_name': '',
+        'body': kSizeQuoteBaseNote,
+      },
+      for (final pair in kSizeQuoteNoteSeedModels)
+        {
+          'scope': 'model',
+          'category_name': pair.$1,
+          'model_name': pair.$2,
+          'body': sizeQuoteSpecNote(categoryName: pair.$1, modelName: pair.$2),
+        },
+    ];
+    await _client.from('standard_unit_price_quote_notes').upsert(
+          rows,
+          onConflict: 'scope,category_name,model_name',
+        );
+  }
+
+  Future<void> saveCommonQuoteNote(String body) async {
+    try {
+      await _client.from('standard_unit_price_quote_notes').upsert(
+        {
+          'scope': 'common',
+          'category_name': '',
+          'model_name': '',
+          'body': body,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        onConflict: 'scope,category_name,model_name',
+      );
+      _noteBook = (_noteBook ?? const SizeQuoteNoteBook()).putCommon(body);
+    } catch (e) {
+      throw ApiException('공통 노트를 저장하지 못했습니다. $e');
+    }
+  }
+
+  Future<List<QuoteBranchContact>> loadQuoteBranchContacts() async {
+    try {
+      final res = await _client
+          .from('coad_branch')
+          .select('id, name, short_name, quote_address, quote_email, active')
+          .eq('active', true)
+          .order('sort_order');
+      return [
+        for (final row in List<Map<String, dynamic>>.from(res))
+          QuoteBranchContact(
+            id: '${row['id'] ?? ''}',
+            name: '${row['name'] ?? ''}',
+            shortName: '${row['short_name'] ?? ''}',
+            address: '${row['quote_address'] ?? ''}',
+            email: '${row['quote_email'] ?? ''}',
+          ),
+      ];
+    } catch (e) {
+      final s = e.toString().toLowerCase();
+      if (s.contains('quote_address') ||
+          s.contains('quote_email') ||
+          s.contains('does not exist') ||
+          s.contains('schema cache') ||
+          s.contains('pgrst')) {
+        return const [];
+      }
+      throw ApiException('지사 정보를 불러오지 못했습니다. $e');
+    }
+  }
+
+  Future<void> saveQuoteBranchContact({
+    required String id,
+    required String address,
+    required String email,
+  }) async {
+    try {
+      await _client.from('coad_branch').update({
+        'quote_address': address.trim(),
+        'quote_email': email.trim(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', id);
+    } catch (e) {
+      throw ApiException('지사 주소·메일을 저장하지 못했습니다. $e');
+    }
+  }
+
+  Future<void> saveModelQuoteNote({
+    required String categoryName,
+    required String modelName,
+    required String body,
+  }) async {
+    try {
+      await _client.from('standard_unit_price_quote_notes').upsert(
+        {
+          'scope': 'model',
+          'category_name': categoryName.trim(),
+          'model_name': modelName.trim(),
+          'body': body,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        onConflict: 'scope,category_name,model_name',
+      );
+      _noteBook = (_noteBook ?? const SizeQuoteNoteBook()).putModel(
+        categoryName: categoryName,
+        modelName: modelName,
+        body: body,
+      );
+    } catch (e) {
+      throw ApiException('모델 노트를 저장하지 못했습니다. $e');
+    }
   }
 
   static String _imageContentType(String ext) {

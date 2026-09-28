@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
@@ -7,6 +8,8 @@ import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/data/size_quote_repository.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_paper.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_spec_note.dart';
+import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +22,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 Future<Uint8List> sizeQuoteToPdf({
@@ -52,6 +56,55 @@ Future<Uint8List> sizeQuoteToPdf({
 
 enum SizeQuoteViewAction { close, sent, unsent, edit }
 
+String sizeQuoteLoginStaffLabel(AppUser? user) {
+  return sizeQuoteStaffLabel(
+    name: user?.name ?? '',
+    title: user?.title,
+    fallback: user?.id ?? '',
+  );
+}
+
+/// 사용자 행의 휴대폰. 로그인 정보에 없으면 users.phone 을 읽는다.
+Future<String> lookupSizeQuoteStaffPhone(String userId) async {
+  final id = userId.trim();
+  if (id.isEmpty) return '';
+  try {
+    final row = await Supabase.instance.client
+        .from('users')
+        .select()
+        .eq('id', id)
+        .maybeSingle();
+    if (row == null) return '';
+    for (final key in const [
+      'phone',
+      'mobile_phone',
+      'cell_phone',
+      'tel',
+      'telephone',
+      'contact_phone',
+    ]) {
+      final raw = row[key];
+      if (raw != null && raw.toString().trim().isNotEmpty) {
+        return raw.toString().trim();
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+
+/// 저장된 작성자가 없거나 로그인 아이디만 있으면 지금 로그인한 사람 이름을 쓴다.
+String sizeQuoteShownManager({
+  required String? createdBy,
+  required AppUser? user,
+}) {
+  final staff = sizeQuoteLoginStaffLabel(user);
+  final stored = (createdBy ?? '').trim();
+  final id = user?.id.trim() ?? '';
+  if (stored.isEmpty) return staff;
+  if (id.isNotEmpty && stored == id && staff.isNotEmpty) return staff;
+  return stored;
+}
+
 Future<SizeQuoteViewAction> showSizeQuoteExportSheet(
   BuildContext context, {
   required SizeQuoteDocument doc,
@@ -60,6 +113,7 @@ Future<SizeQuoteViewAction> showSizeQuoteExportSheet(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
+    enableDrag: false,
     useSafeArea: false,
     builder: (_) => _SizeQuoteExportSheet(doc: doc),
   );
@@ -74,28 +128,86 @@ Future<bool> showSizeQuotePreviewSheet(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
+    enableDrag: false,
     useSafeArea: false,
     builder: (_) => _SizeQuotePreviewSheet(doc: doc),
   );
   return result == true;
 }
 
-class _SizeQuotePreviewSheet extends StatelessWidget {
+class _SizeQuotePreviewSheet extends ConsumerStatefulWidget {
   const _SizeQuotePreviewSheet({required this.doc});
 
   final SizeQuoteDocument doc;
 
   @override
+  ConsumerState<_SizeQuotePreviewSheet> createState() =>
+      _SizeQuotePreviewSheetState();
+}
+
+class _SizeQuotePreviewSheetState extends ConsumerState<_SizeQuotePreviewSheet> {
+  String _phone = '';
+  SizeQuoteNoteBook? _notes;
+  List<QuoteBranchContact> _branches = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    final user = ref.read(authControllerProvider);
+    final cached = (user?.phone ?? '').trim();
+    if (cached.isNotEmpty) {
+      _phone = cached;
+    } else {
+      unawaited(_loadPhone(user?.id ?? ''));
+    }
+    unawaited(_loadNotes());
+    unawaited(_loadBranches());
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final rows = await ref
+          .read(sizeQuoteRepositoryProvider)
+          .loadQuoteBranchContacts();
+      if (!mounted) return;
+      setState(() => _branches = rows);
+    } catch (_) {}
+  }
+
+  Future<void> _loadNotes() async {
+    try {
+      final notes = await ref.read(sizeQuoteRepositoryProvider).loadQuoteNotes();
+      if (!mounted) return;
+      setState(() => _notes = notes);
+    } catch (_) {}
+  }
+
+  Future<void> _loadPhone(String userId) async {
+    final phone = await lookupSizeQuoteStaffPhone(userId);
+    if (!mounted || phone.isEmpty) return;
+    setState(() => _phone = phone);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final doc = widget.doc;
     final scheme = Theme.of(context).colorScheme;
     final media = MediaQuery.of(context);
     final bottomInset = media.viewPadding.bottom + media.viewInsets.bottom;
+    final user = ref.watch(authControllerProvider);
+    final staff = sizeQuoteLoginStaffLabel(user);
+    final manager = sizeQuoteManagerLine(
+      staff.isNotEmpty
+          ? staff
+          : sizeQuoteShownManager(createdBy: doc.createdBy, user: user),
+      _phone.isNotEmpty ? _phone : user?.phone,
+    );
     final audit = sizeQuoteAuditLine(doc);
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+      padding: EdgeInsets.fromLTRB(8, 0, 8, 12 + bottomInset),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: media.size.height * 0.86 - bottomInset,
+          maxHeight: media.size.height * 0.92 - bottomInset,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -110,6 +222,10 @@ class _SizeQuotePreviewSheet extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
             ),
+            Text(
+              '두 손가락으로 확대 · 한 손가락으로 이동',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
             if (doc.promoImageIds.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
@@ -122,11 +238,15 @@ class _SizeQuotePreviewSheet extends StatelessWidget {
                   ),
                 ),
               ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Flexible(
-              child: SingleChildScrollView(
-                child: Center(
-                  child: FittedBox(child: SizeQuotePaper(doc: doc)),
+              child: _SizeQuotePaperViewer(
+                child: SizeQuotePaper(
+                  doc: doc,
+                  managerName: manager,
+                  branchName: user?.branchName,
+                  office: sizeQuoteOfficeFor(user?.branchName, _branches),
+                  notes: _notes,
                 ),
               ),
             ),
@@ -175,11 +295,47 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
   bool _busy = false;
   late SizeQuoteDocument _doc;
   final _won = NumberFormat('#,###');
+  String _phone = '';
+  SizeQuoteNoteBook? _notes;
+  List<QuoteBranchContact> _branches = const [];
 
   @override
   void initState() {
     super.initState();
     _doc = widget.doc;
+    final user = ref.read(authControllerProvider);
+    final cached = (user?.phone ?? '').trim();
+    if (cached.isNotEmpty) {
+      _phone = cached;
+    } else {
+      unawaited(_loadPhone(user?.id ?? ''));
+    }
+    unawaited(_loadNotes());
+    unawaited(_loadBranches());
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final rows = await ref
+          .read(sizeQuoteRepositoryProvider)
+          .loadQuoteBranchContacts();
+      if (!mounted) return;
+      setState(() => _branches = rows);
+    } catch (_) {}
+  }
+
+  Future<void> _loadNotes() async {
+    try {
+      final notes = await ref.read(sizeQuoteRepositoryProvider).loadQuoteNotes();
+      if (!mounted) return;
+      setState(() => _notes = notes);
+    } catch (_) {}
+  }
+
+  Future<void> _loadPhone(String userId) async {
+    final phone = await lookupSizeQuoteStaffPhone(userId);
+    if (!mounted || phone.isEmpty) return;
+    setState(() => _phone = phone);
   }
 
   SizeQuoteRepository get _repo => ref.read(sizeQuoteRepositoryProvider);
@@ -200,8 +356,16 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
   }
 
   String? get _editorName {
+    final label = sizeQuoteLoginStaffLabel(ref.read(authControllerProvider));
+    return label.isEmpty ? null : label;
+  }
+
+  String get _managerName {
     final user = ref.read(authControllerProvider);
-    return user?.name ?? user?.id;
+    return sizeQuoteManagerLine(
+      sizeQuoteShownManager(createdBy: _doc.createdBy, user: user),
+      _phone.isNotEmpty ? _phone : user?.phone,
+    );
   }
 
   Future<Uint8List?> _capturePng() async {
@@ -374,13 +538,12 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
   }
 
   Future<void> _markSentAndClose({required bool sent}) async {
-    final user = ref.read(authControllerProvider);
     try {
       final stored = await _repo.upsert(
         sent
             ? _doc.copyWith(sentYmd: todayYmdSeoul())
             : _doc.copyWith(clearSentYmd: true),
-        editorName: user?.name ?? user?.id,
+        editorName: _editorName,
       );
       if (mounted) setState(() => _doc = stored);
     } catch (_) {}
@@ -397,10 +560,10 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
     final bottomInset = media.viewPadding.bottom + media.viewInsets.bottom;
     final audit = sizeQuoteAuditLine(_doc);
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+      padding: EdgeInsets.fromLTRB(8, 0, 8, 12 + bottomInset),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: media.size.height * 0.86 - bottomInset,
+          maxHeight: media.size.height * 0.92 - bottomInset,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -505,33 +668,44 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            Text(
+              '두 손가락으로 확대 · 한 손가락으로 이동',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
             Flexible(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    Center(
-                      child: FittedBox(
-                        child: RepaintBoundary(
-                          key: _paperKey,
-                          child: SizeQuotePaper(doc: _doc),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: _SizeQuotePaperViewer(
+                      child: RepaintBoundary(
+                        key: _paperKey,
+                        child: SizeQuotePaper(
+                          doc: _doc,
+                          managerName: _managerName,
+                          branchName: ref.read(authControllerProvider)?.branchName,
+                          office: sizeQuoteOfficeFor(
+                            ref.read(authControllerProvider)?.branchName,
+                            _branches,
+                          ),
+                          notes: _notes,
                         ),
                       ),
                     ),
-                    if (_doc.promoImageIds.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          '홍보 이미지 ${_doc.promoImageIds.length}장 · PDF 다음장에 붙습니다',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: scheme.onSurfaceVariant,
-                          ),
+                  ),
+                  if (_doc.promoImageIds.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        '홍보 이미지 ${_doc.promoImageIds.length}장 · PDF 다음장에 붙습니다',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -592,17 +766,124 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
                 ),
               ),
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () => Navigator.of(context).pop(SizeQuoteViewAction.edit),
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('수정'),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => Navigator.of(context).pop(
+                            SizeQuoteViewAction.close,
+                          ),
+                    icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                    label: const Text('뒤로'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => Navigator.of(context).pop(
+                            SizeQuoteViewAction.edit,
+                          ),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('수정'),
+                  ),
+                ),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 화면 안에 견적서 전체가 들어오도록 맞춘 변환.
+/// 오른쪽이 잘리지 않게 가로·세로 중 더 작은 배율을 쓴다.
+Matrix4 sizeQuoteFitMatrix({required Size view, required Size paper}) {
+  if (view.width <= 0 ||
+      view.height <= 0 ||
+      paper.width <= 0 ||
+      paper.height <= 0) {
+    return Matrix4.identity();
+  }
+  final scale = math.min(view.width / paper.width, view.height / paper.height);
+  final dx = (view.width - paper.width * scale) / 2;
+  final dy = (view.height - paper.height * scale) / 2;
+  return Matrix4.identity()
+    ..translateByDouble(dx, dy, 0, 1)
+    ..scaleByDouble(scale, scale, scale, 1);
+}
+
+/// 처음에는 견적서 전체를 보여주고, 두 손가락으로 확대한 뒤 이동할 수 있다.
+class _SizeQuotePaperViewer extends StatefulWidget {
+  const _SizeQuotePaperViewer({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_SizeQuotePaperViewer> createState() => _SizeQuotePaperViewerState();
+}
+
+class _SizeQuotePaperViewerState extends State<_SizeQuotePaperViewer> {
+  final _controller = TransformationController();
+  final _childKey = GlobalKey();
+  double _minScale = 0.05;
+  bool _fitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _fit() {
+    if (!mounted || _fitted) return;
+    final view = context.findRenderObject() as RenderBox?;
+    final child = _childKey.currentContext?.findRenderObject() as RenderBox?;
+    if (view == null ||
+        child == null ||
+        !view.hasSize ||
+        !child.hasSize ||
+        view.size.width <= 0 ||
+        child.size.width <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+      return;
+    }
+    final matrix = sizeQuoteFitMatrix(view: view.size, paper: child.size);
+    final scale = matrix.getMaxScaleOnAxis();
+    _controller.value = matrix;
+    setState(() {
+      _minScale = scale;
+      _fitted = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: AnimatedOpacity(
+        opacity: _fitted ? 1 : 0,
+        duration: const Duration(milliseconds: 80),
+        child: InteractiveViewer(
+          transformationController: _controller,
+          minScale: _minScale,
+          maxScale: 5,
+          constrained: false,
+          alignment: Alignment.topLeft,
+          boundaryMargin: const EdgeInsets.all(double.infinity),
+          clipBehavior: Clip.hardEdge,
+          panEnabled: true,
+          scaleEnabled: true,
+          child: KeyedSubtree(key: _childKey, child: widget.child),
         ),
       ),
     );

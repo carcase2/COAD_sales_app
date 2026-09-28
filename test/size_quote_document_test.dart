@@ -1,4 +1,7 @@
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_export.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_paper.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -11,6 +14,91 @@ void main() {
     heightMm: 4000,
     standardPrice: 1000000,
   );
+
+  test('PREMIUM 공사명은 모델이 아니라 상위 분류다', () {
+    const premium = SizeQuoteSeed(
+      categoryId: 'cat',
+      categoryName: '스피드도어',
+      modelId: 'p',
+      modelName: 'PREMIUM',
+      widthMm: 3000,
+      heightMm: 3000,
+      standardPrice: 6800000,
+    );
+    final doc = sizeQuoteFromSeed(seed: premium, ymd: '2026-09-28');
+    expect(doc.workName, '스피드도어 설치 공사');
+    expect(
+      sizeQuoteResolvedWorkName(
+        workName: 'PREMIUM 설치 공사',
+        categoryName: '스피드도어',
+        modelName: 'PREMIUM',
+      ),
+      '스피드도어 설치 공사',
+    );
+    expect(
+      sizeQuoteResolvedWorkName(
+        workName: '현장 맞춤 공사',
+        categoryName: '스피드도어',
+        modelName: 'PREMIUM',
+      ),
+      '현장 맞춤 공사',
+    );
+    expect(
+      sizeQuoteStaffLabel(name: '김경덕', title: '이사'),
+      '김경덕 이사',
+    );
+    expect(sizeQuoteStaffLabel(name: '김경덕', title: '팀원'), '김경덕');
+    expect(
+      sizeQuoteManagerLine('김경덕 이사', '01012345678'),
+      '김경덕 이사 (H.P 010-1234-5678)',
+    );
+    expect(
+      sizeQuoteManagerLine('김경덕 (H.P 010-1234-5678)', '01099998888'),
+      '김경덕 (H.P 010-1234-5678)',
+    );
+  });
+
+  testWidgets('견적서 용지에 상위 분류 공사명과 로그인한 담당자가 보인다', (tester) async {
+    const doc = SizeQuoteDocument(
+      id: '1',
+      customerName: '김현장',
+      ymd: '2026-09-28',
+      categoryName: '스피드도어',
+      modelName: 'PREMIUM',
+      workName: 'PREMIUM 설치 공사',
+      createdBy: '옛작성자',
+    );
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SingleChildScrollView(
+          child: SizeQuotePaper(
+            doc: doc,
+            managerName: '김경덕',
+            branchName: '대구지사',
+          ),
+        ),
+      ),
+    );
+    expect(find.text('스피드도어 설치 공사'), findsOneWidget);
+    expect(find.text('김경덕'), findsOneWidget);
+    expect(find.text('담당자 : 김경덕'), findsOneWidget);
+    expect(find.text('코아드  대구지사'), findsOneWidget);
+    expect(find.textContaining('달성군 논공읍'), findsOneWidget);
+    expect(find.textContaining('coaddg@coaddoor.com'), findsOneWidget);
+    expect(find.text('PREMIUM 설치 공사'), findsNothing);
+  });
+
+  test('견적서 전체 보기는 오른쪽 끝까지 화면 안에 넣는다', () {
+    const view = Size(360, 520);
+    const paper = Size(560, 980);
+    final matrix = sizeQuoteFitMatrix(view: view, paper: paper);
+    final scale = matrix.getMaxScaleOnAxis();
+    final dx = matrix.getTranslation().x;
+    expect(scale, closeTo(520 / 980, 0.0001));
+    expect(dx, greaterThan(0));
+    expect(dx + paper.width * scale, lessThanOrEqualTo(view.width + 0.01));
+    expect(dx, greaterThanOrEqualTo(-0.01));
+  });
 
   test('표준단가에 %·금액을 더해 판매단가를 만든다', () {
     expect(
@@ -37,6 +125,14 @@ void main() {
       ),
       1000000,
     );
+    expect(
+      sizeQuoteApplyMarkup(
+        standardPrice: 1000000,
+        percent: 5,
+        amount: 200000,
+      ),
+      1250000,
+    );
   });
 
   test('본체 라인은 표준단가와 마진을 따라간다', () {
@@ -59,6 +155,24 @@ void main() {
     expect(marked.sellingUnitPrice, 1100000);
     expect(marked.lines.single.unitPrice, 1100000);
     expect(marked.total, 1100000);
+  });
+
+  test('네고는 5%·20만원 단위로 올리고 최종이 그대로면 변경 없다', () {
+    expect(sizeQuoteStepPercent(0, 5), 5);
+    expect(sizeQuoteStepPercent(5, -5), 0);
+    expect(sizeQuoteStepPercent(98, 5), 100);
+    expect(sizeQuoteStepPercent(0, -5, min: -100), -5);
+    expect(sizeQuoteStepAmount(0, -200000, min: -1000000), -200000);
+    expect(sizeQuoteStepAmount(0, 200000, max: 1000000), 200000);
+    expect(sizeQuoteStepAmount(200000, -200000), 0);
+    expect(sizeQuoteStepAmount(900000, 200000, max: 1000000), 1000000);
+
+    final base = sizeQuoteFromSeed(seed: seed(), ymd: '2026-09-07');
+    expect(base.finalUnchanged, isTrue);
+    expect(base.finalChangeLabel, '변경 없음');
+    final cut = base.copyWith(negoAmount: 200000);
+    expect(cut.finalUnchanged, isFalse);
+    expect(cut.finalChangeLabel, '변경 −200,000원');
   });
 
   test('네고는 빨간색 요약과 최종 합계에 반영된다', () {
