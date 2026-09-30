@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/models/app_usage_summary.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/models/install_after_usage.dart';
+import 'package:coad_customer_calls/models/sales_tool_usage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UsageRepository {
@@ -82,15 +83,97 @@ class UsageRepository {
           .lt('created_at', endIso)
           .order('created_at', ascending: false)
           .range(from, from + 999);
-      final page = List<Map<String, dynamic>>.from(res as List)
-          .map(InstallAfterSearchLog.fromJson)
-          .toList();
+      final page = List<Map<String, dynamic>>.from(
+        res as List,
+      ).map(InstallAfterSearchLog.fromJson).toList();
       logs.addAll(page);
       if (page.length < 1000) break;
     }
 
     final adminIds = await _fetchAdminUserIds();
     return buildInstallAfterUsageReport(logs, adminIds: adminIds);
+  }
+
+  /// 명함 등록 · 표준단가 견적 작성. [startYmd]가 비면 전체, [endYmd]는 포함.
+  Future<SalesToolUsageBundle> fetchSalesToolUsage({
+    String? startYmd,
+    required String endYmd,
+  }) async {
+    final endExclusive = addDaysToYmd(endYmd, 1);
+    final endIso = '${endExclusive}T00:00:00+09:00';
+    final start = startYmd?.trim() ?? '';
+    final startIso = start.isEmpty ? null : '${start}T00:00:00+09:00';
+
+    final directoryFuture = _fetchSalesToolDirectory();
+    final cardsFuture = _pageCreatedRows(
+      table: 'business_cards',
+      columns: 'id, name, company, created_by, created_by_name, created_at',
+      hideDeleted: true,
+      startIso: startIso,
+      endIso: endIso,
+    );
+    final quotesFuture = _pageCreatedRows(
+      table: 'standard_unit_price_quotes',
+      columns:
+          'id, quote_no, customer_name, site, category_name, model_name, total, sent_ymd, email_sent_ymd, created_by, created_at',
+      hideDeleted: false,
+      startIso: startIso,
+      endIso: endIso,
+    );
+
+    final directory = await directoryFuture;
+    final cards = await cardsFuture;
+    final quotes = await quotesFuture;
+
+    return SalesToolUsageBundle(
+      cards: buildSalesToolUsageReport([
+        for (final row in cards) ?salesToolCardEvent(row, directory),
+      ]),
+      quotes: buildSalesToolUsageReport([
+        for (final row in quotes) ?salesToolQuoteEvent(row, directory),
+      ]),
+    );
+  }
+
+  Future<SalesToolDirectory> _fetchSalesToolDirectory() async {
+    try {
+      final res = await _client
+          .from('users')
+          .select(
+            'id, name, title, role, permissions, groups(name), coad_branch(name)',
+          );
+      final people = <SalesToolPerson>[];
+      for (final row in List<Map<String, dynamic>>.from(res as List)) {
+        final person = salesToolPersonFromUserRow(row);
+        if (person != null) people.add(person);
+      }
+      return SalesToolDirectory(people);
+    } catch (_) {
+      return SalesToolDirectory(const []);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _pageCreatedRows({
+    required String table,
+    required String columns,
+    required bool hideDeleted,
+    required String? startIso,
+    required String endIso,
+  }) async {
+    final rows = <Map<String, dynamic>>[];
+    for (var from = 0; from < 8000; from += 1000) {
+      var query = _client.from(table).select(columns);
+      if (hideDeleted) query = query.isFilter('deleted_at', null);
+      if (startIso != null) query = query.gte('created_at', startIso);
+      final res = await query
+          .lt('created_at', endIso)
+          .order('created_at', ascending: false)
+          .range(from, from + 999);
+      final page = List<Map<String, dynamic>>.from(res as List);
+      rows.addAll(page);
+      if (page.length < 1000) break;
+    }
+    return rows;
   }
 
   Future<Set<String>> _fetchAdminUserIds() async {

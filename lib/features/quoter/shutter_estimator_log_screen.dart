@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/features/settings/usage_embed_frame.dart';
 import 'package:coad_customer_calls/data/shutter_repository.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +13,9 @@ import 'package:intl/intl.dart';
 
 /// COAD_home 관리자 「셔터 견적기 사용 이력」 화면.
 class ShutterEstimatorLogScreen extends ConsumerStatefulWidget {
-  const ShutterEstimatorLogScreen({super.key});
+  const ShutterEstimatorLogScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<ShutterEstimatorLogScreen> createState() =>
@@ -72,8 +75,9 @@ class _ShutterEstimatorLogScreenState
     final user = ref.watch(authControllerProvider);
 
     if (!isAdminGroup(user)) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('견적기 사용 이력')),
+      return UsageEmbedFrame(
+        embedded: widget.embedded,
+        title: '견적기 사용 이력',
         body: const AppEmpty(
           message: '관리자 그룹만 조회할 수 있습니다.',
           icon: Icons.lock_outline_rounded,
@@ -81,20 +85,19 @@ class _ShutterEstimatorLogScreenState
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('견적기 사용 이력'),
-        actions: [
-          IconButton(
-            tooltip: '새로고침',
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              unawaited(_load());
-            },
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
+    return UsageEmbedFrame(
+      embedded: widget.embedded,
+      title: '견적기 사용 이력',
+      actions: [
+        IconButton(
+          tooltip: '새로고침',
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            unawaited(_load());
+          },
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+      ],
       body: Column(
         children: [
           Padding(
@@ -118,22 +121,10 @@ class _ShutterEstimatorLogScreenState
                       value: _periodAll,
                       label: Text('전체', maxLines: 1),
                     ),
-                    ButtonSegment(
-                      value: 7,
-                      label: Text('7일', maxLines: 1),
-                    ),
-                    ButtonSegment(
-                      value: 30,
-                      label: Text('30일', maxLines: 1),
-                    ),
-                    ButtonSegment(
-                      value: 90,
-                      label: Text('90일', maxLines: 1),
-                    ),
-                    ButtonSegment(
-                      value: 365,
-                      label: Text('1년', maxLines: 1),
-                    ),
+                    ButtonSegment(value: 7, label: Text('7일', maxLines: 1)),
+                    ButtonSegment(value: 30, label: Text('30일', maxLines: 1)),
+                    ButtonSegment(value: 90, label: Text('90일', maxLines: 1)),
+                    ButtonSegment(value: 365, label: Text('1년', maxLines: 1)),
                   ],
                   selected: {_periodDays},
                   onSelectionChanged: (s) {
@@ -148,8 +139,8 @@ class _ShutterEstimatorLogScreenState
                     ),
                     textStyle: WidgetStatePropertyAll(
                       Theme.of(context).textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ),
@@ -178,8 +169,8 @@ class _ShutterEstimatorLogScreenState
                     Text(
                       '사용자별 사용 빈도',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     if (bundle.byUser.isEmpty)
@@ -206,7 +197,9 @@ class _ShutterEstimatorLogScreenState
                             ),
                             title: Text(
                               u.userName,
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                             subtitle: Text(
                               '견적액 합계 ${_won.format(u.totalPriceSum)}원',
@@ -226,8 +219,8 @@ class _ShutterEstimatorLogScreenState
                     Text(
                       '상세 이력 (최근 ${bundle.history.length}건)',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     if (bundle.history.isEmpty)

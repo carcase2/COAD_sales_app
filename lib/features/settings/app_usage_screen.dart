@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/features/settings/usage_embed_frame.dart';
 import 'package:coad_customer_calls/models/app_usage_summary.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -83,14 +84,15 @@ class UsagePeriod {
   }
 }
 
-class AppUsageScreen extends ConsumerStatefulWidget {
-  const AppUsageScreen({super.key});
+/// 앱 전체 실행·탭 사용. 앱 사용량 화면의 첫 탭.
+class AppUsageOverview extends ConsumerStatefulWidget {
+  const AppUsageOverview({super.key});
 
   @override
-  ConsumerState<AppUsageScreen> createState() => _AppUsageScreenState();
+  ConsumerState<AppUsageOverview> createState() => _AppUsageOverviewState();
 }
 
-class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
+class _AppUsageOverviewState extends ConsumerState<AppUsageOverview> {
   String _periodId = 'today';
   bool _excludeAdmins = false;
   AsyncValue<List<AppUsageSummary>> _summaries = const AsyncLoading();
@@ -140,50 +142,46 @@ class _AppUsageScreenState extends ConsumerState<AppUsageScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
     if (!isAdminGroup(user)) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('앱 사용량')),
-        body: const Center(child: Text('관리자 그룹만 이용할 수 있습니다.')),
-      );
+      return const Center(child: Text('관리자 그룹만 이용할 수 있습니다.'));
     }
 
     final scheme = Theme.of(context).colorScheme;
     final period = _period;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('앱 사용량'),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: '기간',
-            initialValue: _periodId,
-            onSelected: _selectPeriod,
-            itemBuilder: (context) => [
-              for (final id in UsagePeriod.ids)
-                PopupMenuItem(
-                  value: id,
-                  child: Text(UsagePeriod.resolve(id).menuLabel),
-                ),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    period.shortLabel,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                  const Icon(Icons.arrow_drop_down_rounded),
-                ],
+    return UsageEmbedFrame(
+      embedded: true,
+      title: '앱 사용량',
+      actions: [
+        PopupMenuButton<String>(
+          tooltip: '기간',
+          initialValue: _periodId,
+          onSelected: _selectPeriod,
+          itemBuilder: (context) => [
+            for (final id in UsagePeriod.ids)
+              PopupMenuItem(
+                value: id,
+                child: Text(UsagePeriod.resolve(id).menuLabel),
               ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  period.shortLabel,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down_rounded),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
       body: _summaries.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorBody(

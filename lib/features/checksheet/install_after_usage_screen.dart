@@ -5,6 +5,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
+import 'package:coad_customer_calls/features/settings/usage_embed_frame.dart';
 import 'package:coad_customer_calls/models/install_after_usage.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +15,9 @@ import 'package:intl/intl.dart';
 
 /// 시공 사진 검색 기록 · 사용자별 순위 (관리자 그룹만).
 class InstallAfterUsageScreen extends ConsumerStatefulWidget {
-  const InstallAfterUsageScreen({super.key});
+  const InstallAfterUsageScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<InstallAfterUsageScreen> createState() =>
@@ -42,7 +45,9 @@ class _InstallAfterUsageScreenState
     setState(() => _data = const AsyncLoading());
     try {
       final period = UsagePeriod.resolve(_periodId);
-      final report = await ref.read(usageRepositoryProvider).fetchInstallAfterUsage(
+      final report = await ref
+          .read(usageRepositoryProvider)
+          .fetchInstallAfterUsage(
             startYmd: period.startYmd,
             endYmd: period.endYmd,
           );
@@ -60,8 +65,9 @@ class _InstallAfterUsageScreenState
     final scheme = Theme.of(context).colorScheme;
 
     if (!isAdminGroup(user)) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('시공 사진 검색 기록')),
+      return UsageEmbedFrame(
+        embedded: widget.embedded,
+        title: '시공 사진 검색 기록',
         body: const AppEmpty(
           message: '관리자 그룹만 조회할 수 있습니다.',
           icon: Icons.lock_outline_rounded,
@@ -69,49 +75,48 @@ class _InstallAfterUsageScreenState
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('시공 사진 검색 기록'),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: '기간',
-            initialValue: _periodId,
-            onSelected: (id) {
-              if (id == _periodId) return;
-              setState(() => _periodId = id);
-              unawaited(_load());
-            },
-            itemBuilder: (context) => [
-              for (final id in UsagePeriod.ids)
-                PopupMenuItem(
-                  value: id,
-                  child: Text(UsagePeriod.resolve(id).menuLabel),
-                ),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _period.shortLabel,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const Icon(Icons.arrow_drop_down_rounded),
-                ],
+    return UsageEmbedFrame(
+      embedded: widget.embedded,
+      title: '시공 사진 검색 기록',
+      actions: [
+        PopupMenuButton<String>(
+          tooltip: '기간',
+          initialValue: _periodId,
+          onSelected: (id) {
+            if (id == _periodId) return;
+            setState(() => _periodId = id);
+            unawaited(_load());
+          },
+          itemBuilder: (context) => [
+            for (final id in UsagePeriod.ids)
+              PopupMenuItem(
+                value: id,
+                child: Text(UsagePeriod.resolve(id).menuLabel),
               ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _period.shortLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const Icon(Icons.arrow_drop_down_rounded),
+              ],
             ),
           ),
-          IconButton(
-            tooltip: '새로고침',
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              unawaited(_load());
-            },
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
+        ),
+        IconButton(
+          tooltip: '새로고침',
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            unawaited(_load());
+          },
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+      ],
       body: _data.when(
         loading: () => const AppLoading(message: '검색 기록 불러오는 중…'),
         error: (e, _) => AppErrorState(
@@ -212,8 +217,8 @@ class _InstallAfterUsageScreenState
                 Text(
                   '많이 검색한 사람',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -247,9 +252,8 @@ class _InstallAfterUsageScreenState
                     Expanded(
                       child: Text(
                         '검색 기록',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                     ),
                     FilterChip(
@@ -394,8 +398,9 @@ class _UserRankCard extends StatelessWidget {
     final dt = row.lastAt != null
         ? DateFormat('MM.dd HH:mm').format(row.lastAt!.toLocal())
         : null;
-    final bar =
-        maxSearches <= 0 ? 0.0 : (row.searches / maxSearches).clamp(0.0, 1.0);
+    final bar = maxSearches <= 0
+        ? 0.0
+        : (row.searches / maxSearches).clamp(0.0, 1.0);
 
     return Card(
       margin: EdgeInsets.zero,

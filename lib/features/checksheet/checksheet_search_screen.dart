@@ -6,8 +6,7 @@ import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
-import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
-import 'package:coad_customer_calls/features/checksheet/install_after_usage_screen.dart';
+import 'package:coad_customer_calls/features/settings/app_usage_hub_screen.dart';
 import 'package:coad_customer_calls/models/checksheet_archive.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/usage_service.dart';
@@ -388,9 +387,11 @@ class _ChecksheetSearchScreenState
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => _isAfter
-                        ? const InstallAfterUsageScreen()
-                        : const ChecksheetUsageScreen(),
+                    builder: (_) => AppUsageScreen(
+                      initialTab: _isAfter
+                          ? AppUsageScreen.tabPhotos
+                          : AppUsageScreen.tabChecksheet,
+                    ),
                   ),
                 );
               },

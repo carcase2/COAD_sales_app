@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/core/utils/admin_permissions.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
+import 'package:coad_customer_calls/features/settings/usage_embed_frame.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,7 +13,9 @@ import 'package:intl/intl.dart';
 
 /// 체크시트 사용 내역 · 사용자별 순위 (관리자).
 class ChecksheetUsageScreen extends ConsumerStatefulWidget {
-  const ChecksheetUsageScreen({super.key});
+  const ChecksheetUsageScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<ChecksheetUsageScreen> createState() =>
@@ -76,10 +79,9 @@ class _ChecksheetUsageScreenState extends ConsumerState<ChecksheetUsageScreen> {
     setState(() => _rows = const AsyncLoading());
     try {
       final period = UsagePeriod.resolve(_periodId);
-      final summaries = await ref.read(usageRepositoryProvider).fetchSummaries(
-            startYmd: period.startYmd,
-            endYmd: period.endYmd,
-          );
+      final summaries = await ref
+          .read(usageRepositoryProvider)
+          .fetchSummaries(startYmd: period.startYmd, endYmd: period.endYmd);
       final rows = <_ChecksheetRow>[];
       for (final s in summaries) {
         final opens = s.tabCounts['checksheet'] ?? 0;
@@ -123,8 +125,9 @@ class _ChecksheetUsageScreenState extends ConsumerState<ChecksheetUsageScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     if (!isAdminGroup(user)) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('체크시트 사용 내역')),
+      return UsageEmbedFrame(
+        embedded: widget.embedded,
+        title: '체크시트 사용 내역',
         body: const AppEmpty(
           message: '관리자 그룹만 조회할 수 있습니다.',
           icon: Icons.lock_outline_rounded,
@@ -132,49 +135,48 @@ class _ChecksheetUsageScreenState extends ConsumerState<ChecksheetUsageScreen> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('체크시트 사용 내역'),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: '기간',
-            initialValue: _periodId,
-            onSelected: (id) {
-              if (id == _periodId) return;
-              setState(() => _periodId = id);
-              unawaited(_load());
-            },
-            itemBuilder: (context) => [
-              for (final id in UsagePeriod.ids)
-                PopupMenuItem(
-                  value: id,
-                  child: Text(UsagePeriod.resolve(id).menuLabel),
-                ),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _period.shortLabel,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const Icon(Icons.arrow_drop_down_rounded),
-                ],
+    return UsageEmbedFrame(
+      embedded: widget.embedded,
+      title: '체크시트 사용 내역',
+      actions: [
+        PopupMenuButton<String>(
+          tooltip: '기간',
+          initialValue: _periodId,
+          onSelected: (id) {
+            if (id == _periodId) return;
+            setState(() => _periodId = id);
+            unawaited(_load());
+          },
+          itemBuilder: (context) => [
+            for (final id in UsagePeriod.ids)
+              PopupMenuItem(
+                value: id,
+                child: Text(UsagePeriod.resolve(id).menuLabel),
               ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _period.shortLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const Icon(Icons.arrow_drop_down_rounded),
+              ],
             ),
           ),
-          IconButton(
-            tooltip: '새로고침',
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              unawaited(_load());
-            },
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
+        ),
+        IconButton(
+          tooltip: '새로고침',
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            unawaited(_load());
+          },
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+      ],
       body: _rows.when(
         loading: () => const AppLoading(message: '사용 내역 불러오는 중…'),
         error: (e, _) => AppErrorState(
@@ -268,8 +270,8 @@ class _ChecksheetUsageScreenState extends ConsumerState<ChecksheetUsageScreen> {
                   Text(
                     '많이 쓰는 사람',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -293,8 +295,8 @@ class _ChecksheetUsageScreenState extends ConsumerState<ChecksheetUsageScreen> {
                   Text(
                     '잘 쓰는 사람',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(

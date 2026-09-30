@@ -34,14 +34,11 @@ import 'package:coad_customer_calls/features/customer_support/reception_create_h
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
-import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
-import 'package:coad_customer_calls/features/checksheet/install_after_usage_screen.dart';
 import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
-import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_hub_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_list_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_search_delegate.dart';
-import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
+import 'package:coad_customer_calls/features/settings/app_usage_hub_screen.dart';
 import 'package:coad_customer_calls/features/settings/settings_screen.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:coad_customer_calls/navigation/app_menu.dart';
@@ -1358,47 +1355,6 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             );
           }),
         ),
-        if (isAdminGroup(user))
-          AppMenuEntry(
-            id: 'checksheet_usage',
-            sectionId: 'tools',
-            icon: Icons.bar_chart_rounded,
-            title: '체크시트 사용 내역',
-            subtitle: '누가 많이·잘 쓰는지 확인',
-            keywords: const ['체크시트', '사용량', '통계', '이력', '관리'],
-            onTap: () => closeDrawerThen(() {
-              _trackTab(user, 'checksheet');
-              Navigator.of(hostContext).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ChecksheetUsageScreen(),
-                ),
-              );
-            }),
-          ),
-        if (isAdminGroup(user))
-          AppMenuEntry(
-            id: 'install_after_usage',
-            sectionId: 'tools',
-            icon: Icons.insights_rounded,
-            title: '시공 사진 검색 기록',
-            subtitle: '누가 많이 검색하는지 · 기간별',
-            keywords: const [
-              '시공',
-              '사진',
-              '검색',
-              '기록',
-              '사용량',
-              '통계',
-              '관리',
-            ],
-            onTap: () => closeDrawerThen(() {
-              Navigator.of(hostContext).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const InstallAfterUsageScreen(),
-                ),
-              );
-            }),
-          ),
         AppMenuEntry(
           id: 'home_pending_uncalled',
           sectionId: 'shortcuts',
@@ -1471,28 +1427,24 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             sectionId: 'account',
             icon: Icons.bar_chart_rounded,
             title: '앱 사용량',
-            subtitle: '앱 사용 기록이 있는 직원 통계',
-            keywords: const ['사용량', '통계', '관리'],
+            subtitle: '앱 · 체크시트 · 시공사진 · 견적 · 명함',
+            keywords: const [
+              '사용량',
+              '통계',
+              '관리',
+              '체크시트',
+              '시공',
+              '사진',
+              '검색',
+              '견적',
+              '견적기',
+              '셔터',
+              '명함',
+              '표준단가',
+            ],
             onTap: () => closeDrawerThen(() {
               Navigator.of(hostContext).push(
                 MaterialPageRoute<void>(builder: (_) => const AppUsageScreen()),
-              );
-            }),
-          ),
-        if (isAdminGroup(user))
-          AppMenuEntry(
-            id: 'shutter_estimator_log',
-            sectionId: 'account',
-            icon: Icons.history_edu_rounded,
-            title: '견적기 사용 이력',
-            subtitle: '셔터 견적기 사용 통계 (COAD_home 동일)',
-            keywords: const ['견적', '이력', '통계', '관리', '셔터'],
-            onTap: () => closeDrawerThen(() {
-              _trackTab(user, 'quoter_log');
-              Navigator.of(hostContext).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ShutterEstimatorLogScreen(),
-                ),
               );
             }),
           ),

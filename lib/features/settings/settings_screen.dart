@@ -6,13 +6,10 @@ import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/features/customer_support/support_due_schedule.dart';
 import 'package:coad_customer_calls/features/customer_support/support_visit_teams_screen.dart';
 import 'package:coad_customer_calls/features/checksheet/checksheet_search_screen.dart';
-import 'package:coad_customer_calls/features/checksheet/checksheet_usage_screen.dart';
-import 'package:coad_customer_calls/features/checksheet/install_after_usage_screen.dart';
 import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
-import 'package:coad_customer_calls/features/quoter/shutter_estimator_log_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
-import 'package:coad_customer_calls/features/settings/app_usage_screen.dart';
+import 'package:coad_customer_calls/features/settings/app_usage_hub_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/providers/app_update_provider.dart';
 import 'package:coad_customer_calls/providers/theme_mode_provider.dart';
@@ -183,26 +180,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.bar_chart_rounded, color: scheme.primary),
               title: const Text('앱 사용량'),
-              subtitle: const Text('앱을 실제로 사용한 직원 통계'),
+              subtitle: const Text('앱 · 체크시트 · 시공사진 · 견적기 · 명함 · 표준단가'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const AppUsageScreen(),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.history_edu_rounded, color: scheme.primary),
-              title: const Text('견적기 사용 이력'),
-              subtitle: const Text('셔터 견적기 사용 통계 · 상세 이력'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ShutterEstimatorLogScreen(),
                   ),
                 );
               },
@@ -261,36 +244,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               );
             },
           ),
-          if (isAdminGroup(user))
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.bar_chart_rounded, color: scheme.primary),
-              title: const Text('체크시트 사용 내역'),
-              subtitle: const Text('사용자별 검색·열람·저장 순위'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ChecksheetUsageScreen(),
-                  ),
-                );
-              },
-            ),
-          if (isAdminGroup(user))
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.insights_rounded, color: scheme.primary),
-              title: const Text('시공 사진 검색 기록'),
-              subtitle: const Text('누가 얼마나 · 기간별 · 검색 내역'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const InstallAfterUsageScreen(),
-                  ),
-                );
-              },
-            ),
           const SizedBox(height: 20),
           Text(
             '앱',
