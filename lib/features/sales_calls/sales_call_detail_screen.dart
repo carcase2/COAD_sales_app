@@ -2201,6 +2201,7 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
       _unsuccessfulReasonCtrl.text = draft.unsuccessfulReason ?? '';
       _consultationNextDateCtrl.text = draft.nextDateYmd ?? '';
       _statusId = draft.statusId ?? CallStatusIds.undecided;
+      _carryConsultationIntoLostReason();
       final ymd = _consultationNextDateCtrl.text.trim();
       if (ymd.isNotEmpty) {
         _consultationDayFollowCountYmd = ymd;
@@ -2681,6 +2682,20 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
     );
   }
 
+  /// 미수주 사유가 비어 있을 때만 상담내용을 옮긴다.
+  void _carryConsultationIntoLostReason() {
+    if (_statusId != CallStatusIds.lost) return;
+    final carried = carryConsultationIntoLostReason(
+      consultationContent: _newConsultationCtrl.text,
+      unsuccessfulReason: _unsuccessfulReasonCtrl.text,
+    );
+    if (carried == _unsuccessfulReasonCtrl.text) return;
+    _unsuccessfulReasonCtrl.value = TextEditingValue(
+      text: carried,
+      selection: TextSelection.collapsed(offset: carried.length),
+    );
+  }
+
   Widget _buildStatusGrid(
     ColorScheme scheme, [
     void Function(void Function())? setModalState,
@@ -2708,7 +2723,11 @@ class _SalesCallDetailScreenState extends ConsumerState<SalesCallDetailScreen> {
         return GestureDetector(
           onTap: () {
             void apply() {
-              _statusId = s['id'] as int;
+              final nextId = s['id'] as int;
+              _statusId = nextId;
+              if (nextId == CallStatusIds.lost) {
+                _carryConsultationIntoLostReason();
+              }
               if (!statusRequiresNextScheduledDate(_statusId!)) {
                 _consultationNextDateCtrl.clear();
               }

@@ -168,6 +168,16 @@ String consultationFollowDateCountMessage({
 bool consultationContentRequiredForStatus(int statusId) =>
     statusId != CallStatusIds.lost && statusId != CallStatusIds.won;
 
+/// 미수주로 바꿀 때 사유가 비어 있으면 이미 적은 상담내용을 사유로 가져온다.
+/// 사유를 따로 적은 뒤에는 그 글을 덮어쓰지 않는다.
+String carryConsultationIntoLostReason({
+  required String consultationContent,
+  required String unsuccessfulReason,
+}) {
+  if (unsuccessfulReason.trim().isNotEmpty) return unsuccessfulReason;
+  return consultationContent;
+}
+
 void validateConsultationSubmit({
   required String consultationContent,
   required int statusId,

@@ -41,6 +41,30 @@ void main() {
     );
   });
 
+  test('미수주 사유가 비어 있으면 입력한 상담내용을 가져온다', () {
+    expect(
+      carryConsultationIntoLostReason(
+        consultationContent: '가격이 맞지 않아 보류',
+        unsuccessfulReason: '',
+      ),
+      '가격이 맞지 않아 보류',
+    );
+    expect(
+      carryConsultationIntoLostReason(
+        consultationContent: '가격이 맞지 않아 보류',
+        unsuccessfulReason: '   ',
+      ),
+      '가격이 맞지 않아 보류',
+    );
+    expect(
+      carryConsultationIntoLostReason(
+        consultationContent: '가격이 맞지 않아 보류',
+        unsuccessfulReason: '예산 초과',
+      ),
+      '예산 초과',
+    );
+  });
+
   test('validate — 미수주 사유 필수, 상담내용 선택', () {
     expect(
       () => validateConsultationSubmit(
