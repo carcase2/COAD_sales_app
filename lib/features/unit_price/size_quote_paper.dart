@@ -62,7 +62,11 @@ SizeQuoteOffice sizeQuoteOfficeOf(String? branchName) {
       email: kSizeQuoteHonamOffice.email,
     );
   }
-  return SizeQuoteOffice(label: raw.isEmpty ? '본사' : raw, address: '', email: '');
+  return SizeQuoteOffice(
+    label: raw.isEmpty ? '본사' : raw,
+    address: '',
+    email: '',
+  );
 }
 
 class QuoteBranchContact {
@@ -143,6 +147,11 @@ class SizeQuotePaper extends StatelessWidget {
   static const _muted = Color(0xFF4B5563);
   static const _line = Color(0xFF111827);
   static const _nego = Color(0xFFDC2626);
+  static const _officeStyle = TextStyle(
+    fontSize: 10,
+    height: 1.35,
+    color: _ink,
+  );
   static final _won = NumberFormat('#,###');
 
   String _money(int n) {
@@ -220,17 +229,33 @@ class SizeQuotePaper extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     if (_office.address.trim().isNotEmpty)
-                      Text(
-                        '주소 : ${_office.address}',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          height: 1.35,
-                          color: _ink,
+                      _fitOfficeLine(
+                        Text(
+                          '주소 : ${_office.address}',
+                          maxLines: 1,
+                          softWrap: false,
+                          style: _officeStyle,
                         ),
                       ),
-                    const Text(
-                      'TEL : 1899-7081   FAX : 0505-182-5567',
-                      style: TextStyle(fontSize: 10, height: 1.35, color: _ink),
+                    _fitOfficeLine(
+                      const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'TEL : 1899-7081',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: _officeStyle,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'FAX : 0505-182-5567',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: _officeStyle,
+                          ),
+                        ],
+                      ),
                     ),
                     const Text(
                       'Homepage : www.coaddoor.com',
@@ -256,7 +281,9 @@ class SizeQuotePaper extends StatelessWidget {
                             right: 0,
                             top: 0,
                             child: Image(
-                              image: AssetImage('assets/images/quote_stamp.png'),
+                              image: AssetImage(
+                                'assets/images/quote_stamp.png',
+                              ),
                               width: 58,
                               height: 58,
                               fit: BoxFit.contain,
@@ -308,7 +335,11 @@ class SizeQuotePaper extends StatelessWidget {
           const SizedBox(height: 8),
           const Text(
             '下記와 같이 見積하나이다.',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _ink),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _ink,
+            ),
           ),
           const SizedBox(height: 4),
           FittedBox(
@@ -352,7 +383,7 @@ class SizeQuotePaper extends StatelessWidget {
                 ],
               ),
               for (final kind in kSizeQuoteKindOrder) ...[
-                if (doc.linesOfKind(kind).isNotEmpty)
+                if (doc.linesOfKind(kind).any(sizeQuoteLineShowsOnPaper))
                   TableRow(
                     decoration: const BoxDecoration(color: Color(0xFFEEF2FF)),
                     children: [
@@ -370,17 +401,18 @@ class SizeQuotePaper extends StatelessWidget {
                     ],
                   ),
                 for (final line in doc.linesOfKind(kind))
-                  TableRow(
-                    children: [
-                      _td('${++no}'),
-                      _td(line.name, align: TextAlign.left),
-                      _td(line.spec.trim().isEmpty ? '-' : line.spec.trim()),
-                      _td(line.unit.trim().isEmpty ? '-' : line.unit.trim()),
-                      _td('${line.qty}'),
-                      _moneyTd(line.unitPrice ?? 0),
-                      _moneyTd(line.amount, bold: true),
-                    ],
-                  ),
+                  if (sizeQuoteLineShowsOnPaper(line))
+                    TableRow(
+                      children: [
+                        _td('${++no}'),
+                        _td(line.name, align: TextAlign.left),
+                        _td(line.spec.trim().isEmpty ? '-' : line.spec.trim()),
+                        _td(line.unit.trim().isEmpty ? '-' : line.unit.trim()),
+                        _td('${line.qty}'),
+                        _moneyTd(line.unitPrice ?? 0),
+                        _moneyTd(line.amount, bold: true),
+                      ],
+                    ),
               ],
               if (doc.lines.isEmpty)
                 TableRow(
@@ -457,6 +489,17 @@ class SizeQuotePaper extends StatelessWidget {
             style: TextStyle(fontSize: 9.5, height: 1.35, color: _muted),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _fitOfficeLine(Widget child) {
+    return SizedBox(
+      width: double.infinity,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: child,
       ),
     );
   }

@@ -3396,9 +3396,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   Future<void> _openSizeQuoteWriter() async {
     final result = _result;
     if (result == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('먼저 규격을 넣어 견적을 산출해 주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('먼저 규격을 넣어 견적을 산출해 주세요.')));
       return;
     }
     HapticFeedback.selectionClick();
@@ -3406,13 +3406,17 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       result: result,
       companyName: _selectedCompanyName,
     );
-    await pushSizeQuoteEditor(
+    final saved = await pushSizeQuoteEditor(
       context,
       seed: draft.seed,
       extraLines: draft.extraLines,
       initialNote: draft.note,
       initialQuantity: draft.quantity,
     );
+    if (!mounted || saved == null || saved.openExport) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('견적서를 저장했습니다.')));
   }
 
   Future<void> _copyEstimateToClipboard() async {

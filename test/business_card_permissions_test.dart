@@ -201,6 +201,14 @@ hong@coad.co.kr
     expect(choices.where((e) => e.card.id == 'c2').length, 2);
   });
 
+  test('입력한 전화와 같은 명함 번호만 고른다', () {
+    final card = _card();
+    final fills = businessCardFillsForPhone('01012345678', [card]);
+    expect(fills.length, 1);
+    expect(fills.single.phoneLabel, '휴대폰');
+    expect(fills.single.phone, '010-1234-5678');
+  });
+
   test('번호가 하나면 선택 없이 바로 채운다', () {
     final one = _card().copyWith(officePhone: '', faxPhone: '');
     final choices = businessCardFillChoices('홍길동', [one]);

@@ -114,13 +114,9 @@ class BusinessCardFill {
   final String phoneLabel;
 }
 
-List<BusinessCardFill> businessCardFillChoices(
-  String query,
-  List<BusinessCard> cards,
-) {
-  final matches = matchingBusinessCardsByName(query, cards);
+List<BusinessCardFill> businessCardFillsOf(Iterable<BusinessCard> cards) {
   final out = <BusinessCardFill>[];
-  for (final card in matches) {
+  for (final card in cards) {
     final phones = businessCardPhoneOptions(card);
     if (phones.isEmpty) {
       out.add(BusinessCardFill(card: card, phone: '', phoneLabel: ''));
@@ -133,6 +129,27 @@ List<BusinessCardFill> businessCardFillChoices(
     }
   }
   return out;
+}
+
+List<BusinessCardFill> businessCardFillChoices(
+  String query,
+  List<BusinessCard> cards,
+) {
+  return businessCardFillsOf(matchingBusinessCardsByName(query, cards));
+}
+
+/// 입력한 번호와 같은 명함 번호만 남긴다. 없으면 카드의 전체 번호다.
+List<BusinessCardFill> businessCardFillsForPhone(
+  String phone,
+  List<BusinessCard> cards,
+) {
+  final digits = normalizePhoneDigits(phone);
+  final fills = businessCardFillsOf(cards);
+  if (digits.length < 8) return fills;
+  final exact = fills
+      .where((f) => normalizePhoneDigits(f.phone) == digits)
+      .toList(growable: false);
+  return exact.isEmpty ? fills : exact;
 }
 
 class BusinessCardRepository {
@@ -289,6 +306,30 @@ class BusinessCardRepository {
               normalizePhoneDigits(c.officePhone) == digits ||
               normalizePhoneDigits(c.faxPhone) == digits,
         )
+        .toList();
+  }
+
+  Future<List<BusinessCard>> findByEmail({
+    required AppUser user,
+    required String email,
+  }) async {
+    if (!canAccessBusinessCards(user)) return const [];
+    final q = email.trim().toLowerCase();
+    if (!q.contains('@') || q.length < 5) return const [];
+    // 점(.)은 메일의 일부다. or 필터를 깨는 문자만 뺀다.
+    final safe = q.replaceAll(RegExp(r'[,()%]'), '').trim();
+    if (safe.isEmpty || !safe.contains('@')) return const [];
+    final rows = await _client
+        .from('business_cards')
+        .select()
+        .isFilter('deleted_at', null)
+        .ilike('email', safe)
+        .order('updated_at', ascending: false)
+        .limit(12);
+    return List<Map<String, dynamic>>.from(rows)
+        .map(BusinessCard.fromJson)
+        .where((c) => canViewBusinessCard(user, c))
+        .where((c) => c.email.trim().toLowerCase() == q)
         .toList();
   }
 

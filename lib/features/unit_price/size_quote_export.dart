@@ -45,9 +45,7 @@ Future<Uint8List> sizeQuoteToPdf({
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(20),
-        build: (_) => pw.Center(
-          child: pw.Image(image, fit: pw.BoxFit.contain),
-        ),
+        build: (_) => pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain)),
       ),
     );
   }
@@ -120,11 +118,13 @@ Future<SizeQuoteViewAction> showSizeQuoteExportSheet(
   return result ?? SizeQuoteViewAction.close;
 }
 
-Future<bool> showSizeQuotePreviewSheet(
+enum SizeQuotePreviewChoice { close, save, send }
+
+Future<SizeQuotePreviewChoice> showSizeQuotePreviewSheet(
   BuildContext context, {
   required SizeQuoteDocument doc,
 }) async {
-  final result = await showModalBottomSheet<bool>(
+  final result = await showModalBottomSheet<SizeQuotePreviewChoice>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -132,7 +132,7 @@ Future<bool> showSizeQuotePreviewSheet(
     useSafeArea: false,
     builder: (_) => _SizeQuotePreviewSheet(doc: doc),
   );
-  return result == true;
+  return result ?? SizeQuotePreviewChoice.close;
 }
 
 class _SizeQuotePreviewSheet extends ConsumerStatefulWidget {
@@ -145,7 +145,8 @@ class _SizeQuotePreviewSheet extends ConsumerStatefulWidget {
       _SizeQuotePreviewSheetState();
 }
 
-class _SizeQuotePreviewSheetState extends ConsumerState<_SizeQuotePreviewSheet> {
+class _SizeQuotePreviewSheetState
+    extends ConsumerState<_SizeQuotePreviewSheet> {
   String _phone = '';
   SizeQuoteNoteBook? _notes;
   List<QuoteBranchContact> _branches = const [];
@@ -176,7 +177,9 @@ class _SizeQuotePreviewSheetState extends ConsumerState<_SizeQuotePreviewSheet> 
 
   Future<void> _loadNotes() async {
     try {
-      final notes = await ref.read(sizeQuoteRepositoryProvider).loadQuoteNotes();
+      final notes = await ref
+          .read(sizeQuoteRepositoryProvider)
+          .loadQuoteNotes();
       if (!mounted) return;
       setState(() => _notes = notes);
     } catch (_) {}
@@ -223,7 +226,7 @@ class _SizeQuotePreviewSheetState extends ConsumerState<_SizeQuotePreviewSheet> 
               style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
             ),
             Text(
-              '두 손가락으로 확대 · 한 손가락으로 이동',
+              '두 손가락으로 확대·축소 · 한 손가락으로 이동',
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             if (doc.promoImageIds.isNotEmpty)
@@ -255,23 +258,43 @@ class _SizeQuotePreviewSheetState extends ConsumerState<_SizeQuotePreviewSheet> 
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
+                    onPressed: () =>
+                        Navigator.of(context).pop(SizeQuotePreviewChoice.close),
                     child: const Text('닫기'),
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    icon: const Icon(Icons.send_rounded, size: 18),
-                    label: const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text('저장하고 보내기', maxLines: 1),
-                    ),
+                FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    minimumSize: const Size(96, 52),
                   ),
+                  onPressed: () =>
+                      Navigator.of(context).pop(SizeQuotePreviewChoice.save),
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('저장', maxLines: 1, softWrap: false),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () =>
+                    Navigator.of(context).pop(SizeQuotePreviewChoice.send),
+                icon: const Icon(Icons.ios_share_rounded, size: 18),
+                label: const Text('저장하고 보내기'),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '저장은 견적 목록에만 남깁니다. 저장하고 보내기는 이미지·PDF·메일로 이어집니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: scheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -326,7 +349,9 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
 
   Future<void> _loadNotes() async {
     try {
-      final notes = await ref.read(sizeQuoteRepositoryProvider).loadQuoteNotes();
+      final notes = await ref
+          .read(sizeQuoteRepositoryProvider)
+          .loadQuoteNotes();
       if (!mounted) return;
       setState(() => _notes = notes);
     } catch (_) {}
@@ -401,9 +426,9 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
       final png = await _capturePng();
       if (png == null || png.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('견적서 이미지를 만들지 못했습니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('견적서 이미지를 만들지 못했습니다.')));
         return;
       }
       await action(png);
@@ -456,9 +481,9 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
     if (uri == null) return;
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('클라우드 PDF를 열지 못했습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('클라우드 PDF를 열지 못했습니다.')));
     }
   }
 
@@ -467,17 +492,17 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
       final granted = await Gal.requestAccess();
       if (!granted) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('갤러리 접근 권한이 필요합니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('갤러리 접근 권한이 필요합니다.')));
         return;
       }
     }
     await Gal.putImageBytes(png, name: '$_stem.png');
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('견적서 이미지를 앨범에 저장했습니다.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('견적서 이미지를 앨범에 저장했습니다.')));
   }
 
   Future<void> _savePdf(Uint8List png) async {
@@ -526,9 +551,7 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
     if (!mounted) return;
     await SharePlus.instance.share(
       ShareParams(
-        files: [
-          XFile(file.path, mimeType: 'image/png', name: '$_stem.png'),
-        ],
+        files: [XFile(file.path, mimeType: 'image/png', name: '$_stem.png')],
         subject: sizeQuoteEmailSubject(_doc),
         text: sizeQuoteEmailBody(_doc, totalLabel: _totalLabel),
       ),
@@ -548,9 +571,9 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
       if (mounted) setState(() => _doc = stored);
     } catch (_) {}
     if (!mounted) return;
-    Navigator.of(context).pop(
-      sent ? SizeQuoteViewAction.sent : SizeQuoteViewAction.unsent,
-    );
+    Navigator.of(
+      context,
+    ).pop(sent ? SizeQuoteViewAction.sent : SizeQuoteViewAction.unsent);
   }
 
   @override
@@ -600,10 +623,11 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
               ),
             const SizedBox(height: 8),
             Material(
-              color: (_doc.isEmailSent
-                      ? AppTokens.success(scheme)
-                      : (_doc.isSent ? scheme.primary : scheme.error))
-                  .withValues(alpha: 0.12),
+              color:
+                  (_doc.isEmailSent
+                          ? AppTokens.success(scheme)
+                          : (_doc.isSent ? scheme.primary : scheme.error))
+                      .withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
@@ -669,7 +693,7 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
               ),
             ),
             Text(
-              '두 손가락으로 확대 · 한 손가락으로 이동',
+              '두 손가락으로 확대·축소 · 한 손가락으로 이동',
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
@@ -683,7 +707,9 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
                         child: SizeQuotePaper(
                           doc: _doc,
                           managerName: _managerName,
-                          branchName: ref.read(authControllerProvider)?.branchName,
+                          branchName: ref
+                              .read(authControllerProvider)
+                              ?.branchName,
                           office: sizeQuoteOfficeFor(
                             ref.read(authControllerProvider)?.branchName,
                             _branches,
@@ -772,9 +798,9 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
                   child: OutlinedButton.icon(
                     onPressed: _busy
                         ? null
-                        : () => Navigator.of(context).pop(
-                            SizeQuoteViewAction.close,
-                          ),
+                        : () => Navigator.of(
+                            context,
+                          ).pop(SizeQuoteViewAction.close),
                     icon: const Icon(Icons.arrow_back_rounded, size: 18),
                     label: const Text('뒤로'),
                   ),
@@ -784,9 +810,9 @@ class _SizeQuoteExportSheetState extends ConsumerState<_SizeQuoteExportSheet> {
                   child: OutlinedButton.icon(
                     onPressed: _busy
                         ? null
-                        : () => Navigator.of(context).pop(
-                            SizeQuoteViewAction.edit,
-                          ),
+                        : () => Navigator.of(
+                            context,
+                          ).pop(SizeQuoteViewAction.edit),
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     label: const Text('수정'),
                   ),
@@ -817,7 +843,16 @@ Matrix4 sizeQuoteFitMatrix({required Size view, required Size paper}) {
     ..scaleByDouble(scale, scale, scale, 1);
 }
 
-/// 처음에는 견적서 전체를 보여주고, 두 손가락으로 확대한 뒤 이동할 수 있다.
+/// 맞춘 크기보다 줄일 수 있게 최소 배율을 잡는다. 맞춘 값보다 커지지는 않는다.
+double sizeQuoteViewerMinScale(double fitScale) {
+  if (!fitScale.isFinite || fitScale <= 0) return 0.05;
+  final shrunk = fitScale * 0.35;
+  if (shrunk >= fitScale) return fitScale;
+  if (shrunk < 0.05) return fitScale < 0.05 ? fitScale : 0.05;
+  return shrunk;
+}
+
+/// 처음에는 견적서 전체를 보여주고, 두 손가락으로 키우거나 줄인 뒤 이동할 수 있다.
 class _SizeQuotePaperViewer extends StatefulWidget {
   const _SizeQuotePaperViewer({required this.child});
 
@@ -832,11 +867,15 @@ class _SizeQuotePaperViewerState extends State<_SizeQuotePaperViewer> {
   final _childKey = GlobalKey();
   double _minScale = 0.05;
   bool _fitted = false;
+  bool _userAdjusted = false;
+  Size? _fittedPaper;
+  int _stableFrames = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+    Future<void>.delayed(const Duration(milliseconds: 400), _fit);
   }
 
   @override
@@ -846,7 +885,7 @@ class _SizeQuotePaperViewerState extends State<_SizeQuotePaperViewer> {
   }
 
   void _fit() {
-    if (!mounted || _fitted) return;
+    if (!mounted || _userAdjusted) return;
     final view = context.findRenderObject() as RenderBox?;
     final child = _childKey.currentContext?.findRenderObject() as RenderBox?;
     if (view == null ||
@@ -854,17 +893,34 @@ class _SizeQuotePaperViewerState extends State<_SizeQuotePaperViewer> {
         !view.hasSize ||
         !child.hasSize ||
         view.size.width <= 0 ||
-        child.size.width <= 0) {
+        view.size.height <= 0 ||
+        child.size.width <= 0 ||
+        child.size.height <= 0) {
+      _stableFrames = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
       return;
     }
-    final matrix = sizeQuoteFitMatrix(view: view.size, paper: child.size);
+    final paper = child.size;
+    final same =
+        _fittedPaper != null &&
+        (paper.width - _fittedPaper!.width).abs() < 1 &&
+        (paper.height - _fittedPaper!.height).abs() < 1;
+    if (same) {
+      _stableFrames += 1;
+      if (_stableFrames >= 2) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+      return;
+    }
+    _stableFrames = 0;
+    final matrix = sizeQuoteFitMatrix(view: view.size, paper: paper);
     final scale = matrix.getMaxScaleOnAxis();
     _controller.value = matrix;
     setState(() {
-      _minScale = scale;
+      _minScale = sizeQuoteViewerMinScale(scale);
       _fitted = true;
+      _fittedPaper = paper;
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
   }
 
   @override
@@ -883,6 +939,7 @@ class _SizeQuotePaperViewerState extends State<_SizeQuotePaperViewer> {
           clipBehavior: Clip.hardEdge,
           panEnabled: true,
           scaleEnabled: true,
+          onInteractionStart: (_) => _userAdjusted = true,
           child: KeyedSubtree(key: _childKey, child: widget.child),
         ),
       ),

@@ -70,8 +70,7 @@ class _StandardUnitPriceScreenState
   List<SizeQuoteDocument> _similarQuotes = const [];
   Timer? _similarDebounce;
 
-  List<StandardUnitPriceRow> get _cells =>
-      _cellsByModel[_modelId] ?? const [];
+  List<StandardUnitPriceRow> get _cells => _cellsByModel[_modelId] ?? const [];
 
   @override
   void initState() {
@@ -140,8 +139,7 @@ class _StandardUnitPriceScreenState
       var categoryId = firstCat?.id;
       var modelId = firstModel?.id;
       final savedCat = prefs.getString(_kPrefCat);
-      if (savedCat != null &&
-          catalog.categories.any((c) => c.id == savedCat)) {
+      if (savedCat != null && catalog.categories.any((c) => c.id == savedCat)) {
         categoryId = savedCat;
         final inCat = catalog.modelsFor(savedCat);
         final savedModel = prefs.getString(_kPrefModel);
@@ -154,8 +152,7 @@ class _StandardUnitPriceScreenState
         final savedModel = prefs.getString(_kPrefModel);
         if (savedModel != null &&
             catalog.models.any((m) => m.id == savedModel)) {
-          final matched =
-              catalog.models.firstWhere((m) => m.id == savedModel);
+          final matched = catalog.models.firstWhere((m) => m.id == savedModel);
           categoryId = matched.categoryId;
           modelId = matched.id;
         }
@@ -300,7 +297,9 @@ class _StandardUnitPriceScreenState
       return;
     }
     try {
-      final rows = await ref.read(sizeQuoteRepositoryProvider).listSimilar(
+      final rows = await ref
+          .read(sizeQuoteRepositoryProvider)
+          .listSimilar(
             modelId: modelId,
             widthMm: _widthMm,
             heightMm: _heightMm,
@@ -338,12 +337,18 @@ class _StandardUnitPriceScreenState
       );
       return;
     }
-    await pushSizeQuoteEditor(
+    final saved = await pushSizeQuoteEditor(
       context,
       existing: existing,
       seed: seed,
     );
-    if (mounted) unawaited(_loadSimilarQuotes());
+    if (!mounted) return;
+    if (saved != null && !saved.openExport) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('견적서를 저장했습니다.')));
+    }
+    unawaited(_loadSimilarQuotes());
   }
 
   Future<void> _openQuoteHistory() async {
@@ -448,7 +453,9 @@ class _StandardUnitPriceScreenState
   void _backspaceSize() {
     HapticFeedback.selectionClick();
     final s = '$_currentAxisMm';
-    final next = s.length <= 1 ? 0 : (int.tryParse(s.substring(0, s.length - 1)) ?? 0);
+    final next = s.length <= 1
+        ? 0
+        : (int.tryParse(s.substring(0, s.length - 1)) ?? 0);
     if (_editingWidth) {
       _writeSize(widthMm: next);
     } else {
@@ -517,10 +524,10 @@ class _StandardUnitPriceScreenState
   }
 
   String get _quoteLine => formatStandardQuoteLine(
-        categoryName: _selectedCategory?.name ?? '',
-        modelName: _selectedModel?.name ?? '',
-        inference: _inference,
-      );
+    categoryName: _selectedCategory?.name ?? '',
+    modelName: _selectedModel?.name ?? '',
+    inference: _inference,
+  );
 
   List<SameSizeModelQuote> get _comparisons {
     if (!_hasSize) return const [];
@@ -551,9 +558,9 @@ class _StandardUnitPriceScreenState
       await SharePlus.instance.share(ShareParams(text: line));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('단가를 복사했습니다')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('단가를 복사했습니다')));
   }
 
   Future<void> _reloadHistory() async {
@@ -567,9 +574,9 @@ class _StandardUnitPriceScreenState
   }
 
   void _showError(Object e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(koreanErrorMessage(e))),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
   }
 
   int get _widthMm =>
@@ -582,11 +589,11 @@ class _StandardUnitPriceScreenState
   bool get _isGarageDoor => _selectedCategory?.name == '차고문';
 
   StandardPriceInference get _inference => inferStandardPrice(
-        cells: _cells.map((c) => c.asCell).toList(),
-        widthMm: _widthMm == 0 ? 2000 : _widthMm,
-        heightMm: _heightMm == 0 ? 2000 : _heightMm,
-        ceilingHeights: _isGarageDoor,
-      );
+    cells: _cells.map((c) => c.asCell).toList(),
+    widthMm: _widthMm == 0 ? 2000 : _widthMm,
+    heightMm: _heightMm == 0 ? 2000 : _heightMm,
+    ceilingHeights: _isGarageDoor,
+  );
 
   StandardUnitPriceModel? get _selectedModel {
     final id = _modelId;
@@ -600,7 +607,8 @@ class _StandardUnitPriceScreenState
   StandardUnitPriceCategory? get _selectedCategory {
     final id = _categoryId;
     if (id == null) return null;
-    for (final c in _catalog?.categories ?? const <StandardUnitPriceCategory>[]) {
+    for (final c
+        in _catalog?.categories ?? const <StandardUnitPriceCategory>[]) {
       if (c.id == id) return c;
     }
     return null;
@@ -613,12 +621,16 @@ class _StandardUnitPriceScreenState
     if (modelId == null) return;
     final value = num.tryParse(_adjustValueCtrl.text.replaceAll(',', ''));
     if (value == null || value == 0) {
-      final typedInReason = num.tryParse(_adjustReasonCtrl.text.replaceAll(',', ''));
-      _showError(StateError(
-        typedInReason != null && typedInReason != 0
-            ? '조정액 칸에 $typedInReason을 넣고, 사유 칸에는 이유를 적어 주세요.'
-            : '조정액 칸에 0이 아닌 값을 입력해 주세요. 인하는 -100처럼 앞에 마이너스를 붙입니다.',
-      ));
+      final typedInReason = num.tryParse(
+        _adjustReasonCtrl.text.replaceAll(',', ''),
+      );
+      _showError(
+        StateError(
+          typedInReason != null && typedInReason != 0
+              ? '조정액 칸에 $typedInReason을 넣고, 사유 칸에는 이유를 적어 주세요.'
+              : '조정액 칸에 0이 아닌 값을 입력해 주세요. 인하는 -100처럼 앞에 마이너스를 붙입니다.',
+        ),
+      );
       return;
     }
     if (_adjustReasonCtrl.text.trim().isEmpty) {
@@ -663,9 +675,9 @@ class _StandardUnitPriceScreenState
       await _reloadCells(modelId);
       await _reloadHistory();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('일괄 조정을 적용했습니다')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('일괄 조정을 적용했습니다')));
       }
     } catch (e) {
       if (mounted) _showError(e);
@@ -691,7 +703,10 @@ class _StandardUnitPriceScreenState
     }
   }
 
-  Future<void> _renameCategory(StandardUnitPriceCategory cat, String name) async {
+  Future<void> _renameCategory(
+    StandardUnitPriceCategory cat,
+    String name,
+  ) async {
     setState(() => _saving = true);
     try {
       await _repo.updateCategory(id: cat.id, name: name);
@@ -882,8 +897,9 @@ class _StandardUnitPriceScreenState
                       won: _won,
                       dt: _dt,
                       onToggle: (id) => setState(
-                        () => _openAdjustmentId =
-                            _openAdjustmentId == id ? null : id,
+                        () => _openAdjustmentId = _openAdjustmentId == id
+                            ? null
+                            : id,
                       ),
                     ),
                   );
@@ -926,47 +942,45 @@ class _StandardUnitPriceScreenState
       body: _loading
           ? const AppLoading(message: '표준단가 불러오는 중…')
           : _error != null
-              ? AppErrorState(
-                  message: koreanErrorMessage(_error!),
-                  onRetry: _load,
-                )
-              : _LookupTab(
-                  catalog: _catalog!,
-                  categoryId: _categoryId,
-                  modelId: _modelId,
-                  comparisons: _comparisons,
-                  widthMm: _widthMm,
-                  heightMm: _heightMm,
-                  editingWidth: _editingWidth,
-                  inference: _inference,
-                  hasSize: _hasSize,
-                  selectedCategory: _selectedCategory,
-                  selectedModel: _selectedModel,
-                  won: _won,
-                  onSelectCategory: _selectCategory,
-                  onSelectModel: _selectModel,
-                  onEditWidth: _setEditingWidth,
-                  onTapSizeAxis: _tapSizeAxis,
-                  onQuickWidth: _quickWidth,
-                  onQuickHeight: _quickHeight,
-                  onDigit: _appendDigit,
-                  onBackspace: _backspaceSize,
-                  onClearCurrent: _clearCurrentAxis,
-                  onClearAll: () {
-                    _widthCtrl.clear();
-                    _heightCtrl.clear();
-                    setState(() => _editingWidth = true);
-                    _persistLookup();
-                  },
-                  onCopyPrice: () => unawaited(_copyQuote()),
-                  onSharePrice: () => unawaited(_copyQuote(share: true)),
-                  onShowGrid: _openGridSheet,
-                  similarCount: _similarQuotes.length,
-                  onWriteQuote: () => unawaited(_openQuoteWriter()),
-                  onOpenSimilar: _similarQuotes.isEmpty
-                      ? null
-                      : () => unawaited(_openSimilarQuotes()),
-                ),
+          ? AppErrorState(message: koreanErrorMessage(_error!), onRetry: _load)
+          : _LookupTab(
+              catalog: _catalog!,
+              categoryId: _categoryId,
+              modelId: _modelId,
+              comparisons: _comparisons,
+              widthMm: _widthMm,
+              heightMm: _heightMm,
+              editingWidth: _editingWidth,
+              inference: _inference,
+              hasSize: _hasSize,
+              selectedCategory: _selectedCategory,
+              selectedModel: _selectedModel,
+              won: _won,
+              onSelectCategory: _selectCategory,
+              onSelectModel: _selectModel,
+              onEditWidth: _setEditingWidth,
+              onTapSizeAxis: _tapSizeAxis,
+              onQuickWidth: _quickWidth,
+              onQuickHeight: _quickHeight,
+              onDigit: _appendDigit,
+              onBackspace: _backspaceSize,
+              onClearCurrent: _clearCurrentAxis,
+              onClearAll: () {
+                _widthCtrl.clear();
+                _heightCtrl.clear();
+                setState(() => _editingWidth = true);
+                _persistLookup();
+              },
+              onCopyPrice: () => unawaited(_copyQuote()),
+              onSharePrice: () => unawaited(_copyQuote(share: true)),
+              onShowGrid: _openGridSheet,
+              similarCount: _similarQuotes.length,
+              onWriteQuote: () => unawaited(_openQuoteWriter()),
+              onOpenQuotes: () => unawaited(_openQuoteHistory()),
+              onOpenSimilar: _similarQuotes.isEmpty
+                  ? null
+                  : () => unawaited(_openSimilarQuotes()),
+            ),
     );
   }
 }
@@ -1000,6 +1014,7 @@ class _LookupTab extends StatelessWidget {
     required this.onShowGrid,
     required this.similarCount,
     required this.onWriteQuote,
+    required this.onOpenQuotes,
     this.onOpenSimilar,
   });
 
@@ -1030,8 +1045,8 @@ class _LookupTab extends StatelessWidget {
   final VoidCallback onShowGrid;
   final int similarCount;
   final VoidCallback onWriteQuote;
+  final VoidCallback onOpenQuotes;
   final VoidCallback? onOpenSimilar;
-
 
   @override
   Widget build(BuildContext context) {
@@ -1040,7 +1055,8 @@ class _LookupTab extends StatelessWidget {
         ? const <StandardUnitPriceModel>[]
         : catalog.modelsFor(categoryId!);
     final price = hasSize ? (inference.estimatedPrice ?? 0) : 0;
-    final unavailable = hasSize &&
+    final unavailable =
+        hasSize &&
         (inference.outOfRange ||
             (!inference.isEstimated &&
                 inference.match?.available == false &&
@@ -1051,8 +1067,8 @@ class _LookupTab extends StatelessWidget {
     final headerColor = unavailable
         ? scheme.error
         : hasSize && inference.isEstimated
-            ? const Color(0xFFB45309)
-            : accent;
+        ? const Color(0xFFB45309)
+        : accent;
     final heightChips = selectedCategory?.name == '차고문'
         ? garageQuickHeights
         : standardQuickHeights;
@@ -1078,6 +1094,7 @@ class _LookupTab extends StatelessWidget {
           onSharePrice: onSharePrice,
           onShowGrid: onShowGrid,
           onWriteQuote: onWriteQuote,
+          onOpenQuotes: onOpenQuotes,
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
@@ -1184,17 +1201,14 @@ class _LookupTab extends StatelessWidget {
                         label: mm == 2150
                             ? '2150 4단'
                             : mm == 2700
-                                ? '2700 5단'
-                                : '$mm',
-                        selected: editingWidth
-                            ? widthMm == mm
-                            : heightMm == mm,
+                            ? '2700 5단'
+                            : '$mm',
+                        selected: editingWidth ? widthMm == mm : heightMm == mm,
                         color: editingWidth
                             ? const Color(0xFF1D4ED8)
                             : const Color(0xFF0F766E),
-                        onTap: () => editingWidth
-                            ? onQuickWidth(mm)
-                            : onQuickHeight(mm),
+                        onTap: () =>
+                            editingWidth ? onQuickWidth(mm) : onQuickHeight(mm),
                       ),
                   ],
                 ),
@@ -1220,7 +1234,6 @@ class _LookupTab extends StatelessWidget {
   }
 }
 
-
 class _PriceHeader extends StatefulWidget {
   const _PriceHeader({
     required this.color,
@@ -1233,6 +1246,7 @@ class _PriceHeader extends StatefulWidget {
     required this.onSharePrice,
     required this.onShowGrid,
     required this.onWriteQuote,
+    required this.onOpenQuotes,
   });
 
   final Color color;
@@ -1245,6 +1259,7 @@ class _PriceHeader extends StatefulWidget {
   final VoidCallback onSharePrice;
   final VoidCallback onShowGrid;
   final VoidCallback onWriteQuote;
+  final VoidCallback onOpenQuotes;
 
   @override
   State<_PriceHeader> createState() => _PriceHeaderState();
@@ -1262,8 +1277,7 @@ class _PriceHeaderState extends State<_PriceHeader> {
 
   @override
   Widget build(BuildContext context) {
-    final canCopy =
-        widget.hasSize && !widget.unavailable && widget.price > 0;
+    final canCopy = widget.hasSize && !widget.unavailable && widget.price > 0;
     return Material(
       color: widget.color,
       child: Padding(
@@ -1307,6 +1321,13 @@ class _PriceHeaderState extends State<_PriceHeader> {
                       ),
                     ),
                   ),
+                ),
+                IconButton(
+                  tooltip: '견적 기록',
+                  onPressed: widget.onOpenQuotes,
+                  color: Colors.white,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.folder_open_rounded),
                 ),
                 if (canCopy)
                   Padding(
@@ -1394,11 +1415,7 @@ class _PriceHeaderState extends State<_PriceHeader> {
 }
 
 class _HeaderTag extends StatelessWidget {
-  const _HeaderTag({
-    required this.label,
-    required this.bg,
-    required this.fg,
-  });
+  const _HeaderTag({required this.label, required this.bg, required this.fg});
 
   final String label;
   final Color bg;
@@ -1415,11 +1432,7 @@ class _HeaderTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: fg),
       ),
     );
   }
@@ -1450,8 +1463,8 @@ class _ModelTile extends StatelessWidget {
     final priceText = !hasSize
         ? '선택'
         : (quote == null || quote!.unavailable)
-            ? '불가'
-            : '${won.format(quote!.price)}원';
+        ? '불가'
+        : '${won.format(quote!.price)}원';
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.0,
       child: Material(
@@ -1573,8 +1586,8 @@ class _InlineKeypad extends StatelessWidget {
         final actionH = constraints.maxHeight < 220
             ? 36.0
             : constraints.maxHeight < 280
-                ? 40.0
-                : 44.0;
+            ? 40.0
+            : 44.0;
         final gap = constraints.maxHeight < 220 ? 2.0 : 4.0;
         final digitSize = constraints.maxHeight < 220 ? 20.0 : 24.0;
 
@@ -1652,9 +1665,7 @@ class _InlineKeypad extends StatelessWidget {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          editingWidth
-                              ? '폭 지움'
-                              : (canCopy ? '복사' : '높이 지움'),
+                          editingWidth ? '폭 지움' : (canCopy ? '복사' : '높이 지움'),
                         ),
                       ),
                     ),
@@ -1678,9 +1689,7 @@ class _InlineKeypad extends StatelessWidget {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          editingWidth
-                              ? '다음 · 높이'
-                              : (canCopy ? '견적서' : '폭으로'),
+                          editingWidth ? '다음 · 높이' : (canCopy ? '견적서' : '폭으로'),
                         ),
                       ),
                     ),
@@ -1738,16 +1747,15 @@ class _PriceGrid extends StatelessWidget {
         final dataW = dataCols == 0
             ? minData
             : fillW
-                ? (availW - axisW) / dataCols
-                : minData;
+            ? (availW - axisW) / dataCols
+            : minData;
         final headH = minHead;
         final cellH = fillW ? 56.0 : minCell;
         final table = Table(
           border: TableBorder.all(color: scheme.outlineVariant),
           columnWidths: {
             0: FixedColumnWidth(axisW),
-            for (var i = 0; i < dataCols; i++)
-              i + 1: FixedColumnWidth(dataW),
+            for (var i = 0; i < dataCols; i++) i + 1: FixedColumnWidth(dataW),
           },
           children: [
             TableRow(
@@ -1768,13 +1776,13 @@ class _PriceGrid extends StatelessWidget {
                   for (final w in axes.widths)
                     _LookupGridCell(
                       cell: _lookupCell(cells, w, h),
-                      selected: hasSize &&
+                      selected:
+                          hasSize &&
                           !inference.isEstimated &&
                           !inference.outOfRange &&
                           inference.bucketWidth == w &&
                           inference.bucketHeight == h,
-                      highlighted: hasSize &&
-                          highlightKeys.contains('${w}_$h'),
+                      highlighted: hasSize && highlightKeys.contains('${w}_$h'),
                       outOfRange: hasSize && inference.outOfRange,
                       estimated: hasSize && inference.isEstimated,
                       height: cellH,
@@ -1799,7 +1807,6 @@ class _PriceGrid extends StatelessWidget {
     );
   }
 }
-
 
 StandardUnitPriceRow? _lookupCell(
   List<StandardUnitPriceRow> cells,
@@ -1853,9 +1860,7 @@ class _CategoryTabs extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Row(
         children: [
@@ -2172,31 +2177,29 @@ class _LookupGridCell extends StatelessWidget {
     final label = blocked
         ? 'X'
         : priced
-            ? '${(cell!.price / 10000).round()}만'
-            : '-';
+        ? '${(cell!.price / 10000).round()}만'
+        : '-';
     final ring = selected
         ? const Color(0xFF0F172A)
         : highlighted
-            ? (outOfRange ? const Color(0xFFDC2626) : const Color(0xFFFBBF24))
-            : null;
+        ? (outOfRange ? const Color(0xFFDC2626) : const Color(0xFFFBBF24))
+        : null;
     return Material(
       color: blocked
           ? const Color(0xFF7F1D1D)
           : selected
-              ? const Color(0xFFFFF7ED)
-              : highlighted && estimated
-                  ? const Color(0xFFFEF3C7)
-                  : highlighted && outOfRange
-                      ? const Color(0xFFFEE2E2)
-                      : Colors.white,
+          ? const Color(0xFFFFF7ED)
+          : highlighted && estimated
+          ? const Color(0xFFFEF3C7)
+          : highlighted && outOfRange
+          ? const Color(0xFFFEE2E2)
+          : Colors.white,
       child: InkWell(
         onTap: onTap,
         child: DecoratedBox(
           decoration: ring == null
               ? const BoxDecoration()
-              : BoxDecoration(
-                  border: Border.all(color: ring, width: 2),
-                ),
+              : BoxDecoration(border: Border.all(color: ring, width: 2)),
           child: SizedBox(
             height: height,
             child: Center(
@@ -2208,8 +2211,8 @@ class _LookupGridCell extends StatelessWidget {
                   color: blocked
                       ? Colors.white
                       : selected
-                          ? const Color(0xFF9A3412)
-                          : null,
+                      ? const Color(0xFF9A3412)
+                      : null,
                 ),
               ),
             ),
@@ -2275,8 +2278,7 @@ class _AdjustTabState extends State<_AdjustTab> {
 
   @override
   Widget build(BuildContext context) {
-    final value =
-        num.tryParse(widget.valueCtrl.text.replaceAll(',', '')) ?? 0;
+    final value = num.tryParse(widget.valueCtrl.text.replaceAll(',', '')) ?? 0;
     final preview = widget.cells
         .where(
           (c) =>
@@ -2335,12 +2337,10 @@ class _AdjustTabState extends State<_AdjustTab> {
                 ? '예: 5 또는 -5'
                 : '예: -100',
             helperText: widget.type == StandardAdjustType.amount
-                ? (amountWords.isEmpty
-                    ? '인하는 -100처럼 이 칸에 입력하세요'
-                    : amountWords)
+                ? (amountWords.isEmpty ? '인하는 -100처럼 이 칸에 입력하세요' : amountWords)
                 : (value == 0
-                    ? '인상은 양수, 인하는 음수입니다. 이 칸에 입력하세요'
-                    : '$value% ${value < 0 ? '인하' : '인상'}'),
+                      ? '인상은 양수, 인하는 음수입니다. 이 칸에 입력하세요'
+                      : '$value% ${value < 0 ? '인하' : '인상'}'),
           ),
         ),
         const SizedBox(height: 12),
@@ -2455,8 +2455,9 @@ class _HistoryTabState extends State<_HistoryTab> {
       byUser[editor] = (byUser[editor] ?? 0) + 1;
     }
     final periodKeys = periodMap.keys.toList()..sort((a, b) => b.compareTo(a));
-    final lastLabel =
-        adjustments.isEmpty ? '-' : labelWithEditor(adjustments.first);
+    final lastLabel = adjustments.isEmpty
+        ? '-'
+        : labelWithEditor(adjustments.first);
     final userNames = byUser.keys.toList()
       ..sort((a, b) => (byUser[b] ?? 0).compareTo(byUser[a] ?? 0));
     if (adjustments.isEmpty && logs.isEmpty) {
@@ -2491,7 +2492,10 @@ class _HistoryTabState extends State<_HistoryTab> {
         for (final key in periodKeys)
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text(key, style: const TextStyle(fontWeight: FontWeight.w800)),
+            title: Text(
+              key,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
             subtitle: Text(
               '${periodMap[key]!.length}회 · ${periodMap[key]!.join(' · ')}\n수정한 사람: ${(periodEditors[key] ?? const []).join(', ')}',
             ),
@@ -2502,19 +2506,24 @@ class _HistoryTabState extends State<_HistoryTab> {
           for (final name in userNames)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              title: Text(
+                name,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
               trailing: Text('${byUser[name]}회'),
             ),
         ],
         const SizedBox(height: 16),
-        const Text('변경이 어떻게 이뤄졌는지', style: TextStyle(fontWeight: FontWeight.w800)),
+        const Text(
+          '변경이 어떻게 이뤄졌는지',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
         const SizedBox(height: 8),
         for (final row in adjustments) ...[
           Card(
             child: InkWell(
-              onTap: () => setState(
-                () => _openId = _openId == row.id ? null : row.id,
-              ),
+              onTap: () =>
+                  setState(() => _openId = _openId == row.id ? null : row.id),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -2522,7 +2531,8 @@ class _HistoryTabState extends State<_HistoryTab> {
                   children: [
                     Text(
                       [
-                        if ((row.categoryName ?? '').isNotEmpty) row.categoryName,
+                        if ((row.categoryName ?? '').isNotEmpty)
+                          row.categoryName,
                         row.modelName ?? '모델',
                       ].join(' / '),
                       style: const TextStyle(fontWeight: FontWeight.w800),
@@ -2543,7 +2553,9 @@ class _HistoryTabState extends State<_HistoryTab> {
                     ),
                     if (_openId == row.id) ...[
                       const Divider(),
-                      for (final log in logs.where((l) => l.adjustmentId == row.id))
+                      for (final log in logs.where(
+                        (l) => l.adjustmentId == row.id,
+                      ))
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text(
@@ -2598,7 +2610,7 @@ class _CatalogTab extends StatelessWidget {
   final bool saving;
   final ValueChanged<String> onAddCategory;
   final void Function(StandardUnitPriceCategory cat, String name)
-      onRenameCategory;
+  onRenameCategory;
   final ValueChanged<StandardUnitPriceCategory> onDeleteCategory;
   final void Function(String categoryId, String name) onAddModel;
   final void Function(StandardUnitPriceModel model, String name) onRenameModel;
@@ -2658,14 +2670,15 @@ class _CatalogTab extends StatelessWidget {
         for (final cat in catalog.categories) ...[
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(backgroundColor: hexToColor(cat.color), radius: 8),
+            leading: CircleAvatar(
+              backgroundColor: hexToColor(cat.color),
+              radius: 8,
+            ),
             title: Text(
               cat.name,
               style: const TextStyle(fontWeight: FontWeight.w900),
             ),
-            subtitle: Text(
-              '모델 ${catalog.modelsFor(cat.id).length}개',
-            ),
+            subtitle: Text('모델 ${catalog.modelsFor(cat.id).length}개'),
             trailing: Wrap(
               children: [
                 IconButton(
@@ -2673,7 +2686,11 @@ class _CatalogTab extends StatelessWidget {
                   onPressed: saving
                       ? null
                       : () async {
-                          final name = await _prompt(context, '분류 수정', cat.name);
+                          final name = await _prompt(
+                            context,
+                            '분류 수정',
+                            cat.name,
+                          );
                           if (name != null && name.isNotEmpty) {
                             onRenameCategory(cat, name);
                           }
@@ -2691,7 +2708,10 @@ class _CatalogTab extends StatelessWidget {
           for (final model in catalog.modelsFor(cat.id))
             ListTile(
               contentPadding: const EdgeInsets.only(left: 12),
-              leading: CircleAvatar(backgroundColor: hexToColor(model.color), radius: 7),
+              leading: CircleAvatar(
+                backgroundColor: hexToColor(model.color),
+                radius: 7,
+              ),
               title: Text(model.name),
               trailing: Wrap(
                 children: [
@@ -2700,8 +2720,11 @@ class _CatalogTab extends StatelessWidget {
                     onPressed: saving
                         ? null
                         : () async {
-                            final name =
-                                await _prompt(context, '모델 수정', model.name);
+                            final name = await _prompt(
+                              context,
+                              '모델 수정',
+                              model.name,
+                            );
                             if (name != null && name.isNotEmpty) {
                               onRenameModel(model, name);
                             }
@@ -2722,7 +2745,11 @@ class _CatalogTab extends StatelessWidget {
               onPressed: saving
                   ? null
                   : () async {
-                      final name = await _prompt(context, '모델 추가 · ${cat.name}', '');
+                      final name = await _prompt(
+                        context,
+                        '모델 추가 · ${cat.name}',
+                        '',
+                      );
                       if (name != null && name.isNotEmpty) {
                         onAddModel(cat.id, name);
                       }

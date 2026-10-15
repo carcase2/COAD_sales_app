@@ -24,6 +24,110 @@ const kSizeQuoteMarkupBoth = 'both';
 
 const kSizeQuoteFitLineName = '금액 조정';
 
+const kSizeQuoteDetailBody = 'body';
+const kSizeQuoteDetailSensor = 'sensor';
+const kSizeQuoteDetailInstall = 'install';
+const kSizeQuoteDetailTransport = 'transport';
+
+const kSizeQuoteDetailOrder = [
+  kSizeQuoteDetailBody,
+  kSizeQuoteDetailSensor,
+  kSizeQuoteDetailInstall,
+  kSizeQuoteDetailTransport,
+];
+
+const kSizeQuoteDefaultSensor = 200000;
+const kSizeQuoteDefaultInstall = 800000;
+const kSizeQuoteDefaultTransport = 300000;
+
+String sizeQuoteDetailLabel(String role) {
+  switch (role) {
+    case kSizeQuoteDetailSensor:
+      return '센서';
+    case kSizeQuoteDetailInstall:
+      return '시공비';
+    case kSizeQuoteDetailTransport:
+      return '운반장비대';
+    default:
+      return '본체';
+  }
+}
+
+String? normalizeSizeQuoteDetailRole(Object? raw) {
+  switch ('${raw ?? ''}'.trim()) {
+    case kSizeQuoteDetailBody:
+    case '본체':
+      return kSizeQuoteDetailBody;
+    case kSizeQuoteDetailSensor:
+    case '센서':
+    case '센처':
+      return kSizeQuoteDetailSensor;
+    case kSizeQuoteDetailInstall:
+    case '시공비':
+      return kSizeQuoteDetailInstall;
+    case kSizeQuoteDetailTransport:
+    case '운반장비대':
+      return kSizeQuoteDetailTransport;
+    default:
+      return null;
+  }
+}
+
+String sizeQuoteDetailBodyName(String modelName) {
+  final model = modelName.trim();
+  if (model.isEmpty) return '본체';
+  if (model.endsWith('본체')) return model;
+  return '$model 본체';
+}
+
+/// 목표 단가에서 센서·시공비·운반장비대를 뺀 본체 단가. 0원 아래로는 내려가지 않는다.
+int sizeQuoteDetailBodyUnit({
+  required int targetUnit,
+  required int sensor,
+  required int install,
+  required int transport,
+}) {
+  final extras =
+      (sensor < 0 ? 0 : sensor) +
+      (install < 0 ? 0 : install) +
+      (transport < 0 ? 0 : transport);
+  final target = targetUnit < 0 ? 0 : targetUnit;
+  final body = target - extras;
+  return body < 0 ? 0 : body;
+}
+
+String sizeQuoteSignedWon(int value) {
+  final won = NumberFormat('#,###');
+  if (value == 0) return '0원';
+  final sign = value > 0 ? '+' : '−';
+  return '$sign${won.format(value.abs())}원';
+}
+
+/// 부호가 붙은 퍼센트. 소수 한 자리까지, 0.0은 정수로.
+String sizeQuoteSignedPercent(num pct) {
+  if (pct == 0) return '0%';
+  final absPct = pct.abs();
+  final rounded = (absPct * 10).round() / 10;
+  final body = rounded == rounded.roundToDouble()
+      ? '${rounded.round()}'
+      : rounded.toStringAsFixed(1);
+  final sign = pct > 0 ? '+' : '−';
+  return '$sign$body%';
+}
+
+/// 표준단가와 목표(판매) 단가의 차이. 같으면 `차이 없음`.
+String sizeQuotePriceGapLabel({
+  required int standardPrice,
+  required int targetUnit,
+}) {
+  final delta = targetUnit - standardPrice;
+  if (delta == 0) return '차이 없음';
+  final amount = sizeQuoteSignedWon(delta);
+  if (standardPrice <= 0) return amount;
+  final pct = delta / standardPrice * 100;
+  return '$amount (${sizeQuoteSignedPercent(pct)})';
+}
+
 String sizeQuoteKindLabel(String kind) {
   switch (kind) {
     case kSizeQuoteKindAccessory:
@@ -73,7 +177,9 @@ num readSizeQuoteMarkupPercent(Map<String, dynamic> json) {
     '${json['markupType'] ?? json['markup_type'] ?? ''}',
   );
   if (type == kSizeQuoteMarkupPercent) {
-    return num.tryParse('${json['markupValue'] ?? json['markup_value'] ?? 0}') ??
+    return num.tryParse(
+          '${json['markupValue'] ?? json['markup_value'] ?? 0}',
+        ) ??
         0;
   }
   return 0;
@@ -88,8 +194,9 @@ int readSizeQuoteMarkupAmount(Map<String, dynamic> json) {
     '${json['markupType'] ?? json['markup_type'] ?? ''}',
   );
   if (type == kSizeQuoteMarkupAmount) {
-    return num.tryParse('${json['markupValue'] ?? json['markup_value'] ?? 0}')
-            ?.round() ??
+    return num.tryParse(
+          '${json['markupValue'] ?? json['markup_value'] ?? 0}',
+        )?.round() ??
         0;
   }
   return 0;
@@ -171,6 +278,10 @@ class SizeQuoteLine {
     this.note = '',
     this.kind = kSizeQuoteKindMain,
     this.isProduct = false,
+    this.detailRole,
+    this.widthMm = 0,
+    this.heightMm = 0,
+    this.standardPrice = 0,
   });
 
   final String name;
@@ -181,6 +292,16 @@ class SizeQuoteLine {
   final String note;
   final String kind;
   final bool isProduct;
+
+  /// 세부견적 역할. 본체·센서·시공비·운반장비대. 기본 견적이면 null.
+  final String? detailRole;
+
+  /// 이 줄이 속한 사이즈. 없으면 견적서의 대표 사이즈다.
+  final int widthMm;
+  final int heightMm;
+
+  /// 이 사이즈의 표준단가. 제품·본체 줄에만 둔다. 고객 용지에는 찍지 않는다.
+  final int standardPrice;
 
   int get amount {
     final p = unitPrice ?? 0;
@@ -196,6 +317,10 @@ class SizeQuoteLine {
     'note': note,
     'kind': kind,
     'isProduct': isProduct,
+    if (detailRole != null) 'detailRole': detailRole,
+    if (widthMm > 0) 'widthMm': widthMm,
+    if (heightMm > 0) 'heightMm': heightMm,
+    if (standardPrice > 0) 'standardPrice': standardPrice,
   };
 
   factory SizeQuoteLine.fromJson(Map<String, dynamic> json) {
@@ -212,6 +337,17 @@ class SizeQuoteLine {
         (json['kind'] ?? json['category'] ?? '').toString(),
       ),
       isProduct: json['isProduct'] == true || json['is_product'] == true,
+      detailRole: normalizeSizeQuoteDetailRole(
+        json['detailRole'] ?? json['detail_role'],
+      ),
+      widthMm: int.tryParse('${json['widthMm'] ?? json['width_mm'] ?? 0}') ?? 0,
+      heightMm:
+          int.tryParse('${json['heightMm'] ?? json['height_mm'] ?? 0}') ?? 0,
+      standardPrice:
+          int.tryParse(
+            '${json['standardPrice'] ?? json['standard_price'] ?? 0}',
+          ) ??
+          0,
     );
   }
 
@@ -225,6 +361,10 @@ class SizeQuoteLine {
     String? note,
     String? kind,
     bool? isProduct,
+    String? detailRole,
+    int? widthMm,
+    int? heightMm,
+    int? standardPrice,
   }) {
     return SizeQuoteLine(
       name: name ?? this.name,
@@ -235,6 +375,10 @@ class SizeQuoteLine {
       note: note ?? this.note,
       kind: kind ?? this.kind,
       isProduct: isProduct ?? this.isProduct,
+      detailRole: detailRole ?? this.detailRole,
+      widthMm: widthMm ?? this.widthMm,
+      heightMm: heightMm ?? this.heightMm,
+      standardPrice: standardPrice ?? this.standardPrice,
     );
   }
 }
@@ -250,11 +394,7 @@ class SizeQuoteEditEvent {
   final String by;
   final String summary;
 
-  Map<String, dynamic> toJson() => {
-    'at': at,
-    'by': by,
-    'summary': summary,
-  };
+  Map<String, dynamic> toJson() => {'at': at, 'by': by, 'summary': summary};
 
   factory SizeQuoteEditEvent.fromJson(Map<String, dynamic> json) {
     return SizeQuoteEditEvent(
@@ -290,7 +430,8 @@ class SizeQuotePromoImage {
       modelId: '${json['model_id'] ?? json['modelId'] ?? ''}',
       title: '${json['title'] ?? ''}',
       storagePath: '${json['storage_path'] ?? json['storagePath'] ?? ''}',
-      sortOrder: (json['sort_order'] as num?)?.toInt() ??
+      sortOrder:
+          (json['sort_order'] as num?)?.toInt() ??
           int.tryParse('${json['sortOrder'] ?? 0}') ??
           0,
       createdBy: (json['created_by'] ?? json['createdBy'])?.toString(),
@@ -447,17 +588,30 @@ class SizeQuoteDocument {
     return '−${won.format(negoOff)}원';
   }
 
-  /// 마진·네고·금액조정 전의 기준 합계. 제품은 표준단가×수량이다.
+  bool get isDetailQuote => sizeQuoteLinesAreDetail(lines);
+
+  /// 마진·네고·금액조정 전의 기준 합계. 제품은 그 사이즈의 표준단가×수량이다.
+  /// 줄에 표준단가가 없으면 첫 제품만 견적서 표준단가를 쓴다.
+  /// 세부견적의 센서·시공비·운반장비대는 목표 단가를 나눈 것이라 기준에 넣지 않는다.
   int get baselineTotal {
     var sum = 0;
+    var seenProduct = false;
     for (final line in lines) {
       if (_isFitLine(line)) continue;
-      if (line.isProduct && standardPrice > 0) {
+      if (sizeQuoteLineIsDetailPart(line)) continue;
+      if (line.isProduct) {
         final qty = line.qty <= 0 ? 1 : line.qty;
-        sum += standardPrice * qty;
-      } else {
-        sum += line.amount;
+        final own = line.standardPrice;
+        final standard = own > 0
+            ? own
+            : (!seenProduct && standardPrice > 0 ? standardPrice : 0);
+        seenProduct = true;
+        if (standard > 0) {
+          sum += standard * qty;
+          continue;
+        }
       }
+      sum += line.amount;
     }
     return sum;
   }
@@ -589,9 +743,7 @@ class SizeQuoteDocument {
         (json['markupType'] ?? json['markup_type'] ?? '').toString(),
       ),
       markupValue:
-          num.tryParse(
-            '${json['markupValue'] ?? json['markup_value'] ?? 0}',
-          ) ??
+          num.tryParse('${json['markupValue'] ?? json['markup_value'] ?? 0}') ??
           0,
       markupPercent: readSizeQuoteMarkupPercent(json),
       markupAmount: readSizeQuoteMarkupAmount(json),
@@ -604,7 +756,10 @@ class SizeQuoteDocument {
                 .toList()
           : const [],
       promoImageIds: rawPromo is List
-          ? rawPromo.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+          ? rawPromo
+                .map((e) => e.toString())
+                .where((e) => e.isNotEmpty)
+                .toList()
           : const [],
       note: (json['note'] ?? '').toString(),
       createdBy: (json['createdBy'] ?? json['created_by'])?.toString(),
@@ -614,9 +769,7 @@ class SizeQuoteDocument {
       sentYmd: ymdOf(json['sentYmd'] ?? json['sent_ymd']),
       emailSentYmd: ymdOf(json['emailSentYmd'] ?? json['email_sent_ymd']),
       negoAmount:
-          int.tryParse(
-            '${json['negoAmount'] ?? json['nego_amount'] ?? 0}',
-          ) ??
+          int.tryParse('${json['negoAmount'] ?? json['nego_amount'] ?? 0}') ??
           0,
       negoPercent:
           double.tryParse(
@@ -632,9 +785,8 @@ class SizeQuoteDocument {
           ? rawHistory
                 .whereType<Map>()
                 .map(
-                  (e) => SizeQuoteEditEvent.fromJson(
-                    Map<String, dynamic>.from(e),
-                  ),
+                  (e) =>
+                      SizeQuoteEditEvent.fromJson(Map<String, dynamic>.from(e)),
                 )
                 .toList()
           : const [],
@@ -786,6 +938,9 @@ SizeQuoteLine sizeQuoteProductLine({
     unitPrice: selling,
     kind: kSizeQuoteKindMain,
     isProduct: true,
+    widthMm: seed.widthMm,
+    heightMm: seed.heightMm,
+    standardPrice: seed.standardPrice,
     note: [
       '표준단가 ${won.format(seed.standardPrice)}원',
       if (markup.isNotEmpty) markup,
@@ -907,12 +1062,7 @@ List<SizeQuoteLine> sizeQuoteSyncProductLine({
 }
 
 /// 퍼센트를 [delta]만큼 올리고 내린다.
-int sizeQuoteStepPercent(
-  num current,
-  int delta, {
-  int min = 0,
-  int max = 100,
-}) {
+int sizeQuoteStepPercent(num current, int delta, {int min = 0, int max = 100}) {
   final next = current.round() + delta;
   if (next < min) return min;
   if (next > max) return max;
@@ -945,8 +1095,358 @@ int sizeQuoteAdjustmentForTarget({
 
 bool _isFitLine(SizeQuoteLine line) =>
     line.kind == kSizeQuoteKindOther &&
-    (line.name.trim() == kSizeQuoteFitLineName ||
-        line.note.trim() == 'fit');
+    (line.name.trim() == kSizeQuoteFitLineName || line.note.trim() == 'fit');
+
+bool sizeQuoteLineIsDetail(SizeQuoteLine line) =>
+    (line.detailRole ?? '').isNotEmpty;
+
+/// 센서·시공비·운반장비대. 본체는 제품 라인이라 여기 넣지 않는다.
+bool sizeQuoteLineIsDetailPart(SizeQuoteLine line) {
+  final role = line.detailRole;
+  return role == kSizeQuoteDetailSensor ||
+      role == kSizeQuoteDetailInstall ||
+      role == kSizeQuoteDetailTransport;
+}
+
+bool sizeQuoteLinesAreDetail(Iterable<SizeQuoteLine> lines) =>
+    lines.any((e) => e.detailRole == kSizeQuoteDetailBody);
+
+bool sizeQuoteLineIsExtra(SizeQuoteLine line) =>
+    !line.isProduct && !sizeQuoteLineIsDetail(line) && !_isFitLine(line);
+
+bool sizeQuoteLineShowsOnPaper(SizeQuoteLine line) {
+  if (sizeQuoteLineIsDetail(line) && line.amount <= 0) return false;
+  return true;
+}
+
+int sizeQuoteDetailUnitPrice(Iterable<SizeQuoteLine> lines, String role) {
+  for (final line in lines) {
+    if (line.detailRole == role) return line.unitPrice ?? 0;
+  }
+  return 0;
+}
+
+/// 목표 단가를 본체·센서·시공비·운반장비대로 나눈다.
+/// 본체는 목표에서 나머지를 뺀 금액이고, 0원인 센서·시공비·운반장비대는 빼 둔다.
+List<SizeQuoteLine> sizeQuoteDetailLines({
+  required SizeQuoteSeed seed,
+  required int quantity,
+  required int targetUnit,
+  required int sensor,
+  required int install,
+  required int transport,
+}) {
+  final qty = quantity <= 0 ? 1 : quantity;
+  final safeSensor = sensor < 0 ? 0 : sensor;
+  final safeInstall = install < 0 ? 0 : install;
+  final safeTransport = transport < 0 ? 0 : transport;
+  final body = sizeQuoteDetailBodyUnit(
+    targetUnit: targetUnit,
+    sensor: safeSensor,
+    install: safeInstall,
+    transport: safeTransport,
+  );
+  final spec = seed.widthMm > 0 && seed.heightMm > 0
+      ? '${seed.widthMm}×${seed.heightMm}'
+      : '';
+  SizeQuoteLine row({
+    required String role,
+    required String name,
+    required String unit,
+    required int price,
+    required bool product,
+  }) {
+    return SizeQuoteLine(
+      name: name,
+      spec: spec,
+      unit: unit,
+      qty: qty,
+      unitPrice: price,
+      kind: kSizeQuoteKindMain,
+      isProduct: product,
+      detailRole: role,
+      widthMm: seed.widthMm,
+      heightMm: seed.heightMm,
+      standardPrice: product ? seed.standardPrice : 0,
+    );
+  }
+
+  return [
+    row(
+      role: kSizeQuoteDetailBody,
+      name: sizeQuoteDetailBodyName(seed.modelName),
+      unit: 'SET',
+      price: body,
+      product: true,
+    ),
+    if (safeSensor > 0)
+      row(
+        role: kSizeQuoteDetailSensor,
+        name: '센서',
+        unit: 'SET',
+        price: safeSensor,
+        product: false,
+      ),
+    if (safeInstall > 0)
+      row(
+        role: kSizeQuoteDetailInstall,
+        name: '시공비',
+        unit: '식',
+        price: safeInstall,
+        product: false,
+      ),
+    if (safeTransport > 0)
+      row(
+        role: kSizeQuoteDetailTransport,
+        name: '운반장비대',
+        unit: '식',
+        price: safeTransport,
+        product: false,
+      ),
+  ];
+}
+
+/// 한 사이즈의 견적 줄. 세부 항목 수량은 그 사이즈의 세트 수와 같다.
+List<SizeQuoteLine> sizeQuoteSizeLines({
+  required String modelName,
+  required int widthMm,
+  required int heightMm,
+  required int quantity,
+  required int standardPrice,
+  required bool detail,
+  required int unitPrice,
+  int sensor = 0,
+  int install = 0,
+  int transport = 0,
+}) {
+  if (detail) {
+    return sizeQuoteDetailLines(
+      seed: SizeQuoteSeed(
+        categoryId: '',
+        categoryName: '',
+        modelId: '',
+        modelName: modelName,
+        widthMm: widthMm,
+        heightMm: heightMm,
+        standardPrice: standardPrice,
+      ),
+      quantity: quantity,
+      targetUnit: unitPrice,
+      sensor: sensor,
+      install: install,
+      transport: transport,
+    );
+  }
+  final qty = quantity <= 0 ? 1 : quantity;
+  final won = NumberFormat('#,###');
+  return [
+    SizeQuoteLine(
+      name: modelName,
+      spec: widthMm > 0 && heightMm > 0 ? '$widthMm×$heightMm' : '',
+      unit: 'SET',
+      qty: qty,
+      unitPrice: unitPrice,
+      kind: kSizeQuoteKindMain,
+      isProduct: true,
+      widthMm: widthMm,
+      heightMm: heightMm,
+      standardPrice: standardPrice,
+      note: standardPrice > 0 ? '표준단가 ${won.format(standardPrice)}원' : '',
+    ),
+  ];
+}
+
+/// 세부 항목이 목표보다 크면 비율대로 줄여 합이 목표를 넘지 않게 한다.
+({int sensor, int install, int transport}) sizeQuoteScaledDetailParts({
+  required int target,
+  required int previousTarget,
+  required int sensor,
+  required int install,
+  required int transport,
+}) {
+  final safeSensor = sensor < 0 ? 0 : sensor;
+  final safeInstall = install < 0 ? 0 : install;
+  final safeTransport = transport < 0 ? 0 : transport;
+  final extras = safeSensor + safeInstall + safeTransport;
+  if (target <= 0) {
+    return (sensor: 0, install: 0, transport: 0);
+  }
+  if (extras <= target) {
+    return (sensor: safeSensor, install: safeInstall, transport: safeTransport);
+  }
+  final oldBody = previousTarget > extras ? previousTarget - extras : 0;
+  final oldSum = oldBody + extras;
+  if (oldSum <= 0) {
+    return (sensor: 0, install: 0, transport: 0);
+  }
+  final nextSensor = (safeSensor * target / oldSum).floor();
+  final nextInstall = (safeInstall * target / oldSum).floor();
+  var nextTransport = (safeTransport * target / oldSum).floor();
+  if (nextSensor + nextInstall + nextTransport > target) {
+    nextTransport = target - nextSensor - nextInstall;
+    if (nextTransport < 0) nextTransport = 0;
+  }
+  return (sensor: nextSensor, install: nextInstall, transport: nextTransport);
+}
+
+/// 한 견적 안의 사이즈. 단가는 1세트 금액이고 수량을 곱하면 줄 금액이 된다.
+class SizeQuoteSizeGroup {
+  const SizeQuoteSizeGroup({
+    required this.widthMm,
+    required this.heightMm,
+    required this.quantity,
+    required this.standardPrice,
+    required this.sensor,
+    required this.install,
+    required this.transport,
+    required this.bodyUnit,
+    required this.sellingUnit,
+  });
+
+  final int widthMm;
+  final int heightMm;
+  final int quantity;
+  final int standardPrice;
+  final int sensor;
+  final int install;
+  final int transport;
+  final int bodyUnit;
+  final int sellingUnit;
+
+  String get label {
+    if (widthMm <= 0 || heightMm <= 0) return '';
+    return '$widthMm×$heightMm';
+  }
+}
+
+int sizeQuoteStandardFromNote(String note) {
+  final match = RegExp(r'표준단가\s*([0-9,]+)').firstMatch(note);
+  if (match == null) return 0;
+  return int.tryParse(match.group(1)!.replaceAll(',', '')) ?? 0;
+}
+
+({int width, int height})? _parseSizeSpec(String spec) {
+  final match = RegExp(r'^(\d+)\s*[×xX]\s*(\d+)$').firstMatch(spec.trim());
+  if (match == null) return null;
+  final width = int.tryParse(match.group(1)!);
+  final height = int.tryParse(match.group(2)!);
+  if (width == null || height == null || width <= 0 || height <= 0) {
+    return null;
+  }
+  return (width: width, height: height);
+}
+
+String _lineSizeKey(SizeQuoteLine line, SizeQuoteDocument doc) {
+  if (line.widthMm > 0 && line.heightMm > 0) {
+    return '${line.widthMm}x${line.heightMm}';
+  }
+  final parsed = _parseSizeSpec(line.spec);
+  if (parsed != null) return '${parsed.width}x${parsed.height}';
+  return '${doc.widthMm}x${doc.heightMm}';
+}
+
+/// 견적 줄을 사이즈별로 나눈다. 첫 항목이 대표 사이즈다.
+List<SizeQuoteSizeGroup> sizeQuoteSizesOf(SizeQuoteDocument doc) {
+  final order = <String>[];
+  final buckets = <String, List<SizeQuoteLine>>{};
+  for (final line in doc.lines) {
+    if (!line.isProduct && !sizeQuoteLineIsDetail(line)) continue;
+    final key = _lineSizeKey(line, doc);
+    buckets
+        .putIfAbsent(key, () {
+          order.add(key);
+          return <SizeQuoteLine>[];
+        })
+        .add(line);
+  }
+  if (order.isEmpty) return const [];
+  final docKey = '${doc.widthMm}x${doc.heightMm}';
+  final primaryKey = buckets.containsKey(docKey) ? docKey : order.first;
+  final keys = [
+    primaryKey,
+    for (final key in order)
+      if (key != primaryKey) key,
+  ];
+  return [
+    for (final key in keys)
+      _sizeGroupOf(
+        doc,
+        key,
+        buckets[key] ?? const [],
+        primary: key == primaryKey,
+      ),
+  ];
+}
+
+SizeQuoteSizeGroup _sizeGroupOf(
+  SizeQuoteDocument doc,
+  String key,
+  List<SizeQuoteLine> lines, {
+  required bool primary,
+}) {
+  final parts = key.split('x');
+  final width = parts.isEmpty ? 0 : int.tryParse(parts.first) ?? 0;
+  final height = parts.length < 2 ? 0 : int.tryParse(parts[1]) ?? 0;
+  SizeQuoteLine? product;
+  var sensor = 0;
+  var install = 0;
+  var transport = 0;
+  var body = 0;
+  var detail = false;
+  for (final line in lines) {
+    if (line.detailRole == kSizeQuoteDetailBody || line.isProduct) {
+      product ??= line;
+    }
+    final role = line.detailRole;
+    if (role == kSizeQuoteDetailSensor) {
+      sensor = line.unitPrice ?? 0;
+      detail = true;
+    } else if (role == kSizeQuoteDetailInstall) {
+      install = line.unitPrice ?? 0;
+      detail = true;
+    } else if (role == kSizeQuoteDetailTransport) {
+      transport = line.unitPrice ?? 0;
+      detail = true;
+    } else if (role == kSizeQuoteDetailBody) {
+      body = line.unitPrice ?? 0;
+      detail = true;
+    }
+  }
+  final qty = (product?.qty ?? (primary ? doc.quantity : 1));
+  final own = product?.standardPrice ?? 0;
+  final noted = sizeQuoteStandardFromNote(product?.note ?? '');
+  final standard = own > 0
+      ? own
+      : (noted > 0 ? noted : (primary ? doc.standardPrice : 0));
+  final selling = detail
+      ? body + sensor + install + transport
+      : (product?.unitPrice ?? 0);
+  return SizeQuoteSizeGroup(
+    widthMm: width,
+    heightMm: height,
+    quantity: qty <= 0 ? 1 : qty,
+    standardPrice: standard < 0 ? 0 : standard,
+    sensor: sensor,
+    install: install,
+    transport: transport,
+    bodyUnit: detail ? body : (product?.unitPrice ?? 0),
+    sellingUnit: selling < 0 ? 0 : selling,
+  );
+}
+
+/// 목록에 보여줄 사이즈. 한 사이즈면 대표 규격만, 여러 개면 수량까지 붙인다.
+String sizeQuoteSizeListLabel(SizeQuoteDocument doc) {
+  final sizes = sizeQuoteSizesOf(doc);
+  if (sizes.length <= 1) return doc.sizeLabel;
+  return sizes
+      .map((size) {
+        if (size.label.isEmpty) return '';
+        if (size.quantity <= 1) return size.label;
+        return '${size.label} ${size.quantity}SET';
+      })
+      .where((label) => label.isNotEmpty)
+      .join(' · ');
+}
 
 List<SizeQuoteLine> sizeQuoteLinesWithoutFit(List<SizeQuoteLine> lines) =>
     lines.where((e) => !_isFitLine(e)).toList();
@@ -1020,19 +1520,17 @@ List<SizeQuoteDocument> sizeQuoteSimilarOf({
 }) {
   final id = modelId.trim();
   if (id.isEmpty || widthMm <= 0 || heightMm <= 0) return const [];
-  final rows = all
-      .where((e) {
-        if ((excludeId ?? '').isNotEmpty && e.id == excludeId) return false;
-        if ((e.modelId ?? '').trim() != id) return false;
-        return sizeQuoteIsSimilarSize(
-          widthMm: widthMm,
-          heightMm: heightMm,
-          otherWidthMm: e.widthMm,
-          otherHeightMm: e.heightMm,
-          toleranceMm: toleranceMm,
-        );
-      })
-      .toList();
+  final rows = all.where((e) {
+    if ((excludeId ?? '').isNotEmpty && e.id == excludeId) return false;
+    if ((e.modelId ?? '').trim() != id) return false;
+    return sizeQuoteIsSimilarSize(
+      widthMm: widthMm,
+      heightMm: heightMm,
+      otherWidthMm: e.widthMm,
+      otherHeightMm: e.heightMm,
+      toleranceMm: toleranceMm,
+    );
+  }).toList();
   rows.sort((a, b) {
     final da = sizeQuoteSizeDistanceMm(
       widthMm: widthMm,
@@ -1099,7 +1597,10 @@ String sizeQuoteFileStem(SizeQuoteDocument doc) {
       ? doc.site.trim()
       : (doc.customerName.trim().isEmpty ? '고객' : doc.customerName.trim());
   final safe = raw.replaceAll(RegExp(r'[\\/:*?"<>|\s]+'), '_');
-  final model = doc.modelName.trim().replaceAll(RegExp(r'[\\/:*?"<>|\s]+'), '_');
+  final model = doc.modelName.trim().replaceAll(
+    RegExp(r'[\\/:*?"<>|\s]+'),
+    '_',
+  );
   final day = doc.ymd.trim().isEmpty ? '' : '_${doc.ymd.trim()}';
   final modelPart = model.isEmpty ? '' : '_$model';
   return '견적서_$safe$modelPart$day';
@@ -1112,10 +1613,7 @@ String sizeQuoteEmailSubject(SizeQuoteDocument doc) {
   return '[COAD 견적서] $who ${doc.modelName} ${doc.ymd}'.trim();
 }
 
-String sizeQuoteEmailBody(
-  SizeQuoteDocument doc, {
-  required String totalLabel,
-}) {
+String sizeQuoteEmailBody(SizeQuoteDocument doc, {required String totalLabel}) {
   final name = doc.customerName.trim().isEmpty ? '고객' : doc.customerName.trim();
   return [
     '$name 고객님 견적서입니다.',
@@ -1142,6 +1640,7 @@ String sizeQuoteSnapshotSummary(SizeQuoteDocument doc) {
     if (doc.modelName.trim().isNotEmpty) doc.modelName.trim(),
     if (doc.sizeLabel.isNotEmpty) doc.sizeLabel,
     '품목 ${doc.lines.length}건',
+    if (doc.isDetailQuote) '세부견적',
     '합계 ${doc.total <= 0 ? '0' : won.format(doc.total)}원',
     if (doc.hasNego) '네고 ${doc.negoSummary}',
     if (doc.isEmailSent) '메일발송',
@@ -1156,9 +1655,7 @@ String sizeQuoteEditDiffSummary(
   final won = NumberFormat('#,###');
   final changes = <String>[];
   if (before.total != after.total) {
-    changes.add(
-      '합계 ${won.format(before.total)}→${won.format(after.total)}원',
-    );
+    changes.add('합계 ${won.format(before.total)}→${won.format(after.total)}원');
   }
   if (before.lines.length != after.lines.length) {
     changes.add('품목 ${before.lines.length}→${after.lines.length}건');
@@ -1172,12 +1669,15 @@ String sizeQuoteEditDiffSummary(
       changes.add('네고 해제');
     }
   }
+  if (before.isDetailQuote != after.isDetailQuote) {
+    changes.add(after.isDetailQuote ? '세부견적' : '기본견적');
+  }
   if (before.markupType != after.markupType ||
-      before.markupValue != after.markupValue) {
+      before.markupValue != after.markupValue ||
+      before.markupPercent != after.markupPercent ||
+      before.markupAmount != after.markupAmount) {
     changes.add(
-      after.markupSummary.isEmpty
-          ? '표준가 그대로'
-          : '마진 ${after.markupSummary}',
+      after.markupSummary.isEmpty ? '표준가 그대로' : '마진 ${after.markupSummary}',
     );
   }
   if (before.customerName.trim() != after.customerName.trim()) {
@@ -1292,7 +1792,9 @@ List<SizeQuoteSiteGroup> sizeQuoteSiteGroups(List<SizeQuoteDocument> items) {
     final first = e.value.first;
     final title = first.site.trim().isNotEmpty
         ? first.site.trim()
-        : (first.customerName.trim().isEmpty ? '(현장 없음)' : first.customerName.trim());
+        : (first.customerName.trim().isEmpty
+              ? '(현장 없음)'
+              : first.customerName.trim());
     return SizeQuoteSiteGroup(key: e.key, title: title, items: e.value);
   }).toList();
   groups.sort((a, b) {
@@ -1372,10 +1874,7 @@ class SizeQuoteStore {
   }
 
   Future<void> upsert(SizeQuoteDocument doc) async {
-    final next = [
-      doc,
-      ...load().where((e) => e.id != doc.id),
-    ];
+    final next = [doc, ...load().where((e) => e.id != doc.id)];
     next.sort((a, b) {
       final byYmd = b.ymd.compareTo(a.ymd);
       if (byYmd != 0) return byYmd;
