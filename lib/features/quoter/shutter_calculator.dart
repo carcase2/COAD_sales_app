@@ -119,23 +119,63 @@ class ShutterCalculator {
     return _isMotorAtLeastKem800(weightKg, widthMm) ? 'KEM-800' : 'KEM-500B';
   }
 
+  /// 단열 스라트. 비와이메탈 22mm, 명진 20mm.
+  /// 20mm는 22mm와 같은 브라켓·박스이고 높이 상한만 300mm 높다.
+  static const int insulatedSlat22Mm = 22;
+  static const int insulatedSlat20Mm = 20;
+  static const int insulatedSlat20HeightBumpMm = 300;
+
+  static String _compactCompanyName(String? name) =>
+      (name ?? '').replaceAll(RegExp(r'\s+'), '');
+
+  static bool isMyungjinCompany(String? name) =>
+      _compactCompanyName(name).contains('명진');
+
+  static bool isByMetalCompany(String? name) =>
+      _compactCompanyName(name).contains('비와이');
+
+  /// 명진만 단열 20mm. 비와이메탈과 그 외 업체는 22mm.
+  static int insulatedSlatMmForCompany(String? companyName) =>
+      isMyungjinCompany(companyName) ? insulatedSlat20Mm : insulatedSlat22Mm;
+
+  static bool isInsulatedType(ShutterType type) {
+    final model = getDbInfo(type)['model_type'];
+    return model?.contains('단열') ?? false;
+  }
+
+  static int _insulatedHeightBumpMm({
+    required bool isInsulated,
+    required int insulatedSlatMm,
+  }) {
+    if (!isInsulated || insulatedSlatMm != insulatedSlat20Mm) return 0;
+    return insulatedSlat20HeightBumpMm;
+  }
+
   /// 브라켓 종류 — coad_home `getBracketType`.
+  /// [insulatedSlatMm] 20이면 단열 높이 구간이 300mm 올라간다.
   static String getBracketType({
     required bool isInsulated,
     required double heightMm,
     double widthMm = 0,
     double weightKg = 0,
+    int insulatedSlatMm = insulatedSlat22Mm,
   }) {
     if (heightMm <= 0) return '-';
 
     if (isInsulated) {
-      if (heightMm <= 2000) return 'KEM-300, KEM-400';
-      if (heightMm <= 3500) return 'KEM-500, KEM-600';
-      if (heightMm <= 5500) {
+      final bump = _insulatedHeightBumpMm(
+        isInsulated: true,
+        insulatedSlatMm: insulatedSlatMm,
+      );
+      if (heightMm <= 2000 + bump) return 'KEM-300, KEM-400';
+      if (heightMm <= 3500 + bump) {
+        return 'KEM-500, KEM-600, 주문형 브라켓';
+      }
+      if (heightMm <= 5500 + bump) {
         return _resolve500B800('KEM-500B, KEM-800', weightKg, widthMm);
       }
-      if (heightMm <= 8000) return 'KEM-800';
-      if (heightMm <= 9000) return 'KEM-1000';
+      if (heightMm <= 8000 + bump) return 'KEM-800';
+      if (heightMm <= 9000 + bump) return 'KEM-1000';
       return '-';
     }
 
@@ -170,17 +210,20 @@ class ShutterCalculator {
   }
 
   /// 셔터박스 — coad_home `getShutterBoxSize`.
+  /// [insulatedSlatMm] 20이면 단열 높이 구간이 300mm 올라간다.
   static String getShutterBoxSize({
     required bool isInsulated,
     required double heightMm,
     double weightKg = 0,
     double widthMm = 0,
+    int insulatedSlatMm = insulatedSlat22Mm,
   }) {
     final bracketStr = getBracketType(
       isInsulated: isInsulated,
       heightMm: heightMm,
       widthMm: widthMm,
       weightKg: weightKg,
+      insulatedSlatMm: insulatedSlatMm,
     );
     final parts = bracketStr.split(',');
     for (final part in parts) {
@@ -188,9 +231,13 @@ class ShutterCalculator {
       if (size != null) return size;
     }
 
+    final bump = _insulatedHeightBumpMm(
+      isInsulated: isInsulated,
+      insulatedSlatMm: insulatedSlatMm,
+    );
     final wide = isWide8InchRollPipe(widthMm);
-    if (isInsulated && heightMm > (wide ? 8500 : 9000)) return '905*750';
-    if (isInsulated && heightMm > (wide ? 6500 : 7000)) return '855*700';
+    if (isInsulated && heightMm > (wide ? 8500 : 9000) + bump) return '905*750';
+    if (isInsulated && heightMm > (wide ? 6500 : 7000) + bump) return '855*700';
     if (!isInsulated && heightMm > (wide ? 7999 : 8999)) return '855*700';
     return '650*505';
   }
@@ -206,6 +253,7 @@ class ShutterCalculator {
     required List<Map<String, dynamic>> gridPrices,
     required List<Map<String, dynamic>> unitPrices,
     Map<String, int>? unitPriceOverrideMap,
+    int insulatedSlatMm = insulatedSlat22Mm,
   }) {
     final area = calculateArea(input.widthMm, input.heightMm);
     final weightKg = calculateWeight(input.widthMm, input.heightMm, input.type);
@@ -216,17 +264,22 @@ class ShutterCalculator {
     final category = info['category']!;
     final modelType = info['model_type'];
     final isInsulated = modelType?.contains('단열') ?? false;
+    final slatMm = isInsulated && insulatedSlatMm == insulatedSlat20Mm
+        ? insulatedSlat20Mm
+        : insulatedSlat22Mm;
     final bracketType = getBracketType(
       isInsulated: isInsulated,
       heightMm: input.heightMm,
       widthMm: input.widthMm,
       weightKg: weightKg,
+      insulatedSlatMm: slatMm,
     );
     final boxSize = getShutterBoxSize(
       isInsulated: isInsulated,
       heightMm: input.heightMm,
       weightKg: weightKg,
       widthMm: input.widthMm,
+      insulatedSlatMm: slatMm,
     );
 
     final breakdown = <ShutterBreakdownItem>[];

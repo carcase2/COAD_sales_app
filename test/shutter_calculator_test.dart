@@ -65,6 +65,174 @@ void main() {
         '700*555',
       );
     });
+
+    test('단열 22mm 높이 구간', () {
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: true, heightMm: 2000),
+        'KEM-300, KEM-400',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(isInsulated: true, heightMm: 2000),
+        '650*505',
+      );
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: true, heightMm: 2001),
+        'KEM-500, KEM-600, 주문형 브라켓',
+      );
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: true, heightMm: 3500),
+        'KEM-500, KEM-600, 주문형 브라켓',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(isInsulated: true, heightMm: 3500),
+        '700*555',
+      );
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: true, heightMm: 5500),
+        'KEM-500B, KEM-800',
+      );
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: true, heightMm: 8000),
+        'KEM-800',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(isInsulated: true, heightMm: 8000),
+        '800*655',
+      );
+      expect(
+        ShutterCalculator.getBracketType(isInsulated: true, heightMm: 9000),
+        'KEM-1000',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(isInsulated: true, heightMm: 9000),
+        '855*700',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(isInsulated: true, heightMm: 9001),
+        '905*750',
+      );
+    });
+
+    test('단열 20mm는 높이 상한이 300mm 높다', () {
+      const mm20 = ShutterCalculator.insulatedSlat20Mm;
+      expect(
+        ShutterCalculator.getBracketType(
+          isInsulated: true,
+          heightMm: 2300,
+          insulatedSlatMm: mm20,
+        ),
+        'KEM-300, KEM-400',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: true,
+          heightMm: 2300,
+          insulatedSlatMm: mm20,
+        ),
+        '650*505',
+      );
+      expect(
+        ShutterCalculator.getBracketType(
+          isInsulated: true,
+          heightMm: 2301,
+          insulatedSlatMm: mm20,
+        ),
+        'KEM-500, KEM-600, 주문형 브라켓',
+      );
+      expect(
+        ShutterCalculator.getBracketType(
+          isInsulated: true,
+          heightMm: 3800,
+          insulatedSlatMm: mm20,
+        ),
+        'KEM-500, KEM-600, 주문형 브라켓',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: true,
+          heightMm: 3800,
+          insulatedSlatMm: mm20,
+        ),
+        '700*555',
+      );
+      expect(
+        ShutterCalculator.getBracketType(
+          isInsulated: true,
+          heightMm: 5800,
+          insulatedSlatMm: mm20,
+        ),
+        'KEM-500B, KEM-800',
+      );
+      expect(
+        ShutterCalculator.getBracketType(
+          isInsulated: true,
+          heightMm: 8300,
+          insulatedSlatMm: mm20,
+        ),
+        'KEM-800',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: true,
+          heightMm: 8300,
+          insulatedSlatMm: mm20,
+        ),
+        '800*655',
+      );
+      expect(
+        ShutterCalculator.getBracketType(
+          isInsulated: true,
+          heightMm: 9300,
+          insulatedSlatMm: mm20,
+        ),
+        'KEM-1000',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: true,
+          heightMm: 9300,
+          insulatedSlatMm: mm20,
+        ),
+        '855*700',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: true,
+          heightMm: 9301,
+          insulatedSlatMm: mm20,
+        ),
+        '905*750',
+      );
+      // 22mm면 이미 한 단계 큰 박스인 높이가 20mm에서는 이전 박스다.
+      expect(
+        ShutterCalculator.getShutterBoxSize(isInsulated: true, heightMm: 2100),
+        '700*555',
+      );
+      expect(
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: true,
+          heightMm: 2100,
+          insulatedSlatMm: mm20,
+        ),
+        '650*505',
+      );
+    });
+
+    test('명진은 20mm, 비와이메탈과 그 외는 22mm', () {
+      expect(ShutterCalculator.insulatedSlatMmForCompany('명진'), 20);
+      expect(ShutterCalculator.insulatedSlatMmForCompany('명진금속'), 20);
+      expect(ShutterCalculator.insulatedSlatMmForCompany('비와이메탈'), 22);
+      expect(ShutterCalculator.insulatedSlatMmForCompany('다른업체'), 22);
+      expect(ShutterCalculator.isByMetalCompany('비와이 메탈'), isTrue);
+      expect(
+        ShutterCalculator.isInsulatedType(ShutterType.doubleExtrusionInsulated),
+        isTrue,
+      );
+      expect(
+        ShutterCalculator.isInsulatedType(ShutterType.doubleExtrusion),
+        isFalse,
+      );
+    });
   });
 
   group('ShutterCalculator.getDbInfo / isSecurityType', () {

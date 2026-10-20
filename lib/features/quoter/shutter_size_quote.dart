@@ -35,9 +35,13 @@ sizeQuoteDraftFromShutter({
   final widthMm = result.input.widthMm.round();
   final heightMm = result.input.heightMm.round();
   final qty = result.input.quantity <= 0 ? 1 : result.input.quantity;
-  final slatItems = result.breakdown.where((e) => e.name.contains('스라트')).toList();
+  final slatItems = result.breakdown
+      .where((e) => e.name.contains('스라트'))
+      .toList();
   final slat = slatItems.fold<int>(0, (sum, e) => sum + e.amount);
-  final fallbackProduct = result.breakdown.where((e) => e.amount > 0).firstOrNull;
+  final fallbackProduct = result.breakdown
+      .where((e) => e.amount > 0)
+      .firstOrNull;
   final productPrice = slat > 0
       ? slat
       : (fallbackProduct?.amount ?? result.totalAmount);
@@ -88,8 +92,13 @@ sizeQuoteDraftFromShutter({
     );
   }
 
+  final insulated = ShutterCalculator.isInsulatedType(type);
+  final slatMm = insulated
+      ? ShutterCalculator.insulatedSlatMmForCompany(companyName)
+      : null;
   final note = [
     if ((companyName ?? '').trim().isNotEmpty) '적용 업체: ${companyName!.trim()}',
+    if (slatMm != null) '단열 스라트 ${slatMm}mm',
     if (result.area > 0) '면적 ${result.area.toStringAsFixed(2)}㎡',
     if (result.motorModel.trim().isNotEmpty) '모터 ${result.motorModel.trim()}',
     if (result.powerSpec.trim().isNotEmpty) result.powerSpec.trim(),

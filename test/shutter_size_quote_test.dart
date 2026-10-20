@@ -11,13 +11,15 @@ void main() {
         widthMm: 4000,
         heightMm: 4000,
         quantity: 1,
-        extraItems: [
-          ShutterExtraItem(name: '리모컨', price: 30000, quantity: 2),
-        ],
+        extraItems: [ShutterExtraItem(name: '리모컨', price: 30000, quantity: 2)],
       ),
       totalAmount: 1710000,
       breakdown: [
-        ShutterBreakdownItem(name: '스라트 (본체)', amount: 810000, note: '10㎡ × 81,000원'),
+        ShutterBreakdownItem(
+          name: '스라트 (본체)',
+          amount: 810000,
+          note: '10㎡ × 81,000원',
+        ),
         ShutterBreakdownItem(name: '시공 예상 비용', amount: 800000),
         ShutterBreakdownItem(name: '모터', amount: 400000, note: 'KEM-500'),
         ShutterBreakdownItem(name: '장비대', amount: 200000),
@@ -31,10 +33,7 @@ void main() {
       calculatedAt: '2026-09-09 12:00',
     );
 
-    final draft = sizeQuoteDraftFromShutter(
-      result: result,
-      companyName: '코아드',
-    );
+    final draft = sizeQuoteDraftFromShutter(result: result, companyName: '코아드');
 
     expect(draft.seed.categoryName, '셔터');
     expect(draft.seed.modelName, '이중압출');
@@ -58,5 +57,35 @@ void main() {
     expect(draft.extraLines.any((e) => e.name == '리모컨'), isTrue);
     expect(draft.note, contains('적용 업체: 코아드'));
     expect(draft.note, contains('KEM-500'));
+    expect(draft.note, isNot(contains('단열 스라트')));
+  });
+
+  test('단열 견적 비고는 제조사에 따라 20mm 또는 22mm를 적는다', () {
+    ShutterEstimateResult resultFor(ShutterType type) {
+      return ShutterEstimateResult(
+        input: ShutterEstimateInput(type: type, widthMm: 3000, heightMm: 2100),
+        totalAmount: 1,
+        breakdown: const [],
+        area: 1,
+        weightKg: 1,
+        motorModel: 'KEM-300',
+        powerSpec: '500W',
+        boxSize: '650*505',
+        bracketType: 'KEM-300, KEM-400',
+        calculatedAt: '2026-10-20 12:00',
+      );
+    }
+
+    final myungjin = sizeQuoteDraftFromShutter(
+      result: resultFor(ShutterType.windproofInsulated),
+      companyName: '명진',
+    );
+    final byMetal = sizeQuoteDraftFromShutter(
+      result: resultFor(ShutterType.doubleExtrusionInsulated),
+      companyName: '비와이메탈',
+    );
+
+    expect(myungjin.note, contains('단열 스라트 20mm'));
+    expect(byMetal.note, contains('단열 스라트 22mm'));
   });
 }

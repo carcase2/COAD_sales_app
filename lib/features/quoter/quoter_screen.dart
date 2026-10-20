@@ -324,6 +324,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         gridPrices: prices['grid'] as List<Map<String, dynamic>>,
         unitPrices: prices['unit'] as List<Map<String, dynamic>>,
         unitPriceOverrideMap: preferredUnitMap,
+        insulatedSlatMm: ShutterCalculator.insulatedSlatMmForCompany(
+          preferredCompany?.companyName,
+        ),
       );
       comparisons = _buildCompanyComparisons(
         prices: prices,
@@ -519,6 +522,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         gridPrices: prices['grid'] as List<Map<String, dynamic>>,
         unitPrices: prices['unit'] as List<Map<String, dynamic>>,
         unitPriceOverrideMap: unitMap,
+        insulatedSlatMm: ShutterCalculator.insulatedSlatMmForCompany(
+          company.companyName,
+        ),
       );
       return CompanyComparisonRow(
         company: company,
@@ -619,6 +625,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       gridPrices: prices['grid'] as List<Map<String, dynamic>>,
       unitPrices: prices['unit'] as List<Map<String, dynamic>>,
       unitPriceOverrideMap: unitMap,
+      insulatedSlatMm: ShutterCalculator.insulatedSlatMmForCompany(
+        selectedCompany?.companyName,
+      ),
     );
     final comparisons = _buildCompanyComparisons(
       prices: prices,
@@ -984,6 +993,23 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               ),
             ),
           ),
+          if (!keyboardOpen)
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Text(
+                'made by 허만',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.1,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                  color: scheme.onSurfaceVariant.withValues(
+                    alpha: isDark ? 0.82 : 0.74,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1787,25 +1813,24 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   minimumSize: const Size.fromHeight(48),
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.restart_alt_rounded, size: 18),
-                    SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.restart_alt_rounded, size: 18),
+                      SizedBox(width: 4),
+                      Text(
                         '처음부터',
                         maxLines: 1,
                         softWrap: false,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
                           fontSize: 14,
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1820,25 +1845,24 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                   minimumSize: const Size.fromHeight(48),
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.straighten_rounded, size: 18),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.straighten_rounded, size: 18),
+                      const SizedBox(width: 4),
+                      Text(
                         sizeLabel,
                         maxLines: 1,
                         softWrap: false,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontWeight: FontWeight.w900,
                           fontSize: 14,
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1851,25 +1875,24 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     minimumSize: const Size.fromHeight(48),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.edit_document, size: 18),
-                      SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
+                  child: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.edit_document, size: 18),
+                        SizedBox(width: 4),
+                        Text(
                           '견적서',
                           maxLines: 1,
                           softWrap: false,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 14,
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2261,66 +2284,79 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Text(
+                  '적용 총액',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                if (selectedName != null)
+                  Text(
+                    selectedName,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _krwFormat.format(result.totalAmount),
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: typeColor,
+                      letterSpacing: -0.8,
+                      height: 1.05,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            selectedName != null
-                                ? '적용 총액 · $selectedName'
-                                : '적용 총액',
+                      child: _ResultQuickAction(
+                        icon: Icons.receipt_long_rounded,
+                        label: '견적 내역',
+                        onTap: () => _showBreakdownSheet(scheme),
+                        scheme: scheme,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _ResultQuickAction(
+                        icon: Icons.memory_rounded,
+                        label: '기술 사양',
+                        onTap: () => _showSpecsSheet(scheme),
+                        scheme: scheme,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => unawaited(_openSizeQuoteWriter()),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            '견적서',
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: scheme.onSurfaceVariant,
-                            ),
+                            softWrap: false,
+                            style: TextStyle(fontWeight: FontWeight.w900),
                           ),
-                          const SizedBox(height: 2),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _krwFormat.format(result.totalAmount),
-                              style: TextStyle(
-                                fontSize: 26,
-                                fontWeight: FontWeight.w900,
-                                color: typeColor,
-                                letterSpacing: -0.8,
-                                height: 1.05,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _ResultQuickAction(
-                      icon: Icons.receipt_long_rounded,
-                      label: '견적 내역',
-                      onTap: () => _showBreakdownSheet(scheme),
-                      scheme: scheme,
-                    ),
-                    const SizedBox(width: 6),
-                    _ResultQuickAction(
-                      icon: Icons.memory_rounded,
-                      label: '기술 사양',
-                      onTap: () => _showSpecsSheet(scheme),
-                      scheme: scheme,
-                    ),
-                    const SizedBox(width: 6),
-                    FilledButton(
-                      onPressed: () => unawaited(_openSizeQuoteWriter()),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(0, 44),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                      ),
-                      child: const Text(
-                        '견적서',
-                        style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
                       ),
                     ),
                   ],
@@ -2840,6 +2876,46 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     );
   }
 
+  static const _specMakerByMetal = 'bymetal';
+  static const _specMakerMyungjin = 'myungjin';
+
+  String? get _specMakerKey {
+    final name = _selectedCompanyName;
+    if (ShutterCalculator.isMyungjinCompany(name)) return _specMakerMyungjin;
+    if (ShutterCalculator.isByMetalCompany(name)) return _specMakerByMetal;
+    return null;
+  }
+
+  String? _companyIdForSpecMaker(String key) {
+    final token = key == _specMakerMyungjin ? '명진' : '비와이';
+    for (final row in _companyComparisons) {
+      final name = row.company.companyName.replaceAll(RegExp(r'\s+'), '');
+      if (name.contains(token)) return row.company.id;
+    }
+    return null;
+  }
+
+  Future<void> _applySpecMaker(
+    String key,
+    BuildContext sheetContext,
+    void Function(VoidCallback fn) setSheetState,
+  ) async {
+    final id = _companyIdForSpecMaker(key);
+    if (id == null) {
+      final label = key == _specMakerMyungjin ? '명진' : '비와이메탈';
+      if (!sheetContext.mounted) return;
+      ScaffoldMessenger.of(
+        sheetContext,
+      ).showSnackBar(SnackBar(content: Text('$label 단가가 등록되어 있지 않습니다.')));
+      return;
+    }
+    if (id != _selectedCompanyId) {
+      await _onSelectCompany(id);
+    }
+    if (!sheetContext.mounted) return;
+    setSheetState(() {});
+  }
+
   void _showSpecsSheet(ColorScheme scheme) {
     showModalBottomSheet<void>(
       context: context,
@@ -2849,117 +2925,274 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       enableDrag: false,
       backgroundColor: scheme.surface,
       builder: (ctx) {
-        final maxH = MediaQuery.sizeOf(ctx).height * 0.72;
-        return SizedBox(
-          height: maxH,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
-                child: Row(
-                  children: [
-                    Icon(Icons.memory_rounded, size: 18, color: scheme.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '기술 사양',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: scheme.onSurface,
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.8;
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final result = _result;
+            if (result == null) return const SizedBox.shrink();
+            final insulated = ShutterCalculator.isInsulatedType(_selectedType);
+            final slatMm = ShutterCalculator.insulatedSlatMmForCompany(
+              _selectedCompanyName,
+            );
+            final makerKey = _specMakerKey;
+            final appliedName = _selectedCompanyName;
+            return SizedBox(
+              height: maxH,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.memory_rounded,
+                          size: 18,
+                          color: scheme.primary,
                         ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '닫기',
-                      onPressed: () => Navigator.of(ctx).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(
-                height: 1,
-                color: scheme.outlineVariant.withValues(alpha: 0.45),
-              ),
-              Expanded(
-                child: ListView(
-                  physics: const ClampingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest.withValues(
-                          alpha: 0.2,
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              _buildSpecItem(
-                                '추정 무게',
-                                '${_result!.weightKg.toStringAsFixed(1)} kg',
-                                scheme,
-                              ),
-                              _buildSpecItem(
-                                '권장 모터',
-                                _result!.motorModel,
-                                scheme,
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 20),
-                          Row(
-                            children: [
-                              _buildSpecItem(
-                                '소비전력',
-                                _result!.powerSpec,
-                                scheme,
-                              ),
-                              _buildSpecItem('셔터박스', _result!.boxSize, scheme),
-                            ],
-                          ),
-                          const Divider(height: 20),
-                          _buildSpecItem(
-                            '롤파이프',
-                            ShutterCalculator.getRollPipeType(
-                              _result!.input.widthMm,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '기술 사양',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: scheme.onSurface,
                             ),
-                            scheme,
-                            expanded: false,
                           ),
-                          const Divider(height: 20),
-                          _buildSpecItem(
-                            '브라켓 종류',
-                            _result!.bracketType,
-                            scheme,
-                            expanded: false,
+                        ),
+                        IconButton(
+                          tooltip: '닫기',
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(
+                    height: 1,
+                    color: scheme.outlineVariant.withValues(alpha: 0.45),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      physics: const ClampingScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                      children: [
+                        if (_companyComparisons.isNotEmpty) ...[
+                          _buildSpecMakerPicker(
+                            scheme: scheme,
+                            insulated: insulated,
+                            makerKey: makerKey,
+                            appliedName: appliedName,
+                            slatMm: slatMm,
+                            onPick: (key) => unawaited(
+                              _applySpecMaker(key, ctx, setSheetState),
+                            ),
                           ),
+                          const SizedBox(height: 12),
                         ],
-                      ),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest.withValues(
+                              alpha: 0.2,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  _buildSpecItem(
+                                    '추정 무게',
+                                    '${result.weightKg.toStringAsFixed(1)} kg',
+                                    scheme,
+                                  ),
+                                  _buildSpecItem(
+                                    '권장 모터',
+                                    result.motorModel,
+                                    scheme,
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 20),
+                              Row(
+                                children: [
+                                  _buildSpecItem(
+                                    '소비전력',
+                                    result.powerSpec,
+                                    scheme,
+                                  ),
+                                  _buildSpecItem(
+                                    insulated ? '셔터박스 · ${slatMm}mm' : '셔터박스',
+                                    result.boxSize,
+                                    scheme,
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 20),
+                              _buildSpecItem(
+                                '롤파이프',
+                                ShutterCalculator.getRollPipeType(
+                                  result.input.widthMm,
+                                ),
+                                scheme,
+                                expanded: false,
+                              ),
+                              const Divider(height: 20),
+                              _buildSpecItem(
+                                insulated ? '브라켓 · ${slatMm}mm' : '브라켓 종류',
+                                result.bracketType,
+                                scheme,
+                                expanded: false,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          insulated
+                              ? '단열(22mm)는 비와이메탈, 단열(20mm)는 명진입니다. '
+                                    '20mm는 같은 브라켓·박스를 300mm 더 높은 개구까지 씁니다. '
+                                    '폭 7,500mm 이상이면 8인치 롤파이프 및 모터 1단계 상향이 적용됩니다.'
+                              : '브라켓·박스 규칙은 COAD_home 견적기와 동일합니다. '
+                                    '일반 스라트는 제조사가 달라도 셔터박스·브라켓이 같습니다. '
+                                    '폭 7,500mm 이상이면 8인치 롤파이프 및 모터 1단계 상향이 적용됩니다.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '브라켓·박스 규칙은 COAD_home 견적기와 동일합니다. '
-                      '폭 7,500mm 이상이면 8인치 롤파이프 및 모터 1단계 상향이 적용됩니다.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.35,
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildSpecMakerPicker({
+    required ColorScheme scheme,
+    required bool insulated,
+    required String? makerKey,
+    required String? appliedName,
+    required int slatMm,
+    required ValueChanged<String> onPick,
+  }) {
+    final otherMaker =
+        makerKey == null && (appliedName ?? '').trim().isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '제조사',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        if (otherMaker) ...[
+          const SizedBox(height: 4),
+          Text(
+            insulated
+                ? '적용 중: $appliedName · 단열 ${slatMm}mm'
+                : '적용 중: $appliedName',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurface,
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildSpecMakerButton(
+                label: '비와이메탈',
+                subtitle: insulated ? '단열 22mm' : null,
+                selected: makerKey == _specMakerByMetal,
+                onTap: () => onPick(_specMakerByMetal),
+                scheme: scheme,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSpecMakerButton(
+                label: '명진',
+                subtitle: insulated ? '단열 20mm' : null,
+                selected: makerKey == _specMakerMyungjin,
+                onTap: () => onPick(_specMakerMyungjin),
+                scheme: scheme,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpecMakerButton({
+    required String label,
+    required String? subtitle,
+    required bool selected,
+    required VoidCallback onTap,
+    required ColorScheme scheme,
+  }) {
+    final accent = QuoterTypeStyle.color(_selectedType);
+    return Material(
+      color: selected
+          ? accent.withValues(alpha: 0.14)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? accent
+                  : scheme.outlineVariant.withValues(alpha: 0.45),
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: scheme.onSurface,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: selected ? accent : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -3741,44 +3974,40 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               ),
               const SizedBox(width: 6),
               Expanded(
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        row.company.companyName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSelected
-                              ? FontWeight.w900
-                              : FontWeight.w700,
-                          color: scheme.onSurface,
-                        ),
+                    Text(
+                      row.company.companyName,
+                      maxLines: 2,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: isSelected
+                            ? FontWeight.w900
+                            : FontWeight.w700,
+                        color: scheme.onSurface,
                       ),
                     ),
-                    if (isLowest) ...[
-                      const SizedBox(width: 4),
+                    if (ShutterCalculator.isInsulatedType(_selectedType) ||
+                        isLowest ||
+                        isSelected)
                       Text(
-                        '최저',
+                        [
+                          if (ShutterCalculator.isInsulatedType(_selectedType))
+                            '${ShutterCalculator.insulatedSlatMmForCompany(row.company.companyName)}mm',
+                          if (isLowest) '최저',
+                          if (isSelected) '적용',
+                        ].join(' · '),
+                        maxLines: 1,
+                        softWrap: false,
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.green.shade800,
+                          fontWeight: FontWeight.w800,
+                          color: isSelected
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
                         ),
                       ),
-                    ],
-                    if (isSelected) ...[
-                      const SizedBox(width: 4),
-                      Text(
-                        '적용',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          color: scheme.primary,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -4293,13 +4522,18 @@ class _ResultQuickAction extends StatelessWidget {
             children: [
               Icon(icon, size: 18, color: scheme.primary),
               const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
-                  height: 1.1,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
+                    height: 1.1,
+                  ),
                 ),
               ),
             ],
