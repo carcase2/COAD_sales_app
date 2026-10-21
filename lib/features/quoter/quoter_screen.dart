@@ -31,9 +31,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 class QuoterScreen extends ConsumerStatefulWidget {
-  const QuoterScreen({super.key, this.showQuickActions = true});
+  const QuoterScreen({
+    super.key,
+    this.showQuickActions = true,
+    this.initialType,
+    this.initialWidthMm,
+    this.initialHeightMm,
+  });
 
   final bool showQuickActions;
+
+  /// 사이즈 비교에서 들어온 셔터 종류와 규격. 있으면 결과 단계로 바로 산출한다.
+  final ShutterType? initialType;
+  final int? initialWidthMm;
+  final int? initialHeightMm;
 
   @override
   ConsumerState<QuoterScreen> createState() => _QuoterScreenState();
@@ -108,6 +119,16 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   @override
   void initState() {
     super.initState();
+    final initialType = widget.initialType;
+    if (initialType != null) _selectedType = initialType;
+    final initialWidth = widget.initialWidthMm;
+    final initialHeight = widget.initialHeightMm;
+    if (initialWidth != null && initialWidth > 0) {
+      _widthController.text = '$initialWidth';
+    }
+    if (initialHeight != null && initialHeight > 0) {
+      _heightController.text = '$initialHeight';
+    }
     _widthController.addListener(_invalidateCalculatedResult);
     _heightController.addListener(_invalidateCalculatedResult);
     _motorCostController.addListener(_invalidateCalculatedResult);
@@ -118,6 +139,13 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadCachedSyncTime();
       _checkIfPriceRefreshNeeded();
+      // 종류와 사이즈가 함께 있으면 결과로 산출한다. 사이즈만 있으면 종류 선택에 두고 규격은 채워 둔다.
+      if (widget.initialType != null &&
+          _canCalculate &&
+          widget.initialWidthMm != null &&
+          widget.initialHeightMm != null) {
+        unawaited(_goToStep(4));
+      }
     });
   }
 

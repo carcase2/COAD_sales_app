@@ -1,13 +1,12 @@
-import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/quoter/size_first_quote_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
-import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/usage_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// 견적 탭: 셔터 견적기 · 표준단가 · 견적서(검색·재사용).
+/// 견적 탭: 사이즈로 모델 비교 · 견적서.
 class QuoterHubScreen extends ConsumerStatefulWidget {
   const QuoterHubScreen({
     super.key,
@@ -18,7 +17,7 @@ class QuoterHubScreen extends ConsumerStatefulWidget {
   /// 메인 탭 등 상위 Scaffold 안이면 false.
   final bool showAppBar;
 
-  /// 0 = 셔터 견적기, 1 = 표준단가, 2 = 견적서.
+  /// 0 = 사이즈 비교, 1 = 견적서.
   final int initialTabIndex;
 
   @override
@@ -33,8 +32,8 @@ class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 3,
-      initialIndex: widget.initialTabIndex.clamp(0, 2),
+      length: 2,
+      initialIndex: widget.initialTabIndex.clamp(0, 1),
       vsync: this,
     );
     _tabController!.addListener(_onTabChanged);
@@ -62,16 +61,11 @@ class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
     if (user == null) return;
     final index = _tabController?.index ?? 0;
     final key = switch (index) {
-      0 => 'shutter_quoter',
-      1 => 'standard_unit_price',
-      2 => 'quoter_list',
+      0 => 'size_first_quote',
+      1 => 'quoter_list',
       _ => 'quoter',
     };
-    UsageService.recordTab(
-      userId: user.id,
-      userName: user.name,
-      tabKey: key,
-    );
+    UsageService.recordTab(userId: user.id, userName: user.name, tabKey: key);
   }
 
   @override
@@ -96,8 +90,7 @@ class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
               fontSize: 13,
             ),
             tabs: const [
-              Tab(height: 40, child: _HubTabLabel('셔터 견적기')),
-              Tab(height: 40, child: _HubTabLabel('표준단가')),
+              Tab(height: 40, child: _HubTabLabel('사이즈')),
               Tab(height: 40, child: _HubTabLabel('견적서')),
             ],
           ),
@@ -106,8 +99,7 @@ class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
           child: TabBarView(
             controller: _tabController,
             children: const [
-              QuoterScreen(showQuickActions: false),
-              StandardUnitPriceScreen(showAppBar: false),
+              SizeFirstQuoteScreen(),
               SizeQuoteWriterScreen(embedded: true),
             ],
           ),

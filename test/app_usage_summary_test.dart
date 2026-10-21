@@ -16,6 +16,7 @@ void main() {
     expect(appUsageTabLabel('quoter'), '견적');
     expect(appUsageTabLabel('shutter_quoter'), '셔터 견적기');
     expect(appUsageTabLabel('standard_unit_price'), '표준단가');
+    expect(appUsageTabLabel('size_first_quote'), '사이즈 견적');
     expect(appUsageTabLabel('quoter_list'), '견적서');
     expect(appUsageTabLabel('quoter_log'), '견적 로그');
     expect(appUsageTabLabel('customer_support'), '고객지원팀');

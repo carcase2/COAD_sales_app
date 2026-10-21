@@ -143,6 +143,7 @@ const List<String> appUsageKnownTabKeys = [
   'quoter',
   'shutter_quoter',
   'standard_unit_price',
+  'size_first_quote',
   'quoter_list',
   'quoter_log',
   'general_schedule',
@@ -184,6 +185,8 @@ String appUsageTabLabel(String key) {
       return '셔터 견적기';
     case 'standard_unit_price':
       return '표준단가';
+    case 'size_first_quote':
+      return '사이즈 견적';
     case 'quoter_list':
       return '견적서';
     case 'quoter_log':
