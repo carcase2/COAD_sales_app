@@ -19,6 +19,11 @@ class HomeHubVisual {
                 Color.lerp(scheme.surface, scheme.secondaryContainer, 0.12)!,
             accent: scheme.secondary,
           ),
+        HomeHubSection.work => (
+            canvas:
+                Color.lerp(scheme.surface, scheme.tertiaryContainer, 0.12)!,
+            accent: scheme.tertiary,
+          ),
       };
 
   static BoxDecoration screenBackground(

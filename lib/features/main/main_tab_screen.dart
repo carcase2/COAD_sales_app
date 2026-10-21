@@ -5,6 +5,8 @@ import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/core/utils/mail_permissions.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/utils/gosu_permissions.dart';
+import 'package:coad_customer_calls/core/utils/work_permissions.dart';
+import 'package:coad_customer_calls/features/work/work_tasks_screen.dart';
 import 'package:coad_customer_calls/core/utils/mes_permissions.dart';
 import 'package:coad_customer_calls/data/mes_repository.dart';
 import 'package:coad_customer_calls/features/mes/mes_home_screen.dart';
@@ -1138,6 +1140,26 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
         AppMenuSection(id: 'account', title: '계정'),
       ],
       entries: [
+        if (canAccessWorkTasks(user))
+          AppMenuEntry(
+            id: 'work_tasks',
+            sectionId: 'tools',
+            icon: Icons.assignment_turned_in_outlined,
+            title: '업무관리',
+            subtitle: '남은 업무 · 시작 · 완료 · 보류',
+            quickAccess: true,
+            quickLabel: '업무',
+            keywords: const ['업무', '업무관리', '할일', '연구소', '남은업무', '마감'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'work_tasks');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const WorkTasksScreen(),
+                  settings: const RouteSettings(name: WorkTasksScreen.routeName),
+                ),
+              );
+            }),
+          ),
         if (canAccessCustomerSupport(user))
           AppMenuEntry(
             id: 'customer_support',

@@ -79,8 +79,9 @@ PendingUncalledSummary summarizePendingUncalled({
   );
 }
 
-/// 홈 통합 화면의 [흐름 | 달력] 구역 — `HomeHubScreen`이 소비.
-enum HomeHubSection { flow, calendar }
+/// 홈 통합 화면의 [흐름 | 달력 | 업무] 구역 — `HomeHubScreen`이 소비.
+/// 업무 탭은 연구소·관리자에게만 붙인다.
+enum HomeHubSection { flow, calendar, work }
 
 /// 흐름 탭 상단 일/주/월 — 달력과 공유.
 enum HubNavStep { day, week, month }

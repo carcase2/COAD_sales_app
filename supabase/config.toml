@@ -330,6 +330,12 @@ verify_jwt = false
 [functions.notify-as-due-schedule]
 verify_jwt = false
 
+[functions.notify-work-task]
+verify_jwt = false
+
+[functions.work-tasks]
+verify_jwt = false
+
 [functions.archive-checksheets]
 verify_jwt = false
 

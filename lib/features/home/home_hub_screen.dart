@@ -16,7 +16,10 @@ import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_dept.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/core/utils/work_permissions.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
+import 'package:coad_customer_calls/data/work_task_repository.dart';
+import 'package:coad_customer_calls/features/work/work_tasks_screen.dart';
 import 'package:coad_customer_calls/features/home/home_flow_stats.dart';
 import 'package:coad_customer_calls/features/issuance/overdue_install_home_card.dart';
 import 'package:coad_customer_calls/features/issuance/overdue_install_provider.dart';
@@ -44,10 +47,16 @@ class HomeHubScreen extends ConsumerStatefulWidget {
 class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   static const String _longPressHintHiddenPrefKey =
       'home_flow_longpress_hint_hidden_v1';
-  static const List<HomeHubSection> _sectionOrder = [
-    HomeHubSection.flow,
-    HomeHubSection.calendar,
-  ];
+  List<HomeHubSection> get _sectionOrder {
+    if (canAccessWorkTasks(ref.read(authControllerProvider))) {
+      return const [
+        HomeHubSection.flow,
+        HomeHubSection.calendar,
+        HomeHubSection.work,
+      ];
+    }
+    return const [HomeHubSection.flow, HomeHubSection.calendar];
+  }
 
   late PageController _sectionPageController;
   late PageController _deptPageController;
@@ -1881,6 +1890,8 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
         if (mounted) {
           setState(() => _calendarKeyNonce++);
         }
+      case HomeHubSection.work:
+        ref.read(workTasksRefreshProvider.notifier).state++;
     }
     await _checkAndSyncPending();
   }
@@ -1891,14 +1902,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     int? pendingBadge,
     int? calendarBadge,
   }) {
-    const sections = <(HomeHubSection, String, IconData)>[
+    final sections = <(HomeHubSection, String, IconData)>[
       (HomeHubSection.flow, '흐름', Icons.insights_rounded),
       (HomeHubSection.calendar, '달력', Icons.calendar_month_rounded),
+      if (canAccessWorkTasks(ref.watch(authControllerProvider)))
+        (HomeHubSection.work, '업무', Icons.assignment_turned_in_rounded),
     ];
 
     int badgeCountFor(HomeHubSection section) => switch (section) {
       HomeHubSection.flow => pendingBadge ?? 0,
       HomeHubSection.calendar => calendarBadge ?? 0,
+      HomeHubSection.work => 0,
     };
 
     bool showsCountBadge(HomeHubSection section) =>
@@ -2987,11 +3001,17 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 onPageChanged: _onSectionPageChanged,
                 children: [
-                  _lazySectionPage(HomeHubSection.flow, _buildFlowBody(scheme)),
-                  _lazySectionPage(
-                    HomeHubSection.calendar,
-                    _buildCalendarBody(),
-                  ),
+                  for (final section in _sectionOrder)
+                    _lazySectionPage(
+                      section,
+                      switch (section) {
+                        HomeHubSection.flow => _buildFlowBody(scheme),
+                        HomeHubSection.calendar => _buildCalendarBody(),
+                        HomeHubSection.work => const WorkTasksScreen(
+                          embedded: true,
+                        ),
+                      },
+                    ),
                 ],
               ),
             ),

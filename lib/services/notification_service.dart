@@ -13,8 +13,11 @@ import 'package:coad_customer_calls/features/home/home_navigation.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_reception_list_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
+import 'package:coad_customer_calls/core/utils/work_permissions.dart';
+import 'package:coad_customer_calls/data/work_task_repository.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/work/work_tasks_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -101,6 +104,7 @@ class NotificationService {
   static const String _androidChannelAsVisitSoonId =
       'as_visit_soon_notifications';
   static const String _androidChannelGeneralId = 'general_notifications';
+  static const String _androidChannelWorkId = 'work_task_notifications';
 
   static const String _androidChannelCallName = '새 접수 알림';
   static const String _androidChannelIssuanceName = '발급요청 알림';
@@ -109,6 +113,7 @@ class NotificationService {
   static const String _androidChannelAsFeedbackName = 'A/S 피드백 대기';
   static const String _androidChannelAsVisitSoonName = 'A/S 방문 2시간 전';
   static const String _androidChannelGeneralName = '일반 알림';
+  static const String _androidChannelWorkName = '업무 알림';
 
   static const String _androidChannelCallDesc = '새 통화 접수 알림';
   static const String _androidChannelIssuanceDesc = '세금계산서/이행증권 발급 알림';
@@ -120,6 +125,8 @@ class NotificationService {
   static const String _androidChannelAsVisitSoonDesc =
       '방문 예정 시각 2시간 전 알림';
   static const String _androidChannelGeneralDesc = '앱 업데이트 등 일반 알림';
+  static const String _androidChannelWorkDesc =
+      '남은 업무, 오늘 마감, 업무 추가·시작·완료·보류';
 
   static const int _asDueNotifIdMorning = 91009;
   static const int _asDueNotifIdAfternoon = 91013;
@@ -131,6 +138,7 @@ class NotificationService {
     _asDueNotifIdEvening,
   ];
   static const String _asDueCalendarRouteName = 'AsDueCalendar';
+  static DateTime? _lastWorkTasksOpenAt;
   static const String _asFeedbackTag = 'as_feedback_wait';
   static const String _asVisitSoonTag = 'as_visit_soon';
 
@@ -221,6 +229,9 @@ class NotificationService {
         _isDaeguScheduleNotification(data)) {
       return _androidChannelScheduleId;
     }
+    if (_isWorkTaskNotification(data)) {
+      return _androidChannelWorkId;
+    }
     if (_extractCallIdFromData(data) != null) {
       return _androidChannelCallId;
     }
@@ -241,6 +252,8 @@ class NotificationService {
         return _androidChannelAsFeedbackName;
       case _androidChannelAsVisitSoonId:
         return _androidChannelAsVisitSoonName;
+      case _androidChannelWorkId:
+        return _androidChannelWorkName;
       default:
         return _androidChannelGeneralName;
     }
@@ -260,6 +273,8 @@ class NotificationService {
         return _androidChannelAsFeedbackDesc;
       case _androidChannelAsVisitSoonId:
         return _androidChannelAsVisitSoonDesc;
+      case _androidChannelWorkId:
+        return _androidChannelWorkDesc;
       default:
         return _androidChannelGeneralDesc;
     }
@@ -378,6 +393,7 @@ class NotificationService {
         _androidChannelAsFeedbackId,
         _androidChannelAsVisitSoonId,
         _androidChannelGeneralId,
+        _androidChannelWorkId,
       ];
       for (final id in ids) {
         await androidPlugin.createNotificationChannel(
@@ -594,7 +610,8 @@ class NotificationService {
     var title = titleBody.$1;
     var body = titleBody.$2;
     if (_isGeneralScheduleNotification(data) ||
-        _isDaeguScheduleNotification(data)) {
+        _isDaeguScheduleNotification(data) ||
+        _isWorkTaskNotification(data)) {
       body = body.replaceAll(r'\n', '\n');
     }
     if (title.isEmpty && body.isEmpty) {
@@ -613,6 +630,9 @@ class NotificationService {
       } else if (_isAsDueScheduleNotification(data)) {
         title = '[A/S] 방문·발송 예정';
         body = '오늘·지난 방문/발송 일정을 확인하세요.';
+      } else if (_isWorkTaskNotification(data)) {
+        title = '업무 알림';
+        body = '알림을 누르면 남은 업무를 볼 수 있습니다.';
       } else {
         final callId = _extractCallIdFromData(data);
         if (callId != null) {
@@ -661,7 +681,12 @@ class NotificationService {
     final callId = _extractCallIdFromData(data);
     final asId = _extractAsReceptionId(data);
     final gosuId = _extractGosuReceptionId(data);
-    final notificationId = _isAsDueScheduleNotification(data)
+    final workNoteId = int.tryParse(
+      (data['notification_id'] ?? data['notificationId'] ?? '').toString(),
+    );
+    final notificationId = _isWorkTaskNotification(data)
+        ? (workNoteId ?? ('work_tasks'.hashCode & 0x7fffffff))
+        : _isAsDueScheduleNotification(data)
         ? _asDueNotificationIdFromData(data)
         : _isDaeguScheduleNotification(data)
         ? ('daegu_schedule:${data['action'] ?? 'open'}').hashCode & 0x7fffffff
@@ -672,7 +697,9 @@ class NotificationService {
         : gosuId != null
         ? gosuId.hashCode & 0x7fffffff
         : _notificationIdFor(callId, message);
-    final tag = _isAsDueScheduleNotification(data)
+    final tag = _isWorkTaskNotification(data)
+        ? 'work_tasks:${data['task_id'] ?? data['kind'] ?? 'board'}'
+        : _isAsDueScheduleNotification(data)
         ? 'as_due_schedule'
         : _isDaeguScheduleNotification(data)
         ? 'daegu_schedule'
@@ -756,6 +783,12 @@ class NotificationService {
       return jsonEncode({
         'type': 'general_schedule',
         'action': 'open_general_schedule',
+      });
+    }
+    if (_isWorkTaskNotification(data)) {
+      return jsonEncode({
+        'type': 'work_tasks',
+        'action': 'open_work_tasks',
       });
     }
     final callId = _extractCallIdFromData(data);
@@ -904,6 +937,10 @@ class NotificationService {
       _openGeneralScheduleHub(data);
       return;
     }
+    if (_isWorkTaskNotification(data)) {
+      _openWorkTasks();
+      return;
+    }
     final id = _extractCallIdFromData(data);
     if (id != null) {
       _navigateToCallDetail(id);
@@ -1006,6 +1043,61 @@ class NotificationService {
         .toLowerCase();
     final action = (data['action'] ?? '').toString().trim().toLowerCase();
     return type == 'issuance_request' || action == 'open_issuance_request';
+  }
+
+  static bool _isWorkTaskNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'work_tasks' ||
+        type == 'work-tasks' ||
+        action == 'open_work_tasks';
+  }
+
+  static void _openWorkTasks() {
+    const payload = {
+      'type': 'work_tasks',
+      'action': 'open_work_tasks',
+    };
+    final openedAt = _lastWorkTasksOpenAt;
+    if (openedAt != null &&
+        DateTime.now().difference(openedAt) < const Duration(seconds: 2)) {
+      return;
+    }
+    final nav = navigatorKey.currentState;
+    final ctx = navigatorKey.currentContext;
+    if (nav == null || ctx == null) {
+      _queuePendingData(payload);
+      return;
+    }
+    try {
+      final container = ProviderScope.containerOf(ctx);
+      final user = container.read(authControllerProvider);
+      if (user == null) {
+        _queuePendingData(payload);
+        return;
+      }
+      if (!canAccessWorkTasks(user)) {
+        _pendingMessageData = null;
+        _lastWorkTasksOpenAt = DateTime.now();
+        return;
+      }
+      _pendingMessageData = null;
+      _lastWorkTasksOpenAt = DateTime.now();
+      container.read(workTasksRefreshProvider.notifier).state++;
+      if (_topRouteName(nav) == WorkTasksScreen.routeName) return;
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const WorkTasksScreen(),
+          settings: const RouteSettings(name: WorkTasksScreen.routeName),
+        ),
+      );
+      _log('open work tasks');
+    } catch (_) {
+      _queuePendingData(payload);
+    }
   }
 
   static bool _isGeneralScheduleNotification(Map<String, dynamic> data) {
