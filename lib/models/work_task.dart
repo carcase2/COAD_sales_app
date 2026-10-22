@@ -37,7 +37,7 @@ Map<String, int> workAssigneeColorSlots(Iterable<String> keys) {
   return slots;
 }
 
-/// 연구소 업무 (`tasks`) 한 건. 완료는 목록에 넣지 않는다.
+/// 연구소 업무 (`tasks`) 한 건. 완료도 완료한 날과 기한에 남긴다.
 class WorkTask {
   const WorkTask({
     required this.id,
@@ -45,6 +45,7 @@ class WorkTask {
     required this.detail,
     required this.status,
     this.dueDate,
+    this.completedDate,
     this.assigneeNames = const [],
     this.assigneeEmails = const [],
     this.priorityId = '',
@@ -58,6 +59,7 @@ class WorkTask {
   final String detail;
   final String status;
   final String? dueDate;
+  final String? completedDate;
   final List<String> assigneeNames;
   final List<String> assigneeEmails;
   final String priorityId;
@@ -66,6 +68,8 @@ class WorkTask {
   final String createdAt;
 
   bool get isHeld => status == '보류';
+
+  bool get isDone => status == '완료';
 
   bool get isOpen => status == '접수' || status == '진행중';
 
@@ -85,12 +89,14 @@ class WorkTask {
       }
     }
     final due = (json['dueDate'] ?? '').toString().trim();
+    final completed = (json['completedDate'] ?? '').toString().trim();
     return WorkTask(
       id: (json['id'] ?? '').toString(),
       title: (json['title'] ?? '').toString(),
       detail: (json['detail'] ?? '').toString(),
       status: (json['status'] ?? '').toString(),
       dueDate: due.length >= 10 ? due.substring(0, 10) : null,
+      completedDate: completed.length >= 10 ? completed.substring(0, 10) : null,
       assigneeNames: names,
       assigneeEmails: _stringList(json['assigneeEmails']),
       priorityId: (json['priorityId'] ?? '').toString().trim(),
@@ -201,6 +207,31 @@ class WorkPriority {
       name: (json['name'] ?? '').toString().trim(),
     );
   }
+}
+
+String? _workYmd(String? raw) {
+  final text = (raw ?? '').trim();
+  if (text.length < 10) return null;
+  return text.substring(0, 10);
+}
+
+/// 달력에 찍을 날. 완료 건은 기한과 완료한 날을 모두 포함한다.
+Iterable<String> workTaskMarkDays(WorkTask task) sync* {
+  final due = _workYmd(task.dueDate);
+  if (due != null) yield due;
+  if (!task.isDone) return;
+  final done = _workYmd(task.completedDate);
+  if (done != null && done != due) yield done;
+}
+
+/// 그 날 목록에 넣을지. 기한이 그 날이거나, 그 날 완료한 업무다.
+bool workTaskOnDay(WorkTask task, String ymd) {
+  final day = _workYmd(ymd);
+  if (day == null) return false;
+  for (final marked in workTaskMarkDays(task)) {
+    if (marked == day) return true;
+  }
+  return false;
 }
 
 /// 담당·중요도가 비어 있으면 그 조건은 전체를 의미한다.
@@ -417,6 +448,17 @@ class WorkTaskBoard {
     return rows;
   }
 
+  /// 완료 건. 남은 업무 수에는 넣지 않고, 달력과 그날 목록에서만 보여 준다.
+  List<WorkTask> get completed {
+    final rows = tasks.where((task) => task.isDone).toList();
+    rows.sort((a, b) {
+      final byDone = (b.completedDate ?? '').compareTo(a.completedDate ?? '');
+      if (byDone != 0) return byDone;
+      return a.title.compareTo(b.title);
+    });
+    return rows;
+  }
+
   int get dueTodayCount => remaining
       .where((task) => workDueKind(task.dueDate, today) == WorkDueKind.today)
       .length;
@@ -474,6 +516,7 @@ class WorkTaskBoard {
             detail: task.detail,
             status: task.status,
             dueDate: task.dueDate,
+            completedDate: task.completedDate,
             assigneeNames: task.assigneeNames,
             assigneeEmails: task.assigneeEmails,
             priorityId: task.priorityId,

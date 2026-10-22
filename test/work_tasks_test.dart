@@ -51,6 +51,70 @@ void main() {
     expect(board.held.first.canStart, isTrue);
   });
 
+  test('오늘 완료한 업무는 남은 수에서 빠지지만 그 날과 기한에는 보인다', () {
+    const today = '2026-10-22';
+    final done = WorkTask(
+      id: '9',
+      title: '오늘 끝',
+      detail: '',
+      status: '완료',
+      dueDate: '2026-10-20',
+      completedDate: today,
+    );
+    final open = _task(id: '2', title: '진행', status: '진행중', due: today);
+    final board = WorkTaskBoard(
+      today: today,
+      assignees: const [],
+      tasks: [done, open],
+    );
+
+    expect(board.remaining.map((task) => task.title), ['진행']);
+    expect(board.completed.map((task) => task.title), ['오늘 끝']);
+    expect(board.dueTodayCount, 1);
+    expect(board.overdueCount, 0);
+    expect(done.isDone, isTrue);
+    expect(done.canComplete, isFalse);
+    expect(workTaskOnDay(done, today), isTrue);
+    expect(workTaskOnDay(done, '2026-10-20'), isTrue);
+    expect(workTaskOnDay(done, '2026-10-21'), isFalse);
+    expect(workTaskMarkDays(done), ['2026-10-20', today]);
+    expect(workTaskOnDay(open, today), isTrue);
+  });
+
+  test('완료일을 응답에서 읽고 완료 건만 완료 목록에 넣는다', () {
+    final board = WorkTaskBoard.fromJson({
+      'today': '2026-10-22',
+      'tasks': [
+        {
+          'id': '9',
+          'title': '끝',
+          'detail': '',
+          'status': '완료',
+          'dueDate': '2026-10-20T00:00:00',
+          'completedDate': '2026-10-22T15:00:00',
+          'requester': 'coaddoor12@gmail.com',
+        },
+        {
+          'id': '2',
+          'title': '진행',
+          'detail': '',
+          'status': '진행중',
+          'dueDate': '2026-10-22',
+        },
+      ],
+      'assignees': [
+        {'email': 'coaddoor12@gmail.com', 'name': '김경덕'},
+      ],
+    });
+
+    final done = board.tasks.firstWhere((task) => task.id == '9');
+    expect(done.completedDate, '2026-10-22');
+    expect(done.dueDate, '2026-10-20');
+    expect(done.requester, '김경덕');
+    expect(board.completed.map((task) => task.title), ['끝']);
+    expect(board.remaining.map((task) => task.title), ['진행']);
+  });
+
   test('담당과 중요도로 거르고 담당자별로 묶는다', () {
     const people = [
       WorkAssignee(email: 'a@coad.co.kr', name: '김경덕'),

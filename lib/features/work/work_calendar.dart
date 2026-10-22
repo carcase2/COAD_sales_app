@@ -42,11 +42,10 @@ class WorkMonthMarks extends StatelessWidget {
     final urgentDays = <String>{};
     final busyDays = <String>{};
     for (final task in tasks) {
-      final due = task.dueDate;
-      if (due == null || due.length < 10) continue;
-      final ymd = due.substring(0, 10);
-      busyDays.add(ymd);
-      if (task.priorityName == '특급') urgentDays.add(ymd);
+      for (final ymd in workTaskMarkDays(task)) {
+        busyDays.add(ymd);
+        if (!task.isDone && task.priorityName == '특급') urgentDays.add(ymd);
+      }
     }
     final weekDays = week ? seoulSundayWeekDays(focus) : const <String>[];
     final cells = week ? <String?>[...weekDays] : workMonthCells(focus);

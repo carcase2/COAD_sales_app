@@ -196,17 +196,40 @@ async function loadBoard(admin: SupabaseClient, user: UserRow) {
   const names = await emailNames(admin)
   const priorityName = new Map(priorities.map((item) => [item.id, item.name]))
 
+  const taskSelect =
+    'id, title, detail, status_id, priority_id, due_date, completed_date, assignees, requester, created_at'
   let tasks: Array<Record<string, unknown>> = []
   if (openIds.length > 0) {
     const { data, error } = await admin
       .from('tasks')
-      .select('id, title, detail, status_id, priority_id, due_date, assignees, requester, created_at')
+      .select(taskSelect)
       .eq('department_id', deptId)
       .in('status_id', openIds)
       .order('due_date', { ascending: true, nullsFirst: false })
       .limit(300)
     if (error) throw error
     tasks = (data ?? []) as Array<Record<string, unknown>>
+  }
+
+  // 완료는 목록에서 빼지 않는다. 오늘 완료한 업무가 달력에서 바로 사라지지 않게
+  // 최근 완료 건을 남은 업무와 따로 가져온다.
+  const doneId = statuses.get('완료')
+  if (doneId) {
+    const { data, error } = await admin
+      .from('tasks')
+      .select(taskSelect)
+      .eq('department_id', deptId)
+      .eq('status_id', doneId)
+      .order('completed_date', { ascending: false, nullsFirst: false })
+      .limit(400)
+    if (error) throw error
+    const seen = new Set(tasks.map((task) => (task.id ?? '').toString()))
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const id = (row.id ?? '').toString()
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      tasks.push(row)
+    }
   }
 
   const idToName = new Map<string, string>()
@@ -227,6 +250,7 @@ async function loadBoard(admin: SupabaseClient, user: UserRow) {
         detail: (task.detail ?? '').toString(),
         status: idToName.get((task.status_id ?? '').toString()) ?? '',
         dueDate: (task.due_date ?? '').toString(),
+        completedDate: (task.completed_date ?? '').toString(),
         requester: personLabel((task.requester ?? '').toString(), names),
         createdAt: (task.created_at ?? '').toString(),
         priorityId,

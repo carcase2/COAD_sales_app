@@ -170,7 +170,9 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
   }
 
   List<WorkTask> _scoped(WorkTaskBoard board) {
-    final source = _showHeld ? board.held : board.remaining;
+    final source = _showHeld
+        ? board.held
+        : [...board.remaining, ...board.completed];
     return filterWorkTasks(source, assigneeEmail: _selectedEmail(board));
   }
 
@@ -284,9 +286,10 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
             final tasks = <WorkTask>[
               if (board != null)
                 for (final task in _scoped(board))
-                  if (task.dueDate == ymd) task,
+                  if (workTaskOnDay(task, ymd)) task,
             ];
             tasks.sort((a, b) {
+              if (a.isDone != b.isDone) return a.isDone ? 1 : -1;
               final byPriority = workPriorityRank(
                 a.priorityName,
               ).compareTo(workPriorityRank(b.priorityName));
@@ -475,14 +478,19 @@ class _WorkLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final done = task.isDone;
     final due = workDueKind(task.dueDate, today);
-    final dueLabel = switch (due) {
-      WorkDueKind.overdue => '기한 지남',
-      WorkDueKind.today => '오늘',
-      WorkDueKind.upcoming => _monthDay(task.dueDate),
-      WorkDueKind.undated => '기한 없음',
-    };
-    final urgent = task.priorityName == '특급';
+    final dueLabel = done
+        ? (task.dueDate != null && task.dueDate != task.completedDate
+              ? '완료 · 기한 ${_monthDay(task.dueDate)}'
+              : '완료')
+        : switch (due) {
+            WorkDueKind.overdue => '기한 지남',
+            WorkDueKind.today => '오늘',
+            WorkDueKind.upcoming => _monthDay(task.dueDate),
+            WorkDueKind.undated => '기한 없음',
+          };
+    final urgent = !done && task.priorityName == '특급';
     final stripe = workTaskAssigneeColors(task, assigneeColors);
     final people = visibleTaskAssignees(
       task,
@@ -490,11 +498,13 @@ class _WorkLine extends StatelessWidget {
     final meta = [
       if (people.isNotEmpty) people,
       dueLabel,
-      if (task.status.isNotEmpty) task.status,
+      if (!done && task.status.isNotEmpty) task.status,
       if (!urgent && task.priorityName.isNotEmpty) task.priorityName,
     ].join(' · ');
     return Material(
-      color: urgent
+      color: done
+          ? scheme.surfaceContainerHighest.withValues(alpha: 0.65)
+          : urgent
           ? scheme.errorContainer
           : due == WorkDueKind.overdue
           ? scheme.errorContainer.withValues(alpha: 0.55)
@@ -536,7 +546,15 @@ class _WorkLine extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w800),
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    decoration: done
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                    color: done
+                                        ? scheme.onSurfaceVariant
+                                        : null,
+                                  ),
                             ),
                           ),
                         ],
@@ -558,31 +576,35 @@ class _WorkLine extends StatelessWidget {
                               ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                       ],
-                      Row(
-                        children: [
-                          if (onStart != null)
-                            _MiniButton(
-                              label: '시작',
-                              onPressed: busy ? null : onStart,
-                            ),
-                          if (onHold != null)
-                            _MiniButton(
-                              label: '보류',
-                              onPressed: busy ? null : onHold,
-                            ),
-                          const Spacer(),
-                          if (onComplete != null)
-                            FilledButton(
-                              onPressed: busy ? null : onComplete,
-                              style: FilledButton.styleFrom(
-                                minimumSize: const Size(64, 36),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                visualDensity: VisualDensity.compact,
+                      if (onStart != null ||
+                          onHold != null ||
+                          onComplete != null)
+                        Row(
+                          children: [
+                            if (onStart != null)
+                              _MiniButton(
+                                label: '시작',
+                                onPressed: busy ? null : onStart,
                               ),
-                              child: const Text('완료'),
-                            ),
-                        ],
-                      ),
+                            if (onHold != null)
+                              _MiniButton(
+                                label: '보류',
+                                onPressed: busy ? null : onHold,
+                              ),
+                            const Spacer(),
+                            if (onComplete != null)
+                              FilledButton(
+                                onPressed: busy ? null : onComplete,
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(64, 36),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                child: const Text('완료'),
+                              ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
@@ -763,14 +785,22 @@ class _WorkDetailBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final done = task.isDone;
     final due = workDueKind(task.dueDate, today);
-    final dueText = switch (due) {
-      WorkDueKind.overdue => '기한 지남 · ${formatYmdFlowLabelKo(task.dueDate!)}',
-      WorkDueKind.today => '오늘 · ${formatYmdFlowLabelKo(task.dueDate!)}',
-      WorkDueKind.upcoming => formatYmdFlowLabelKo(task.dueDate!),
-      WorkDueKind.undated => '기한 없음',
-    };
-    final dueColor = due == WorkDueKind.overdue
+    final dueText = done
+        ? (task.completedDate == null
+              ? '완료'
+              : '완료 · ${formatYmdFlowLabelKo(task.completedDate!)}')
+        : switch (due) {
+            WorkDueKind.overdue =>
+              '기한 지남 · ${formatYmdFlowLabelKo(task.dueDate!)}',
+            WorkDueKind.today => '오늘 · ${formatYmdFlowLabelKo(task.dueDate!)}',
+            WorkDueKind.upcoming => formatYmdFlowLabelKo(task.dueDate!),
+            WorkDueKind.undated => '기한 없음',
+          };
+    final dueColor = done
+        ? scheme.onSurfaceVariant
+        : due == WorkDueKind.overdue
         ? scheme.error
         : due == WorkDueKind.today
         ? scheme.primary
@@ -813,6 +843,8 @@ class _WorkDetailBody extends StatelessWidget {
                   task.title,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w900,
+                    decoration: done ? TextDecoration.lineThrough : null,
+                    color: done ? scheme.onSurfaceVariant : null,
                   ),
                 ),
                 const SizedBox(height: AppTokens.spaceLg),
