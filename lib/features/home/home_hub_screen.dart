@@ -15,6 +15,7 @@ import 'package:coad_customer_calls/features/home/sales_today_desk.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_dept.dart';
+import 'package:coad_customer_calls/features/home/home_dept_swipe_frame.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/work_permissions.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
@@ -2846,75 +2847,38 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             Expanded(
               child: Stack(
                 children: [
-                  PageView(
-                    controller: _deptPageController,
-                    onPageChanged: (index) {
-                      HapticFeedback.selectionClick();
-                      if (_deptPageIndex != index) {
-                        setState(() => _deptPageIndex = index);
-                      }
-                      _syncHomeDeptProvider(index);
-                    },
-                    children: [
-                      _flowDeptPage(body: salesExtras),
-                      _flowDeptPage(
-                        body: _buildSupportPeriodStats(periodKey: periodKey),
-                      ),
-                      _flowDeptPage(
-                        body: GosuHomePanel(
-                          embedded: true,
-                          periodKey: periodKey,
-                          receptionLabel: gosuReceptionLabel,
-                          updatedLabel: gosuUpdatedLabel,
-                          followLabel: gosuFollowLabel,
+                  HomeDeptSwipeFrame(
+                    pageIndex: _deptPageIndex,
+                    pageCount: 3,
+                    pageLabels: const ['영업부', '고객지원팀', '자동문의고수'],
+                    onGoTo: _goDeptPage,
+                    accentFor: (index) => _deptAccent(scheme, index),
+                    child: PageView(
+                      controller: _deptPageController,
+                      onPageChanged: (index) {
+                        HapticFeedback.selectionClick();
+                        if (_deptPageIndex != index) {
+                          setState(() => _deptPageIndex = index);
+                        }
+                        _syncHomeDeptProvider(index);
+                      },
+                      children: [
+                        _flowDeptPage(body: salesExtras),
+                        _flowDeptPage(
+                          body: _buildSupportPeriodStats(periodKey: periodKey),
                         ),
-                      ),
-                    ],
+                        _flowDeptPage(
+                          body: GosuHomePanel(
+                            embedded: true,
+                            periodKey: periodKey,
+                            receptionLabel: gosuReceptionLabel,
+                            updatedLabel: gosuUpdatedLabel,
+                            followLabel: gosuFollowLabel,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  if (_deptPageIndex < 2)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: IconButton(
-                          tooltip: _deptPageIndex == 0 ? '고객지원팀' : '자동문의고수',
-                          onPressed: () => _goDeptPage(_deptPageIndex + 1),
-                          style: IconButton.styleFrom(
-                            backgroundColor: scheme.surface.withValues(
-                              alpha: 0.72,
-                            ),
-                            foregroundColor: _deptAccent(
-                              scheme,
-                              _deptPageIndex + 1,
-                            ),
-                          ),
-                          icon: const Icon(Icons.chevron_right_rounded),
-                        ),
-                      ),
-                    ),
-                  if (_deptPageIndex > 0)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: IconButton(
-                          tooltip: _deptPageIndex == 1 ? '영업부' : '고객지원팀',
-                          onPressed: () => _goDeptPage(_deptPageIndex - 1),
-                          style: IconButton.styleFrom(
-                            backgroundColor: scheme.surface.withValues(
-                              alpha: 0.72,
-                            ),
-                            foregroundColor: _deptAccent(
-                              scheme,
-                              _deptPageIndex - 1,
-                            ),
-                          ),
-                          icon: const Icon(Icons.chevron_left_rounded),
-                        ),
-                      ),
-                    ),
                   Positioned(
                     left: 0,
                     right: 0,
