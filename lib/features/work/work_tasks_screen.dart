@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/core/utils/work_permissions.dart';
 import 'package:coad_customer_calls/data/work_task_repository.dart';
 import 'package:coad_customer_calls/features/work/work_assignee_style.dart';
 import 'package:coad_customer_calls/features/work/work_calendar.dart';
+import 'package:coad_customer_calls/features/work/work_day_sheet.dart';
 import 'package:coad_customer_calls/models/work_task.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -278,82 +279,16 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (sheetContext) {
-        final height = MediaQuery.sizeOf(sheetContext).height * 0.72;
         return ValueListenableBuilder<int>(
           valueListenable: _detailTick,
           builder: (context, _, _) {
             final board = _board;
-            final tasks = <WorkTask>[
-              if (board != null)
-                for (final task in _scoped(board))
-                  if (workTaskOnDay(task, ymd)) task,
-            ];
-            tasks.sort((a, b) {
-              if (a.isDone != b.isDone) return a.isDone ? 1 : -1;
-              final byPriority = workPriorityRank(
-                a.priorityName,
-              ).compareTo(workPriorityRank(b.priorityName));
-              if (byPriority != 0) return byPriority;
-              return a.title.compareTo(b.title);
-            });
-            return SizedBox(
-              height: height,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTokens.spaceLg,
-                    ),
-                    child: Text(
-                      formatYmdFlowLabelKo(ymd),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppTokens.spaceSm),
-                  Expanded(
-                    child: tasks.isEmpty
-                        ? const Center(child: Text('이 날 업무가 없습니다.'))
-                        : ListView(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppTokens.spaceLg,
-                              0,
-                              AppTokens.spaceLg,
-                              AppTokens.spaceSm,
-                            ),
-                            children: [
-                              for (final task in tasks) ...[
-                                _taskCard(task),
-                                const SizedBox(height: 8),
-                              ],
-                            ],
-                          ),
-                  ),
-                  SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppTokens.spaceLg,
-                        AppTokens.spaceSm,
-                        AppTokens.spaceLg,
-                        AppTokens.spaceMd,
-                      ),
-                      child: FilledButton(
-                        onPressed: _busy ? null : () => _add(dueDate: ymd),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(
-                            AppTokens.minTouchTarget,
-                          ),
-                        ),
-                        child: const Text('이 날 업무 추가'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            return WorkDaySheet(
+              ymd: ymd,
+              tasks: board == null ? const [] : _scoped(board),
+              busy: _busy,
+              onAdd: () => _add(dueDate: ymd),
+              taskBuilder: _taskCard,
             );
           },
         );

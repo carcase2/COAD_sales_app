@@ -234,6 +234,26 @@ bool workTaskOnDay(WorkTask task, String ymd) {
   return false;
 }
 
+/// 그 날의 예정 또는 완료 목록. 급한 순, 같은 순위는 제목 순.
+List<WorkTask> workTasksForDay(
+  Iterable<WorkTask> tasks,
+  String ymd, {
+  required bool completed,
+}) {
+  final rows = [
+    for (final task in tasks)
+      if (task.isDone == completed && workTaskOnDay(task, ymd)) task,
+  ];
+  rows.sort((a, b) {
+    final byPriority = workPriorityRank(
+      a.priorityName,
+    ).compareTo(workPriorityRank(b.priorityName));
+    if (byPriority != 0) return byPriority;
+    return a.title.compareTo(b.title);
+  });
+  return rows;
+}
+
 /// 담당·중요도가 비어 있으면 그 조건은 전체를 의미한다.
 List<WorkTask> filterWorkTasks(
   List<WorkTask> tasks, {

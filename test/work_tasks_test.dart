@@ -79,6 +79,34 @@ void main() {
     expect(workTaskOnDay(done, '2026-10-21'), isFalse);
     expect(workTaskMarkDays(done), ['2026-10-20', today]);
     expect(workTaskOnDay(open, today), isTrue);
+    expect(
+      workTasksForDay(
+        [done, open],
+        today,
+        completed: false,
+      ).map((task) => task.title),
+      ['진행'],
+    );
+    expect(
+      workTasksForDay(
+        [done, open],
+        today,
+        completed: true,
+      ).map((task) => task.title),
+      ['오늘 끝'],
+    );
+    expect(
+      workTasksForDay(
+        [done, open],
+        '2026-10-20',
+        completed: true,
+      ).map((task) => task.title),
+      ['오늘 끝'],
+    );
+    expect(
+      workTasksForDay([done, open], '2026-10-20', completed: false),
+      isEmpty,
+    );
   });
 
   test('완료일을 응답에서 읽고 완료 건만 완료 목록에 넣는다', () {
