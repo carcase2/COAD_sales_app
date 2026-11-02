@@ -8,6 +8,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// 알림 탭으로 이미 열린 업무 목록을 다시 읽게 한다.
 final workTasksRefreshProvider = StateProvider<int>((ref) => 0);
 
+/// 이미 업무 화면이 위에 있을 때, 알림의 그 업무를 상세로 연다.
+class WorkTaskOpenRequest {
+  const WorkTaskOpenRequest({required this.taskId, required this.serial});
+
+  final String taskId;
+  final int serial;
+}
+
+final workTaskOpenRequestProvider = StateProvider<WorkTaskOpenRequest?>(
+  (ref) => null,
+);
+
 class WorkTaskRepository {
   WorkTaskRepository(this._client);
 
@@ -41,6 +53,18 @@ class WorkTaskRepository {
     required String action,
   }) {
     return _call(userId, {'action': action, 'taskId': taskId});
+  }
+
+  Future<WorkTask?> task({
+    required String userId,
+    required String taskId,
+  }) async {
+    final data = await _invoke(userId, {'action': 'task', 'taskId': taskId});
+    final raw = data['task'];
+    if (raw is Map) {
+      return WorkTask.fromJson(Map<String, dynamic>.from(raw));
+    }
+    return null;
   }
 
   Future<List<WorkComment>> comments({

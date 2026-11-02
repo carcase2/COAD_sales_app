@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
-import 'package:coad_customer_calls/models/shutter_models.dart';
-import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_lowest_quote.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_size_quote.dart';
 import 'package:coad_customer_calls/features/quoter/size_first_quote.dart';
+import 'package:coad_customer_calls/models/shutter_models.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price.dart';
@@ -118,19 +120,37 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
   List<SizeFirstOffer> get _offers {
     final catalog = _catalog;
     if (catalog == null || !_hasSize) return const [];
-    return sizeFirstOffers(
+    final shutterOnly = _categoryId == kShutterQuoteCategoryId;
+    final catalogOffers = sizeFirstOffers(
       categories: catalog.orderedCategories,
       models: catalog.models,
       cellsByModel: _cellsByModel,
       widthMm: _widthMm,
       heightMm: _heightMm,
-      categoryId: _categoryId,
+      categoryId: shutterOnly ? kShutterQuoteCategoryId : _categoryId,
     );
+    if (_categoryId != null && !shutterOnly) return catalogOffers;
+    return [
+      ...catalogOffers,
+      ...shutterSizeOffers(
+        existing: catalogOffers,
+        widthMm: _widthMm,
+        heightMm: _heightMm,
+      ),
+    ];
   }
 
   Future<void> _openWriter(SizeFirstOffer offer) async {
+    final type = offer.shutterType;
+    if (type != null) {
+      await _openShutterQuote(type, offer.modelName);
+      return;
+    }
     final price = offer.quote.price;
-    if (price == null) return;
+    if (price == null) {
+      await _explainMissing(offer);
+      return;
+    }
     final saved = await pushSizeQuoteEditor(
       context,
       seed: SizeQuoteSeed(
@@ -149,42 +169,18 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
     ).showSnackBar(const SnackBar(content: Text('견적서를 저장했습니다.')));
   }
 
-  void _openShutter(SizeFirstOffer offer) {
-    final type = offer.shutterType;
-    if (type == null) return;
+  /// 셔터는 기존 산출 화면에서 내역·기술 사양·제조사를 본 뒤 견적서를 쓴다.
+  Future<void> _openShutterQuote(ShutterType type, String modelName) async {
     _track('shutter_quoter');
-    _pushShutter(
-      title: '${QuoterTypeStyle.label(type)} 계산',
-      type: type,
-      widthMm: _widthMm,
-      heightMm: _heightMm,
-    );
-  }
-
-  void _openShutterWizard() {
-    _track('shutter_quoter');
-    _pushShutter(
-      title: '셔터 계산',
-      widthMm: _widthMm > 0 ? _widthMm : null,
-      heightMm: _heightMm > 0 ? _heightMm : null,
-    );
-  }
-
-  void _pushShutter({
-    required String title,
-    ShutterType? type,
-    int? widthMm,
-    int? heightMm,
-  }) {
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => Scaffold(
-          appBar: AppBar(title: Text(title)),
+          appBar: AppBar(title: Text(modelName)),
           body: QuoterScreen(
             showQuickActions: false,
             initialType: type,
-            initialWidthMm: widthMm,
-            initialHeightMm: heightMm,
+            initialWidthMm: _widthMm,
+            initialHeightMm: _heightMm,
           ),
         ),
       ),
@@ -199,15 +195,38 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
   }
 
   void _onOfferTap(SizeFirstOffer offer) {
-    if (offer.quote.price != null) {
-      unawaited(_openWriter(offer));
-      return;
+    unawaited(_openWriter(offer));
+  }
+
+  Map<ShutterType, ShutterLowestQuote> _shutterQuotes() {
+    if (!_hasSize) return const {};
+    final prices = ref.watch(shutterPricesFutureProvider).asData?.value;
+    if (prices == null) return const {};
+    final quotes = <ShutterType, ShutterLowestQuote>{};
+    for (final type in ShutterType.values) {
+      try {
+        final run = runLowestShutterQuote(
+          type: type,
+          widthMm: _widthMm,
+          heightMm: _heightMm,
+          prices: prices,
+        );
+        if (run.result.totalAmount > 0) quotes[type] = run;
+      } catch (_) {}
     }
-    if (offer.isShutter) {
-      _openShutter(offer);
-      return;
+    return quotes;
+  }
+
+  int? _shownPrice(
+    SizeFirstOffer offer,
+    Map<ShutterType, ShutterLowestQuote> shutterQuotes,
+  ) {
+    final type = offer.shutterType;
+    if (type != null) {
+      final total = shutterQuotes[type]?.result.totalAmount;
+      if (total != null && total > 0) return total;
     }
-    unawaited(_explainMissing(offer));
+    return offer.quote.price;
   }
 
   Future<void> _explainMissing(SizeFirstOffer offer) async {
@@ -236,13 +255,16 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '이 사이즈는 단가가 없습니다',
+                offer.isShutter ? '이 사이즈는 셔터 견적이 없습니다' : '이 사이즈는 단가가 없습니다',
                 style: Theme.of(ctx).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 4),
-              Text(lookup, style: Theme.of(ctx).textTheme.bodySmall),
+              Text(
+                offer.isShutter ? '셔터 단가로 합계를 계산하지 못했습니다.' : lookup,
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
             ],
           ),
         );
@@ -263,8 +285,25 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
     if (catalog == null) {
       return const AppLoading(message: '단가 불러오는 중…');
     }
-    final offers = _offers;
-    final priced = offers.where((offer) => offer.quote.price != null).length;
+    final pricesAsync = ref.watch(shutterPricesFutureProvider);
+    final shutterCalculating = pricesAsync.isLoading && !pricesAsync.hasValue;
+    final shutterQuotes = _shutterQuotes();
+    final offers = [..._offers]
+      ..sort((a, b) {
+        final ap = _shownPrice(a, shutterQuotes);
+        final bp = _shownPrice(b, shutterQuotes);
+        if (ap == null && bp == null) return a.modelName.compareTo(b.modelName);
+        if (ap == null) return 1;
+        if (bp == null) return -1;
+        final byPrice = ap.compareTo(bp);
+        if (byPrice != 0) return byPrice;
+        final byCat = a.categoryName.compareTo(b.categoryName);
+        if (byCat != 0) return byCat;
+        return a.modelName.compareTo(b.modelName);
+      });
+    final priced = offers
+        .where((offer) => _shownPrice(offer, shutterQuotes) != null)
+        .length;
     final garageOnly =
         _categoryId != null &&
         catalog.categories.any(
@@ -288,14 +327,6 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-              ),
-              TextButton(
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                onPressed: _openShutterWizard,
-                child: const Text('셔터 계산'),
               ),
               TextButton(
                 style: TextButton.styleFrom(
@@ -382,6 +413,16 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
                   onSelected: (_) => setState(() => _categoryId = null),
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  visualDensity: VisualDensity.compact,
+                  label: const Text('셔터'),
+                  selected: _categoryId == kShutterQuoteCategoryId,
+                  onSelected: (_) =>
+                      setState(() => _categoryId = kShutterQuoteCategoryId),
+                ),
+              ),
               for (final cat in catalog.orderedCategories)
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
@@ -406,18 +447,24 @@ class _SizeFirstQuoteScreenState extends ConsumerState<SizeFirstQuoteScreen> {
                   separatorBuilder: (_, _) => const SizedBox(height: 6),
                   itemBuilder: (context, index) {
                     final offer = offers[index];
+                    final price = _shownPrice(offer, shutterQuotes);
                     final cheapest =
-                        offer.quote.price != null &&
-                        offers.indexWhere((item) => item.quote.price != null) ==
+                        price != null &&
+                        offers.indexWhere(
+                              (item) =>
+                                  _shownPrice(item, shutterQuotes) != null,
+                            ) ==
                             index;
                     return _OfferTile(
                       offer: offer,
+                      price: price,
                       won: _won,
                       cheapest: cheapest,
+                      calculating:
+                          offer.isShutter &&
+                          price == null &&
+                          shutterCalculating,
                       onTap: () => _onOfferTap(offer),
-                      onShutter: offer.isShutter
-                          ? () => _openShutter(offer)
-                          : null,
                     );
                   },
                 ),
@@ -468,31 +515,34 @@ class _SizeField extends StatelessWidget {
 class _OfferTile extends StatelessWidget {
   const _OfferTile({
     required this.offer,
+    required this.price,
     required this.won,
     required this.cheapest,
+    required this.calculating,
     required this.onTap,
-    this.onShutter,
   });
 
   final SizeFirstOffer offer;
+  final int? price;
   final NumberFormat won;
   final bool cheapest;
+  final bool calculating;
   final VoidCallback onTap;
-  final VoidCallback? onShutter;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final price = offer.quote.price;
     final missing = price == null;
-    final label = missing
+    final fromShutter = offer.isShutter && price != null;
+    final label = calculating
+        ? '계산 중'
+        : missing
         ? (offer.quote.inference.outOfRange ? '범위 초과' : '단가 없음')
         : '${won.format(price)}원';
     final subtitle = [
       offer.categoryName,
-      if (!missing && offer.quote.inference.isEstimated) '추정',
+      if (!missing && !fromShutter && offer.quote.inference.isEstimated) '추정',
       if (cheapest) '최저',
-      if (offer.isShutter) '셔터 계산',
     ].join(' · ');
     return Material(
       color: scheme.surfaceContainerLow,
@@ -533,28 +583,12 @@ class _OfferTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: missing ? scheme.onSurfaceVariant : scheme.primary,
-                    ),
-                  ),
-                  if (onShutter != null)
-                    TextButton(
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        minimumSize: const Size(48, 32),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: onShutter,
-                      child: const Text('계산'),
-                    ),
-                ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: missing ? scheme.onSurfaceVariant : scheme.primary,
+                ),
               ),
             ],
           ),

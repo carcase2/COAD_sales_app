@@ -377,21 +377,28 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       });
 
       HapticFeedback.mediumImpact();
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('견적이 산출되었습니다.'),
-              ],
+      // 사이즈 비교에서 열면 결과 화면이 확인이다. 스낵바는 견적서 버튼을 가린다.
+      if (widget.initialType == null) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  SizedBox(width: 8),
+                  Text('견적이 산출되었습니다.'),
+                ],
+              ),
+              backgroundColor: Colors.teal.shade600,
+              duration: const Duration(seconds: 2),
             ),
-            backgroundColor: Colors.teal.shade600,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+          );
+      }
 
       // Web과 동일: 견적 확정 직후 1회 fire-and-forget 로그 전송 (실패해도 UI 영향 없음)
       final currentUser = ref.read(authControllerProvider);
@@ -684,6 +691,9 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               if (!mounted || _lastPriceSyncAt != null) return;
               setState(() => _lastPriceSyncAt = DateTime.now());
             });
+          }
+          if (widget.initialType != null && _currentStep == 4) {
+            return _buildSizeEntryResult(scheme);
           }
           return widget.showQuickActions
               ? _buildWithQuickActions(scheme, _buildContent(scheme))
@@ -2001,6 +2011,542 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 사이즈 비교에서 들어온 결과. 금액, 제조사, 사양, 내역을 한 스크롤에 둔다.
+  Widget _buildSizeEntryResult(ColorScheme scheme) {
+    final result = _result;
+    if (result == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: scheme.primary),
+            const SizedBox(height: 12),
+            Text(
+              '견적을 산출하는 중',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final typeColor = QuoterTypeStyle.color(_selectedType);
+    final lines = [
+      for (final item in result.breakdown)
+        if (item.amount > 0) item,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            children: [
+              _sizeEntryPrice(scheme, result, typeColor),
+              if (_companyComparisons.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _sizeEntrySectionTitle(scheme, '제조사'),
+                const SizedBox(height: 8),
+                _sizeEntryCompanies(scheme, typeColor),
+              ],
+              const SizedBox(height: 20),
+              _sizeEntrySectionTitle(scheme, '기술 사양'),
+              const SizedBox(height: 8),
+              _sizeEntrySpecs(scheme, result),
+              if (lines.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _sizeEntrySectionTitle(scheme, '견적 내역'),
+                const SizedBox(height: 8),
+                _sizeEntryLines(scheme, lines),
+              ],
+              if (ShutterCalculator.isSecurityType(_selectedType)) ...[
+                const SizedBox(height: 12),
+                Text(
+                  kShutterSlatUnitPriceNotice,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.35,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              _buildSimilarEstimatesSection(scheme),
+            ],
+          ),
+        ),
+        Material(
+          color: scheme.surface,
+          elevation: 3,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              child: FilledButton(
+                onPressed: () => unawaited(_openSizeQuoteWriter()),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+                child: const Text(
+                  '견적서 작성',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sizeEntryPrice(
+    ColorScheme scheme,
+    ShutterEstimateResult result,
+    Color typeColor,
+  ) {
+    final width = result.input.widthMm.round();
+    final height = result.input.heightMm.round();
+    final company = _selectedCompanyName;
+    final insulated = ShutterCalculator.isInsulatedType(_selectedType);
+    final slatMm = insulated
+        ? ShutterCalculator.insulatedSlatMmForCompany(company)
+        : null;
+    final box = result.boxSize.trim();
+    final caption = [
+      if ((company ?? '').isNotEmpty) company!,
+      if (slatMm != null) '단열 ${slatMm}mm',
+      if (box.isNotEmpty && box != '-') '셔터박스 $box',
+    ].join(' · ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${NumberFormat('#,###').format(width)} × ${NumberFormat('#,###').format(height)} mm',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 2),
+        if (result.totalAmount > 0)
+          Text(
+            _krwFormat.format(result.totalAmount),
+            style: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -1,
+              height: 1.1,
+              color: typeColor,
+            ),
+          )
+        else
+          Text(
+            '이 사이즈는 격자 단가가 없습니다.',
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.35,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurface,
+            ),
+          ),
+        if (caption.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            caption,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.fade,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurface,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _sizeEntrySectionTitle(ColorScheme scheme, String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w800,
+        color: scheme.onSurfaceVariant,
+      ),
+    );
+  }
+
+  Widget _sizeEntryCompanies(ColorScheme scheme, Color typeColor) {
+    final sorted = [..._companyComparisons]
+      ..sort((a, b) {
+        final byPrice = a.totalAmount.compareTo(b.totalAmount);
+        if (byPrice != 0) return byPrice;
+        return a.company.companyName.compareTo(b.company.companyName);
+      });
+    final lowestId = sorted.first.company.id;
+    final insulated = ShutterCalculator.isInsulatedType(_selectedType);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Column(
+        children: [
+          for (var i = 0; i < sorted.length; i++)
+            _sizeEntryCompanyRow(
+              scheme: scheme,
+              typeColor: typeColor,
+              row: sorted[i],
+              lowest: sorted[i].company.id == lowestId,
+              insulated: insulated,
+              showDivider: i < sorted.length - 1,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sizeEntryCompanyRow({
+    required ColorScheme scheme,
+    required Color typeColor,
+    required CompanyComparisonRow row,
+    required bool lowest,
+    required bool insulated,
+    required bool showDivider,
+  }) {
+    final selected = row.company.id == _selectedCompanyId;
+    final name = row.company.companyName;
+    final result = _result!;
+    final slatMm = ShutterCalculator.insulatedSlatMmForCompany(name);
+    final box = insulated
+        ? ShutterCalculator.getShutterBoxSize(
+            isInsulated: true,
+            heightMm: result.input.heightMm,
+            weightKg: result.weightKg,
+            widthMm: result.input.widthMm,
+            insulatedSlatMm: slatMm,
+          )
+        : '';
+    final caption = [
+      if (insulated) '${slatMm}mm',
+      if (box.isNotEmpty && box != '-') '셔터박스 $box',
+    ].join(' · ');
+    return Material(
+      color: selected
+          ? typeColor.withValues(alpha: 0.10)
+          : scheme.surfaceContainerLow,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          unawaited(_onSelectCompany(row.company.id));
+        },
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+          decoration: BoxDecoration(
+            border: showDivider
+                ? Border(
+                    bottom: BorderSide(
+                      color: scheme.outlineVariant.withValues(alpha: 0.35),
+                    ),
+                  )
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_off_rounded,
+                    color: selected ? typeColor : scheme.onSurfaceVariant,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  if (lowest) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: typeColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '최저',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: typeColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  Text(
+                    _krwFormat.format(row.totalAmount),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              if (caption.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Padding(
+                  padding: const EdgeInsets.only(left: 32),
+                  child: Text(
+                    caption,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.fade,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sizeEntrySpecs(ColorScheme scheme, ShutterEstimateResult result) {
+    final insulated = ShutterCalculator.isInsulatedType(_selectedType);
+    final slatMm = insulated
+        ? ShutterCalculator.insulatedSlatMmForCompany(_selectedCompanyName)
+        : null;
+    final box = result.boxSize.trim().isEmpty ? '-' : result.boxSize.trim();
+    final bracketParts = result.bracketType
+        .split(',')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty && part != '-')
+        .toList();
+    final shorts = <(String, String)>[
+      ('모터', result.motorModel.trim().isEmpty ? '-' : result.motorModel),
+      ('소비전력', result.powerSpec.trim().isEmpty ? '-' : result.powerSpec),
+      ('무게', '${result.weightKg.toStringAsFixed(1)} kg'),
+      ('롤파이프', ShutterCalculator.getRollPipeType(result.input.widthMm)),
+    ];
+    return Column(
+      children: [
+        _sizeEntryWideSpec(
+          scheme,
+          slatMm == null ? '셔터박스' : '셔터박스 · ${slatMm}mm',
+          box,
+        ),
+        const SizedBox(height: 8),
+        _sizeEntryBracketSpec(
+          scheme,
+          slatMm == null ? '브라켓' : '브라켓 · ${slatMm}mm',
+          bracketParts,
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < shorts.length; i += 2) ...[
+          if (i > 0) const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _sizeEntrySpecTile(scheme, shorts[i])),
+              const SizedBox(width: 8),
+              Expanded(
+                child: i + 1 < shorts.length
+                    ? _sizeEntrySpecTile(scheme, shorts[i + 1])
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _sizeEntryWideSpec(ColorScheme scheme, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.fade,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sizeEntryBracketSpec(
+    ColorScheme scheme,
+    String label,
+    List<String> parts,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (parts.isEmpty)
+            const Text(
+              '-',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final part in parts)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      part,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sizeEntrySpecTile(ColorScheme scheme, (String, String) spec) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            spec.$1,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            spec.$2,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.fade,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sizeEntryLines(ColorScheme scheme, List<ShutterBreakdownItem> lines) {
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < lines.length; i++)
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: BoxDecoration(
+                border: i == lines.length - 1
+                    ? null
+                    : Border(
+                        bottom: BorderSide(
+                          color: scheme.outlineVariant.withValues(alpha: 0.35),
+                        ),
+                      ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _compactItemName(lines[i].name),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _krwFormat.format(lines[i].amount),
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -4393,23 +4939,87 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _krwFormat.format(displayAmount),
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              color: scheme.onSurface,
+                        const Spacer(),
+                        Text(
+                          '유사도 ${se.score}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.8,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (!isMotorIncluded) ...[
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _krwFormat.format(displayAmount),
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          est.modelName ?? QuoterTypeStyle.label(_selectedType),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: headerColor.withValues(alpha: 0.9),
+                          ),
+                        ),
+                        if (est.description != null &&
+                            est.description!.isNotEmpty)
+                          Text(
+                            est.description!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.9,
+                              ),
+                            ),
+                          ),
+                        if (isSimulated)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '+40만 가산됨',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: scheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (!isMotorIncluded) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
                           Text(
                             '모터포함',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 12,
                               color: scheme.onSurfaceVariant,
                               fontWeight: FontWeight.w700,
                             ),
@@ -4436,63 +5046,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (isSimulated)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: scheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '+40만 가산됨',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: scheme.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        Text(
-                          est.modelName ?? QuoterTypeStyle.label(_selectedType),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: headerColor.withValues(alpha: 0.9),
-                          ),
-                        ),
-                        if (est.description != null &&
-                            est.description!.isNotEmpty)
-                          Text(
-                            est.description!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: scheme.onSurfaceVariant.withValues(
-                                alpha: 0.9,
-                              ),
-                            ),
-                          ),
-                        Text(
-                          '유사도: ${se.score}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: scheme.onSurfaceVariant.withValues(
-                              alpha: 0.8,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ],
                 ),
               ),

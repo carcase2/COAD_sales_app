@@ -718,7 +718,8 @@ class _CustomerSupportIntakeScreenState
               const SizedBox(height: 8),
               TextField(
                 controller: _phoneCtrl,
-                keyboardType: TextInputType.phone,
+                // 아이폰 전화 숫자판에는 추천 칸이 없다.
+                keyboardType: TextInputType.text,
                 decoration: InputDecoration(
                   labelText: '전화번호',
                   hintText: '010-1234-5678',

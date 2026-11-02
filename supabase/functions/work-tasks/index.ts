@@ -303,6 +303,45 @@ serve(async (req) => {
     const taskId = (body.taskId ?? '').toString().trim()
     if (!taskId) return json({ ok: false, error: '업무를 찾지 못했습니다.' }, 400)
 
+    if (action === 'task') {
+      const people = await assigneeChoices(admin)
+      const priorities = await priorityChoices(admin)
+      const nameByEmail = new Map(people.map((person) => [person.email, person.name]))
+      const names = await emailNames(admin)
+      const priorityName = new Map(priorities.map((item) => [item.id, item.name]))
+      const idToName = new Map<string, string>()
+      for (const [name, id] of statuses) idToName.set(id, name)
+      const { data, error } = await admin
+        .from('tasks')
+        .select('id, title, detail, status_id, priority_id, due_date, assignees, requester, created_at')
+        .eq('id', taskId)
+        .eq('department_id', deptId)
+        .maybeSingle()
+      if (error) throw error
+      if (!data) return json({ ok: false, error: '업무를 찾지 못했습니다.' }, 404)
+      const task = data as Record<string, unknown>
+      const emails = asEmails(task.assignees)
+      const priorityId = idKey(task.priority_id)
+      return json({
+        ok: true,
+        task: {
+          id: task.id,
+          title: (task.title ?? '').toString(),
+          detail: (task.detail ?? '').toString(),
+          status: idToName.get((task.status_id ?? '').toString()) ?? '',
+          dueDate: (task.due_date ?? '').toString(),
+          requester: personLabel((task.requester ?? '').toString(), names),
+          createdAt: (task.created_at ?? '').toString(),
+          priorityId,
+          priority: priorityName.get(priorityId) ?? '',
+          assigneeEmails: emails,
+          assigneeNames: emails.map(
+            (email) => nameByEmail.get(email) ?? email.split('@')[0],
+          ),
+        },
+      })
+    }
+
     if (action === 'comments' || action === 'addComment') {
       const { data: current, error: readError } = await admin
         .from('tasks')

@@ -1227,7 +1227,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           sectionId: 'tools',
           icon: Icons.calculate_rounded,
           title: '견적',
-          subtitle: '폭·높이로 모델 비교 · 셔터 계산 · 견적서',
+          subtitle: '폭·높이로 모델 비교 · 세부 견적',
           quickAccess: true,
           quickLabel: '견적',
           keywords: const ['견적', '셔터', '견적기', 'estimator', '단가', '모터', '슬라트'],

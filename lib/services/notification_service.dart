@@ -15,6 +15,7 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_s
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/work_permissions.dart';
 import 'package:coad_customer_calls/data/work_task_repository.dart';
+import 'package:coad_customer_calls/models/work_task.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/work/work_tasks_screen.dart';
@@ -122,11 +123,9 @@ class NotificationService {
       '매일 오전 9시·오후 1시·오후 6시 오늘·지난 방문/발송 예정';
   static const String _androidChannelAsFeedbackDesc =
       '피드백 대기 2시간 뒤 재알림. 19시 이후는 다음날 오전 9시';
-  static const String _androidChannelAsVisitSoonDesc =
-      '방문 예정 시각 2시간 전 알림';
+  static const String _androidChannelAsVisitSoonDesc = '방문 예정 시각 2시간 전 알림';
   static const String _androidChannelGeneralDesc = '앱 업데이트 등 일반 알림';
-  static const String _androidChannelWorkDesc =
-      '남은 업무, 오늘 마감, 업무 추가·시작·완료·보류';
+  static const String _androidChannelWorkDesc = '남은 업무, 오늘 마감, 업무 추가·시작·완료·보류';
 
   static const int _asDueNotifIdMorning = 91009;
   static const int _asDueNotifIdAfternoon = 91013;
@@ -139,6 +138,8 @@ class NotificationService {
   ];
   static const String _asDueCalendarRouteName = 'AsDueCalendar';
   static DateTime? _lastWorkTasksOpenAt;
+  static String? _lastWorkTaskOpenedId;
+  static int _workOpenSerial = 0;
   static const String _asFeedbackTag = 'as_feedback_wait';
   static const String _asVisitSoonTag = 'as_visit_soon';
 
@@ -786,10 +787,7 @@ class NotificationService {
       });
     }
     if (_isWorkTaskNotification(data)) {
-      return jsonEncode({
-        'type': 'work_tasks',
-        'action': 'open_work_tasks',
-      });
+      return jsonEncode(workTaskNotificationPayload(data));
     }
     final callId = _extractCallIdFromData(data);
     if (callId == null) return null;
@@ -938,7 +936,7 @@ class NotificationService {
       return;
     }
     if (_isWorkTaskNotification(data)) {
-      _openWorkTasks();
+      _openWorkTasks(data);
       return;
     }
     final id = _extractCallIdFromData(data);
@@ -1056,13 +1054,12 @@ class NotificationService {
         action == 'open_work_tasks';
   }
 
-  static void _openWorkTasks() {
-    const payload = {
-      'type': 'work_tasks',
-      'action': 'open_work_tasks',
-    };
+  static void _openWorkTasks(Map<String, dynamic> data) {
+    final payload = workTaskNotificationPayload(data);
+    final taskId = workTaskIdFromNotification(payload);
     final openedAt = _lastWorkTasksOpenAt;
     if (openedAt != null &&
+        _lastWorkTaskOpenedId == taskId &&
         DateTime.now().difference(openedAt) < const Duration(seconds: 2)) {
       return;
     }
@@ -1082,19 +1079,28 @@ class NotificationService {
       if (!canAccessWorkTasks(user)) {
         _pendingMessageData = null;
         _lastWorkTasksOpenAt = DateTime.now();
+        _lastWorkTaskOpenedId = taskId;
         return;
       }
       _pendingMessageData = null;
       _lastWorkTasksOpenAt = DateTime.now();
+      _lastWorkTaskOpenedId = taskId;
       container.read(workTasksRefreshProvider.notifier).state++;
-      if (_topRouteName(nav) == WorkTasksScreen.routeName) return;
+      if (_topRouteName(nav) == WorkTasksScreen.routeName) {
+        if (taskId != null) {
+          container.read(workTaskOpenRequestProvider.notifier).state =
+              WorkTaskOpenRequest(taskId: taskId, serial: ++_workOpenSerial);
+        }
+        _log('open work task on current board taskId=$taskId');
+        return;
+      }
       nav.push(
         MaterialPageRoute<void>(
-          builder: (_) => const WorkTasksScreen(),
+          builder: (_) => WorkTasksScreen(openTaskId: taskId),
           settings: const RouteSettings(name: WorkTasksScreen.routeName),
         ),
       );
-      _log('open work tasks');
+      _log('open work tasks taskId=$taskId');
     } catch (_) {
       _queuePendingData(payload);
     }
@@ -1853,10 +1859,7 @@ class NotificationService {
       );
       if (!when.isAfter(now)) continue;
       final id = _visitSoonNotifId(item.id);
-      final payload = jsonEncode({
-        'type': 'as_visit_soon',
-        'as_id': item.id,
-      });
+      final payload = jsonEncode({'type': 'as_visit_soon', 'as_id': item.id});
       try {
         await _localNotifications.zonedSchedule(
           id: id,

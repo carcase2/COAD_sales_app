@@ -765,7 +765,9 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
                   label: '연락처 *',
                   controller: _phoneCtrl,
                   hint: '010-0000-0000',
-                  keyboardType: TextInputType.phone,
+                  // 아이폰 전화 숫자판에는 추천 칸이 없다.
+                  // 고객명과 같은 문자 키보드여야 '전화에서 붙여넣기'가 뜬다.
+                  keyboardType: TextInputType.text,
                   onChanged: _onPhoneChanged,
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? '번호를 입력해주세요' : null,

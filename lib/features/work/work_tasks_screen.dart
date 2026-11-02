@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/work_permissions.dart';
@@ -11,14 +13,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// 남은 업무 목록. 알림을 눌러도 이 화면이 열린다.
+/// 남은 업무 달력. 알림에 업무 id가 있으면 그 상세를 연다.
 class WorkTasksScreen extends ConsumerStatefulWidget {
-  const WorkTasksScreen({super.key, this.embedded = false});
+  const WorkTasksScreen({super.key, this.embedded = false, this.openTaskId});
 
   static const routeName = 'WorkTasks';
 
   /// 홈 업무 탭에서는 상단 제목 줄을 생략한다.
   final bool embedded;
+
+  /// 알림으로 들어온 업무. 목록을 읽은 뒤 상세를 연다.
+  final String? openTaskId;
 
   @override
   ConsumerState<WorkTasksScreen> createState() => _WorkTasksScreenState();
@@ -33,11 +38,19 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
   bool _calendarWeek = false;
   String? _assigneeEmail;
   String? _monthAnchor;
+  String? _pendingTaskId;
+  WorkTask? _pinned;
+  bool _openingDetail = false;
+  int _handledOpenSerial = 0;
   final ValueNotifier<int> _detailTick = ValueNotifier(0);
 
   @override
   void initState() {
     super.initState();
+    final openTaskId = widget.openTaskId?.trim();
+    _pendingTaskId = openTaskId == null || openTaskId.isEmpty
+        ? null
+        : openTaskId;
     Future<void>.microtask(_load);
   }
 
@@ -75,6 +88,7 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
         _loading = false;
       });
       _touchDetail();
+      unawaited(_openPendingTask());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -92,7 +106,13 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
     try {
       final board = await future;
       if (!mounted) return;
-      setState(() => _board = board);
+      setState(() {
+        _board = board;
+        final pinned = _pinned;
+        if (pinned != null && _taskIn(board, pinned.id) == null) {
+          _pinned = null;
+        }
+      });
       _touchDetail();
     } catch (e) {
       if (!mounted) return;
@@ -178,6 +198,21 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
   Widget build(BuildContext context) {
     ref.listen<int>(workTasksRefreshProvider, (previous, next) {
       if (previous != next) _load();
+    });
+    ref.listen<WorkTaskOpenRequest?>(workTaskOpenRequestProvider, (
+      previous,
+      next,
+    ) {
+      if (widget.embedded ||
+          next == null ||
+          next.serial == _handledOpenSerial) {
+        return;
+      }
+      final route = ModalRoute.of(context);
+      if (route != null && !route.isCurrent) return;
+      _handledOpenSerial = next.serial;
+      _pendingTaskId = next.taskId;
+      unawaited(_openPendingTask());
     });
     final board = _board;
     final rows = board == null ? const <WorkTask>[] : _scoped(board);
@@ -376,13 +411,61 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
     );
   }
 
-  WorkTask? _taskById(String id) {
-    final tasks = _board?.tasks;
-    if (tasks == null) return null;
-    for (final task in tasks) {
+  WorkTask? _taskIn(WorkTaskBoard board, String id) {
+    for (final task in board.tasks) {
       if (task.id == id) return task;
     }
     return null;
+  }
+
+  WorkTask? _taskById(String id) {
+    final board = _board;
+    if (board != null) {
+      final live = _taskIn(board, id);
+      if (live != null) return live;
+    }
+    final pinned = _pinned;
+    if (pinned != null && pinned.id == id) return pinned;
+    return null;
+  }
+
+  Future<void> _openPendingTask() async {
+    final id = _pendingTaskId;
+    if (id == null || id.isEmpty || _openingDetail) return;
+    _openingDetail = true;
+    _pendingTaskId = null;
+    try {
+      var task = _taskById(id);
+      if (task == null) {
+        final user = ref.read(authControllerProvider);
+        if (user != null) {
+          try {
+            task = await WorkTaskRepository(
+              Supabase.instance.client,
+            ).task(userId: user.id, taskId: id);
+          } catch (_) {
+            task = null;
+          }
+        }
+      }
+      if (!mounted) return;
+      if (task == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('이 업무를 찾지 못했습니다.')));
+        return;
+      }
+      if (_taskById(task.id) == null) {
+        setState(() => _pinned = task);
+      }
+      final opened = task;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _openDetail(opened);
+      });
+    } finally {
+      _openingDetail = false;
+    }
   }
 
   void _changeById(String id, String action) {

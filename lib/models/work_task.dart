@@ -37,6 +37,25 @@ Map<String, int> workAssigneeColorSlots(Iterable<String> keys) {
   return slots;
 }
 
+/// 업무 알림 payload에서 업무 id. 없으면 달력만 연다.
+String? workTaskIdFromNotification(Map<String, dynamic> data) {
+  for (final key in const ['task_id', 'taskId']) {
+    final value = (data[key] ?? '').toString().trim();
+    if (value.isNotEmpty && value != 'null') return value;
+  }
+  return null;
+}
+
+/// 로컬 알림과 대기 열기에 남기는 업무 알림. 업무 id는 그대로 둔다.
+Map<String, dynamic> workTaskNotificationPayload(Map<String, dynamic> data) {
+  final taskId = workTaskIdFromNotification(data);
+  return {
+    'type': 'work_tasks',
+    'action': 'open_work_tasks',
+    'task_id': ?taskId,
+  };
+}
+
 /// 연구소 업무 (`tasks`) 한 건. 완료는 목록에 넣지 않는다.
 class WorkTask {
   const WorkTask({

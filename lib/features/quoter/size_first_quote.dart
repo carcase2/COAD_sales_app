@@ -1,7 +1,9 @@
 import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_size_quote.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_models.dart';
 import 'package:coad_customer_calls/models/shutter_models.dart';
+import 'package:flutter/material.dart';
 
 /// 사이즈를 먼저 정한 뒤 고르는 모델 한 줄.
 class SizeFirstOffer {
@@ -111,4 +113,72 @@ List<SizeFirstOffer> sizeFirstOffers({
     return a.modelName.compareTo(b.modelName);
   });
   return offers;
+}
+
+/// 표준단가 목록에 없는 셔터 종류를 같은 비교 목록에 넣는다.
+/// 이미 이름이 맞는 모델이 있으면 그 종류는 다시 만들지 않는다.
+List<SizeFirstOffer> shutterSizeOffers({
+  required List<SizeFirstOffer> existing,
+  required int widthMm,
+  required int heightMm,
+}) {
+  if (widthMm <= 0 || heightMm <= 0) return const [];
+  final covered = {
+    for (final offer in existing)
+      if (offer.shutterType != null) offer.shutterType!,
+  };
+  return [
+    for (final type in ShutterType.values)
+      if (!covered.contains(type))
+        _shutterOffer(type, widthMm: widthMm, heightMm: heightMm),
+  ];
+}
+
+SizeFirstOffer _shutterOffer(
+  ShutterType type, {
+  required int widthMm,
+  required int heightMm,
+}) {
+  final name = QuoterTypeStyle.label(type);
+  final color = _colorHex(QuoterTypeStyle.color(type));
+  final modelId = shutterQuoteModelId(type);
+  return SizeFirstOffer(
+    categoryId: kShutterQuoteCategoryId,
+    categoryName: kShutterQuoteCategoryName,
+    modelId: modelId,
+    modelName: name,
+    color: color,
+    quote: SameSizeModelQuote(
+      modelId: modelId,
+      modelName: name,
+      color: color,
+      inference: StandardPriceInference(
+        inputWidth: widthMm,
+        inputHeight: heightMm,
+        bucketWidth: widthMm,
+        bucketHeight: heightMm,
+        isExactBucket: false,
+        match: null,
+        nearby: const [],
+        lowerWidth: widthMm,
+        upperWidth: widthMm,
+        lowerHeight: heightMm,
+        upperHeight: heightMm,
+        estimatedPrice: null,
+        isEstimated: false,
+        outOfRange: false,
+        rangeMinWidth: widthMm,
+        rangeMaxWidth: widthMm,
+        rangeMinHeight: heightMm,
+        rangeMaxHeight: heightMm,
+        highlightCells: const [],
+      ),
+    ),
+    shutterType: type,
+  );
+}
+
+String _colorHex(Color color) {
+  final rgb = color.toARGB32() & 0xFFFFFF;
+  return '#${rgb.toRadixString(16).padLeft(6, '0')}';
 }

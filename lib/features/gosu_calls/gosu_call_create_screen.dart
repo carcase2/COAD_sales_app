@@ -615,7 +615,8 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _phoneCtrl,
-              keyboardType: TextInputType.phone,
+              // 아이폰 전화 숫자판에는 추천 칸이 없다.
+              keyboardType: TextInputType.text,
               onChanged: _onPhoneChanged,
               decoration: InputDecoration(
                 labelText: '연락처 *',

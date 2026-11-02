@@ -19,6 +19,30 @@ WorkTask _task({
 }) => WorkTask(id: id, title: title, detail: '', status: status, dueDate: due);
 
 void main() {
+  test('업무 알림은 업무 id를 상세로 넘긴다', () {
+    expect(
+      workTaskIdFromNotification({'task_id': 'abc', 'type': 'work_tasks'}),
+      'abc',
+    );
+    expect(workTaskIdFromNotification({'taskId': ' def '}), 'def');
+    expect(workTaskIdFromNotification({'kind': 'morning_remaining'}), isNull);
+    expect(
+      workTaskNotificationPayload({
+        'type': 'work_tasks',
+        'task_id': 'abc',
+        'title': '업무가 추가되었습니다',
+      }),
+      {'type': 'work_tasks', 'action': 'open_work_tasks', 'task_id': 'abc'},
+    );
+    expect(
+      workTaskNotificationPayload({
+        'type': 'work_tasks',
+        'kind': 'morning_due',
+      }),
+      {'type': 'work_tasks', 'action': 'open_work_tasks'},
+    );
+  });
+
   test('업무관리 메뉴는 연구소와 관리자만', () {
     expect(canAccessWorkTasks(null), isFalse);
     expect(canAccessWorkTasks(_user(groupName: '연구소')), isTrue);
