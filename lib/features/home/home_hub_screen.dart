@@ -1713,13 +1713,22 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     });
   }
 
-  /// 세로 스크롤 방향으로 상단 조작 줄을 접고 편다. 맨 위면 항상 편다.
-  bool _onBodyScroll(ScrollUpdateNotification n) {
-    if (n.metrics.axis != Axis.vertical || n.dragDetails == null) return false;
-    final delta = n.scrollDelta ?? 0;
+  /// 세로 스크롤 방향으로 상단 조작 줄을 접고 편다.
+  /// 접히면 화면이 넓어져 짧은 내용은 맨 위로 돌아가므로, 펴는 건 손가락을
+  /// 아래로 끌 때만 한다 (맨 위에서 끌어내리는 오버스크롤 포함).
+  bool _onBodyScroll(ScrollNotification n) {
+    if (n.metrics.axis != Axis.vertical) return false;
+    final double delta;
+    if (n is ScrollUpdateNotification && n.dragDetails != null) {
+      delta = n.scrollDelta ?? 0;
+    } else if (n is OverscrollNotification && n.dragDetails != null) {
+      delta = n.overscroll;
+    } else {
+      return false;
+    }
     final collapse = n.metrics.pixels > 48 && delta > 0
         ? true
-        : (n.metrics.pixels <= 0 || delta < -6)
+        : delta < -6 || (n.metrics.pixels <= 0 && delta < 0)
         ? false
         : _headerCollapsed;
     if (collapse != _headerCollapsed) {
@@ -2982,7 +2991,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             ),
           ),
           Expanded(
-            child: NotificationListener<ScrollUpdateNotification>(
+            child: NotificationListener<ScrollNotification>(
               onNotification: _onBodyScroll,
               child: DecoratedBox(
                 decoration: BoxDecoration(
