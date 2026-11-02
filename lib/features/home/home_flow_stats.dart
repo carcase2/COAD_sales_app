@@ -688,23 +688,17 @@ class _StatItem extends StatelessWidget {
       children: [
         Icon(icon, size: 18, color: color.withValues(alpha: 0.85)),
         const SizedBox(width: 8),
+        // 긴 라벨(금일 업데이트)도 줄이지 않고 두 줄로 — 네 칸 글자 크기를 맞춘다.
         Expanded(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-                style: TextStyle(
-                  fontSize: 14.5,
-                  height: 1.1,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.92),
-                ),
-              ),
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14.5,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.92),
             ),
           ),
         ),

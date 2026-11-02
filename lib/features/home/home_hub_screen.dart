@@ -15,6 +15,7 @@ import 'package:coad_customer_calls/features/home/sales_today_desk.dart';
 import 'package:coad_customer_calls/data/support_call_log_repository.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/features/home/home_dept.dart';
+import 'package:coad_customer_calls/features/home/home_dept_swipe_frame.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/work_permissions.dart';
 import 'package:coad_customer_calls/features/home/home_hub_visual.dart';
@@ -64,6 +65,7 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
   late String _hubFlowAnchorYmd;
   HubNavStep _hubNavStep = HubNavStep.day;
   HomeHubSection _section = HomeHubSection.flow;
+  bool _headerCollapsed = false;
   final Set<HomeHubSection> _materializedSections = {HomeHubSection.flow};
   CalendarFormat _launchCalendarFormat = CalendarFormat.week;
   int _calendarKeyNonce = 0;
@@ -1687,7 +1689,10 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _materializeSection(section);
     if (_section == section && !fromPill) return;
     HapticFeedback.selectionClick();
-    setState(() => _section = section);
+    setState(() {
+      _section = section;
+      _headerCollapsed = false;
+    });
     if (_sectionPageController.hasClients) {
       _sectionPageController.animateToPage(
         _sectionIndex(section),
@@ -1702,7 +1707,25 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
     _materializeSection(next);
     if (_section == next) return;
     HapticFeedback.selectionClick();
-    setState(() => _section = next);
+    setState(() {
+      _section = next;
+      _headerCollapsed = false;
+    });
+  }
+
+  /// 세로 스크롤 방향으로 상단 조작 줄을 접고 편다. 맨 위면 항상 편다.
+  bool _onBodyScroll(ScrollUpdateNotification n) {
+    if (n.metrics.axis != Axis.vertical || n.dragDetails == null) return false;
+    final delta = n.scrollDelta ?? 0;
+    final collapse = n.metrics.pixels > 48 && delta > 0
+        ? true
+        : (n.metrics.pixels <= 0 || delta < -6)
+        ? false
+        : _headerCollapsed;
+    if (collapse != _headerCollapsed) {
+      setState(() => _headerCollapsed = collapse);
+    }
+    return false;
   }
 
   void _consumePendingLaunch() {
@@ -1915,8 +1938,11 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       HomeHubSection.work => 0,
     };
 
+    // 0건 배지는 보라 헤더 위에서 거의 안 보이고 정보도 없어 숨긴다.
     bool showsCountBadge(HomeHubSection section) =>
-        section == HomeHubSection.flow || section == HomeHubSection.calendar;
+        (section == HomeHubSection.flow ||
+            section == HomeHubSection.calendar) &&
+        badgeCountFor(section) > 0;
 
     final trackColor = embedded
         ? scheme.onPrimary.withValues(alpha: 0.1)
@@ -2846,75 +2872,38 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
             Expanded(
               child: Stack(
                 children: [
-                  PageView(
-                    controller: _deptPageController,
-                    onPageChanged: (index) {
-                      HapticFeedback.selectionClick();
-                      if (_deptPageIndex != index) {
-                        setState(() => _deptPageIndex = index);
-                      }
-                      _syncHomeDeptProvider(index);
-                    },
-                    children: [
-                      _flowDeptPage(body: salesExtras),
-                      _flowDeptPage(
-                        body: _buildSupportPeriodStats(periodKey: periodKey),
-                      ),
-                      _flowDeptPage(
-                        body: GosuHomePanel(
-                          embedded: true,
-                          periodKey: periodKey,
-                          receptionLabel: gosuReceptionLabel,
-                          updatedLabel: gosuUpdatedLabel,
-                          followLabel: gosuFollowLabel,
+                  HomeDeptSwipeFrame(
+                    pageIndex: _deptPageIndex,
+                    pageCount: 3,
+                    pageLabels: const ['영업부', '고객지원팀', '자동문의고수'],
+                    onGoTo: _goDeptPage,
+                    accentFor: (index) => _deptAccent(scheme, index),
+                    child: PageView(
+                      controller: _deptPageController,
+                      onPageChanged: (index) {
+                        HapticFeedback.selectionClick();
+                        if (_deptPageIndex != index) {
+                          setState(() => _deptPageIndex = index);
+                        }
+                        _syncHomeDeptProvider(index);
+                      },
+                      children: [
+                        _flowDeptPage(body: salesExtras),
+                        _flowDeptPage(
+                          body: _buildSupportPeriodStats(periodKey: periodKey),
                         ),
-                      ),
-                    ],
+                        _flowDeptPage(
+                          body: GosuHomePanel(
+                            embedded: true,
+                            periodKey: periodKey,
+                            receptionLabel: gosuReceptionLabel,
+                            updatedLabel: gosuUpdatedLabel,
+                            followLabel: gosuFollowLabel,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  if (_deptPageIndex < 2)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: IconButton(
-                          tooltip: _deptPageIndex == 0 ? '고객지원팀' : '자동문의고수',
-                          onPressed: () => _goDeptPage(_deptPageIndex + 1),
-                          style: IconButton.styleFrom(
-                            backgroundColor: scheme.surface.withValues(
-                              alpha: 0.72,
-                            ),
-                            foregroundColor: _deptAccent(
-                              scheme,
-                              _deptPageIndex + 1,
-                            ),
-                          ),
-                          icon: const Icon(Icons.chevron_right_rounded),
-                        ),
-                      ),
-                    ),
-                  if (_deptPageIndex > 0)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: IconButton(
-                          tooltip: _deptPageIndex == 1 ? '영업부' : '고객지원팀',
-                          onPressed: () => _goDeptPage(_deptPageIndex - 1),
-                          style: IconButton.styleFrom(
-                            backgroundColor: scheme.surface.withValues(
-                              alpha: 0.72,
-                            ),
-                            foregroundColor: _deptAccent(
-                              scheme,
-                              _deptPageIndex - 1,
-                            ),
-                          ),
-                          icon: const Icon(Icons.chevron_left_rounded),
-                        ),
-                      ),
-                    ),
                   Positioned(
                     left: 0,
                     right: 0,
@@ -2982,37 +2971,46 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
       decoration: HomeHubVisual.screenBackground(_section, scheme),
       child: Column(
         children: [
-          _buildUnifiedHomeTop(scheme, user),
+          // 아래로 스크롤하면 상단 조작 줄을 접어 숫자 카드를 넓게, 위로 올리면 다시 편다.
+          ClipRect(
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.bottomCenter,
+              heightFactor: _headerCollapsed ? 0 : 1,
+              child: _buildUnifiedHomeTop(scheme, user),
+            ),
+          ),
           Expanded(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: HomeHubVisual.sectionTone(
-                      _section,
-                      scheme,
-                    ).accent.withValues(alpha: 0.28),
-                    width: 2,
+            child: NotificationListener<ScrollUpdateNotification>(
+              onNotification: _onBodyScroll,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: HomeHubVisual.sectionTone(
+                        _section,
+                        scheme,
+                      ).accent.withValues(alpha: 0.28),
+                      width: 2,
+                    ),
                   ),
                 ),
-              ),
-              child: PageView(
-                controller: _sectionPageController,
-                physics: const NeverScrollableScrollPhysics(),
-                onPageChanged: _onSectionPageChanged,
-                children: [
-                  for (final section in _sectionOrder)
-                    _lazySectionPage(
-                      section,
-                      switch (section) {
+                child: PageView(
+                  controller: _sectionPageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  onPageChanged: _onSectionPageChanged,
+                  children: [
+                    for (final section in _sectionOrder)
+                      _lazySectionPage(section, switch (section) {
                         HomeHubSection.flow => _buildFlowBody(scheme),
                         HomeHubSection.calendar => _buildCalendarBody(),
                         HomeHubSection.work => const WorkTasksScreen(
                           embedded: true,
                         ),
-                      },
-                    ),
-                ],
+                      }),
+                  ],
+                ),
               ),
             ),
           ),

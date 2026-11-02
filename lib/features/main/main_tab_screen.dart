@@ -83,6 +83,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   int _currentIndex = 0;
   int _navSelectedIndex = _navHomeIndex;
   final Set<int> _loadedIndices = {0}; // 초기에 로드할 인덱스 (홈)
+  ScheduleBranch _lastScheduleBranch = ScheduleBranch.headOffice;
+
   /// 홈에서 연속 뒤로가기 시 앱 종료(스낵바 안내 후 2초 이내 재입력)
   DateTime? _lastBackExitHintAt;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -484,16 +486,13 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
   bool _showDaeguScheduleInNav(AppUser? user) =>
       user != null && canAccessDaeguSchedule(user);
 
-  int _scheduleTabCount(AppUser? user) {
-    var n = 0;
-    if (_showGeneralScheduleInNav(user)) n++;
-    if (_showDaeguScheduleInNav(user)) n++;
-    return n;
-  }
+  /// 본사일반·대구지사는 하단 네비 「일정」 한 칸을 같이 쓴다.
+  bool _showScheduleInNav(AppUser? user) =>
+      _showGeneralScheduleInNav(user) || _showDaeguScheduleInNav(user);
 
-  /// 홈(0) 접수(1) 발급(2) 견적(3) [일정들] 더보기
+  /// 홈(0) 접수(1) 발급(2) 견적(3) [일정] 더보기
   int _navMenuIndexFor(AppUser? user) =>
-      _navScheduleBaseIndex + _scheduleTabCount(user);
+      _navScheduleBaseIndex + (_showScheduleInNav(user) ? 1 : 0);
 
   int? _navGeneralScheduleIndex(AppUser? user) {
     if (!_showGeneralScheduleInNav(user)) return null;
@@ -502,9 +501,21 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   int? _navDaeguScheduleIndex(AppUser? user) {
     if (!_showDaeguScheduleInNav(user)) return null;
-    return _showGeneralScheduleInNav(user)
-        ? _navScheduleBaseIndex + 1
-        : _navScheduleBaseIndex;
+    return _navScheduleBaseIndex;
+  }
+
+  /// 「일정」 탭 — 마지막에 본 지사로 연다. 처음은 본사일반.
+  void _selectScheduleTab() {
+    final user = ref.read(authControllerProvider);
+    final daegu =
+        !_showGeneralScheduleInNav(user) ||
+        (_lastScheduleBranch == ScheduleBranch.daegu &&
+            _showDaeguScheduleInNav(user));
+    if (daegu) {
+      _selectDaeguScheduleTab();
+    } else {
+      _selectGeneralScheduleTab();
+    }
   }
 
   void _syncNavFromCurrentTab() {
@@ -553,6 +564,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       _navSelectedIndex = navIndex;
       _currentIndex = _generalScheduleTabIndex;
       _loadedIndices.add(_generalScheduleTabIndex);
+      _lastScheduleBranch = ScheduleBranch.headOffice;
       _lastBackExitHintAt = null;
     });
     _trackTab(user, ScheduleBranch.headOffice.usageTabKey);
@@ -574,6 +586,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       _navSelectedIndex = navIndex;
       _currentIndex = _daeguScheduleTabIndex;
       _loadedIndices.add(_daeguScheduleTabIndex);
+      _lastScheduleBranch = ScheduleBranch.daegu;
       _lastBackExitHintAt = null;
     });
     _trackTab(user, ScheduleBranch.daegu.usageTabKey);
@@ -586,14 +599,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       _openMenuDrawer();
       return;
     }
-    final generalNav = _navGeneralScheduleIndex(user);
-    if (generalNav != null && navIndex == generalNav) {
-      _selectGeneralScheduleTab();
-      return;
-    }
-    final daeguNav = _navDaeguScheduleIndex(user);
-    if (daeguNav != null && navIndex == daeguNav) {
-      _selectDaeguScheduleTab();
+    if (_showScheduleInNav(user) && navIndex == _navScheduleBaseIndex) {
+      _selectScheduleTab();
       return;
     }
     if (navIndex == _navQuoterIndex) {
@@ -1073,6 +1080,20 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 },
               ),
             ),
+            // 일정 탭 하나에 두 지사 — 둘 다 볼 수 있으면 아래에서 바꾼다.
+            if (showGeneralSchedule &&
+                showDaeguSchedule &&
+                (_currentIndex == _generalScheduleTabIndex ||
+                    _currentIndex == _daeguScheduleTabIndex) &&
+                MediaQuery.viewInsetsOf(context).bottom == 0)
+              _ScheduleBranchSwitch(
+                branch: _currentIndex == _daeguScheduleTabIndex
+                    ? ScheduleBranch.daegu
+                    : ScheduleBranch.headOffice,
+                onChanged: (branch) => branch == ScheduleBranch.daegu
+                    ? _selectDaeguScheduleTab()
+                    : _selectGeneralScheduleTab(),
+              ),
           ],
         ),
         // 키보드 올라오면 하단 네비 숨김 — 견적 규격 입력 등이 가려지지 않게
@@ -1082,8 +1103,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                 builder: (context, ref, _) => RepaintBoundary(
                   child: _MainBottomNavBar(
                     selectedIndex: _navSelectedIndex,
-                    showGeneralSchedule: showGeneralSchedule,
-                    showDaeguSchedule: showDaeguSchedule,
+                    showSchedule: showGeneralSchedule || showDaeguSchedule,
                     issuanceBadgeAsync: ref.watch(
                       issuanceRequestBadgeCountVisibleProvider,
                     ),
@@ -1096,18 +1116,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
                         _onNavDestinationSelected(_navIssuanceIndex),
                     onTapQuoter: () =>
                         _onNavDestinationSelected(_navQuoterIndex),
-                    onTapGeneralSchedule: () {
-                      final idx = _navGeneralScheduleIndex(
-                        ref.read(authControllerProvider),
-                      );
-                      if (idx != null) _onNavDestinationSelected(idx);
-                    },
-                    onTapDaeguSchedule: () {
-                      final idx = _navDaeguScheduleIndex(
-                        ref.read(authControllerProvider),
-                      );
-                      if (idx != null) _onNavDestinationSelected(idx);
-                    },
+                    onTapSchedule: () =>
+                        _onNavDestinationSelected(_navScheduleBaseIndex),
                     onTapMenu: () => _onNavDestinationSelected(
                       _navMenuIndexFor(ref.read(authControllerProvider)),
                     ),
@@ -1727,8 +1737,7 @@ class _IssuanceNavIcon extends StatelessWidget {
 class _MainBottomNavBar extends StatelessWidget {
   const _MainBottomNavBar({
     required this.selectedIndex,
-    required this.showGeneralSchedule,
-    required this.showDaeguSchedule,
+    required this.showSchedule,
     required this.issuanceBadgeAsync,
     required this.onTapHome,
     required this.onLongPressHome,
@@ -1736,14 +1745,14 @@ class _MainBottomNavBar extends StatelessWidget {
     required this.onLongPressReception,
     required this.onTapIssuance,
     required this.onTapQuoter,
-    required this.onTapGeneralSchedule,
-    required this.onTapDaeguSchedule,
+    required this.onTapSchedule,
     required this.onTapMenu,
   });
 
   final int selectedIndex;
-  final bool showGeneralSchedule;
-  final bool showDaeguSchedule;
+
+  /// 본사일반·대구지사 중 하나라도 볼 수 있으면 「일정」 한 칸.
+  final bool showSchedule;
   final AsyncValue<int> issuanceBadgeAsync;
   final VoidCallback onTapHome;
   final VoidCallback onLongPressHome;
@@ -1751,8 +1760,7 @@ class _MainBottomNavBar extends StatelessWidget {
   final VoidCallback onLongPressReception;
   final VoidCallback onTapIssuance;
   final VoidCallback onTapQuoter;
-  final VoidCallback onTapGeneralSchedule;
-  final VoidCallback onTapDaeguSchedule;
+  final VoidCallback onTapSchedule;
   final VoidCallback onTapMenu;
 
   @override
@@ -1767,13 +1775,10 @@ class _MainBottomNavBar extends StatelessWidget {
       scheme.primary,
       0.15,
     )!;
-    final generalScheduleAccent = AppTokens.generalScheduleAccent(scheme);
-    final daeguScheduleAccent = AppTokens.daeguScheduleAccent(scheme);
-    // 홈0 접수1 발급2 견적3 [본사?] [대구?] 더보기
-    var nextIndex = 4;
-    final gsIndex = showGeneralSchedule ? nextIndex++ : -1;
-    final daeguIndex = showDaeguSchedule ? nextIndex++ : -1;
-    final menuIndex = nextIndex;
+    final scheduleAccent = AppTokens.generalScheduleAccent(scheme);
+    // 홈0 접수1 발급2 견적3 [일정?] 더보기
+    const scheduleIndex = 4;
+    final menuIndex = showSchedule ? 5 : 4;
     final quoterSelected = selectedIndex == 3;
     return SafeArea(
       top: false,
@@ -1843,32 +1848,15 @@ class _MainBottomNavBar extends StatelessWidget {
                 onTap: onTapQuoter,
               ),
             ),
-            if (showGeneralSchedule)
+            if (showSchedule)
               Expanded(
                 child: _BottomNavItem(
-                  label: '본사일반',
-                  tag: kGeneralScheduleTestLabel.isEmpty
-                      ? null
-                      : kGeneralScheduleTestLabel,
-                  selected: selectedIndex == gsIndex,
+                  label: '일정',
+                  selected: selectedIndex == scheduleIndex,
                   selectedIcon: Icons.engineering_rounded,
                   unselectedIcon: Icons.engineering_outlined,
-                  accentColor: generalScheduleAccent,
-                  onTap: onTapGeneralSchedule,
-                ),
-              ),
-            if (showDaeguSchedule)
-              Expanded(
-                child: _BottomNavItem(
-                  label: '대구지사',
-                  tag: kDaeguScheduleTestLabel.isEmpty
-                      ? null
-                      : kDaeguScheduleTestLabel,
-                  selected: selectedIndex == daeguIndex,
-                  selectedIcon: Icons.apartment_rounded,
-                  unselectedIcon: Icons.apartment_outlined,
-                  accentColor: daeguScheduleAccent,
-                  onTap: onTapDaeguSchedule,
+                  accentColor: scheduleAccent,
+                  onTap: onTapSchedule,
                 ),
               ),
             Expanded(
@@ -1888,6 +1876,49 @@ class _MainBottomNavBar extends StatelessWidget {
   }
 }
 
+/// 「일정」 탭 하단 본사일반 · 대구지사 전환.
+class _ScheduleBranchSwitch extends StatelessWidget {
+  const _ScheduleBranchSwitch({required this.branch, required this.onChanged});
+
+  final ScheduleBranch branch;
+  final ValueChanged<ScheduleBranch> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      color: scheme.surface,
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      child: SegmentedButton<ScheduleBranch>(
+        showSelectedIcon: false,
+        style: SegmentedButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          selectedBackgroundColor: AppTokens.generalScheduleAccent(
+            scheme,
+          ).withValues(alpha: 0.16),
+        ),
+        segments: const [
+          ButtonSegment(
+            value: ScheduleBranch.headOffice,
+            icon: Icon(Icons.engineering_rounded, size: 18),
+            label: Text('본사일반'),
+          ),
+          ButtonSegment(
+            value: ScheduleBranch.daegu,
+            icon: Icon(Icons.apartment_rounded, size: 18),
+            label: Text('대구지사'),
+          ),
+        ],
+        selected: {branch},
+        onSelectionChanged: (selection) {
+          if (selection.isEmpty) return;
+          onChanged(selection.first);
+        },
+      ),
+    );
+  }
+}
+
 class _BottomNavItem extends StatelessWidget {
   const _BottomNavItem({
     required this.label,
@@ -1898,7 +1929,6 @@ class _BottomNavItem extends StatelessWidget {
     this.unselectedIcon,
     this.customIcon,
     this.accentColor,
-    this.tag,
   });
 
   final String label;
@@ -1909,7 +1939,6 @@ class _BottomNavItem extends StatelessWidget {
   final IconData? unselectedIcon;
   final Widget? customIcon;
   final Color? accentColor;
-  final String? tag;
 
   @override
   Widget build(BuildContext context) {
@@ -1988,28 +2017,6 @@ class _BottomNavItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (tag != null) ...[
-                  const SizedBox(height: 2),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: scheme.tertiaryContainer.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(
-                      tag!,
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        color: scheme.onTertiaryContainer,
-                        height: 1.1,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
