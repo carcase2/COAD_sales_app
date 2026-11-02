@@ -965,8 +965,9 @@ class SalesCallsRepository {
             .select(cols)
             .gte('call_date', '$fromYmd 00:00:00')
             .neq('status_id', 4)
-            // isMissed의 초기 단계(null·''·'0'·'접수')만 — 60일치 전체 대신 미통화만 받는다.
-            .or('call_stage.is.null,call_stage.in.("","0","접수")')
+            // isMissed의 초기 단계만 — 60일치 전체 대신 미통화만 받는다.
+            // call_stage는 정수 칸이라 초기 단계는 null·0 뿐이다 ('' 비교는 22P02 오류).
+            .or('call_stage.is.null,call_stage.eq.0')
             .order('created_at', ascending: false)
             .range(offset, offset + postgrestMaxPageSize - 1);
         merged.addAll(parseSalesCallList(res).where((c) => c.isMissed));
