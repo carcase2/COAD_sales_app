@@ -1,9 +1,12 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
+import { workTaskMessage } from './message.ts'
 
 const LAB_GROUPS = new Set(['연구소', '관리자'])
 const OPEN_NAMES = new Set(['접수', '진행중'])
+/** 연달아 바뀐 상태를 한 알림으로 모으려고 기다리는 시간. */
+const SETTLE_MS = 20_000
 
 type PushUser = { id: string; name: string; fcm_token?: string | null }
 
@@ -100,7 +103,14 @@ async function deactivate(admin: SupabaseClient, token: string): Promise<void> {
 async function sendPush(
   admin: SupabaseClient,
   pushTokens: string[],
-  message: { title: string; body: string; kind: string; notificationId: string; taskId?: string },
+  message: {
+    title: string
+    body: string
+    kind: string
+    notificationId: string
+    taskId?: string
+    collapseId?: string
+  },
 ): Promise<number> {
   if (pushTokens.length === 0) return 0
   const projectId = Deno.env.get('FIREBASE_PROJECT_ID')
@@ -142,7 +152,11 @@ async function sendPush(
                 data,
                 android: { priority: 'high' },
                 apns: {
-                  headers: { 'apns-push-type': 'alert', 'apns-priority': '10' },
+                  headers: {
+                    'apns-push-type': 'alert',
+                    'apns-priority': '10',
+                    ...(message.collapseId ? { 'apns-collapse-id': message.collapseId } : {}),
+                  },
                   payload: {
                     aps: {
                       alert: { title: message.title, body: message.body },
@@ -273,49 +287,84 @@ serve(async (req) => {
 
     const kind = (body.kind ?? '').toString()
     const record = (body.record ?? {}) as Record<string, unknown>
+    const oldRecord = (body.old_record ?? {}) as Record<string, unknown>
     const taskId = (record.id ?? '').toString()
-    const titleText = (record.title ?? '').toString().trim() || '제목 없음'
     if (!taskId || (kind !== 'added' && kind !== 'status')) {
       return json({ success: true, skipped: 'ignored' })
     }
 
-    const { data: statuses } = await admin.from('task_statuses').select('id, name')
-    const statusName = new Map(
-      ((statuses ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name]),
-    )
-    const nextStatus = statusName.get((record.status_id ?? '').toString()) ?? ''
     const stamp = (record.updated_at ?? record.created_at ?? taskId).toString()
     const dedupeKey = kind === 'added' ? `added:${taskId}` : `status:${taskId}:${record.status_id}:${stamp}`
     if (!(await claimDedupe(admin, dedupeKey))) {
       return json({ success: true, skipped: 'duplicate' })
     }
 
+    // 시작 누르고 바로 완료하면 트리거가 두 번 온다. 잠깐 기다린 뒤 지금 상태를
+    // 다시 읽어, 그사이 또 바뀌었으면 이 알림은 버리고 마지막 것만 보낸다.
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
+    const { data: current, error: currentError } = await admin
+      .from('tasks')
+      .select('*')
+      .eq('id', taskId)
+      .maybeSingle()
+    if (currentError) throw currentError
+    if (!current) return json({ success: true, skipped: 'deleted' })
+    const task = current as Record<string, unknown>
+    if (kind === 'status') {
+      if ((task.status_id ?? '').toString() !== (record.status_id ?? '').toString()) {
+        return json({ success: true, skipped: 'superseded' })
+      }
+      // 추가 알림이 기다리는 동안 바뀐 상태는 그 알림이 「바로 시작」처럼 한 번에 알린다.
+      const createdAt = Date.parse((task.created_at ?? '').toString())
+      const updatedAt = Date.parse((record.updated_at ?? '').toString())
+      const changedAt = Number.isFinite(updatedAt) ? updatedAt : Date.now() - SETTLE_MS
+      if (Number.isFinite(createdAt) && changedAt - createdAt < SETTLE_MS * 0.9) {
+        return json({ success: true, skipped: 'covered-by-added' })
+      }
+    }
+
+    const { data: statuses } = await admin.from('task_statuses').select('id, name')
+    const statusName = new Map(
+      ((statuses ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name]),
+    )
+    const { data: priorities } = await admin.from('task_priorities').select('id, name')
+    const priorityName = new Map(
+      ((priorities ?? []) as Array<{ id: unknown; name: string }>).map((row) => [String(row.id), row.name]),
+    )
     const names = await nameMap(admin)
-    const assigneeLabel = (Array.isArray(record.assignees) ? record.assignees : [])
+    const assigneeLabel = (Array.isArray(task.assignees) ? task.assignees : [])
       .map((email) => names.get((email ?? '').toString()) ?? '')
       .filter(Boolean)
       .join(', ')
-    const due = ymd(record.due_date)
-    const detailBits = [
-      assigneeLabel ? `담당 ${assigneeLabel}` : '',
-      due ? `마감 ${due}` : '',
-    ].filter(Boolean)
+    const requesterRaw = (task.requester ?? '').toString().trim()
+    const enteredPrevious = Date.parse((oldRecord.updated_at ?? '').toString())
+    const changedAt = Date.parse((record.updated_at ?? '').toString())
 
-    let headline = '업무 상태가 바뀌었습니다'
-    if (kind === 'added') headline = '업무가 추가되었습니다'
-    else if (nextStatus === '완료') headline = '업무가 완료되었습니다'
-    else if (nextStatus === '진행중') headline = '업무가 시작되었습니다'
-    else if (nextStatus === '보류') headline = '업무가 보류되었습니다'
-    else if (nextStatus === '접수') headline = '업무가 접수로 바뀌었습니다'
+    const message = workTaskMessage({
+      kind: kind as 'added' | 'status',
+      title: (task.title ?? '').toString(),
+      status: statusName.get((task.status_id ?? '').toString()) ?? '',
+      previousStatus: statusName.get((oldRecord.status_id ?? '').toString()) ?? '',
+      assigneeLabel,
+      requester: names.get(requesterRaw) ?? requesterRaw,
+      priority: priorityName.get(String(task.priority_id ?? '')) ?? '',
+      due: ymd(task.due_date),
+      today: todayKst(),
+      minutesInPrevious:
+        Number.isFinite(enteredPrevious) && Number.isFinite(changedAt)
+          ? Math.max(0, (changedAt - enteredPrevious) / 60_000)
+          : null,
+    })
 
     const sent = await sendPush(admin, pushTokens, {
-      title: headline,
-      body: [titleText, ...detailBits].join('\n'),
+      ...message,
       kind,
-      notificationId: noteId(`${kind}:${taskId}:${nextStatus}`),
+      // 같은 업무 알림은 한 칸에서 갈아끼운다 (안드로이드 id·태그, iOS collapse-id).
+      notificationId: noteId(`task:${taskId}`),
+      collapseId: `task-${taskId}`,
       taskId,
     })
-    return json({ success: true, sent, title: headline })
+    return json({ success: true, sent, title: message.title })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('notify-work-task error:', message)
