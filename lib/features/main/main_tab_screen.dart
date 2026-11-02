@@ -131,7 +131,8 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(seconds: 2), () {
+      // 홈 첫 조회와 겹치지 않게 — 알림 예약은 급하지 않다.
+      Future<void>.delayed(const Duration(seconds: 5), () {
         if (!mounted) return;
         unawaited(refreshSupportDueReminders(ref));
       });
@@ -144,9 +145,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
       });
     });
 
-    // 유휴 시 견적 단가 프리페치 — 견적 탭 첫 진입 체감 단축
+    // 유휴 시 견적 단가 프리페치 — 견적 탭 첫 진입 체감 단축.
+    // 홈 첫 조회가 끝난 뒤로 미룬다 (동시 요청이 몰리면 홈 숫자가 늦게 뜬다).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(milliseconds: 900), () {
+      Future<void>.delayed(const Duration(seconds: 6), () {
         if (!mounted) return;
         unawaited(ref.read(shutterPricesFutureProvider.future));
       });
@@ -214,9 +216,9 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     super.dispose();
   }
 
+  /// 시작 시에는 실시간 구독만 건다. 발급 1년치 전체 조회(수백 KB)는 발급 탭을
+  /// 처음 열 때 한 번 — 다른 탭에서는 배지만, 알림은 원격 푸시가 맡는다.
   void _startIssuanceCompletionWatcher() {
-    unawaited(_checkIssuanceCompletionAndNotify());
-    unawaited(_checkIssuanceRequestAndNotify());
     _issuanceCompletionWatchChannel?.unsubscribe();
     _issuanceCompletionWatchChannel = Supabase.instance.client
         .channel('issuance-completion-watch')
@@ -285,55 +287,11 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
     if (onIssuanceTab) {
       // 발급 탭: 캐시 무효화만 — 구독 중 위젯이 한 번 재조회. 강제 이중 fetch 없음.
       invalidateIssuanceCore(ref);
-      await _checkIssuanceCompletionAndNotify();
       await _checkIssuanceRequestAndNotify();
     } else {
       // 다른 탭: 경량 배지만. 전체 목록 refetch·로컬 알림 스캔은 생략
       // (원격 푸시/FCM이 알림 담당, 배지로 건수 반영).
       invalidateIssuanceBadgeOnly(ref);
-    }
-  }
-
-  Future<void> _checkIssuanceCompletionAndNotify() async {
-    try {
-      final prefs = ref.read(appDependenciesProvider).prefs;
-      const initKey = 'issuance_completion_watch_initialized_v1';
-      const seenKey = 'issuance_completion_seen_keys_v1';
-
-      final taxCompleted = await ref.read(
-        issuanceCompletedRowsProvider(IssuanceDomain.taxInvoice).future,
-      );
-      final bondCompleted = await ref.read(
-        issuanceCompletedRowsProvider(IssuanceDomain.performanceBond).future,
-      );
-      final allCompleted = [...taxCompleted, ...bondCompleted];
-
-      String rowKey(IssuanceRequestRow row) {
-        final masterId = (row.master['id'] ?? '').toString();
-        final issueId = (row.issue?['id'] ?? '').toString();
-        return '${row.domain.name}:$masterId:$issueId';
-      }
-
-      final currentKeys = allCompleted.map(rowKey).toSet();
-      final seenKeys = (prefs.getStringList(seenKey) ?? const <String>[])
-          .toSet();
-      final initialized = prefs.getBool(initKey) ?? false;
-
-      if (!initialized) {
-        await prefs.setBool(initKey, true);
-        await prefs.setStringList(seenKey, currentKeys.toList());
-        return;
-      }
-
-      final newKeys = currentKeys.difference(seenKeys);
-      if (newKeys.isEmpty) return;
-
-      // 로컬 알림은 FCM(또는 포그라운드 원격 알림)이 담당 — seen 키만 동기화.
-
-      final merged = seenKeys.union(currentKeys).toList();
-      await prefs.setStringList(seenKey, merged);
-    } catch (_) {
-      // 감시 실패 시 UI 영향 없이 다음 주기에 재시도
     }
   }
 
@@ -450,7 +408,10 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
 
   void _selectIssuanceTab() {
     ref.read(issuanceBadgeLoadEnabledProvider.notifier).state = true;
-    _loadedIndices.add(_issuanceTabIndex);
+    // 발급 탭 첫 진입 — 탭이 어차피 읽는 목록으로 새 발급요청 알림을 맞춘다.
+    if (_loadedIndices.add(_issuanceTabIndex)) {
+      unawaited(_checkIssuanceRequestAndNotify());
+    }
     if (_navSelectedIndex == _navIssuanceIndex &&
         _currentIndex == _issuanceTabIndex) {
       return;

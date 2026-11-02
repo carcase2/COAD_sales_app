@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
@@ -14,6 +15,7 @@ import 'package:coad_customer_calls/models/sales_call_draft.dart';
 import 'package:coad_customer_calls/models/temp_manager_override.dart';
 import 'package:coad_customer_calls/data/temp_manager_logic.dart';
 import 'package:coad_customer_calls/models/today_stats.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// **1층: 메타데이터·URL** — 웹 `supabaseClient`와 동일한 **메인** Supabase 프로젝트
@@ -112,11 +114,25 @@ class SalesCallsRepository {
   }
 
   /// 목록·검색 조회 전 — 만료 원복(스로틀) + 오버라이드 캐시 1회.
+  /// 원복은 목록을 막지 않고 뒤에서 돈다 — 대상은 대개 0건이고, 있으면 다음
+  /// 조회부터 반영된다. 강제 새로고침만 원복을 기다린다.
   Future<List<TempManagerOverride>> _prepareListFetchContext({
     bool force = false,
   }) async {
-    await _maybeRevertExpired(force: force);
+    if (force) {
+      await _maybeRevertExpired(force: true);
+    } else {
+      _revertExpiredInBackground();
+    }
     return _getOverridesCached(force: force);
+  }
+
+  void _revertExpiredInBackground() {
+    unawaited(
+      _maybeRevertExpired().catchError(
+        (Object e) => debugPrint('임시 담당 원복 실패: $e'),
+      ),
+    );
   }
 
   /// PostgREST/Supabase `api.max_rows` (see `supabase/config.toml`).
@@ -203,10 +219,7 @@ class SalesCallsRepository {
 
   Future<List<TempManagerOverride>> fetchTempOverrides({
     bool force = false,
-  }) async {
-    await _maybeRevertExpired(force: force);
-    return _getOverridesCached(force: force);
-  }
+  }) => _prepareListFetchContext(force: force);
 
   /// 기간 만료된 임시 담당 접수 건을 original_manager로 DB 원복 (웹 revert-expired API와 동일).
   /// BASE_URL이 있으면 Next API를 우선 호출하고, 없으면 Supabase로 직접 원복한다.
@@ -237,28 +250,67 @@ class SalesCallsRepository {
 
   Future<int> _revertExpiredViaSupabase() async {
     final todayYmd = todayYmdSeoul();
-    final overrides = await _fetchTempOverridesRemote();
+    final overrides = await _getOverridesCached();
     final expired = overrides
         .where((o) => isTempOverrideExpired(o, todayYmd))
         .toList();
     if (expired.isEmpty) return 0;
 
-    final regionNames = expired
-        .map((o) => o.regionName.trim())
-        .where((s) => s.isNotEmpty)
-        .toSet()
-        .toList();
-    if (regionNames.isEmpty) return 0;
+    // 지역별로 묶어 접수 1건당 그 지역 오버라이드만 본다 (접수 × 전체 오버라이드 X).
+    final expiredByRegion = <String, List<TempManagerOverride>>{};
+    for (final o in expired) {
+      final region = o.regionName.trim();
+      if (region.isEmpty) continue;
+      expiredByRegion.putIfAbsent(region, () => []).add(o);
+    }
+    // 원래 비교는 앞뒤 공백을 무시하므로 저장된 값 그대로도 같이 넣는다.
+    final tempManagers = {
+      for (final o in expired)
+        if (o.tempManager.trim().isNotEmpty) ...[
+          o.tempManager.trim(),
+          o.tempManager,
+        ],
+    }.toList();
+    if (expiredByRegion.isEmpty || tempManagers.isEmpty) return 0;
 
-    final callRes = await _client
-        .from('sales_calls')
-        .select('id, assigned_to, call_date, created_at, region_name')
-        .inFilter('region_name', regionNames);
+    // 접수일이 만료 오버라이드 기간들 안에 있어야 대상 — 시간대 차이로 하루씩 여유.
+    final starts = [for (final o in expired) o.startDate?.trim() ?? ''];
+    final ends = [for (final o in expired) o.endDate?.trim() ?? ''];
+    final fromYmd = starts.any((s) => s.isEmpty)
+        ? null
+        : addDaysToYmd((starts..sort()).first, -1);
+    final toYmd = addDaysToYmd((ends..sort()).last, 1);
+
+    // 원복 대상은 임시 담당 명의 접수뿐 — 서버에서 거르고, 1000건 넘으면 이어 받는다.
+    final rows = <Map<String, dynamic>>[];
+    var offset = 0;
+    while (true) {
+      var query = _client
+          .from('sales_calls')
+          .select('id, assigned_to, call_date, created_at, region_name')
+          .inFilter('region_name', expiredByRegion.keys.toList())
+          .inFilter('assigned_to', tempManagers);
+      // 접수일이 비면 created_at으로 판단하므로 그런 건은 남긴다.
+      query = query.or(
+        fromYmd == null
+            ? 'call_date.is.null,call_date.lte.$toYmd 23:59:59'
+            : 'call_date.is.null,and(call_date.gte.$fromYmd 00:00:00,'
+                  'call_date.lte.$toYmd 23:59:59)',
+      );
+      final page = await query
+          .order('id')
+          .range(offset, offset + postgrestMaxPageSize - 1);
+      rows.addAll(page.map((e) => Map<String, dynamic>.from(e)));
+      if (page.length < postgrestMaxPageSize) break;
+      offset += postgrestMaxPageSize;
+    }
 
     final revertTargets = <String, String>{};
-    for (final row in callRes) {
-      final call = SalesCall.fromJson(Map<String, dynamic>.from(row));
-      for (final o in expired) {
+    for (final row in rows) {
+      final call = SalesCall.fromJson(row);
+      final candidates = expiredByRegion[(call.regionName ?? '').trim()];
+      if (candidates == null) continue;
+      for (final o in candidates) {
         if (shouldRevertCallToOriginal(call, o, todayYmd)) {
           revertTargets[call.id] = o.originalManager.trim();
           break;
@@ -913,6 +965,8 @@ class SalesCallsRepository {
             .select(cols)
             .gte('call_date', '$fromYmd 00:00:00')
             .neq('status_id', 4)
+            // isMissed의 초기 단계(null·''·'0'·'접수')만 — 60일치 전체 대신 미통화만 받는다.
+            .or('call_stage.is.null,call_stage.in.("","0","접수")')
             .order('created_at', ascending: false)
             .range(offset, offset + postgrestMaxPageSize - 1);
         merged.addAll(parseSalesCallList(res).where((c) => c.isMissed));

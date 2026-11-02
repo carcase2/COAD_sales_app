@@ -1764,7 +1764,9 @@ class _HomeHubScreenState extends ConsumerState<HomeHubScreen> {
 
   void _publishHubPeriod() {
     ref.read(homeHubNavStepProvider.notifier).state = _hubNavStep;
-    ref.read(homeHubFlowAnchorYmdProvider.notifier).state = _hubFlowAnchorYmd;
+    // 같은 날짜라도 다른 String이면 알림이 가서 미통화 조회가 한 번 더 나간다.
+    final anchor = ref.read(homeHubFlowAnchorYmdProvider.notifier);
+    if (anchor.state != _hubFlowAnchorYmd) anchor.state = _hubFlowAnchorYmd;
     prefetchHubPeriodFlow(
       ref,
       _activeFlowPeriodKey,

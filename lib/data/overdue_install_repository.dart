@@ -12,6 +12,40 @@ class OverdueInstallRepository {
   static const _maxRows = 4000;
   static const _inqChunk = 80;
 
+  /// MES 원본 JSON에서 금액·수금상태 계산에 쓰는 키만. 원본 전체(수 KB/건) 대신
+  /// 이 키들만 `컬럼->키`로 받는다 — 시공완료 카드 첫 로딩 용량을 크게 줄인다.
+  static const _rawKeys = [
+    'order_price',
+    'ORDER_PRICE',
+    'AMT',
+    'TOT_AMT',
+    'ORDER_AMT',
+    'SO_AMT',
+    'order_price_num',
+    'LINE_AMT',
+    'remain_pay_cost_num',
+    'REMAIN_PAY_COST',
+    'remain_pay_cost',
+    'NON_PRICE',
+    'initial_pay_cost_num',
+    'INITIAL_PAY_COST',
+    'initial_pay_cost',
+    'paid_sum_num',
+    'PAID_SUM',
+    'RECEIVED_STATUS',
+    'received_status',
+  ];
+
+  static String _slimRawSelect(String column) => [
+    for (var i = 0; i < _rawKeys.length; i++) 'rk$i:$column->${_rawKeys[i]}',
+  ].join(', ');
+
+  /// [_slimRawSelect]로 받은 행의 키 값을 원본 JSON 모양의 Map으로 되돌린다.
+  static Map<String, dynamic> _slimRawFrom(Map<String, dynamic> row) => {
+    for (var i = 0; i < _rawKeys.length; i++)
+      if (row.remove('rk$i') case final value?) _rawKeys[i]: value,
+  };
+
   /// 예정일이 [fromYmd]~[toYmd] 이고 시공완료가 아닌 건.
   Future<List<OverdueInstallSite>> fetchPendingOverdue({
     required String fromYmd,
@@ -104,11 +138,12 @@ class OverdueInstallRepository {
     required String fromYmd,
     required String toYmd,
   }) async {
-    const withRaw =
-        'inq_no, instal_dt, site_nm, cust_nm, plant_cd, plant_nm, item_cd, item_qty, manager_nm, reg_usr, install_done, inq_status, raw_json';
     const withoutRaw =
         'inq_no, instal_dt, site_nm, cust_nm, plant_cd, plant_nm, item_cd, item_qty, manager_nm, reg_usr, install_done, inq_status';
-    var select = withRaw;
+    const withRaw = '$withoutRaw, raw_json';
+    final withSlimRaw = '$withoutRaw, ${_slimRawSelect('raw_json')}';
+    // 키만 받기 → (JSON 컬럼이 아니면) 원본 전체 → 원본 없이 순으로 물러선다.
+    var select = withSlimRaw;
     final all = <Map<String, dynamic>>[];
     var from = 0;
     while (from < _maxRows) {
@@ -123,11 +158,20 @@ class OverdueInstallRepository {
             .order('instal_dt', ascending: false)
             .range(from, to);
         final page = List<Map<String, dynamic>>.from(rows as List);
+        if (select == withSlimRaw) {
+          for (final row in page) {
+            row['raw_json'] = _slimRawFrom(row);
+          }
+        }
         all.addAll(page);
         if (page.length < _pageSize) break;
         from += _pageSize;
       } catch (_) {
-        if (select == withRaw && from == 0) {
+        if (from == 0 && select == withSlimRaw) {
+          select = withRaw;
+          continue;
+        }
+        if (from == 0 && select == withRaw) {
           select = withoutRaw;
           continue;
         }
@@ -222,17 +266,36 @@ class OverdueInstallRepository {
     if (missing.isEmpty) return sites;
 
     final extras = <String, Map<String, int?>>{};
+    var slim = true;
+    Future<List<Map<String, dynamic>>> fetchChunk(List<String> chunk) async {
+      if (slim) {
+        try {
+          final rows = await _client
+              .from('mes_inquiries')
+              .select('inq_no, ${_slimRawSelect('raw_data')}')
+              .inFilter('inq_no', chunk);
+          return [
+            for (final row in List<Map<String, dynamic>>.from(rows as List))
+              {...row, 'raw_data': _slimRawFrom(row)},
+          ];
+        } catch (_) {
+          slim = false; // JSON 컬럼이 아니면 원본 전체로.
+        }
+      }
+      final rows = await _client
+          .from('mes_inquiries')
+          .select('inq_no, raw_data')
+          .inFilter('inq_no', chunk);
+      return List<Map<String, dynamic>>.from(rows as List);
+    }
+
     try {
       for (var i = 0; i < missing.length; i += _inqChunk) {
         final end = i + _inqChunk > missing.length
             ? missing.length
             : i + _inqChunk;
         final chunk = missing.sublist(i, end);
-        final rows = await _client
-            .from('mes_inquiries')
-            .select('inq_no, raw_data')
-            .inFilter('inq_no', chunk);
-        for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+        for (final row in await fetchChunk(chunk)) {
           final inq = (row['inq_no'] ?? '').toString().trim();
           if (inq.isEmpty) continue;
           extras[inq] = {
