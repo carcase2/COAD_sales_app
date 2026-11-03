@@ -16,7 +16,8 @@ export type WorkTaskEvent = {
   minutesInPrevious: number | null
 }
 
-const URGENT_PRIORITIES = new Set(['높음', '긴급'])
+/** task_priorities 이름 (낮음·보통·높음·특급·후순위) 중 본문 앞에 표시할 것. */
+const URGENT_PRIORITIES = new Set(['특급', '높음'])
 
 function daysBetween(fromYmd: string, toYmd: string): number {
   const from = Date.parse(`${fromYmd}T00:00:00Z`)
