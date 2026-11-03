@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
+import 'package:coad_customer_calls/data/business_card_vcard.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
@@ -14,6 +15,7 @@ import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BusinessCardDetailScreen extends ConsumerStatefulWidget {
@@ -93,6 +95,29 @@ class _BusinessCardDetailScreenState
     if (saved == true) {
       _changed = true;
       await _reload();
+    }
+  }
+
+  /// .vcf로 공유 시트를 연다 — 「연락처」를 고르면 휴대폰 연락처에 저장, 카톡·문자로도 보낸다.
+  Future<void> _shareContact(BusinessCard card) async {
+    final box = context.findRenderObject() as RenderBox?;
+    try {
+      final file = await writeBusinessCardVCard(card);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'text/vcard')],
+          subject: card.displayName,
+          // 아이패드는 공유 창 위치가 있어야 뜬다.
+          sharePositionOrigin: box == null
+              ? null
+              : box.localToGlobal(Offset.zero) & box.size,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('연락처 파일을 만들지 못했습니다: $e')),
+      );
     }
   }
 
@@ -431,6 +456,18 @@ class _BusinessCardDetailScreenState
                 secondary: Icon(
                   Icons.block_rounded,
                   color: card.isBlacklisted ? scheme.error : scheme.outline,
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: () => unawaited(_shareContact(card)),
+                icon: const Icon(Icons.contact_phone_outlined, size: 20),
+                label: const Text(
+                  '연락처에 저장 · 공유',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(46),
                 ),
               ),
               const SizedBox(height: 8),
