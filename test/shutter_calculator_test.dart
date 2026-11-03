@@ -422,4 +422,55 @@ void main() {
       expect(map['내풍압단열'], 150000);
     });
   });
+
+  group('ShutterCalculator.calculate (방화)', () {
+    // DB shutter_unit_price_grid 의 실제 분류 이름 — 철제방화 · 스크린방화.
+    final gridPrices = <Map<String, dynamic>>[
+      {
+        'category': '철제방화',
+        'model_type': '',
+        'width_mm': 3000,
+        'height_mm': 3000,
+        'price': 2100000,
+      },
+      {
+        'category': '스크린방화',
+        'model_type': '',
+        'width_mm': 3000,
+        'height_mm': 3000,
+        'price': 1800000,
+      },
+    ];
+
+    test('스크린방화는 DB 분류 「스크린방화」 격자 단가로 계산한다', () {
+      expect(
+        ShutterCalculator.getDbInfo(ShutterType.fireScreen)['category'],
+        '스크린방화',
+      );
+      final result = ShutterCalculator.calculate(
+        input: ShutterEstimateInput(
+          type: ShutterType.fireScreen,
+          widthMm: 2800,
+          heightMm: 3000,
+        ),
+        gridPrices: gridPrices,
+        unitPrices: const [],
+      );
+      expect(result.totalAmount, 1800000);
+      expect(result.breakdown.single.note, contains('격자 단가 (3000x3000)'));
+    });
+
+    test('철제방화와 스크린방화는 서로의 격자를 쓰지 않는다', () {
+      final steel = ShutterCalculator.calculate(
+        input: ShutterEstimateInput(
+          type: ShutterType.fireSteel,
+          widthMm: 3000,
+          heightMm: 3000,
+        ),
+        gridPrices: gridPrices,
+        unitPrices: const [],
+      );
+      expect(steel.totalAmount, 2100000);
+    });
+  });
 }

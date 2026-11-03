@@ -447,7 +447,9 @@ class ShutterCalculator {
       case ShutterType.fireSteel:
         return {'category': '철제방화', 'model_type': null};
       case ShutterType.fireScreen:
-        return {'category': '방화스크린', 'model_type': null};
+        // DB shutter_unit_price_grid·shutter_unit_prices 의 분류 이름과 같아야 한다.
+        // '방화스크린'으로 찾던 동안 스크린방화 견적이 늘 0원(격자 미등록)이었다.
+        return {'category': '스크린방화', 'model_type': null};
     }
   }
 
