@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/work_permissions.dart';
@@ -85,7 +87,11 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
     }
   }
 
-  Future<void> _run(Future<WorkTaskBoard> future) async {
+  Future<void> _run(
+    Future<WorkTaskBoard> future, {
+    String? undoLabel,
+    String? doneMessage,
+  }) async {
     if (_busy) return;
     setState(() => _busy = true);
     _touchDetail();
@@ -94,6 +100,14 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
       if (!mounted) return;
       setState(() => _board = board);
       _touchDetail();
+      final undo = board.undo;
+      if (undoLabel != null && undo != null && undo.isValid) {
+        _showUndo(undoLabel, undo);
+      } else if (doneMessage != null) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(doneMessage)));
+      }
     } catch (e) {
       if (!mounted) return;
       final message = e is ApiException ? e.message : '처리하지 못했습니다.';
@@ -365,6 +379,82 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
       WorkTaskRepository(
         Supabase.instance.client,
       ).setStatus(userId: user.id, taskId: task.id, action: action),
+      undoLabel: '「${task.title}」 ${_actionLabel(action)}',
+    );
+  }
+
+  static String _actionLabel(String action) => switch (action) {
+    'start' => '시작',
+    'complete' => '완료',
+    'hold' => '보류',
+    'receive' => '접수로 되돌림',
+    _ => '변경',
+  };
+
+  /// 연구소 웹과 같이 상태를 바꾼 뒤 몇 초간 「실행 취소」 — 잘못 누른 완료·보류를 되돌린다.
+  void _showUndo(String label, WorkTaskUndo undo) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+          duration: const Duration(seconds: 6),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: '실행 취소',
+            onPressed: () {
+              final user = ref.read(authControllerProvider);
+              if (user == null || !mounted) return;
+              _run(
+                WorkTaskRepository(
+                  Supabase.instance.client,
+                ).restore(userId: user.id, undo: undo),
+                doneMessage: '되돌렸습니다.',
+              );
+            },
+          ),
+        ),
+      );
+  }
+
+  /// 상세 「수정」 — 바뀐 칸만 보낸다.
+  Future<void> _edit(String id) async {
+    final task = _taskById(id);
+    final board = _board;
+    final user = ref.read(authControllerProvider);
+    if (task == null || board == null || user == null || _busy) return;
+    final draft = await showModalBottomSheet<_NewWorkDraft>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _AddWorkSheet(
+        existing: task,
+        assignees: visibleWorkAssignees(board.assignees),
+        priorities: board.priorities,
+        today: board.today,
+        initialEmail: task.assigneeEmails.isEmpty
+            ? null
+            : task.assigneeEmails.first,
+        initialDue: task.dueDate,
+        initialPriorityId: task.priorityId,
+      ),
+    );
+    if (draft == null || !mounted) return;
+    final edited = _WorkEditResult.diff(task, draft);
+    if (!edited.hasChanges) return;
+    await _run(
+      WorkTaskRepository(Supabase.instance.client).update(
+        userId: user.id,
+        taskId: id,
+        title: edited.title,
+        detail: edited.detail,
+        dueDate: edited.dueDate,
+        priorityId: edited.priorityId,
+        assigneeEmail: edited.assigneeEmail,
+        requester: edited.requester,
+      ),
+      doneMessage: '수정했습니다.',
     );
   }
 
@@ -404,6 +494,8 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
           onStart: () => _changeById(id, 'start'),
           onHold: () => _changeById(id, 'hold'),
           onComplete: () => _changeById(id, 'complete'),
+          onReceive: () => _changeById(id, 'receive'),
+          onEdit: () => unawaited(_edit(id)),
           loadComments: () => _loadComments(id),
           addComment: (content) => _addComment(id, content),
         ),
@@ -605,6 +697,8 @@ class _WorkDetailPage extends StatefulWidget {
     required this.onStart,
     required this.onHold,
     required this.onComplete,
+    required this.onReceive,
+    required this.onEdit,
     required this.loadComments,
     required this.addComment,
   });
@@ -617,6 +711,8 @@ class _WorkDetailPage extends StatefulWidget {
   final VoidCallback onStart;
   final VoidCallback onHold;
   final VoidCallback onComplete;
+  final VoidCallback onReceive;
+  final VoidCallback onEdit;
   final Future<List<WorkComment>> Function() loadComments;
   final Future<List<WorkComment>> Function(String content) addComment;
 
@@ -714,6 +810,8 @@ class _WorkDetailPageState extends State<_WorkDetailPage> {
           onStart: task.canStart ? widget.onStart : null,
           onHold: task.canHold ? widget.onHold : null,
           onComplete: task.canComplete ? widget.onComplete : null,
+          onReceive: task.canReceive ? widget.onReceive : null,
+          onEdit: widget.onEdit,
           comments: _comments,
           loadingComments: _loadingComments,
           commentError: _commentError,
@@ -736,6 +834,8 @@ class _WorkDetailBody extends StatelessWidget {
     this.onStart,
     this.onHold,
     this.onComplete,
+    this.onReceive,
+    this.onEdit,
     required this.comments,
     required this.loadingComments,
     required this.commentError,
@@ -752,6 +852,8 @@ class _WorkDetailBody extends StatelessWidget {
   final VoidCallback? onStart;
   final VoidCallback? onHold;
   final VoidCallback? onComplete;
+  final VoidCallback? onReceive;
+  final VoidCallback? onEdit;
   final List<WorkComment> comments;
   final bool loadingComments;
   final String? commentError;
@@ -780,7 +882,33 @@ class _WorkDetailBody extends StatelessWidget {
     final createdLabel = created == null ? null : formatSeoulDateTime(created);
     final people = visibleTaskAssignees(task);
     return Scaffold(
-      appBar: AppBar(title: const Text('업무')),
+      appBar: AppBar(
+        title: const Text('업무'),
+        actions: [
+          if (onEdit != null)
+            IconButton(
+              tooltip: '수정',
+              onPressed: busy ? null : onEdit,
+              icon: const Icon(Icons.edit_outlined),
+            ),
+          if (onReceive != null)
+            PopupMenuButton<String>(
+              tooltip: '더보기',
+              enabled: !busy,
+              onSelected: (_) => onReceive!(),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'receive',
+                  child: ListTile(
+                    leading: Icon(Icons.undo_rounded),
+                    title: Text('접수로 되돌리기'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -1234,6 +1362,7 @@ class _NewWorkDraft {
     required this.assigneeEmail,
     this.dueDate,
     this.priorityId,
+    this.requester = '',
   });
 
   final String title;
@@ -1241,6 +1370,59 @@ class _NewWorkDraft {
   final String assigneeEmail;
   final String? dueDate;
   final String? priorityId;
+  final String requester;
+}
+
+/// 수정 시트 결과 — 바뀐 칸만 값이 있다 (null = 그대로).
+class _WorkEditResult {
+  const _WorkEditResult({
+    this.title,
+    this.detail,
+    this.dueDate,
+    this.priorityId,
+    this.assigneeEmail,
+    this.requester,
+  });
+
+  /// 원래 업무와 비교해 바뀐 칸만 남긴다. 마감일을 지우면 ''.
+  factory _WorkEditResult.diff(WorkTask task, _NewWorkDraft draft) {
+    String? changed(String next, String prev) =>
+        next.trim() == prev.trim() ? null : next.trim();
+    final prevDue = (task.dueDate ?? '').trim();
+    final prevDueYmd = prevDue.length >= 10 ? prevDue.substring(0, 10) : '';
+    final nextDue = (draft.dueDate ?? '').trim();
+    final prevEmail = task.assigneeEmails.isEmpty
+        ? ''
+        : task.assigneeEmails.first;
+    return _WorkEditResult(
+      title: changed(draft.title, task.title),
+      detail: changed(draft.detail, task.detail),
+      dueDate: nextDue == prevDueYmd ? null : nextDue,
+      priorityId: (draft.priorityId ?? '') == task.priorityId
+          ? null
+          : draft.priorityId,
+      // 담당이 여럿인 업무는 시트에서 한 명만 고르므로, 그대로면 건드리지 않는다.
+      assigneeEmail: task.assigneeEmails.contains(draft.assigneeEmail)
+          ? null
+          : (draft.assigneeEmail == prevEmail ? null : draft.assigneeEmail),
+      requester: changed(draft.requester, task.requester),
+    );
+  }
+
+  final String? title;
+  final String? detail;
+  final String? dueDate;
+  final String? priorityId;
+  final String? assigneeEmail;
+  final String? requester;
+
+  bool get hasChanges =>
+      title != null ||
+      detail != null ||
+      dueDate != null ||
+      priorityId != null ||
+      assigneeEmail != null ||
+      requester != null;
 }
 
 class _AddWorkSheet extends StatefulWidget {
@@ -1251,6 +1433,7 @@ class _AddWorkSheet extends StatefulWidget {
     this.initialEmail,
     this.initialDue,
     this.initialPriorityId,
+    this.existing,
   });
 
   final List<WorkAssignee> assignees;
@@ -1260,13 +1443,24 @@ class _AddWorkSheet extends StatefulWidget {
   final String? initialDue;
   final String? initialPriorityId;
 
+  /// 있으면 「업무 수정」 — 제목·내용·요청인을 채워 열고 「저장」.
+  final WorkTask? existing;
+
   @override
   State<_AddWorkSheet> createState() => _AddWorkSheetState();
 }
 
 class _AddWorkSheetState extends State<_AddWorkSheet> {
-  late final TextEditingController _title = TextEditingController();
-  late final TextEditingController _detail = TextEditingController();
+  late final TextEditingController _title = TextEditingController(
+    text: widget.existing?.title ?? '',
+  );
+  late final TextEditingController _detail = TextEditingController(
+    text: widget.existing?.detail ?? '',
+  );
+  late final TextEditingController _requester = TextEditingController(
+    text: widget.existing?.requester ?? '',
+  );
+  bool get _editing => widget.existing != null;
   late String? _email = _initialEmail();
   late final String? _ownHiddenEmail = _hiddenSelf();
   late String? _priorityId = _initialPriority();
@@ -1306,6 +1500,8 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
   String? _initialDue() {
     final due = (widget.initialDue ?? '').trim();
     if (due.length >= 10) return due.substring(0, 10);
+    // 수정: 기한 없는 업무는 그대로 「없음」.
+    if (_editing) return null;
     final today = widget.today.trim();
     if (today.length >= 10) return today.substring(0, 10);
     return null;
@@ -1315,6 +1511,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
   void dispose() {
     _title.dispose();
     _detail.dispose();
+    _requester.dispose();
     super.dispose();
   }
 
@@ -1365,6 +1562,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
         assigneeEmail: email,
         dueDate: _dueYmd,
         priorityId: _priorityId,
+        requester: _requester.text.trim(),
       ),
     );
   }
@@ -1413,7 +1611,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    urgent ? '특급 업무 추가' : '업무 추가',
+                    _editing ? '업무 수정' : (urgent ? '특급 업무 추가' : '업무 추가'),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w900,
                     ),
@@ -1431,7 +1629,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
             const SizedBox(height: AppTokens.spaceSm),
             TextField(
               controller: _title,
-              autofocus: true,
+              autofocus: !_editing,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _save(),
               decoration: InputDecoration(
@@ -1521,7 +1719,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
             TextField(
               controller: _detail,
               minLines: 1,
-              maxLines: 2,
+              maxLines: _editing ? 6 : 2,
               decoration: InputDecoration(
                 hintText: '내용 (선택)',
                 isDense: true,
@@ -1529,6 +1727,18 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
                 border: fieldBorder,
               ),
             ),
+            if (_editing) ...[
+              const SizedBox(height: AppTokens.spaceSm),
+              TextField(
+                controller: _requester,
+                decoration: InputDecoration(
+                  hintText: '요청인 (선택)',
+                  isDense: true,
+                  contentPadding: fieldPadding,
+                  border: fieldBorder,
+                ),
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 4),
               Text(_error!, style: TextStyle(color: scheme.error)),
@@ -1541,7 +1751,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
               ),
-              child: const Text('추가'),
+              child: Text(_editing ? '저장' : '추가'),
             ),
           ],
         ),

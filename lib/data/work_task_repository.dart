@@ -43,6 +43,43 @@ class WorkTaskRepository {
     return _call(userId, {'action': action, 'taskId': taskId});
   }
 
+  /// 바뀐 항목만 보낸다 — null 인 칸은 그대로 둔다. [dueDate] '' 이면 마감일을 지운다.
+  Future<WorkTaskBoard> update({
+    required String userId,
+    required String taskId,
+    String? title,
+    String? detail,
+    String? dueDate,
+    String? priorityId,
+    String? assigneeEmail,
+    String? requester,
+  }) {
+    return _call(userId, {
+      'action': 'update',
+      'taskId': taskId,
+      'title': ?title,
+      'detail': ?detail,
+      'dueDate': ?dueDate,
+      'priorityId': ?priorityId,
+      'assigneeEmail': ?assigneeEmail,
+      'requester': ?requester,
+    });
+  }
+
+  /// 「실행 취소」 — 상태·시작일·완료일을 바꾸기 전 값으로. 알림은 보내지 않는다.
+  Future<WorkTaskBoard> restore({
+    required String userId,
+    required WorkTaskUndo undo,
+  }) {
+    return _call(userId, {
+      'action': 'restore',
+      'taskId': undo.taskId,
+      'status': undo.status,
+      'startDate': undo.startDate,
+      'completedDate': undo.completedDate,
+    });
+  }
+
   Future<List<WorkComment>> comments({
     required String userId,
     required String taskId,

@@ -98,6 +98,23 @@ async function assigneeChoices(admin: SupabaseClient): Promise<Array<{ email: st
   return people
 }
 
+/** 연구소 웹 빠른 추가가 쓰는 기본 프로젝트. 없으면 null (프로젝트 없이 만든다). */
+async function dailyProjectId(admin: SupabaseClient): Promise<string | null> {
+  const { data } = await admin.from('projects').select('id').eq('name', '일일업무').limit(1)
+  return ((data?.[0] as { id?: string } | undefined)?.id ?? null) || null
+}
+
+/**
+ * 실행 취소로 되돌린 상태는 알림을 보내지 않는다 — notify-work-task 가
+ * work_push_dedup 의 `silent:<업무 id>:` 행을 보고 건너뛴다.
+ */
+async function markSilent(admin: SupabaseClient, taskId: string): Promise<void> {
+  const { error } = await admin
+    .from('work_push_dedup')
+    .insert({ dedupe_key: `silent:${taskId}:${Date.now()}` })
+  if (error) console.error('silent mark failed:', error)
+}
+
 const PRIORITY_ORDER = ['특급', '높음', '보통', '낮음', '후순위']
 
 function idKey(value: unknown): string {
@@ -283,6 +300,8 @@ serve(async (req) => {
       const { data: types } = await admin.from('task_types').select('id, name').eq('name', '기타').limit(1)
       const typeId = (types?.[0] as { id?: string } | undefined)?.id ?? null
       const { error } = await admin.from('tasks').insert({
+        // 연구소 웹 빠른 추가와 같이 「일일업무」 — 없으면 웹 프로젝트 화면에서 빠진다.
+        project_id: await dailyProjectId(admin),
         title,
         detail,
         assignees: [assigneeEmail],
@@ -332,22 +351,98 @@ serve(async (req) => {
       return json({ ok: true, comments: await loadComments(admin, taskId) })
     }
 
-    const nextName =
-      action === 'start' ? '진행중' : action === 'complete' ? '완료' : action === 'hold' ? '보류' : ''
-    if (!nextName) return json({ ok: false, error: '알 수 없는 동작입니다.' }, 400)
-    const nextId = statuses.get(nextName)
-    if (!nextId) return json({ ok: false, error: `${nextName} 상태를 찾지 못했습니다.` }, 500)
-
     const { data: current, error: readError } = await admin
       .from('tasks')
-      .select('id, status_id, start_date, department_id')
+      .select('id, status_id, start_date, completed_date, department_id')
       .eq('id', taskId)
       .maybeSingle()
     if (readError) throw readError
     if (!current || current.department_id !== deptId) {
       return json({ ok: false, error: '업무를 찾지 못했습니다.' }, 404)
     }
+
+    if (action === 'update') {
+      const patch: Record<string, unknown> = {}
+      if (typeof body.title === 'string') {
+        const title = body.title.trim()
+        if (!title) return json({ ok: false, error: '제목을 입력해 주세요.' }, 400)
+        patch.title = title
+      }
+      if (typeof body.detail === 'string') patch.detail = body.detail.trim()
+      if (typeof body.dueDate === 'string') {
+        const due = body.dueDate.trim()
+        if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+          return json({ ok: false, error: '마감일을 다시 골라 주세요.' }, 400)
+        }
+        patch.due_date = due || null
+      }
+      if (body.priorityId != null) {
+        const priorities = await priorityChoices(admin)
+        const chosen = priorities.find((item) => item.id === idKey(body.priorityId))
+        if (!chosen) return json({ ok: false, error: '중요도를 다시 골라 주세요.' }, 400)
+        patch.priority_id = priorityValue(chosen.id)
+      }
+      if (typeof body.assigneeEmail === 'string') {
+        const email = body.assigneeEmail.trim()
+        const people = await assigneeChoices(admin)
+        if (!people.some((person) => person.email === email)) {
+          return json({ ok: false, error: '담당자를 다시 선택해 주세요.' }, 400)
+        }
+        patch.assignees = [email]
+      }
+      // requester: NOT NULL — 빈 값은 '' (웹 「요청자 없음」).
+      if (typeof body.requester === 'string') patch.requester = body.requester.trim()
+      if (Object.keys(patch).length === 0) return json(await loadBoard(admin, user))
+      const { error: updateError } = await admin.from('tasks').update(patch).eq('id', taskId)
+      if (updateError) throw updateError
+      return json(await loadBoard(admin, user))
+    }
+
+    if (action === 'restore') {
+      // 실행 취소 — 바꾸기 전 상태·시작일·완료일로 되돌린다.
+      const restoreId = statuses.get((body.status ?? '').toString().trim())
+      if (!restoreId) return json({ ok: false, error: '되돌릴 상태를 찾지 못했습니다.' }, 400)
+      const ymdOrNull = (raw: unknown) => {
+        const text = (raw ?? '').toString().trim()
+        return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null
+      }
+      if (current.status_id !== restoreId) await markSilent(admin, taskId)
+      const { error: restoreError } = await admin
+        .from('tasks')
+        .update({
+          status_id: restoreId,
+          start_date: ymdOrNull(body.startDate),
+          completed_date: ymdOrNull(body.completedDate),
+        })
+        .eq('id', taskId)
+      if (restoreError) throw restoreError
+      return json(await loadBoard(admin, user))
+    }
+
+    const nextName =
+      action === 'start'
+        ? '진행중'
+        : action === 'complete'
+          ? '완료'
+          : action === 'hold'
+            ? '보류'
+            : action === 'receive'
+              ? '접수'
+              : ''
+    if (!nextName) return json({ ok: false, error: '알 수 없는 동작입니다.' }, 400)
+    const nextId = statuses.get(nextName)
+    if (!nextId) return json({ ok: false, error: `${nextName} 상태를 찾지 못했습니다.` }, 500)
     if (current.status_id === nextId) return json(await loadBoard(admin, user))
+
+    // 앱의 「실행 취소」가 그대로 되돌릴 수 있게 바꾸기 전 값을 같이 돌려준다.
+    const idToStatus = new Map<string, string>()
+    for (const [name, id] of statuses) idToStatus.set(id, name)
+    const undo = {
+      taskId,
+      status: idToStatus.get((current.status_id ?? '').toString()) ?? '',
+      startDate: (current.start_date ?? '').toString(),
+      completedDate: (current.completed_date ?? '').toString(),
+    }
 
     const patch: Record<string, unknown> = { status_id: nextId }
     if (action === 'start') {
@@ -356,10 +451,13 @@ serve(async (req) => {
     } else if (action === 'complete') {
       patch.completed_date = today
       patch.start_date = (current.start_date ?? '').toString().trim() || today
+    } else if (action === 'receive') {
+      // 연구소 웹 「접수로」(taskLifecycle receive)와 같이 완료일만 비운다.
+      patch.completed_date = null
     }
     const { error: updateError } = await admin.from('tasks').update(patch).eq('id', taskId)
     if (updateError) throw updateError
-    return json(await loadBoard(admin, user))
+    return json({ ...(await loadBoard(admin, user)), undo })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('work-tasks error:', message)

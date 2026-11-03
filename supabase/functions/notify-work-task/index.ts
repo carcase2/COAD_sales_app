@@ -182,6 +182,20 @@ async function sendPush(
   return pushTokens.length
 }
 
+/** work-tasks restore 가 남긴 `silent:<업무 id>:` 행이 2분 안에 있으면 지우고 true. */
+async function consumeSilent(admin: SupabaseClient, taskId: string): Promise<boolean> {
+  const since = new Date(Date.now() - 2 * 60_000).toISOString()
+  const { data, error } = await admin
+    .from('work_push_dedup')
+    .select('dedupe_key')
+    .like('dedupe_key', `silent:${taskId}:%`)
+    .gte('sent_at', since)
+    .limit(1)
+  if (error || !data || data.length === 0) return false
+  await admin.from('work_push_dedup').delete().eq('dedupe_key', data[0].dedupe_key)
+  return true
+}
+
 function noteId(seed: string): string {
   let hash = 0
   for (let i = 0; i < seed.length; i++) {
@@ -313,6 +327,10 @@ serve(async (req) => {
     if (kind === 'status') {
       if ((task.status_id ?? '').toString() !== (record.status_id ?? '').toString()) {
         return json({ success: true, skipped: 'superseded' })
+      }
+      // 앱 「실행 취소」로 되돌린 상태 — 바꿨던 알림은 위 superseded 로 빠지므로 둘 다 안 보낸다.
+      if (await consumeSilent(admin, taskId)) {
+        return json({ success: true, skipped: 'undo' })
       }
       // 추가 알림이 기다리는 동안 바뀐 상태는 그 알림이 「바로 시작」처럼 한 번에 알린다.
       const createdAt = Date.parse((task.created_at ?? '').toString())

@@ -227,4 +227,29 @@ void main() {
     );
     expect(labels.map((person) => person.name), ['김경덕']);
   });
+
+  test('상태 응답의 undo 를 읽고, 접수로는 진행중·보류에서만', () {
+    final board = WorkTaskBoard.fromJson({
+      'today': '2026-11-03',
+      'tasks': const [],
+      'assignees': const [],
+      'undo': {
+        'taskId': 't1',
+        'status': '접수',
+        'startDate': '',
+        'completedDate': '',
+      },
+    });
+    expect(board.undo?.isValid, isTrue);
+    expect(board.undo?.status, '접수');
+    expect(
+      WorkTaskBoard.fromJson({'today': '', 'tasks': const [], 'assignees': const []}).undo,
+      isNull,
+    );
+
+    expect(_task(id: 'x', title: 'x', status: '진행중').canReceive, isTrue);
+    expect(_task(id: 'x', title: 'x', status: '보류').canReceive, isTrue);
+    expect(_task(id: 'x', title: 'x', status: '접수').canReceive, isFalse);
+  });
 }
+

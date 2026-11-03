@@ -75,6 +75,9 @@ class WorkTask {
 
   bool get canComplete => status == '접수' || status == '진행중' || status == '보류';
 
+  /// 연구소 웹 「접수로」 — 시작했거나 보류한 업무를 다시 접수로.
+  bool get canReceive => status == '진행중' || status == '보류';
+
   factory WorkTask.fromJson(Map<String, dynamic> json) {
     final names = <String>[];
     final rawNames = json['assigneeNames'];
@@ -397,6 +400,7 @@ class WorkTaskBoard {
     required this.assignees,
     this.priorities = const [],
     this.myEmail,
+    this.undo,
   });
 
   final String today;
@@ -404,6 +408,9 @@ class WorkTaskBoard {
   final List<WorkAssignee> assignees;
   final List<WorkPriority> priorities;
   final String? myEmail;
+
+  /// 방금 바꾼 상태를 되돌릴 값 — 시작·완료·보류·접수로 응답에만 있다.
+  final WorkTaskUndo? undo;
 
   List<WorkTask> get remaining {
     final rows = tasks.where((task) => task.isOpen).toList();
@@ -488,6 +495,35 @@ class WorkTaskBoard {
       assignees: assignees,
       priorities: priorities,
       myEmail: email.isEmpty ? null : email,
+      undo: json['undo'] is Map
+          ? WorkTaskUndo.fromJson(
+              Map<String, dynamic>.from(json['undo'] as Map),
+            )
+          : null,
     );
   }
+}
+
+/// 상태를 바꾸기 전 값 — 「실행 취소」가 그대로 되돌린다 (연구소 웹 undoLifecycle 과 같음).
+class WorkTaskUndo {
+  const WorkTaskUndo({
+    required this.taskId,
+    required this.status,
+    this.startDate = '',
+    this.completedDate = '',
+  });
+
+  final String taskId;
+  final String status;
+  final String startDate;
+  final String completedDate;
+
+  bool get isValid => taskId.isNotEmpty && status.isNotEmpty;
+
+  factory WorkTaskUndo.fromJson(Map<String, dynamic> json) => WorkTaskUndo(
+    taskId: (json['taskId'] ?? '').toString(),
+    status: (json['status'] ?? '').toString(),
+    startDate: (json['startDate'] ?? '').toString(),
+    completedDate: (json['completedDate'] ?? '').toString(),
+  );
 }
