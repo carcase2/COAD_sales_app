@@ -39,3 +39,34 @@ class QuoterOutOfTableWarning extends StatelessWidget {
     );
   }
 }
+
+/// 범위 밖 견적 금액 바로 아래 — 어느 축을 몇 mm로 계산했는지.
+class QuoterOutOfTableAmountNote extends StatelessWidget {
+  const QuoterOutOfTableAmountNote({super.key, required this.note});
+
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 16, color: scheme.error),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              note,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: scheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

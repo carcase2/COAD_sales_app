@@ -12,6 +12,7 @@ import 'package:coad_customer_calls/features/quoter/quoter_company_models.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_size_input.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimate_notice.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
@@ -58,6 +59,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
 
   /// 규격 키패드: true = 폭 편집, false = 높이 편집 (시스템 키보드 없음)
   bool _editingWidth = true;
+  List<int> _recentWidths = const [];
+  List<int> _recentHeights = const [];
 
   // 비용 직접 수정용 컨트롤러
   // 기본 비용 — COAD_home ShutterEstimatorWizard DEFAULT_COSTS 와 동일
@@ -85,6 +88,13 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         _heightController.text.trim().isNotEmpty ||
         _result != null;
   }
+
+  /// 단가표 밖 규격이면 결과 금액 아래에 붙일 안내 — 안이면 null.
+  String? get _tableClampNote => quoterTableClampNote(_widthMm, _heightMm);
+
+  /// 범위 밖 금액은 흐리게 — 크게 보이면 그대로 견적이 나간다.
+  Color _amountColor(Color typeColor, ColorScheme scheme) =>
+      _tableClampNote == null ? typeColor : scheme.onSurfaceVariant;
 
   bool get _isOutOfTableSizeRange {
     final w = double.tryParse(_widthController.text.replaceAll(',', '')) ?? 0;
@@ -118,6 +128,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadCachedSyncTime();
       _checkIfPriceRefreshNeeded();
+      unawaited(_loadRecentSizes());
     });
   }
 
@@ -188,6 +199,37 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     // 빠른 칩: 폭 입력 후 바로 높이로
     setState(() {
       if (_editingWidth) _editingWidth = false;
+    });
+  }
+
+  Future<void> _loadRecentSizes() async {
+    final recent = await loadQuoterRecentSizes();
+    if (!mounted) return;
+    setState(() {
+      _recentWidths = recent.widths;
+      _recentHeights = recent.heights;
+    });
+  }
+
+  /// 클립보드 「3000x2500」 → 폭·높이에 한 번에. 둘 다 차면 높이 편집으로 둔다.
+  Future<void> _pasteSizePair() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    final pair = parseShutterSizePair(data?.text ?? '');
+    if (pair == null) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('「3000x2500」처럼 폭·높이 두 숫자를 복사한 뒤 눌러 주세요.'),
+          ),
+        );
+      return;
+    }
+    setState(() {
+      _widthController.text = '${pair.width}';
+      _heightController.text = '${pair.height}';
+      _editingWidth = false;
     });
   }
 
@@ -347,6 +389,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
         _selectedCompanyId = preferredContext.selectedCompanyId;
         _companyComparisons = comparisons;
       });
+      // 다음 견적에서 「↺ 최근」 버튼으로 바로 고를 수 있게.
+      unawaited(
+        rememberQuoterSize(w.round(), h.round()).then((_) => _loadRecentSizes()),
+      );
 
       HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context)
@@ -1175,6 +1221,11 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
           outOfTableBanner: _isOutOfTableSizeRange
               ? const QuoterOutOfTableWarning()
               : null,
+          quickSizes: quoterQuickSizes(
+            defaults: _editingWidth ? kQuoterQuickWidths : kQuoterQuickHeights,
+            recent: _editingWidth ? _recentWidths : _recentHeights,
+          ),
+          onPasteSize: () => unawaited(_pasteSizePair()),
         );
       case 3:
         return LayoutBuilder(
@@ -2157,11 +2208,13 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     style: TextStyle(
                       fontSize: 38,
                       fontWeight: FontWeight.w900,
-                      color: typeColor,
+                      color: _amountColor(typeColor, scheme),
                       letterSpacing: -1.5,
                     ),
                   ),
                 ),
+                if (_tableClampNote case final note?)
+                  QuoterOutOfTableAmountNote(note: note),
                 if (ShutterCalculator.isSecurityType(_selectedType)) ...[
                   const SizedBox(height: 10),
                   Text(
@@ -2314,12 +2367,14 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w900,
-                      color: typeColor,
+                      color: _amountColor(typeColor, scheme),
                       letterSpacing: -0.8,
                       height: 1.05,
                     ),
                   ),
                 ),
+                if (_tableClampNote case final note?)
+                  QuoterOutOfTableAmountNote(note: note),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -2478,11 +2533,11 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${_krwFormat.format(result.totalAmount)}',
+                  _krwFormat.format(result.totalAmount),
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
-                    color: typeColor,
+                    color: _amountColor(typeColor, scheme),
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -3667,6 +3722,8 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     sb.writeln('규격(mm): $width x $height');
     sb.writeln('브라켓 종류: ${r.bracketType}');
     sb.writeln('총액: ${_krwFormat.format(r.totalAmount)}');
+    // 복사해 보낸 견적에도 단가표 밖이라는 점을 남긴다.
+    if (_tableClampNote case final note?) sb.writeln('※ $note');
     sb.writeln('산출시각: ${r.calculatedAt}');
     sb.writeln('');
     sb.writeln('[상세]');

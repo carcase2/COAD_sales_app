@@ -23,7 +23,15 @@ class QuoterSizeKeypad extends StatelessWidget {
     required this.isCalculating,
     this.outOfTable = false,
     this.outOfTableBanner,
+    this.quickSizes = const [],
+    this.onPasteSize,
   });
+
+  /// 편집 중인 축의 빠른 규격 — 최근 값이 앞 ([recent] true).
+  final List<({int mm, bool recent})> quickSizes;
+
+  /// 클립보드의 「3000x2500」을 폭·높이에 한 번에 넣는다. null이면 버튼 없음.
+  final VoidCallback? onPasteSize;
 
   final int widthMm;
   final int heightMm;
@@ -43,9 +51,6 @@ class QuoterSizeKeypad extends StatelessWidget {
   final Widget? outOfTableBanner;
 
   static final _fmt = NumberFormat('#,###');
-
-  /// 현장 자주 쓰는 mm 규격
-  static const quickSizes = [1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000];
 
   @override
   Widget build(BuildContext context) {
@@ -128,17 +133,47 @@ class QuoterSizeKeypad extends StatelessWidget {
               height: chipH,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: quickSizes.length,
+                itemCount: quickSizes.length + (onPasteSize == null ? 0 : 1),
                 separatorBuilder: (_, _) => SizedBox(width: gap),
-                itemBuilder: (context, i) {
-                  final size = quickSizes[i];
+                itemBuilder: (context, index) {
+                  // 맨 앞 — 문자로 받은 「3000x2500」을 폭·높이에 한 번에.
+                  if (onPasteSize != null && index == 0) {
+                    return Align(
+                      alignment: Alignment.center,
+                      child: ActionChip(
+                        avatar: Icon(
+                          Icons.content_paste_rounded,
+                          size: 16,
+                          color: accent,
+                        ),
+                        label: const Text('붙여넣기'),
+                        labelStyle: TextStyle(
+                          fontSize: tight ? 12 : 13,
+                          fontWeight: FontWeight.w800,
+                          color: accent,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: BorderSide(color: accent.withValues(alpha: 0.6)),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          onPasteSize!();
+                        },
+                      ),
+                    );
+                  }
+                  final item =
+                      quickSizes[index - (onPasteSize == null ? 0 : 1)];
+                  final size = item.mm;
                   final selected = current == size;
                   return Align(
                     alignment: Alignment.center,
                     child: Material(
                       color: selected
                           ? accent
-                          : scheme.surfaceContainerHighest,
+                          : (item.recent
+                              ? accent.withValues(alpha: 0.12)
+                              : scheme.surfaceContainerHighest),
                       borderRadius: BorderRadius.circular(chipH / 2),
                       child: InkWell(
                         onTap: () {
@@ -162,7 +197,10 @@ class QuoterSizeKeypad extends StatelessWidget {
                             ),
                           ),
                           child: Text(
-                            _fmt.format(size),
+                            // 최근 값은 시계 표시로 기본값과 구분한다.
+                            item.recent
+                                ? '↺ ${_fmt.format(size)}'
+                                : _fmt.format(size),
                             style: TextStyle(
                               fontSize: tight ? 12 : 13,
                               fontWeight: FontWeight.w800,
