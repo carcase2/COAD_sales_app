@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_detail_screen.dart';
@@ -426,7 +427,16 @@ class _CardTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: scheme.outline),
+              // 번호가 있으면 상세에 들어가지 않고 바로 건다 (휴대폰 우선, 없으면 사무실).
+              if (card.primaryPhone.trim().isNotEmpty)
+                IconButton.filledTonal(
+                  tooltip: '${card.primaryPhone} 전화',
+                  onPressed: () =>
+                      unawaited(LauncherUtils.makePhoneCall(card.primaryPhone)),
+                  icon: const Icon(Icons.call_rounded, size: 20),
+                )
+              else
+                Icon(Icons.chevron_right_rounded, color: scheme.outline),
             ],
           ),
         ),
