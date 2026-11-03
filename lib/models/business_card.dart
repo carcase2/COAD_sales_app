@@ -1,5 +1,16 @@
 enum BusinessCardListFilter { all, mine, privateOnly, blacklisted }
 
+/// 명함 목록 정렬 — 최근 수정 · 이름 · 회사(같은 회사끼리, 그 안은 이름).
+enum BusinessCardSort {
+  recent('최근순'),
+  name('이름순'),
+  company('회사별');
+
+  const BusinessCardSort(this.label);
+
+  final String label;
+}
+
 enum BusinessCardVisibility {
   team,
   private;

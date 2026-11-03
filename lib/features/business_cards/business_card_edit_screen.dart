@@ -201,21 +201,22 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
 
     // 같은 번호 확인(네트워크)부터 저장 중으로 막는다 — 연타하면 두 번 등록됐다.
     setState(() => _saving = true);
-    final phone = draft.primaryPhone;
-    if (phone.isNotEmpty) {
+    {
       try {
-        final dupes = await repo.findByPhone(
+        // 휴대폰만 보던 것을 사무실 번호·메일까지 — 같은 사람을 다른 번호로 또 등록하지 않게.
+        final dupes = await repo.findDuplicates(
           user: user,
-          phone: phone,
+          card: draft,
           excludeId: widget.existing?.id,
         );
         if (dupes.isNotEmpty && mounted) {
-          final names = dupes.map((c) => c.displayName).take(3).join(', ');
+          final names = dupes.map((d) => d.label).take(3).join('\n');
+          final more = dupes.length > 3 ? '\n외 ${dupes.length - 3}건' : '';
           final ok = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
-              title: const Text('같은 번호 명함'),
-              content: Text('이미 등록된 번호입니다.\n$names\n그래도 저장할까요?'),
+              title: const Text('이미 있는 명함'),
+              content: Text('같은 연락처의 명함이 있습니다.\n$names$more\n\n그래도 저장할까요?'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),

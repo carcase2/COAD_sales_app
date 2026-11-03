@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:coad_customer_calls/models/business_card.dart';
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// 명함 → vCard 3.0. 공유 시트로 넘기면 휴대폰이 「연락처에 추가」를 띄우고,
 /// 카톡·문자로도 그대로 보낼 수 있다. 연락처 권한이 필요 없다.
@@ -57,4 +59,30 @@ Future<File> writeBusinessCardVCard(BusinessCard card) async {
   final dir = await getTemporaryDirectory();
   final file = File('${dir.path}/${businessCardVCardFileName(card)}');
   return file.writeAsBytes(utf8.encode(businessCardVCard(card)), flush: true);
+}
+
+/// .vcf로 공유 시트를 연다 — 「연락처」를 고르면 휴대폰 연락처에 저장, 카톡·문자로도 보낸다.
+Future<void> shareBusinessCardVCard(
+  BuildContext context,
+  BusinessCard card,
+) async {
+  final box = context.findRenderObject() as RenderBox?;
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  try {
+    final file = await writeBusinessCardVCard(card);
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path, mimeType: 'text/vcard')],
+        subject: card.displayName,
+        // 아이패드는 공유 창 위치가 있어야 뜬다.
+        sharePositionOrigin: box == null || !box.hasSize
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
+      ),
+    );
+  } catch (e) {
+    messenger?.showSnackBar(
+      SnackBar(content: Text('연락처 파일을 만들지 못했습니다: $e')),
+    );
+  }
 }

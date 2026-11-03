@@ -30,6 +30,7 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
   Timer? _debounce;
 
   BusinessCardListFilter _filter = BusinessCardListFilter.all;
+  BusinessCardSort _sort = BusinessCardSort.recent;
   List<BusinessCard> _items = const [];
   bool _loading = true;
   bool _loadingMore = false;
@@ -95,6 +96,7 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
             user: user,
             query: _activeQuery,
             filter: _filter,
+            sort: _sort,
           );
       if (!mounted || seq != _requestSeq) return;
       setState(() {
@@ -121,6 +123,7 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
             user: user,
             query: _activeQuery,
             filter: _filter,
+            sort: _sort,
             offset: _items.length,
           );
       // 그사이 검색어·필터가 바뀌었으면 이전 목록 뒤에 붙이지 않는다.
@@ -212,15 +215,73 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
+            padding: const EdgeInsets.fromLTRB(12, 4, 4, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _filterChip('전체', BusinessCardListFilter.all, scheme),
-                _filterChip('내가 등록', BusinessCardListFilter.mine, scheme),
-                _filterChip('비공개', BusinessCardListFilter.privateOnly, scheme),
-                _filterChip('블랙리스트', BusinessCardListFilter.blacklisted, scheme),
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      _filterChip('전체', BusinessCardListFilter.all, scheme),
+                      _filterChip('내가 등록', BusinessCardListFilter.mine, scheme),
+                      _filterChip(
+                        '비공개',
+                        BusinessCardListFilter.privateOnly,
+                        scheme,
+                      ),
+                      _filterChip(
+                        '블랙리스트',
+                        BusinessCardListFilter.blacklisted,
+                        scheme,
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<BusinessCardSort>(
+                  tooltip: '정렬',
+                  initialValue: _sort,
+                  onSelected: (value) {
+                    if (value == _sort) return;
+                    HapticFeedback.selectionClick();
+                    setState(() => _sort = value);
+                    unawaited(_reload());
+                  },
+                  itemBuilder: (_) => [
+                    for (final s in BusinessCardSort.values)
+                      CheckedPopupMenuItem(
+                        value: s,
+                        checked: s == _sort,
+                        child: Text(s.label),
+                      ),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.sort_rounded,
+                          size: 18,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _sort.label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -334,6 +395,9 @@ class _CardTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppTokens.radiusMd),
       child: InkWell(
         onTap: onTap,
+        // 길게 누르면 상세에 들어가지 않고 전화·문자·복사·연락처 저장.
+        onLongPress: () =>
+            unawaited(showBusinessCardQuickActions(context, card)),
         borderRadius: BorderRadius.circular(AppTokens.radiusMd),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),

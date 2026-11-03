@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/data/business_card_repository.dart';
 import 'package:coad_customer_calls/data/business_card_vcard.dart';
 import 'package:coad_customer_calls/models/business_card.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -79,5 +80,10 @@ void main() {
   test('파일 이름에서 경로·공백 문자를 뺀다', () {
     expect(businessCardVCardFileName(_card(name: '김 철/수')), '김_철_수.vcf');
     expect(businessCardVCardFileName(_card(name: '', company: '')), '명함.vcf');
+  });
+
+  test('중복 안내는 이름과 같은 항목을 함께 보여준다', () {
+    final d = BusinessCardDuplicate(card: _card(), reasons: ['휴대폰', '메일']);
+    expect(d.label, '김철수 (휴대폰·메일 같음)');
   });
 }

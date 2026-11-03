@@ -7,7 +7,7 @@ import 'package:coad_customer_calls/models/business_card.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 export 'package:coad_customer_calls/models/business_card.dart'
-    show BusinessCardListFilter;
+    show BusinessCardListFilter, BusinessCardSort;
 
 /// 이름 입력으로 명함을 고를 때: 완전 일치 → 앞글자 일치 → (3글자 이상) 포함.
 List<BusinessCard> matchingBusinessCardsByName(
@@ -152,6 +152,18 @@ List<BusinessCardFill> businessCardFillsForPhone(
   return exact.isEmpty ? fills : exact;
 }
 
+class BusinessCardDuplicate {
+  const BusinessCardDuplicate({required this.card, required this.reasons});
+
+  final BusinessCard card;
+
+  /// 같은 항목 — 휴대폰 · 사무실 번호 · 메일.
+  final List<String> reasons;
+
+  /// 「김철수 (휴대폰·메일 같음)」
+  String get label => '${card.displayName} (${reasons.join('·')} 같음)';
+}
+
 class BusinessCardRepository {
   BusinessCardRepository({SupabaseClient? client})
     : _client = client ?? Supabase.instance.client;
@@ -174,6 +186,7 @@ class BusinessCardRepository {
     required AppUser user,
     String query = '',
     BusinessCardListFilter filter = BusinessCardListFilter.all,
+    BusinessCardSort sort = BusinessCardSort.recent,
     int offset = 0,
     int limit = pageSize,
   }) async {
@@ -223,9 +236,15 @@ class BusinessCardRepository {
       }
     }
 
-    final rows = await request
-        .order('updated_at', ascending: false)
-        .range(offset, offset + limit - 1);
+    // name·company는 빈 문자열 기본값이라, 비어 있는 명함이 가나다 앞에 온다.
+    final ordered = switch (sort) {
+      BusinessCardSort.recent => request.order('updated_at', ascending: false),
+      BusinessCardSort.name =>
+        request.order('name', ascending: true).order('company', ascending: true),
+      BusinessCardSort.company =>
+        request.order('company', ascending: true).order('name', ascending: true),
+    };
+    final rows = await ordered.range(offset, offset + limit - 1);
 
     final items = <BusinessCard>[];
     for (final row in List<Map<String, dynamic>>.from(rows)) {
@@ -337,6 +356,54 @@ class BusinessCardRepository {
         .where((c) => canViewBusinessCard(user, c))
         .where((c) => c.email.trim().toLowerCase() == q)
         .toList();
+  }
+
+  /// 저장 전 중복 확인 — 휴대폰·사무실 번호·메일 중 하나라도 같은 명함과, 무엇이 같은지.
+  Future<List<BusinessCardDuplicate>> findDuplicates({
+    required AppUser user,
+    required BusinessCard card,
+    String? excludeId,
+  }) async {
+    final reasons = <String, Set<String>>{};
+    final byId = <String, BusinessCard>{};
+    void add(Iterable<BusinessCard> found, String reason) {
+      for (final c in found) {
+        if (excludeId != null && c.id == excludeId) continue;
+        byId[c.id] = c;
+        reasons.putIfAbsent(c.id, () => <String>{}).add(reason);
+      }
+    }
+
+    final checks = <(String, Future<List<BusinessCard>>)>[
+      if (card.mobilePhone.trim().isNotEmpty)
+        (
+          '휴대폰',
+          findByPhone(
+            user: user,
+            phone: card.mobilePhone,
+            excludeId: excludeId,
+          ),
+        ),
+      if (card.officePhone.trim().isNotEmpty)
+        (
+          '사무실 번호',
+          findByPhone(
+            user: user,
+            phone: card.officePhone,
+            excludeId: excludeId,
+          ),
+        ),
+      if (card.email.trim().isNotEmpty)
+        ('메일', findByEmail(user: user, email: card.email)),
+    ];
+    final results = await Future.wait(checks.map((c) => c.$2));
+    for (var i = 0; i < checks.length; i++) {
+      add(results[i], checks[i].$1);
+    }
+    return [
+      for (final id in byId.keys)
+        BusinessCardDuplicate(card: byId[id]!, reasons: reasons[id]!.toList()),
+    ];
   }
 
   Future<BusinessCard> create({

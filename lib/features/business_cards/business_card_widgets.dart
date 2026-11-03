@@ -1,14 +1,16 @@
+import 'dart:async';
+
+import 'package:coad_customer_calls/core/utils/launcher_utils.dart';
 import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
+import 'package:coad_customer_calls/data/business_card_repository.dart';
+import 'package:coad_customer_calls/data/business_card_vcard.dart';
 import 'package:coad_customer_calls/models/business_card.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class BusinessCardAvatar extends StatelessWidget {
-  const BusinessCardAvatar({
-    super.key,
-    required this.card,
-    this.size = 48,
-  });
+  const BusinessCardAvatar({super.key, required this.card, this.size = 48});
 
   final BusinessCard card;
   final double size;
@@ -68,8 +70,9 @@ class BusinessCardVisibilityChip extends StatelessWidget {
       labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
       padding: EdgeInsets.zero,
       side: BorderSide.none,
-      backgroundColor: (private ? scheme.errorContainer : scheme.secondaryContainer)
-          .withValues(alpha: 0.7),
+      backgroundColor:
+          (private ? scheme.errorContainer : scheme.secondaryContainer)
+              .withValues(alpha: 0.7),
     );
   }
 }
@@ -174,5 +177,107 @@ InputDecoration businessCardInputDecoration(BuildContext context, String hint) {
       borderRadius: BorderRadius.circular(AppTokens.radiusMd),
       borderSide: BorderSide.none,
     ),
+  );
+}
+
+/// 목록에서 길게 눌렀을 때 — 번호별 전화·문자·복사, 메일 복사, 연락처 저장·공유.
+Future<void> showBusinessCardQuickActions(
+  BuildContext context,
+  BusinessCard card,
+) {
+  HapticFeedback.mediumImpact();
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final scheme = Theme.of(sheetContext).colorScheme;
+      final phones = businessCardPhoneOptions(card);
+      void close() => Navigator.of(sheetContext).pop();
+      return SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Text(
+                card.displayName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
+                ),
+              ),
+            ),
+            for (final p in phones)
+              ListTile(
+                leading: Icon(
+                  p.label == '팩스' ? Icons.fax_outlined : Icons.call_rounded,
+                  color: scheme.primary,
+                ),
+                title: Text(p.phone),
+                subtitle: Text(p.label),
+                // 팩스는 걸지 않고 복사만 한다.
+                onTap: p.label == '팩스'
+                    ? null
+                    : () {
+                        close();
+                        unawaited(LauncherUtils.makePhoneCall(p.phone));
+                      },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (p.label == '휴대폰')
+                      IconButton(
+                        tooltip: '문자',
+                        icon: const Icon(Icons.sms_outlined),
+                        onPressed: () {
+                          close();
+                          unawaited(LauncherUtils.sendSMS(p.phone));
+                        },
+                      ),
+                    IconButton(
+                      tooltip: '번호 복사',
+                      icon: const Icon(Icons.copy_rounded),
+                      onPressed: () {
+                        close();
+                        unawaited(LauncherUtils.copyPhone(context, p.phone));
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            if (card.email.trim().isNotEmpty)
+              ListTile(
+                leading: Icon(
+                  Icons.mail_outline_rounded,
+                  color: scheme.primary,
+                ),
+                title: Text(card.email),
+                subtitle: const Text('메일 주소 복사'),
+                onTap: () {
+                  close();
+                  unawaited(
+                    Clipboard.setData(ClipboardData(text: card.email.trim())),
+                  );
+                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                    SnackBar(content: Text('${card.email.trim()} 복사했습니다.')),
+                  );
+                },
+              ),
+            ListTile(
+              leading: Icon(
+                Icons.contact_phone_outlined,
+                color: scheme.primary,
+              ),
+              title: const Text('연락처에 저장 · 공유'),
+              onTap: () {
+                close();
+                unawaited(shareBusinessCardVCard(context, card));
+              },
+            ),
+          ],
+        ),
+      );
+    },
   );
 }
