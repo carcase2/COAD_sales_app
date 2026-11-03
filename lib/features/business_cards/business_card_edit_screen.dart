@@ -199,6 +199,8 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
     final repo = ref.read(businessCardRepositoryProvider);
     final draft = _draftFromForm(widget.existing?.id ?? '');
 
+    // 같은 번호 확인(네트워크)부터 저장 중으로 막는다 — 연타하면 두 번 등록됐다.
+    setState(() => _saving = true);
     final phone = draft.primaryPhone;
     if (phone.isNotEmpty) {
       try {
@@ -226,12 +228,15 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
               ],
             ),
           );
-          if (ok != true) return;
+          if (ok != true) {
+            if (mounted) setState(() => _saving = false);
+            return;
+          }
         }
       } catch (_) {}
     }
+    if (!mounted) return;
 
-    setState(() => _saving = true);
     try {
       var imageUrl = _imageUrl;
       if (_localImagePath != null) {

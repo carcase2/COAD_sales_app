@@ -164,6 +164,12 @@ class BusinessCardRepository {
     return raw.replaceAll(RegExp(r'[,.()%]'), ' ').trim();
   }
 
+  /// 검색어용 — or 필터를 깨는 `, ( )`와 와일드카드 `%`만 뺀다.
+  /// 점은 남긴다 (값 안의 점은 PostgREST가 그대로 둔다). `kim.lee@` 같은 메일 검색용.
+  String _sanitizeSearch(String raw) {
+    return raw.replaceAll(RegExp(r'[,()%]'), ' ').trim();
+  }
+
   Future<BusinessCardListResult> list({
     required AppUser user,
     String query = '',
@@ -202,7 +208,7 @@ class BusinessCardRepository {
 
     final q = query.trim();
     if (q.isNotEmpty) {
-      final like = '%${_sanitizeOrValue(q)}%';
+      final like = '%${_sanitizeSearch(q)}%';
       final digits = normalizePhoneDigits(q);
       if (digits.length >= 4) {
         request = request.or(

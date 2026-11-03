@@ -36,6 +36,9 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
   Object? _error;
   String _activeQuery = '';
 
+  /// 빠르게 타이핑하면 늦게 온 이전 검색이 최신 결과를 덮는다 — 마지막 요청만 반영.
+  int _requestSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -79,8 +82,10 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
       });
       return;
     }
+    final seq = ++_requestSeq;
     setState(() {
       _loading = true;
+      _loadingMore = false;
       _error = null;
       _activeQuery = _queryCtrl.text.trim();
     });
@@ -90,14 +95,14 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
             query: _activeQuery,
             filter: _filter,
           );
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
         _items = result.items;
         _hasMore = result.hasMore;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
         _error = e;
         _loading = false;
@@ -108,6 +113,7 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
   Future<void> _loadMore() async {
     final user = ref.read(authControllerProvider);
     if (user == null || _loadingMore || !_hasMore) return;
+    final seq = _requestSeq;
     setState(() => _loadingMore = true);
     try {
       final result = await ref.read(businessCardRepositoryProvider).list(
@@ -116,14 +122,15 @@ class _BusinessCardListScreenState extends ConsumerState<BusinessCardListScreen>
             filter: _filter,
             offset: _items.length,
           );
-      if (!mounted) return;
+      // 그사이 검색어·필터가 바뀌었으면 이전 목록 뒤에 붙이지 않는다.
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
         _items = [..._items, ...result.items];
         _hasMore = result.hasMore;
         _loadingMore = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() => _loadingMore = false);
     }
   }
