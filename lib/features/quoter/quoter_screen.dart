@@ -15,6 +15,7 @@ import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_size_input.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimate_notice.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_quick_estimate.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_size_quote.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_product_pick.dart';
@@ -37,9 +38,19 @@ class QuoterScreen extends ConsumerStatefulWidget {
     super.key,
     this.showQuickActions = true,
     this.pickMode = false,
+    this.initialType,
+    this.initialWidthMm = 0,
+    this.initialHeightMm = 0,
+    this.initialCosts,
   });
 
   final bool showQuickActions;
+
+  /// 견적 화면에서 「자세히」로 열 때: 같은 종류·규격·비용으로 바로 결과까지 산출한다.
+  final ShutterType? initialType;
+  final int initialWidthMm;
+  final int initialHeightMm;
+  final ShutterQuickCosts? initialCosts;
 
   /// 견적서의 「제품 고르기」에서 열었을 때. 「견적서」를 누르면 새 편집기를 열지 않고
   /// 산출 결과를 [SizeQuoteProductPick]으로 돌려준다.
@@ -127,6 +138,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
   @override
   void initState() {
     super.initState();
+    _applyInitialInput();
     _widthController.addListener(_invalidateCalculatedResult);
     _heightController.addListener(_invalidateCalculatedResult);
     _motorCostController.addListener(_invalidateCalculatedResult);
@@ -138,7 +150,28 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       _loadCachedSyncTime();
       _checkIfPriceRefreshNeeded();
       unawaited(_loadRecentSizes());
+      if (widget.initialWidthMm > 0 && widget.initialHeightMm > 0) {
+        unawaited(_goToStep(4));
+      }
     });
+  }
+
+  void _applyInitialInput() {
+    final fmt = NumberFormat('#,###');
+    if (widget.initialType case final type?) _selectedType = type;
+    if (widget.initialWidthMm > 0) {
+      _widthController.text = fmt.format(widget.initialWidthMm);
+    }
+    if (widget.initialHeightMm > 0) {
+      _heightController.text = fmt.format(widget.initialHeightMm);
+    }
+    if (widget.initialCosts case final c?) {
+      _motorCostController.text = fmt.format(c.motor);
+      _installCostController.text = fmt.format(c.install);
+      _equipCostController.text = fmt.format(c.equip);
+      _bendingCostController.text = fmt.format(c.bending);
+      _profitCostController.text = fmt.format(c.profit);
+    }
   }
 
   @override
@@ -462,185 +495,45 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
     required double w,
     required double h,
   }) {
-    return ShutterEstimateInput(
+    return shutterEstimateInput(
       type: _selectedType,
       widthMm: w,
       heightMm: h,
-      includeInstallation: true,
-      includeMotor: true,
-      includeProfit: true,
-      overrideMotorCost: int.tryParse(
-        _motorCostController.text.replaceAll(',', ''),
-      ),
-      overrideInstallCost: int.tryParse(
+      motorCost: int.tryParse(_motorCostController.text.replaceAll(',', '')),
+      installCost: int.tryParse(
         _installCostController.text.replaceAll(',', ''),
       ),
-      overrideEquipCost: int.tryParse(
-        _equipCostController.text.replaceAll(',', ''),
-      ),
-      overrideBendingCost: int.tryParse(
+      equipCost: int.tryParse(_equipCostController.text.replaceAll(',', '')),
+      bendingCost: int.tryParse(
         _bendingCostController.text.replaceAll(',', ''),
       ),
-      overrideProfitCost: int.tryParse(
-        _profitCostController.text.replaceAll(',', ''),
-      ),
+      profitCost: int.tryParse(_profitCostController.text.replaceAll(',', '')),
     );
   }
 
-  /// COAD_home: 기준 단가(비와이메탈) + 등록 업체 목록.
-  static const _baseCompanyId = '__base_unit_price__';
-  static const _baseCompanyName = '비와이메탈';
+  static const _baseCompanyId = kShutterBaseCompanyId;
 
   CompanyContext _buildCompanyContext({
     required Map<String, List<Map<String, dynamic>>> prices,
     required String? selectedCompanyId,
-  }) {
-    final fallbackMap = ShutterCalculator.buildSecurityFallbackUnitPriceMap(
-      prices['unit'] as List<Map<String, dynamic>>,
-    );
-    final companies = _comparisonCompanies(
-      rawRows: prices['company'] ?? const [],
-      fallbackMap: fallbackMap,
-    );
-    if (!ShutterCalculator.isSecurityType(_selectedType) || companies.isEmpty) {
-      return CompanyContext(
-        companies: companies,
-        selectedCompanyId: null,
-        selectedCompany: null,
-        fallbackUnitPriceMap: fallbackMap,
-      );
-    }
-
-    ShutterCompanyUnitPrice? selected;
-    ShutterCompanyUnitPrice? defaultCompany;
-    for (final company in companies) {
-      if (company.id == selectedCompanyId) {
-        selected = company;
-      }
-      if (defaultCompany == null && company.isDefault) {
-        defaultCompany = company;
-      }
-    }
-    final resolved = selected ?? defaultCompany ?? companies.first;
-    return CompanyContext(
-      companies: companies,
-      selectedCompanyId: resolved.id,
-      selectedCompany: resolved,
-      fallbackUnitPriceMap: fallbackMap,
-    );
-  }
-
-  /// 웹과 동일: 비와이메탈(기준) + 회사 단가 테이블 업체.
-  List<ShutterCompanyUnitPrice> _comparisonCompanies({
-    required List<Map<String, dynamic>> rawRows,
-    required Map<String, int> fallbackMap,
-  }) {
-    final registered = _parseCompanyRows(rawRows);
-    final hasBaseName = registered.any(
-      (c) => c.companyName.replaceAll(' ', '') == _baseCompanyName,
-    );
-    if (hasBaseName) return registered;
-
-    final base = ShutterCompanyUnitPrice(
-      id: _baseCompanyId,
-      companyName: _baseCompanyName,
-      unitPriceGeneral: fallbackMap['이중압출'] ?? 81000,
-      unitPriceInsulated: fallbackMap['이중압출단열'] ?? 144000,
-      isDefault: true,
-      sortOrder: -1,
-    );
-    return [base, ...registered];
-  }
+  }) => shutterCompanyContext(
+    prices: prices,
+    type: _selectedType,
+    selectedCompanyId: selectedCompanyId,
+  );
 
   List<CompanyComparisonRow> _buildCompanyComparisons({
     required Map<String, List<Map<String, dynamic>>> prices,
     required ShutterEstimateInput input,
     required String? selectedCompanyId,
-  }) {
-    if (!ShutterCalculator.isSecurityType(_selectedType)) return const [];
-    final fallbackMap = ShutterCalculator.buildSecurityFallbackUnitPriceMap(
-      prices['unit'] as List<Map<String, dynamic>>,
-    );
-    final companies = _comparisonCompanies(
-      rawRows: prices['company'] ?? const [],
-      fallbackMap: fallbackMap,
-    );
-    if (companies.isEmpty) return const [];
+  }) => shutterCompanyComparisons(
+    prices: prices,
+    input: input,
+    selectedCompanyId: selectedCompanyId,
+  );
 
-    final rows = companies.map((company) {
-      // 기준(비와이메탈)은 unit 테이블 단가, 그 외는 회사 단가 오버라이드
-      final Map<String, int>? unitMap = company.id == _baseCompanyId
-          ? null
-          : ShutterCalculator.unitPriceMapFromCompany(
-              company.toJson(),
-              fallbackMap,
-            );
-      final estimate = ShutterCalculator.calculate(
-        input: input,
-        gridPrices: prices['grid'] as List<Map<String, dynamic>>,
-        unitPrices: prices['unit'] as List<Map<String, dynamic>>,
-        unitPriceOverrideMap: unitMap,
-        insulatedSlatMm: ShutterCalculator.insulatedSlatMmForCompany(
-          company.companyName,
-        ),
-      );
-      return CompanyComparisonRow(
-        company: company,
-        totalAmount: estimate.totalAmount,
-        slatAmount: ShutterCalculator.extractSlatPrice(estimate),
-      );
-    }).toList();
-    int? selectedTotal;
-    for (final row in rows) {
-      if (row.company.id == selectedCompanyId) {
-        selectedTotal = row.totalAmount;
-        break;
-      }
-    }
-    return rows
-        .map(
-          (row) => row.copyWith(
-            deltaFromSelected: selectedTotal == null
-                ? 0
-                : row.totalAmount - selectedTotal,
-          ),
-        )
-        .toList();
-  }
-
-  /// 산출 직 최저가 업체 자동 선택 (COAD_home generateEstimate).
-  String? _lowestCompanyId(List<CompanyComparisonRow> rows) {
-    if (rows.isEmpty) return null;
-    CompanyComparisonRow? minRow;
-    for (final row in rows) {
-      if (row.totalAmount <= 0) continue;
-      if (minRow == null || row.totalAmount < minRow.totalAmount) {
-        minRow = row;
-      }
-    }
-    return minRow?.company.id;
-  }
-
-  List<ShutterCompanyUnitPrice> _parseCompanyRows(
-    List<Map<String, dynamic>> rawRows,
-  ) {
-    final rows = rawRows
-        .asMap()
-        .entries
-        .map(
-          (entry) => ShutterCompanyUnitPrice.fromJson(
-            entry.value,
-            fallbackId: 'company_${entry.key}',
-          ),
-        )
-        .toList();
-    rows.sort((a, b) {
-      final orderCompare = a.sortOrder.compareTo(b.sortOrder);
-      if (orderCompare != 0) return orderCompare;
-      return a.companyName.compareTo(b.companyName);
-    });
-    return rows;
-  }
+  String? _lowestCompanyId(List<CompanyComparisonRow> rows) =>
+      shutterLowestCompanyId(rows);
 
   void _debugLogCompanyRows({
     required List<Map<String, dynamic>> rawRows,

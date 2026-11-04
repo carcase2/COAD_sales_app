@@ -3,8 +3,17 @@ import 'dart:convert';
 
 import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_company_models.dart';
 import 'package:coad_customer_calls/features/quoter/quoter_formatters.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_providers.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_size_input.dart';
+import 'package:coad_customer_calls/features/quoter/quoter_type_style.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_cost_sheet.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_quick_estimate.dart';
+import 'package:coad_customer_calls/features/quoter/shutter_size_quote.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/data/shutter_repository.dart';
 import 'package:coad_customer_calls/data/size_quote_repository.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_document.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_export.dart';
@@ -17,6 +26,7 @@ import 'package:coad_customer_calls/features/unit_price/standard_unit_price.dart
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_models.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_repository.dart';
 import 'package:coad_customer_calls/models/app_user.dart';
+import 'package:coad_customer_calls/models/shutter_models.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
@@ -37,10 +47,18 @@ class StandardUnitPriceScreen extends ConsumerStatefulWidget {
     super.key,
     this.showAppBar = true,
     this.pickMode = false,
+    this.title,
+    this.showHomeButton = false,
   });
 
   /// 견적 탭 안에 넣을 때는 false (허브 AppBar·탭과 중복 방지).
   final bool showAppBar;
+
+  /// AppBar 제목. 없으면 「단가 · 견적」.
+  final String? title;
+
+  /// 다른 화면 위에 열렸을 때 홈으로 바로 가는 버튼.
+  final bool showHomeButton;
 
   /// 견적서의 「제품 고르기」에서 열었을 때. 「견적서」를 누르면 고른 모델·사이즈·단가를
   /// [SizeQuoteProductPick]으로 돌려준다.
@@ -57,6 +75,7 @@ class _StandardUnitPriceScreenState
   static const _kPrefModel = 'std_unit_price_model';
   static const _kPrefW = 'std_unit_price_width';
   static const _kPrefH = 'std_unit_price_height';
+  static const _kPrefShutterType = 'std_unit_price_shutter_type';
 
   StandardUnitPriceCatalog? _catalog;
   String? _categoryId;
@@ -79,6 +98,19 @@ class _StandardUnitPriceScreenState
   List<SizeQuoteDocument> _similarQuotes = const [];
   Timer? _similarDebounce;
 
+  // 셔터: 분류 줄의 첫 칸. 모델 = 셔터 종류, 사이즈가 들어가면 바로 견적기로 계산.
+  ShutterType _shutterType = ShutterType.doubleExtrusion;
+  ShutterQuickCosts _shutterCosts = const ShutterQuickCosts();
+  String? _shutterCompanyId;
+  ShutterPriceTables? _shutterPrices;
+  ShutterQuickEstimate? _shutterEstimate;
+  Object? _shutterError;
+  bool _shutterLoading = false;
+  Timer? _shutterLogDebounce;
+  String? _shutterLoggedKey;
+
+  bool get _isShutter => _categoryId == kShutterQuoteCategoryId;
+
   List<StandardUnitPriceRow> get _cells => _cellsByModel[_modelId] ?? const [];
 
   @override
@@ -96,6 +128,7 @@ class _StandardUnitPriceScreenState
     _adjustValueCtrl.dispose();
     _adjustReasonCtrl.dispose();
     _similarDebounce?.cancel();
+    _shutterLogDebounce?.cancel();
     super.dispose();
   }
 
@@ -117,6 +150,7 @@ class _StandardUnitPriceScreenState
     setState(() {
       _loading = true;
       _error = null;
+      _shutterPrices = null;
     });
     try {
       final catalogFut = _repo.fetchCatalog();
@@ -166,6 +200,16 @@ class _StandardUnitPriceScreenState
           modelId = matched.id;
         }
       }
+      final savedShutter = prefs.getString(_kPrefShutterType);
+      for (final t in ShutterType.values) {
+        if (t.name == savedShutter) _shutterType = t;
+      }
+      // 처음 열거나 마지막에 셔터를 봤으면 셔터부터.
+      if (savedCat == kShutterQuoteCategoryId ||
+          (savedCat == null && prefs.getString(_kPrefModel) == null)) {
+        categoryId = kShutterQuoteCategoryId;
+        modelId = shutterQuoteModelId(_shutterType);
+      }
       final savedW = prefs.getInt(_kPrefW) ?? 0;
       final savedH = prefs.getInt(_kPrefH) ?? 0;
       if (savedW > 0) _widthCtrl.text = _won.format(savedW);
@@ -180,6 +224,7 @@ class _StandardUnitPriceScreenState
         _loading = false;
       });
       _scheduleSimilarQuotes();
+      if (_isShutter) unawaited(_recalcShutter());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -190,6 +235,16 @@ class _StandardUnitPriceScreenState
   }
 
   Future<void> _selectCategory(String id) async {
+    if (id == kShutterQuoteCategoryId) {
+      setState(() {
+        _categoryId = id;
+        _modelId = shutterQuoteModelId(_shutterType);
+      });
+      _persistLookup();
+      _scheduleSimilarQuotes();
+      unawaited(_recalcShutter());
+      return;
+    }
     final catalog = _catalog;
     if (catalog == null) return;
     final next = catalog.modelsFor(id);
@@ -204,6 +259,18 @@ class _StandardUnitPriceScreenState
   }
 
   Future<void> _selectModel(String id) async {
+    final shutterType = _shutterTypeOf(id);
+    if (shutterType != null) {
+      setState(() {
+        _modelId = id;
+        _shutterType = shutterType;
+        _shutterCompanyId = null;
+      });
+      _persistLookup();
+      _scheduleSimilarQuotes();
+      unawaited(_recalcShutter());
+      return;
+    }
     setState(() => _modelId = id);
     _persistLookup();
     _scheduleSimilarQuotes();
@@ -290,6 +357,7 @@ class _StandardUnitPriceScreenState
     setState(() {});
     _persistLookup();
     _scheduleSimilarQuotes();
+    if (_isShutter) unawaited(_recalcShutter());
   }
 
   void _scheduleSimilarQuotes() {
@@ -339,6 +407,10 @@ class _StandardUnitPriceScreenState
   }
 
   Future<void> _openQuoteWriter({SizeQuoteDocument? existing}) async {
+    if (_isShutter && existing == null) {
+      await _openShutterQuoteWriter();
+      return;
+    }
     final seed = _quoteSeed;
     if (existing == null && seed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -372,7 +444,8 @@ class _StandardUnitPriceScreenState
   Future<void> _openQuoteHistory() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => SizeQuoteWriterScreen(seed: _quoteSeed),
+        builder: (_) =>
+            SizeQuoteWriterScreen(seed: _isShutter ? null : _quoteSeed),
       ),
     );
     if (mounted) unawaited(_loadSimilarQuotes());
@@ -412,6 +485,7 @@ class _StandardUnitPriceScreenState
     if (_modelId != null) {
       unawaited(prefs.setString(_kPrefModel, _modelId!));
     }
+    unawaited(prefs.setString(_kPrefShutterType, _shutterType.name));
     unawaited(prefs.setInt(_kPrefW, _widthMm));
     unawaited(prefs.setInt(_kPrefH, _heightMm));
   }
@@ -548,7 +622,7 @@ class _StandardUnitPriceScreenState
   );
 
   List<SameSizeModelQuote> get _comparisons {
-    if (!_hasSize) return const [];
+    if (!_hasSize || _isShutter) return const [];
     final catalog = _catalog;
     final catId = _categoryId;
     if (catalog == null || catId == null) return const [];
@@ -569,7 +643,8 @@ class _StandardUnitPriceScreenState
 
   Future<void> _copyQuote({bool share = false}) async {
     if (!_hasSize) return;
-    final line = _quoteLine;
+    final line = _isShutter ? _shutterQuoteLine : _quoteLine;
+    if (line == null) return;
     await Clipboard.setData(ClipboardData(text: line));
     if (!mounted) return;
     if (share) {
@@ -616,6 +691,12 @@ class _StandardUnitPriceScreenState
   StandardUnitPriceModel? get _selectedModel {
     final id = _modelId;
     if (id == null) return null;
+    if (_isShutter) {
+      for (final m in _shutterModels) {
+        if (m.id == id) return m;
+      }
+      return null;
+    }
     for (final m in _catalog?.models ?? const <StandardUnitPriceModel>[]) {
       if (m.id == id) return m;
     }
@@ -625,6 +706,7 @@ class _StandardUnitPriceScreenState
   StandardUnitPriceCategory? get _selectedCategory {
     final id = _categoryId;
     if (id == null) return null;
+    if (id == kShutterQuoteCategoryId) return _shutterCategory;
     for (final c
         in _catalog?.categories ?? const <StandardUnitPriceCategory>[]) {
       if (c.id == id) return c;
@@ -832,6 +914,252 @@ class _StandardUnitPriceScreenState
     }
   }
 
+  // ── 셔터 ──────────────────────────────────────────────
+
+  static String _hex(Color c) =>
+      '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+
+  static final _shutterCategory = StandardUnitPriceCategory(
+    id: kShutterQuoteCategoryId,
+    name: kShutterQuoteCategoryName,
+    sortOrder: -1,
+    color: _hex(const Color(0xFF1565C0)),
+  );
+
+  static final _shutterModels = [
+    for (final (i, t) in ShutterType.values.indexed)
+      StandardUnitPriceModel(
+        id: shutterQuoteModelId(t),
+        categoryId: kShutterQuoteCategoryId,
+        name: QuoterTypeStyle.label(t),
+        sortOrder: i,
+        color: _hex(QuoterTypeStyle.color(t)),
+      ),
+  ];
+
+  List<StandardUnitPriceCategory> get _categories => [
+    _shutterCategory,
+    ...?_catalog?.orderedCategories,
+  ];
+
+  List<StandardUnitPriceModel> get _models {
+    final id = _categoryId;
+    if (id == null) return const [];
+    if (id == kShutterQuoteCategoryId) return _shutterModels;
+    return _catalog?.modelsFor(id) ?? const [];
+  }
+
+  ShutterType? _shutterTypeOf(String modelId) {
+    for (final t in ShutterType.values) {
+      if (shutterQuoteModelId(t) == modelId) return t;
+    }
+    return null;
+  }
+
+  /// 종류·규격·비용·업체가 바뀔 때마다 다시 계산한다. 계산은 기기 안에서 바로 끝난다.
+  Future<void> _recalcShutter() async {
+    if (!_isShutter) return;
+    if (!_hasSize) {
+      setState(() {
+        _shutterEstimate = null;
+        _shutterError = null;
+        _shutterLoading = false;
+      });
+      return;
+    }
+    if (_shutterPrices == null) {
+      setState(() => _shutterLoading = true);
+      try {
+        _shutterPrices = await ref.read(shutterPricesFutureProvider.future);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _shutterError = e;
+          _shutterLoading = false;
+        });
+        return;
+      }
+    }
+    final prices = _shutterPrices;
+    if (!mounted || !_isShutter || !_hasSize || prices == null) return;
+    try {
+      final estimate = shutterQuickEstimate(
+        prices: prices,
+        type: _shutterType,
+        widthMm: _widthMm,
+        heightMm: _heightMm,
+        costs: _shutterCosts,
+        companyId: _shutterCompanyId,
+      );
+      setState(() {
+        _shutterEstimate = estimate;
+        _shutterError = null;
+        _shutterLoading = false;
+      });
+      _scheduleShutterLog(estimate);
+    } catch (e) {
+      setState(() {
+        _shutterEstimate = null;
+        _shutterError = e;
+        _shutterLoading = false;
+      });
+    }
+  }
+
+  /// 셔터 견적기와 같은 산출 기록. 입력이 멈춘 뒤 같은 규격은 한 번만 남긴다.
+  void _scheduleShutterLog(ShutterQuickEstimate estimate) {
+    _shutterLogDebounce?.cancel();
+    final input = estimate.result.input;
+    final key =
+        '${input.type.name}|${input.widthMm.round()}|${input.heightMm.round()}';
+    if (key == _shutterLoggedKey) return;
+    // 입력 중인 짧은 숫자(예: 높이 3)는 남기지 않는다.
+    if (input.widthMm < 1000 || input.heightMm < 1000) return;
+    _shutterLogDebounce = Timer(const Duration(milliseconds: 1500), () {
+      final user = ref.read(authControllerProvider);
+      final userId = user?.id.trim() ?? '';
+      final userName = user?.name.trim() ?? '';
+      if (userId.isEmpty || userName.isEmpty) return;
+      _shutterLoggedKey = key;
+      unawaited(
+        ref
+            .read(shutterRepositoryProvider)
+            .logEstimate({
+              'user_id': userId,
+              'user_name': userName,
+              'width_mm': input.widthMm.toInt(),
+              'height_mm': input.heightMm.toInt(),
+              'model_type': QuoterTypeStyle.label(input.type),
+              'total_price': estimate.total,
+              'created_at': DateTime.now().toIso8601String(),
+            })
+            .catchError((Object e) => debugPrint('Logging failed: $e')),
+      );
+    });
+  }
+
+  void _selectShutterCompany(String id) {
+    HapticFeedback.selectionClick();
+    setState(() => _shutterCompanyId = id);
+    unawaited(_recalcShutter());
+  }
+
+  Future<void> _editShutterCosts() async {
+    final next = await showShutterCostSheet(context, costs: _shutterCosts);
+    if (next == null || !mounted) return;
+    setState(() => _shutterCosts = next);
+    unawaited(_recalcShutter());
+  }
+
+  /// 기존 셔터 견적기를 같은 종류·규격·비용으로 연다 (업체 비교·세부 항목을 넓게).
+  Future<void> _openShutterDetail() async {
+    HapticFeedback.selectionClick();
+    final pick = await Navigator.of(context).push<SizeQuoteProductPick>(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          resizeToAvoidBottomInset: true,
+          appBar: AppBar(title: const Text('셔터 견적기'), toolbarHeight: 48),
+          body: QuoterScreen(
+            showQuickActions: false,
+            pickMode: widget.pickMode,
+            initialType: _shutterType,
+            initialWidthMm: _widthMm,
+            initialHeightMm: _heightMm,
+            initialCosts: _shutterCosts,
+          ),
+        ),
+      ),
+    );
+    if (pick != null && mounted) Navigator.of(context).pop(pick);
+  }
+
+  Future<void> _openShutterQuoteWriter() async {
+    final estimate = _shutterEstimate;
+    if (estimate == null || estimate.total <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('셔터 종류와 폭·높이를 넣어 금액을 먼저 확인하세요.')),
+      );
+      return;
+    }
+    HapticFeedback.selectionClick();
+    final draft = sizeQuoteDraftFromShutter(
+      result: estimate.result,
+      companyName: estimate.companyName,
+    );
+    if (widget.pickMode) {
+      Navigator.of(context).pop(
+        SizeQuoteProductPick(
+          source: SizeQuoteProductSource.shutter,
+          seed: draft.seed,
+          extraLines: draft.extraLines,
+          note: draft.note,
+          quantity: draft.quantity,
+        ),
+      );
+      return;
+    }
+    final saved = await pushSizeQuoteEditor(
+      context,
+      seed: draft.seed,
+      extraLines: draft.extraLines,
+      initialNote: draft.note,
+      initialQuantity: draft.quantity,
+    );
+    if (!mounted) return;
+    if (saved != null && !saved.openExport) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('견적서를 저장했습니다.')));
+    }
+    unawaited(_loadSimilarQuotes());
+  }
+
+  Widget _buildShutterHeader() {
+    return _ShutterHeader(
+      color: QuoterTypeStyle.color(_shutterType),
+      typeLabel: QuoterTypeStyle.label(_shutterType),
+      hasSize: _hasSize,
+      loading: _shutterLoading,
+      error: _shutterError,
+      estimate: _shutterEstimate,
+      costs: _shutterCosts,
+      clampNote: _hasSize ? quoterTableClampNote(_widthMm, _heightMm) : null,
+      won: _won,
+      writeLabel: widget.pickMode ? '넣기' : '견적서',
+      onWriteQuote: () => unawaited(_openShutterQuoteWriter()),
+      onCopy: () => unawaited(_copyQuote()),
+      onEditCosts: () => unawaited(_editShutterCosts()),
+      onOpenDetail: () => unawaited(_openShutterDetail()),
+      onSelectCompany: _selectShutterCompany,
+      onRetry: () {
+        ref.invalidate(shutterPricesFutureProvider);
+        _shutterPrices = null;
+        unawaited(_recalcShutter());
+      },
+    );
+  }
+
+  /// 셔터 종류 칸: 고른 종류는 금액, 나머지는 「선택」.
+  String _shutterModelLabel(String modelId) {
+    final total = _shutterEstimate?.total ?? 0;
+    if (modelId == _modelId && _hasSize && total > 0) {
+      return '${_won.format(total)}원';
+    }
+    return '선택';
+  }
+
+  String? get _shutterQuoteLine {
+    final estimate = _shutterEstimate;
+    if (estimate == null || estimate.total <= 0) return null;
+    final company = (estimate.companyName ?? '').trim();
+    return [
+      '셔터 ${QuoterTypeStyle.label(_shutterType)} '
+          '${_won.format(_widthMm)}×${_won.format(_heightMm)} '
+          '${_won.format(estimate.total)}원',
+      if (company.isNotEmpty) '($company 기준)',
+    ].join(' ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider);
@@ -840,43 +1168,29 @@ class _StandardUnitPriceScreenState
     return Scaffold(
       appBar: AppBar(
         title: widget.showAppBar
-            ? Text(widget.pickMode ? '표준단가에서 고르기' : '표준단가')
+            ? Text(widget.pickMode ? '제품 고르기' : (widget.title ?? '단가 · 견적'))
             : null,
         toolbarHeight: widget.showAppBar ? kToolbarHeight : 44,
         automaticallyImplyLeading: widget.showAppBar,
         actions: [
-          IconButton(
-            tooltip: '지사 주소',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const SizeQuoteOfficeScreen(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.domain_rounded),
-          ),
-          IconButton(
-            tooltip: '견적 노트',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const SizeQuoteNoteScreen(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.notes_rounded),
-          ),
-          IconButton(
-            tooltip: '홍보 이미지',
-            onPressed: _loading || _error != null || _catalog == null
-                ? null
-                : () => unawaited(_openPromoImages()),
-            icon: const Icon(Icons.collections_outlined),
-          ),
+          if (!widget.pickMode)
+            TextButton.icon(
+              onPressed: () => unawaited(_openQuoteHistory()),
+              icon: const Icon(Icons.folder_open_rounded, size: 20),
+              label: const Text('견적서'),
+            ),
+          if (widget.showHomeButton)
+            IconButton(
+              tooltip: '홈으로',
+              icon: const Icon(Icons.home_rounded),
+              onPressed: () =>
+                  Navigator.of(context).popUntil((route) => route.isFirst),
+            ),
           IconButton(
             tooltip: '단가표',
-            onPressed: _loading || _error != null ? null : _openGridSheet,
+            onPressed: _loading || _error != null || _isShutter
+                ? null
+                : _openGridSheet,
             icon: const Icon(Icons.grid_on_rounded),
           ),
           IconButton(
@@ -944,11 +1258,25 @@ class _StandardUnitPriceScreenState
                   unawaited(_openQuoteHistory());
                 case 'promo':
                   unawaited(_openPromoImages());
+                case 'office':
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SizeQuoteOfficeScreen(),
+                    ),
+                  );
+                case 'notes':
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SizeQuoteNoteScreen(),
+                    ),
+                  );
               }
             },
             itemBuilder: (ctx) => [
               const PopupMenuItem(value: 'quotes', child: Text('견적 기록')),
               const PopupMenuItem(value: 'promo', child: Text('홍보 이미지')),
+              const PopupMenuItem(value: 'office', child: Text('지사 주소')),
+              const PopupMenuItem(value: 'notes', child: Text('견적 노트')),
               if (editable)
                 const PopupMenuItem(value: 'adjust', child: Text('일괄 조정')),
               const PopupMenuItem(value: 'history', child: Text('변경 이력')),
@@ -960,11 +1288,19 @@ class _StandardUnitPriceScreenState
         ],
       ),
       body: _loading
-          ? const AppLoading(message: '표준단가 불러오는 중…')
+          ? const AppLoading(message: '단가 불러오는 중…')
           : _error != null
           ? AppErrorState(message: koreanErrorMessage(_error!), onRetry: _load)
           : _LookupTab(
               catalog: _catalog!,
+              categories: _categories,
+              models: _models,
+              header: _isShutter ? _buildShutterHeader() : null,
+              copyEnabled: _isShutter
+                  ? (_shutterEstimate?.total ?? 0) > 0
+                  : null,
+              writeLabel: widget.pickMode ? '넣기' : '견적서',
+              modelLabel: _isShutter ? _shutterModelLabel : null,
               categoryId: _categoryId,
               modelId: _modelId,
               comparisons: _comparisons,
@@ -990,6 +1326,7 @@ class _StandardUnitPriceScreenState
                 _heightCtrl.clear();
                 setState(() => _editingWidth = true);
                 _persistLookup();
+                if (_isShutter) unawaited(_recalcShutter());
               },
               onCopyPrice: () => unawaited(_copyQuote()),
               onSharePrice: () => unawaited(_copyQuote(share: true)),
@@ -1008,6 +1345,12 @@ class _StandardUnitPriceScreenState
 class _LookupTab extends StatelessWidget {
   const _LookupTab({
     required this.catalog,
+    required this.categories,
+    required this.models,
+    this.header,
+    this.copyEnabled,
+    this.writeLabel = '견적서',
+    this.modelLabel,
     required this.categoryId,
     required this.modelId,
     required this.comparisons,
@@ -1039,6 +1382,20 @@ class _LookupTab extends StatelessWidget {
   });
 
   final StandardUnitPriceCatalog catalog;
+  final List<StandardUnitPriceCategory> categories;
+  final List<StandardUnitPriceModel> models;
+
+  /// 셔터처럼 표준단가 머리 대신 보일 금액 칸.
+  final Widget? header;
+
+  /// 키패드 「복사」·「견적서」를 켤지. null이면 표준단가 기준.
+  final bool? copyEnabled;
+
+  /// 견적서 버튼 글자. 고르기 모드는 「넣기」.
+  final String writeLabel;
+
+  /// 모델 칸 가격 대신 보일 글자. null을 돌려주면 표준단가 비교 가격.
+  final String? Function(String modelId)? modelLabel;
   final String? categoryId;
   final String? modelId;
   final List<SameSizeModelQuote> comparisons;
@@ -1071,9 +1428,6 @@ class _LookupTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final models = categoryId == null
-        ? const <StandardUnitPriceModel>[]
-        : catalog.modelsFor(categoryId!);
     final price = hasSize ? (inference.estimatedPrice ?? 0) : 0;
     final unavailable =
         hasSize &&
@@ -1103,23 +1457,25 @@ class _LookupTab extends StatelessWidget {
 
     return Column(
       children: [
-        _PriceHeader(
-          color: headerColor,
-          hasSize: hasSize,
-          unavailable: unavailable,
-          price: price,
-          inference: inference,
-          won: won,
-          onCopyPrice: onCopyPrice,
-          onSharePrice: onSharePrice,
-          onShowGrid: onShowGrid,
-          onWriteQuote: onWriteQuote,
-          onOpenQuotes: onOpenQuotes,
-        ),
+        header ??
+            _PriceHeader(
+              color: headerColor,
+              hasSize: hasSize,
+              unavailable: unavailable,
+              price: price,
+              inference: inference,
+              won: won,
+              onCopyPrice: onCopyPrice,
+              onSharePrice: onSharePrice,
+              onShowGrid: onShowGrid,
+              onWriteQuote: onWriteQuote,
+              onOpenQuotes: onOpenQuotes,
+              writeLabel: writeLabel,
+            ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
           child: _CategoryTabs(
-            categories: catalog.orderedCategories,
+            categories: categories,
             selectedId: categoryId,
             onSelect: onSelectCategory,
           ),
@@ -1143,6 +1499,7 @@ class _LookupTab extends StatelessWidget {
                   quote: quoteOf(model.id),
                   hasSize: hasSize,
                   won: won,
+                  label: modelLabel?.call(model.id),
                   onTap: () => onSelectModel(model.id),
                 );
               },
@@ -1236,13 +1593,15 @@ class _LookupTab extends StatelessWidget {
                 Expanded(
                   child: _InlineKeypad(
                     editingWidth: editingWidth,
-                    canCopy: hasSize && !unavailable && price > 0,
+                    canCopy:
+                        copyEnabled ?? (hasSize && !unavailable && price > 0),
                     onDigit: onDigit,
                     onBackspace: onBackspace,
                     onClear: onClearCurrent,
                     onToggleAxis: () => onEditWidth(!editingWidth),
                     onCopy: onCopyPrice,
                     onWriteQuote: onWriteQuote,
+                    writeLabel: writeLabel,
                   ),
                 ),
               ],
@@ -1267,8 +1626,10 @@ class _PriceHeader extends StatefulWidget {
     required this.onShowGrid,
     required this.onWriteQuote,
     required this.onOpenQuotes,
+    this.writeLabel = '견적서',
   });
 
+  final String writeLabel;
   final Color color;
   final bool hasSize;
   final bool unavailable;
@@ -1365,7 +1726,7 @@ class _PriceHeaderState extends State<_PriceHeader> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      child: const Text('견적서'),
+                      child: Text(widget.writeLabel),
                     ),
                   ),
                 TextButton(
@@ -1467,6 +1828,7 @@ class _ModelTile extends StatelessWidget {
     required this.hasSize,
     required this.won,
     required this.onTap,
+    this.label,
   });
 
   final String name;
@@ -1477,14 +1839,19 @@ class _ModelTile extends StatelessWidget {
   final NumberFormat won;
   final VoidCallback onTap;
 
+  /// 가격 대신 보일 글자 (셔터처럼 같은 사이즈 비교가 없는 분류).
+  final String? label;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final priceText = !hasSize
-        ? '선택'
-        : (quote == null || quote!.unavailable)
-        ? '불가'
-        : '${won.format(quote!.price)}원';
+    final priceText =
+        label ??
+        (!hasSize
+            ? '선택'
+            : (quote == null || quote!.unavailable)
+            ? '불가'
+            : '${won.format(quote!.price)}원');
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.0,
       child: Material(
@@ -1580,8 +1947,10 @@ class _InlineKeypad extends StatelessWidget {
     required this.onToggleAxis,
     required this.onCopy,
     required this.onWriteQuote,
+    this.writeLabel = '견적서',
   });
 
+  final String writeLabel;
   final bool editingWidth;
   final bool canCopy;
   final ValueChanged<String> onDigit;
@@ -1709,7 +2078,9 @@ class _InlineKeypad extends StatelessWidget {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          editingWidth ? '다음 · 높이' : (canCopy ? '견적서' : '폭으로'),
+                          editingWidth
+                              ? '다음 · 높이'
+                              : (canCopy ? writeLabel : '폭으로'),
                         ),
                       ),
                     ),
@@ -2781,6 +3152,269 @@ class _CatalogTab extends StatelessWidget {
           const Divider(),
         ],
       ],
+    );
+  }
+}
+
+/// 셔터를 고르면 표준단가 머리 대신 보이는 금액 칸. 사이즈가 들어가면 바로 계산된다.
+class _ShutterHeader extends StatefulWidget {
+  const _ShutterHeader({
+    required this.color,
+    required this.typeLabel,
+    required this.hasSize,
+    required this.loading,
+    required this.error,
+    required this.estimate,
+    required this.costs,
+    required this.clampNote,
+    required this.won,
+    required this.writeLabel,
+    required this.onWriteQuote,
+    required this.onCopy,
+    required this.onEditCosts,
+    required this.onOpenDetail,
+    required this.onSelectCompany,
+    required this.onRetry,
+  });
+
+  final Color color;
+  final String typeLabel;
+  final bool hasSize;
+  final bool loading;
+  final Object? error;
+  final ShutterQuickEstimate? estimate;
+  final ShutterQuickCosts costs;
+  final String? clampNote;
+  final NumberFormat won;
+  final String writeLabel;
+  final VoidCallback onWriteQuote;
+  final VoidCallback onCopy;
+  final VoidCallback onEditCosts;
+  final VoidCallback onOpenDetail;
+  final ValueChanged<String> onSelectCompany;
+  final VoidCallback onRetry;
+
+  @override
+  State<_ShutterHeader> createState() => _ShutterHeaderState();
+}
+
+class _ShutterHeaderState extends State<_ShutterHeader> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final estimate = widget.hasSize ? widget.estimate : null;
+    final total = estimate?.total ?? 0;
+    final ready = total > 0;
+    final amountText = !widget.hasSize
+        ? '셔터 종류 고르고 폭·높이를 넣으세요'
+        : widget.error != null
+        ? '셔터 단가를 불러오지 못했습니다'
+        : widget.loading && estimate == null
+        ? '계산 중…'
+        : ready
+        ? '${widget.won.format(total)}원'
+        : '금액 없음';
+    final company = (estimate?.companyName ?? '').trim();
+    final subtitle = [
+      '셔터 ${widget.typeLabel}',
+      if (company.isNotEmpty) '$company 기준',
+      if (!widget.costs.isDefault) '비용 조정됨',
+    ].join(' · ');
+    final comparisons = estimate?.comparisons ?? const <CompanyComparisonRow>[];
+    const white = Colors.white;
+    final dim = white.withValues(alpha: 0.9);
+
+    return Material(
+      color: widget.color,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: ready ? widget.onCopy : null,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        amountText,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: white,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (widget.error != null)
+                  TextButton(
+                    onPressed: widget.onRetry,
+                    style: TextButton.styleFrom(foregroundColor: white),
+                    child: const Text('다시'),
+                  ),
+                if (ready)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: FilledButton(
+                      onPressed: widget.onWriteQuote,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: white,
+                        foregroundColor: widget.color,
+                        minimumSize: const Size(56, 36),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      child: Text(widget.writeLabel),
+                    ),
+                  ),
+                TextButton(
+                  onPressed: () => setState(() => _open = !_open),
+                  style: TextButton.styleFrom(
+                    foregroundColor: white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: Text(_open ? '접기' : '펴기'),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                widget.clampNote == null ? subtitle : '※ ${widget.clampNote}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: widget.clampNote == null
+                      ? FontWeight.w700
+                      : FontWeight.w800,
+                  color: widget.clampNote == null
+                      ? dim
+                      : const Color(0xFFFDE68A),
+                ),
+              ),
+            ),
+            if (_open) ...[
+              if (comparisons.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, right: 8),
+                  child: SizedBox(
+                    height: 30,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: comparisons.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 6),
+                      itemBuilder: (context, i) {
+                        final row = comparisons[i];
+                        final selected = row.company.id == estimate?.companyId;
+                        return Material(
+                          color: selected
+                              ? white
+                              : white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(15),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(15),
+                            onTap: () => widget.onSelectCompany(row.company.id),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              child: Text(
+                                '${row.company.companyName} '
+                                '${widget.won.format(row.totalAmount)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: selected ? widget.color : white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              if (ready)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, right: 8),
+                  child: Text(
+                    koreanWonInWords(total),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: white,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+              if (estimate != null)
+                for (final item in estimate.result.breakdown)
+                  if (item.amount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, right: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, color: dim),
+                            ),
+                          ),
+                          Text(
+                            '${widget.won.format(item.amount)}원',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: dim,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: widget.onEditCosts,
+                    style: TextButton.styleFrom(
+                      foregroundColor: white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.tune_rounded, size: 18),
+                    label: const Text('비용 조정'),
+                  ),
+                  if (widget.hasSize)
+                    TextButton.icon(
+                      onPressed: widget.onOpenDetail,
+                      style: TextButton.styleFrom(
+                        foregroundColor: white,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                      label: const Text('자세히'),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
