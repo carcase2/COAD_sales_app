@@ -906,7 +906,24 @@ class SizeQuoteSeed {
   final int widthMm;
   final int heightMm;
   final int standardPrice;
+
+  /// 제품을 아직 안 고른 견적서(「새 견적서 → 직접 입력」).
+  bool get isEmpty =>
+      modelId.trim().isEmpty && modelName.trim().isEmpty && standardPrice <= 0;
+
+  /// 셔터 견적기에서 온 제품. 표준단가 표가 없어 다른 사이즈를 표에서 못 고른다.
+  bool get isShutter => categoryId.trim() == 'shutter';
 }
+
+const kSizeQuoteEmptySeed = SizeQuoteSeed(
+  categoryId: '',
+  categoryName: '',
+  modelId: '',
+  modelName: '',
+  widthMm: 0,
+  heightMm: 0,
+  standardPrice: 0,
+);
 
 SizeQuoteLine sizeQuoteProductLine({
   required SizeQuoteSeed seed,

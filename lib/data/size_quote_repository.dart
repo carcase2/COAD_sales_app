@@ -24,6 +24,22 @@ bool sizeQuoteRelationMissing(Object e) {
           s.contains('42p01'));
 }
 
+/// 지운 견적서 표시(deleted_at) 마이그레이션 전이면 true. 그때는 예전처럼 진짜로 지운다.
+bool sizeQuoteDeletedAtMissing(Object e) {
+  final s = e.toString().toLowerCase();
+  return s.contains('deleted_at') &&
+      (s.contains('42703') ||
+          s.contains('does not exist') ||
+          s.contains('could not find') ||
+          s.contains('schema cache'));
+}
+
+/// 다른 사람이 같은 순간 같은 견적번호로 저장했을 때(quote_no unique).
+bool sizeQuoteNoTaken(Object e) {
+  final s = e.toString().toLowerCase();
+  return s.contains('23505') && s.contains('quote_no');
+}
+
 class SizeQuoteRepository {
   SizeQuoteRepository({SupabaseClient? client, SharedPreferences? prefs})
     : _client = client ?? Supabase.instance.client,
@@ -169,16 +185,27 @@ class SizeQuoteRepository {
     final store = await _store();
     final local = store.load();
     try {
-      final res = await _client
-          .from('standard_unit_price_quotes')
-          .select()
-          .order('ymd', ascending: false)
-          .order('created_at', ascending: false)
-          .limit(limit);
-      final remote = List<Map<String, dynamic>>.from(res)
-          .map(_fromRow)
-          .where((e) => e.id.isNotEmpty)
-          .toList();
+      List<dynamic> res;
+      try {
+        res = await _client
+            .from('standard_unit_price_quotes')
+            .select()
+            .isFilter('deleted_at', null)
+            .order('ymd', ascending: false)
+            .order('created_at', ascending: false)
+            .limit(limit);
+      } catch (e) {
+        if (!sizeQuoteDeletedAtMissing(e)) rethrow;
+        res = await _client
+            .from('standard_unit_price_quotes')
+            .select()
+            .order('ymd', ascending: false)
+            .order('created_at', ascending: false)
+            .limit(limit);
+      }
+      final remote = List<Map<String, dynamic>>.from(
+        res,
+      ).map(_fromRow).where((e) => e.id.isNotEmpty).toList();
       await store.save(remote);
       return remote;
     } catch (e) {
@@ -210,10 +237,9 @@ class SizeQuoteRepository {
       if ((excludeId ?? '').trim().isNotEmpty) {
         query = query.neq('id', excludeId!.trim());
       }
-      final res = await query
-          .order('ymd', ascending: false)
-          .limit(limit);
+      final res = await query.order('ymd', ascending: false).limit(limit);
       final rows = List<Map<String, dynamic>>.from(res)
+          .where((row) => row['deleted_at'] == null)
           .map(_fromRow)
           .where((e) => e.id.isNotEmpty)
           .toList();
@@ -281,7 +307,8 @@ class SizeQuoteRepository {
       throw ApiException('고객명을 입력해 주세요.');
     }
     var quoteNo = doc.quoteNo.trim();
-    if (quoteNo.isEmpty || quoteNo == '미리보기') {
+    final autoNo = quoteNo.isEmpty || quoteNo == '미리보기';
+    if (autoNo) {
       quoteNo = await nextQuoteNo(ymd: doc.ymd);
     }
     final previous = await _findById(doc.id);
@@ -289,7 +316,7 @@ class SizeQuoteRepository {
     final editor = (editorName ?? doc.updatedBy ?? doc.createdBy ?? '').trim();
     final withNo = doc.copyWith(quoteNo: quoteNo);
 
-    late final SizeQuoteDocument saved;
+    late SizeQuoteDocument saved;
     if (previous == null) {
       final createdBy = (doc.createdBy ?? '').trim().isNotEmpty
           ? doc.createdBy!.trim()
@@ -340,9 +367,25 @@ class SizeQuoteRepository {
     }
 
     try {
-      await _client.from('standard_unit_price_quotes').upsert(_rowOf(saved));
+      // 번호를 자동으로 받은 새 견적이 동시에 같은 번호를 잡으면 다음 번호로 다시 넣는다.
+      for (var attempt = 0; ; attempt++) {
+        try {
+          await _client
+              .from('standard_unit_price_quotes')
+              .upsert(_rowOf(saved));
+          break;
+        } catch (e) {
+          if (!autoNo || attempt >= 3 || !sizeQuoteNoTaken(e)) rethrow;
+          saved = saved.copyWith(quoteNo: await nextQuoteNo(ymd: doc.ymd));
+        }
+      }
     } catch (e) {
       if (e is ApiException) rethrow;
+      if (sizeQuoteNoTaken(e)) {
+        throw ApiException(
+          '견적번호 ${saved.quoteNo}가 이미 있습니다. 번호를 바꿔 다시 저장해 주세요.',
+        );
+      }
       if (!sizeQuoteRelationMissing(e)) {
         throw ApiException('표준단가 견적서를 저장하지 못했습니다. $e');
       }
@@ -352,10 +395,22 @@ class SizeQuoteRepository {
     return saved;
   }
 
-  Future<void> delete(String id) async {
+  /// 지운 표시만 한다(deleted_at). 마이그레이션 전이면 예전처럼 행을 지운다.
+  Future<void> delete(String id, {String? by}) async {
     final store = await _store();
     try {
-      await _client.from('standard_unit_price_quotes').delete().eq('id', id);
+      try {
+        await _client
+            .from('standard_unit_price_quotes')
+            .update({
+              'deleted_at': DateTime.now().toUtc().toIso8601String(),
+              'deleted_by': (by ?? '').trim(),
+            })
+            .eq('id', id);
+      } catch (e) {
+        if (!sizeQuoteDeletedAtMissing(e)) rethrow;
+        await _client.from('standard_unit_price_quotes').delete().eq('id', id);
+      }
       await store.remove(id);
     } catch (e) {
       if (sizeQuoteRelationMissing(e)) {
@@ -695,24 +750,20 @@ class SizeQuoteRepository {
           'body': sizeQuoteSpecNote(categoryName: pair.$1, modelName: pair.$2),
         },
     ];
-    await _client.from('standard_unit_price_quote_notes').upsert(
-          rows,
-          onConflict: 'scope,category_name,model_name',
-        );
+    await _client
+        .from('standard_unit_price_quote_notes')
+        .upsert(rows, onConflict: 'scope,category_name,model_name');
   }
 
   Future<void> saveCommonQuoteNote(String body) async {
     try {
-      await _client.from('standard_unit_price_quote_notes').upsert(
-        {
-          'scope': 'common',
-          'category_name': '',
-          'model_name': '',
-          'body': body,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        },
-        onConflict: 'scope,category_name,model_name',
-      );
+      await _client.from('standard_unit_price_quote_notes').upsert({
+        'scope': 'common',
+        'category_name': '',
+        'model_name': '',
+        'body': body,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'scope,category_name,model_name');
       _noteBook = (_noteBook ?? const SizeQuoteNoteBook()).putCommon(body);
     } catch (e) {
       throw ApiException('공통 노트를 저장하지 못했습니다. $e');
@@ -755,11 +806,14 @@ class SizeQuoteRepository {
     required String email,
   }) async {
     try {
-      await _client.from('coad_branch').update({
-        'quote_address': address.trim(),
-        'quote_email': email.trim(),
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', id);
+      await _client
+          .from('coad_branch')
+          .update({
+            'quote_address': address.trim(),
+            'quote_email': email.trim(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', id);
     } catch (e) {
       throw ApiException('지사 주소·메일을 저장하지 못했습니다. $e');
     }
@@ -771,16 +825,13 @@ class SizeQuoteRepository {
     required String body,
   }) async {
     try {
-      await _client.from('standard_unit_price_quote_notes').upsert(
-        {
-          'scope': 'model',
-          'category_name': categoryName.trim(),
-          'model_name': modelName.trim(),
-          'body': body,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        },
-        onConflict: 'scope,category_name,model_name',
-      );
+      await _client.from('standard_unit_price_quote_notes').upsert({
+        'scope': 'model',
+        'category_name': categoryName.trim(),
+        'model_name': modelName.trim(),
+        'body': body,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'scope,category_name,model_name');
       _noteBook = (_noteBook ?? const SizeQuoteNoteBook()).putModel(
         categoryName: categoryName,
         modelName: modelName,

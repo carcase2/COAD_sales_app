@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:coad_customer_calls/features/quoter/quoter_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_screen.dart';
@@ -7,71 +9,59 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// 견적 탭: 셔터 견적기 · 표준단가 · 견적서(검색·재사용).
+/// 견적 탭: 견적서 목록이 첫 화면. 위의 「빠른 단가」로 셔터 견적기·표준단가를 연다.
+/// 새 견적서는 목록의 「새 견적서」에서 제품(표준단가·셔터·직접 입력)을 골라 시작한다.
 class QuoterHubScreen extends ConsumerStatefulWidget {
-  const QuoterHubScreen({
-    super.key,
-    this.showAppBar = true,
-    this.initialTabIndex = 0,
-  });
+  const QuoterHubScreen({super.key, this.showAppBar = true});
 
   /// 메인 탭 등 상위 Scaffold 안이면 false.
   final bool showAppBar;
-
-  /// 0 = 셔터 견적기, 1 = 표준단가, 2 = 견적서.
-  final int initialTabIndex;
 
   @override
   ConsumerState<QuoterHubScreen> createState() => _QuoterHubScreenState();
 }
 
-class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
-    with SingleTickerProviderStateMixin {
-  TabController? _tabController;
+class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen> {
+  /// 빠른 단가에서 견적서를 저장하고 돌아오면 목록을 다시 읽게 바꾼다.
+  int _listGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: 3,
-      initialIndex: widget.initialTabIndex.clamp(0, 2),
-      vsync: this,
-    );
-    _tabController!.addListener(_onTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _trackCurrentTab();
+      _track('quoter_list');
     });
   }
 
-  @override
-  void dispose() {
-    _tabController?.removeListener(_onTabChanged);
-    _tabController?.dispose();
-    super.dispose();
-  }
-
-  void _onTabChanged() {
-    if (_tabController == null || _tabController!.indexIsChanging) {
-      return;
-    }
-    _trackCurrentTab();
-  }
-
-  void _trackCurrentTab() {
+  void _track(String key) {
     final user = ref.read(authControllerProvider);
     if (user == null) return;
-    final index = _tabController?.index ?? 0;
-    final key = switch (index) {
-      0 => 'shutter_quoter',
-      1 => 'standard_unit_price',
-      2 => 'quoter_list',
-      _ => 'quoter',
-    };
-    UsageService.recordTab(
-      userId: user.id,
-      userName: user.name,
-      tabKey: key,
+    UsageService.recordTab(userId: user.id, userName: user.name, tabKey: key);
+  }
+
+  Future<void> _openShutter() async {
+    HapticFeedback.selectionClick();
+    _track('shutter_quoter');
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          // 규격 입력 시 숫자 키보드가 칸을 가리지 않도록 body 축소
+          resizeToAvoidBottomInset: true,
+          appBar: AppBar(title: const Text('셔터 견적기'), toolbarHeight: 48),
+          body: const QuoterScreen(showQuickActions: false),
+        ),
+      ),
     );
+    if (mounted) setState(() => _listGeneration++);
+  }
+
+  Future<void> _openStandard() async {
+    HapticFeedback.selectionClick();
+    _track('standard_unit_price');
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const StandardUnitPriceScreen()),
+    );
+    if (mounted) setState(() => _listGeneration++);
   }
 
   @override
@@ -81,35 +71,42 @@ class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
       children: [
         Material(
           color: scheme.surfaceContainerLow,
-          child: TabBar(
-            controller: _tabController,
-            onTap: (_) => HapticFeedback.selectionClick(),
-            indicatorSize: TabBarIndicatorSize.tab,
-            labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-            dividerColor: scheme.outlineVariant.withValues(alpha: 0.35),
-            labelStyle: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: Row(
+              children: [
+                Text(
+                  '빠른 단가',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _QuickPriceButton(
+                    icon: Icons.calculate_rounded,
+                    label: '셔터 견적기',
+                    onTap: () => unawaited(_openShutter()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _QuickPriceButton(
+                    icon: Icons.grid_on_rounded,
+                    label: '표준단가',
+                    onTap: () => unawaited(_openStandard()),
+                  ),
+                ),
+              ],
             ),
-            unselectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-            tabs: const [
-              Tab(height: 40, child: _HubTabLabel('셔터 견적기')),
-              Tab(height: 40, child: _HubTabLabel('표준단가')),
-              Tab(height: 40, child: _HubTabLabel('견적서')),
-            ],
           ),
         ),
         Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: const [
-              QuoterScreen(showQuickActions: false),
-              StandardUnitPriceScreen(showAppBar: false),
-              SizeQuoteWriterScreen(embedded: true),
-            ],
+          child: SizeQuoteWriterScreen(
+            key: ValueKey(_listGeneration),
+            embedded: true,
           ),
         ),
       ],
@@ -119,8 +116,6 @@ class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
 
     final canPop = Navigator.of(context).canPop();
     return Scaffold(
-      // 규격 입력 시 숫자 키보드가 칸을 가리지 않도록 body 축소
-      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('견적'),
         toolbarHeight: 48,
@@ -140,7 +135,32 @@ class _QuoterHubScreenState extends ConsumerState<QuoterHubScreen>
   }
 }
 
-/// 좁은 화면에서도 탭 글자가 잘리지 않게 축소.
+class _QuickPriceButton extends StatelessWidget {
+  const _QuickPriceButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonalIcon(
+      onPressed: onTap,
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(44),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+      icon: Icon(icon, size: 18),
+      label: _HubTabLabel(label),
+    );
+  }
+}
+
+/// 좁은 화면에서도 버튼 글자가 잘리지 않게 축소.
 class _HubTabLabel extends StatelessWidget {
   const _HubTabLabel(this.text);
 

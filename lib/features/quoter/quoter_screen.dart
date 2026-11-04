@@ -17,6 +17,7 @@ import 'package:coad_customer_calls/features/quoter/shutter_calculator.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_estimate_notice.dart';
 import 'package:coad_customer_calls/features/quoter/similar_estimates_notifier.dart';
 import 'package:coad_customer_calls/features/quoter/shutter_size_quote.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_product_pick.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/quoter/widgets/quoter_out_of_table_warning.dart';
 import 'package:coad_customer_calls/features/quoter/widgets/quoter_size_keypad.dart';
@@ -32,9 +33,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 class QuoterScreen extends ConsumerStatefulWidget {
-  const QuoterScreen({super.key, this.showQuickActions = true});
+  const QuoterScreen({
+    super.key,
+    this.showQuickActions = true,
+    this.pickMode = false,
+  });
 
   final bool showQuickActions;
+
+  /// 견적서의 「제품 고르기」에서 열었을 때. 「견적서」를 누르면 새 편집기를 열지 않고
+  /// 산출 결과를 [SizeQuoteProductPick]으로 돌려준다.
+  final bool pickMode;
 
   @override
   ConsumerState<QuoterScreen> createState() => _QuoterScreenState();
@@ -391,7 +400,10 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       });
       // 다음 견적에서 「↺ 최근」 버튼으로 바로 고를 수 있게.
       unawaited(
-        rememberQuoterSize(w.round(), h.round()).then((_) => _loadRecentSizes()),
+        rememberQuoterSize(
+          w.round(),
+          h.round(),
+        ).then((_) => _loadRecentSizes()),
       );
 
       HapticFeedback.mediumImpact();
@@ -2156,7 +2168,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                       FilledButton.icon(
                         onPressed: () => unawaited(_openSizeQuoteWriter()),
                         icon: const Icon(Icons.edit_document, size: 16),
-                        label: const Text('견적서 작성'),
+                        label: Text(widget.pickMode ? '견적서에 넣기' : '견적서 작성'),
                         style: FilledButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.symmetric(
@@ -2581,7 +2593,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
               FilledButton.icon(
                 onPressed: () => unawaited(_openSizeQuoteWriter()),
                 icon: const Icon(Icons.edit_document, size: 18),
-                label: const Text('견적서 작성'),
+                label: Text(widget.pickMode ? '견적서에 넣기' : '견적서 작성'),
               ),
             ],
           ),
@@ -3694,6 +3706,18 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
       result: result,
       companyName: _selectedCompanyName,
     );
+    if (widget.pickMode) {
+      Navigator.of(context).pop(
+        SizeQuoteProductPick(
+          source: SizeQuoteProductSource.shutter,
+          seed: draft.seed,
+          extraLines: draft.extraLines,
+          note: draft.note,
+          quantity: draft.quantity,
+        ),
+      );
+      return;
+    }
     final saved = await pushSizeQuoteEditor(
       context,
       seed: draft.seed,

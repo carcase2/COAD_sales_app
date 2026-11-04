@@ -11,6 +11,7 @@ import 'package:coad_customer_calls/features/unit_price/size_quote_export.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_note_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_office_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_promo_screen.dart';
+import 'package:coad_customer_calls/features/unit_price/size_quote_product_pick.dart';
 import 'package:coad_customer_calls/features/unit_price/size_quote_writer_screen.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price.dart';
 import 'package:coad_customer_calls/features/unit_price/standard_unit_price_models.dart';
@@ -32,10 +33,18 @@ bool canViewStandardUnitPrice(AppUser? user) {
 bool canEditStandardUnitPrice(AppUser? user) => false;
 
 class StandardUnitPriceScreen extends ConsumerStatefulWidget {
-  const StandardUnitPriceScreen({super.key, this.showAppBar = true});
+  const StandardUnitPriceScreen({
+    super.key,
+    this.showAppBar = true,
+    this.pickMode = false,
+  });
 
   /// 견적 탭 안에 넣을 때는 false (허브 AppBar·탭과 중복 방지).
   final bool showAppBar;
+
+  /// 견적서의 「제품 고르기」에서 열었을 때. 「견적서」를 누르면 고른 모델·사이즈·단가를
+  /// [SizeQuoteProductPick]으로 돌려준다.
+  final bool pickMode;
 
   @override
   ConsumerState<StandardUnitPriceScreen> createState() =>
@@ -334,6 +343,15 @@ class _StandardUnitPriceScreenState
     if (existing == null && seed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('사이즈와 단가를 먼저 확인한 뒤 견적서를 작성하세요.')),
+      );
+      return;
+    }
+    if (widget.pickMode && existing == null && seed != null) {
+      Navigator.of(context).pop(
+        SizeQuoteProductPick(
+          source: SizeQuoteProductSource.standard,
+          seed: seed,
+        ),
       );
       return;
     }
@@ -821,7 +839,9 @@ class _StandardUnitPriceScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: widget.showAppBar ? const Text('표준단가') : null,
+        title: widget.showAppBar
+            ? Text(widget.pickMode ? '표준단가에서 고르기' : '표준단가')
+            : null,
         toolbarHeight: widget.showAppBar ? kToolbarHeight : 44,
         automaticallyImplyLeading: widget.showAppBar,
         actions: [
