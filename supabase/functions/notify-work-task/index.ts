@@ -357,6 +357,7 @@ serve(async (req) => {
     const requesterRaw = (task.requester ?? '').toString().trim()
     const enteredPrevious = Date.parse((oldRecord.updated_at ?? '').toString())
     const changedAt = Date.parse((record.updated_at ?? '').toString())
+    const createdAt = Date.parse((task.created_at ?? '').toString())
 
     const message = workTaskMessage({
       kind: kind as 'added' | 'status',
@@ -371,6 +372,10 @@ serve(async (req) => {
       minutesInPrevious:
         Number.isFinite(enteredPrevious) && Number.isFinite(changedAt)
           ? Math.max(0, (changedAt - enteredPrevious) / 60_000)
+          : null,
+      minutesSinceCreated:
+        Number.isFinite(createdAt) && Number.isFinite(changedAt)
+          ? Math.max(0, (changedAt - createdAt) / 60_000)
           : null,
     })
 

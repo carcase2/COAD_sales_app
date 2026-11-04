@@ -14,6 +14,8 @@ export type WorkTaskEvent = {
   today: string
   /** 이전 상태로 들어간 뒤 지금 상태가 되기까지 걸린 분. 모르면 null. */
   minutesInPrevious: number | null
+  /** 업무를 만든(접수한) 뒤 지금 상태가 되기까지 걸린 분. 모르면 null. */
+  minutesSinceCreated: number | null
 }
 
 /** task_priorities 이름 (낮음·보통·높음·특급·후순위) 중 본문 앞에 표시할 것. */
@@ -83,15 +85,30 @@ export function workTaskMessage(event: WorkTaskEvent): { title: string; body: st
   const name = event.title.trim() || '제목 없음'
 
   const bits: string[] = []
+  const sinceCreated = event.minutesSinceCreated
+  const waited = sinceCreated != null && sinceCreated >= 1 ? elapsedLabel(sinceCreated) : ''
   if (event.kind === 'added') {
     if (event.requester) bits.push(`요청 ${event.requester}`)
-    bits.push(dueLabel(event.due, event.today))
+    // 바로 완료로 올린 업무는 남은 마감이 아니라 마감 대비 언제 끝냈는지.
+    bits.push(
+      event.status === '완료'
+        ? completedAgainstDue(event.due, event.today)
+        : dueLabel(event.due, event.today),
+    )
   } else if (event.status === '완료') {
     const took = event.minutesInPrevious
-    if (event.previousStatus === '진행중' && took != null) {
-      bits.push(took < 1 ? '시작 직후 완료' : `시작 후 ${elapsedLabel(took)} 만에 완료`)
+    if (event.previousStatus === '진행중' && took != null && took >= 1) {
+      bits.push(`시작 후 ${elapsedLabel(took)} 만에 완료`)
+    } else if (waited && (event.previousStatus === '접수' || event.previousStatus === '진행중')) {
+      // 접수에서 바로 완료, 또는 시작과 동시에 완료 — 접수부터 센다.
+      bits.push(`접수 후 ${waited} 만에 완료`)
+    } else if (event.previousStatus === '진행중' && took != null) {
+      bits.push('시작 직후 완료')
     }
     bits.push(completedAgainstDue(event.due, event.today))
+  } else if (event.status === '진행중' && event.previousStatus === '접수') {
+    if (waited) bits.push(`접수 후 ${waited} 만에 시작`)
+    bits.push(dueLabel(event.due, event.today))
   } else if (event.status === '보류' && event.previousStatus === '진행중' && event.minutesInPrevious != null) {
     bits.push(`진행 ${elapsedLabel(event.minutesInPrevious)} 뒤 보류`)
     bits.push(dueLabel(event.due, event.today))
