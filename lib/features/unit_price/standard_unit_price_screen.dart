@@ -111,6 +111,11 @@ class _StandardUnitPriceScreenState
 
   bool get _isShutter => _categoryId == kShutterQuoteCategoryId;
 
+  // 금액 칸을 좌우로 밀어 분류를 바꿀 때: 넘어가는 방향과 잠깐 보이는 안내.
+  int _slideDir = 1;
+  String? _switchNote;
+  Timer? _switchNoteTimer;
+
   List<StandardUnitPriceRow> get _cells => _cellsByModel[_modelId] ?? const [];
 
   @override
@@ -129,6 +134,7 @@ class _StandardUnitPriceScreenState
     _adjustReasonCtrl.dispose();
     _similarDebounce?.cancel();
     _shutterLogDebounce?.cancel();
+    _switchNoteTimer?.cancel();
     super.dispose();
   }
 
@@ -235,6 +241,10 @@ class _StandardUnitPriceScreenState
   }
 
   Future<void> _selectCategory(String id) async {
+    final cats = _categories;
+    final from = cats.indexWhere((c) => c.id == _categoryId);
+    final to = cats.indexWhere((c) => c.id == id);
+    if (from >= 0 && to >= 0 && from != to) _slideDir = to > from ? 1 : -1;
     if (id == kShutterQuoteCategoryId) {
       setState(() {
         _categoryId = id;
@@ -949,6 +959,34 @@ class _StandardUnitPriceScreenState
     return _catalog?.modelsFor(id) ?? const [];
   }
 
+  /// 금액 칸을 밀었을 때. [dir] 1 = 다음 분류(왼쪽으로 밂), -1 = 앞 분류.
+  void _swipeCategory(int dir) {
+    final cats = _categories;
+    final i = cats.indexWhere((c) => c.id == _categoryId);
+    final next = i + dir;
+    if (i < 0 || next < 0 || next >= cats.length) {
+      HapticFeedback.lightImpact();
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    final name = cats[next].name;
+    setState(() => _switchNote = '$name${_roParticle(name)} 바뀜');
+    _switchNoteTimer?.cancel();
+    _switchNoteTimer = Timer(const Duration(milliseconds: 1300), () {
+      if (mounted) setState(() => _switchNote = null);
+    });
+    unawaited(_selectCategory(cats[next].id));
+  }
+
+  /// 「셔터로」·「차고문으로」: 받침 있으면(ㄹ 빼고) 「으로」.
+  static String _roParticle(String word) {
+    if (word.isEmpty) return '로';
+    final code = word.codeUnitAt(word.length - 1);
+    if (code < 0xAC00 || code > 0xD7A3) return '로';
+    final jong = (code - 0xAC00) % 28;
+    return jong == 0 || jong == 8 ? '로' : '으로';
+  }
+
   ShutterType? _shutterTypeOf(String modelId) {
     for (final t in ShutterType.values) {
       if (shutterQuoteModelId(t) == modelId) return t;
@@ -1301,6 +1339,9 @@ class _StandardUnitPriceScreenState
                   : null,
               writeLabel: widget.pickMode ? '넣기' : '견적서',
               modelLabel: _isShutter ? _shutterModelLabel : null,
+              onSwipeCategory: _swipeCategory,
+              slideDir: _slideDir,
+              switchNote: _switchNote,
               categoryId: _categoryId,
               modelId: _modelId,
               comparisons: _comparisons,
@@ -1351,6 +1392,9 @@ class _LookupTab extends StatelessWidget {
     this.copyEnabled,
     this.writeLabel = '견적서',
     this.modelLabel,
+    this.onSwipeCategory,
+    this.slideDir = 1,
+    this.switchNote,
     required this.categoryId,
     required this.modelId,
     required this.comparisons,
@@ -1396,6 +1440,13 @@ class _LookupTab extends StatelessWidget {
 
   /// 모델 칸 가격 대신 보일 글자. null을 돌려주면 표준단가 비교 가격.
   final String? Function(String modelId)? modelLabel;
+
+  /// 금액 칸을 좌우로 밀면 분류를 바꾼다 (1 = 다음, -1 = 앞).
+  final ValueChanged<int>? onSwipeCategory;
+  final int slideDir;
+
+  /// 분류가 바뀐 직후 금액 칸 위에 잠깐 보일 글자.
+  final String? switchNote;
   final String? categoryId;
   final String? modelId;
   final List<SameSizeModelQuote> comparisons;
@@ -1424,6 +1475,106 @@ class _LookupTab extends StatelessWidget {
   final VoidCallback onWriteQuote;
   final VoidCallback onOpenQuotes;
   final VoidCallback? onOpenSimilar;
+
+  /// 금액 칸: 좌우로 밀면 분류가 바뀌고, 옆으로 넘어가는 모습과 안내가 잠깐 보인다.
+  /// 키패드·모델 줄과 겹치지 않게 이 칸에서만 민다.
+  Widget _swipeHeader(BuildContext context, Widget header) {
+    final swipe = onSwipeCategory;
+    final note = switchNote;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: swipe == null
+          ? null
+          : (details) {
+              final v = details.primaryVelocity ?? 0;
+              if (v.abs() < 250) return;
+              swipe(v < 0 ? 1 : -1);
+            },
+      child: Stack(
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topCenter,
+              children: [...previous, ?current],
+            ),
+            transitionBuilder: (child, animation) {
+              final incoming = child.key == ValueKey(categoryId);
+              final dx = (incoming ? 0.35 : -0.35) * slideDir;
+              return ClipRect(
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(dx, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+              );
+            },
+            child: KeyedSubtree(key: ValueKey(categoryId), child: header),
+          ),
+          // 밀 수 있다는 표시: 양 끝의 옅은 화살표.
+          if (swipe != null) ...[
+            const Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                child: Center(
+                  child: Icon(
+                    Icons.chevron_left_rounded,
+                    size: 18,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            ),
+            const Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                child: Center(
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (note != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      note,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1457,21 +1608,24 @@ class _LookupTab extends StatelessWidget {
 
     return Column(
       children: [
-        header ??
-            _PriceHeader(
-              color: headerColor,
-              hasSize: hasSize,
-              unavailable: unavailable,
-              price: price,
-              inference: inference,
-              won: won,
-              onCopyPrice: onCopyPrice,
-              onSharePrice: onSharePrice,
-              onShowGrid: onShowGrid,
-              onWriteQuote: onWriteQuote,
-              onOpenQuotes: onOpenQuotes,
-              writeLabel: writeLabel,
-            ),
+        _swipeHeader(
+          context,
+          header ??
+              _PriceHeader(
+                color: headerColor,
+                hasSize: hasSize,
+                unavailable: unavailable,
+                price: price,
+                inference: inference,
+                won: won,
+                onCopyPrice: onCopyPrice,
+                onSharePrice: onSharePrice,
+                onShowGrid: onShowGrid,
+                onWriteQuote: onWriteQuote,
+                onOpenQuotes: onOpenQuotes,
+                writeLabel: writeLabel,
+              ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
           child: _CategoryTabs(
