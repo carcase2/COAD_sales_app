@@ -1500,7 +1500,12 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       isScrollControlled: true,
       showDragHandle: true,
       useSafeArea: false,
-      builder: (_) => _SizeQuoteLineSheet(kind: kind),
+      builder: (ctx) => Theme(
+        data: Theme.of(
+          ctx,
+        ).copyWith(inputDecorationTheme: sizeQuoteInputTheme(ctx)),
+        child: _SizeQuoteLineSheet(kind: kind),
+      ),
     );
     if (line == null || !mounted) return;
     setState(() => _lines = [..._syncedLines(), line]);
@@ -1513,7 +1518,12 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       isScrollControlled: true,
       showDragHandle: true,
       useSafeArea: false,
-      builder: (_) => _SizeQuoteLineSheet(existing: current[index]),
+      builder: (ctx) => Theme(
+        data: Theme.of(
+          ctx,
+        ).copyWith(inputDecorationTheme: sizeQuoteInputTheme(ctx)),
+        child: _SizeQuoteLineSheet(existing: current[index]),
+      ),
     );
     if (line == null || !mounted) return;
     setState(() {
@@ -1526,10 +1536,31 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
   void _removeLine(int index) {
     final current = _syncedLines();
     if (current[index].isProduct) return;
+    HapticFeedback.selectionClick();
+    final removed = current[index];
     setState(() {
       final next = [...current]..removeAt(index);
       _lines = next;
     });
+    // 잘못 눌러도 바로 되돌릴 수 있게.
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('「${removed.name}」을 뺐습니다.'),
+          action: SnackBarAction(
+            label: '되돌리기',
+            onPressed: () {
+              if (!mounted) return;
+              setState(() {
+                final now = _syncedLines();
+                final at = index.clamp(0, now.length);
+                _lines = [...now]..insert(at, removed);
+              });
+            },
+          ),
+        ),
+      );
   }
 
   void _fitTarget() {
@@ -1796,181 +1827,16 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
             ),
           ],
         ),
-        bottomNavigationBar: _writerFooter(context),
-        body: ListView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          children: [
-            _sectionTitle('고객 · 현장'),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '이름, 전화, 이메일 중 하나만 적어도 명함이 있으면 나머지를 채웁니다.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _nameCtrl,
-                      textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: '고객명',
-                        filled: true,
-                        suffixIcon: _cardSuffix(_CardLookup.name),
-                      ),
-                      onChanged: _onCustomerNameChanged,
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _phoneCtrl,
-                      keyboardType: TextInputType.phone,
-                      textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: '전화',
-                        filled: true,
-                        suffixIcon: _cardSuffix(_CardLookup.phone),
-                      ),
-                      onChanged: _onCustomerPhoneChanged,
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _emailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: '이메일',
-                        filled: true,
-                        suffixIcon: _cardSuffix(_CardLookup.email),
-                      ),
-                      onChanged: _onCustomerEmailChanged,
-                    ),
-                    if (_matchedCard != null) ...[
-                      const SizedBox(height: 8),
-                      Material(
-                        color: scheme.primaryContainer.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(12),
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(
-                            Icons.contact_page_outlined,
-                            color: scheme.primary,
-                          ),
-                          title: Text(
-                            '명함에서 가져옴 · ${_matchedCard!.displayName}',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          subtitle: Text(
-                            [
-                              if (_matchedCard!.company.trim().isNotEmpty)
-                                _matchedCard!.company.trim(),
-                              if (_matchedCard!.email.trim().isNotEmpty)
-                                _matchedCard!.email.trim(),
-                            ].join(' · '),
-                          ),
-                          trailing: _cardChoices.length > 1
-                              ? TextButton(
-                                  onPressed: () => unawaited(_repickCard()),
-                                  child: const Text('다시 고르기'),
-                                )
-                              : null,
-                        ),
-                      ),
-                    ] else if (_cardChoices.length > 1) ...[
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: () => unawaited(_repickCard()),
-                          icon: const Icon(
-                            Icons.contact_page_outlined,
-                            size: 18,
-                          ),
-                          label: const Text('명함에서 고르기'),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _siteCtrl,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: '현장명',
-                        filled: true,
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _workCtrl,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: '공사명',
-                        filled: true,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _addressCtrl,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: '주소',
-                        filled: true,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: _pickYmd,
-                            borderRadius: BorderRadius.circular(16),
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: '견적일',
-                                filled: true,
-                              ),
-                              child: Text(
-                                _ymd,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: '견적번호',
-                              filled: true,
-                            ),
-                            child: Text(
-                              _quoteNo.trim().isEmpty ? '저장 시 자동' : _quoteNo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _sectionTitle(_seed.isShutter ? '셔터 산출 · 금액' : '표준단가 · 금액'),
-            if (_seed.isEmpty)
-              _emptyProductCard(scheme)
-            else
+        bottomNavigationBar: _writerFooter(context, doc),
+        body: Theme(
+          data: Theme.of(
+            context,
+          ).copyWith(inputDecorationTheme: sizeQuoteInputTheme(context)),
+          child: ListView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              _sectionTitle('고객 · 현장'),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -1978,470 +1844,652 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${_seed.categoryName} / ${_seed.modelName}',
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_seed.widthMm}×${_seed.heightMm}',
-                        style: TextStyle(color: scheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 6),
-                      _qtyStepper(),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: SegmentedButton<bool>(
-                          showSelectedIcon: false,
-                          segments: const [
-                            ButtonSegment(value: false, label: Text('기본 견적')),
-                            ButtonSegment(value: true, label: Text('세부 견적')),
-                          ],
-                          selected: {_detail},
-                          onSelectionChanged: (next) {
-                            if (next.isEmpty) return;
-                            _setMode(next.first);
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _targetUnitCtrl,
-                              keyboardType: TextInputType.number,
-                              textInputAction: TextInputAction.done,
-                              decoration: const InputDecoration(
-                                labelText: '목표 단가',
-                                suffixText: '원',
-                                filled: true,
-                              ),
-                              onChanged: _onTargetUnitChanged,
-                              onSubmitted: (_) {
-                                if (!_detail) _applyBasicTarget();
-                              },
-                            ),
-                          ),
-                          if (!_detail) ...[
-                            const SizedBox(width: 8),
-                            FilledButton.tonal(
-                              onPressed: _basicTargetPending
-                                  ? _applyBasicTarget
-                                  : null,
-                              child: const Text('맞추기'),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _detail
-                            ? '본체·센서·시공비·운반장비대 합계가 이 금액이 됩니다.'
-                            : '맞추기를 누르면 판매단가가 이 금액이 됩니다.',
+                        '이름, 전화, 이메일 중 하나만 적어도 명함이 있으면 나머지를 채웁니다.',
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 13,
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
-                      if (_basicTargetPending)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '입력한 목표 ${_won.format(_parsedMoney(_targetUnitCtrl))}원 · 맞추기 전',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFFB45309),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _nameCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: InputDecoration(
+                          labelText: '고객명',
+                          filled: true,
+                          suffixIcon: _cardSuffix(_CardLookup.name),
+                        ),
+                        onChanged: _onCustomerNameChanged,
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next,
+                        decoration: InputDecoration(
+                          labelText: '전화',
+                          filled: true,
+                          suffixIcon: _cardSuffix(_CardLookup.phone),
+                        ),
+                        onChanged: _onCustomerPhoneChanged,
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        decoration: InputDecoration(
+                          labelText: '이메일',
+                          filled: true,
+                          suffixIcon: _cardSuffix(_CardLookup.email),
+                        ),
+                        onChanged: _onCustomerEmailChanged,
+                      ),
+                      if (_matchedCard != null) ...[
+                        const SizedBox(height: 8),
+                        Material(
+                          color: scheme.primaryContainer.withValues(
+                            alpha: 0.45,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          child: ListTile(
+                            dense: true,
+                            leading: Icon(
+                              Icons.contact_page_outlined,
+                              color: scheme.primary,
                             ),
-                          ),
-                        ),
-                      if (!_detail) ...[
-                        const SizedBox(height: 8),
-                        _markupLine(
-                          label: '가산율',
-                          value: _markupPercent == 0
-                              ? '0%'
-                              : '${_signedPercentText(_markupPercent)}%',
-                          minusLabel: '−5%',
-                          plusLabel: '+5%',
-                          onMinus: () => _stepMarkupPercent(-5),
-                          onPlus: () => _stepMarkupPercent(5),
-                        ),
-                        const SizedBox(height: 8),
-                        _markupLine(
-                          label: '가산 금액',
-                          value: _markupAmount == 0
-                              ? '0원'
-                              : '${_won.format(_markupAmount)}원',
-                          minusLabel: '−20만',
-                          plusLabel: '+20만',
-                          onMinus: () => _stepMarkupAmount(-200000),
-                          onPlus: () => _stepMarkupAmount(200000),
-                        ),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            onPressed: _markupPercent == 0 && _markupAmount == 0
-                                ? null
-                                : _resetMarkup,
-                            icon: const Icon(
-                              Icons.restart_alt_rounded,
-                              size: 18,
-                            ),
-                            label: const Text('가산 초기화'),
-                          ),
-                        ),
-                      ] else ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          '세부 항목',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: scheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '기본값 센서 20만 · 시공비 80만 · 운반 30만. 바꾸면 본체는 나머지로 맞춰집니다.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '세트 수량과 같습니다. 2세트면 센서·시공비·운반장비대도 2이고 금액은 두 배입니다.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _detailRemainderRow(bodyUnit: _bodyUnit, qty: qty),
-                        _detailMoneyField(
-                          label: '센서',
-                          controller: _sensorCtrl,
-                          qty: qty,
-                          onChanged: (_) => _onDetailPartChanged(_sensorCtrl),
-                        ),
-                        _detailMoneyField(
-                          label: '시공비',
-                          controller: _installCtrl,
-                          qty: qty,
-                          onChanged: (_) => _onDetailPartChanged(_installCtrl),
-                        ),
-                        _detailMoneyField(
-                          label: '운반장비대',
-                          controller: _transportCtrl,
-                          qty: qty,
-                          onChanged: (_) =>
-                              _onDetailPartChanged(_transportCtrl),
-                        ),
-                        if (_parsedMoney(_targetUnitCtrl) < _detailExtras)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              '세부 항목이 입력한 목표보다 ${_won.format(_detailExtras - _parsedMoney(_targetUnitCtrl))}원 많습니다. 견적은 세부 합계 ${_won.format(_resolvedDetailTarget)}원으로 나갑니다.',
+                            title: Text(
+                              '명함에서 가져옴 · ${_matchedCard!.displayName}',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFFDC2626),
+                              ),
+                            ),
+                            subtitle: Text(
+                              [
+                                if (_matchedCard!.company.trim().isNotEmpty)
+                                  _matchedCard!.company.trim(),
+                                if (_matchedCard!.email.trim().isNotEmpty)
+                                  _matchedCard!.email.trim(),
+                              ].join(' · '),
+                            ),
+                            trailing: _cardChoices.length > 1
+                                ? TextButton(
+                                    onPressed: () => unawaited(_repickCard()),
+                                    child: const Text('다시 고르기'),
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ] else if (_cardChoices.length > 1) ...[
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () => unawaited(_repickCard()),
+                            icon: const Icon(
+                              Icons.contact_page_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('명함에서 고르기'),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _siteCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: '현장명',
+                          filled: true,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _workCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: '공사명',
+                          filled: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _addressCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: '주소',
+                          filled: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: _pickYmd,
+                              borderRadius: BorderRadius.circular(16),
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: '견적일',
+                                  filled: true,
+                                ),
+                                child: Text(
+                                  _ymd,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                      ],
-                      const SizedBox(height: 10),
-                      _priceGapBox(
-                        quotedUnit: quotedUnit,
-                        unchanged: priceUnchanged,
-                        qty: qty,
-                        markupSummary: _detail ? '' : doc.markupSummary,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: '견적번호',
+                                filled: true,
+                              ),
+                              child: Text(
+                                _quoteNo.trim().isEmpty ? '저장 시 자동' : _quoteNo,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
-            const SizedBox(height: 10),
-            if (!_seed.isEmpty && !_seed.isShutter) ...[
-              for (var i = 0; i < _extraSizes.length; i++) ...[
-                _extraSizeCard(i),
-                const SizedBox(height: 10),
-              ],
-              OutlinedButton.icon(
-                onPressed: _addingSize
-                    ? null
-                    : () => unawaited(_addExtraSize()),
-                icon: _addingSize
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.add_rounded, size: 18),
-                label: const Text('다른 사이즈 추가'),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  '폭과 높이를 넣으면 이 모델의 표준단가를 찾아 견적 줄로 붙입니다. 사이즈마다 수량이 따로이고, 세부 항목도 그 수량만큼 늘어납니다.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-            if (!_seed.isEmpty) ...[
-              OutlinedButton.icon(
-                onPressed: () => unawaited(_pickProduct()),
-                icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
-                label: Text(_seed.isShutter ? '다른 규격·제품 추가' : '다른 제품 추가'),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  _seed.isShutter
-                      ? '셔터를 다시 산출하거나 표준단가 모델을 골라 본체 줄로 붙입니다.'
-                      : '셔터 산출이나 다른 표준단가 모델을 본체 줄로 붙입니다.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-            if (_similar.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () => unawaited(
-                  showSizeQuoteSimilarSheet(
-                    context,
-                    items: _similar,
-                    modelName: _seed.modelName,
-                    widthMm: _seed.widthMm,
-                    heightMm: _seed.heightMm,
-                    onOpen: (other) => unawaited(
-                      showSizeQuoteExportSheet(context, doc: other),
+              const SizedBox(height: 16),
+              _sectionTitle(_seed.isShutter ? '셔터 산출 · 금액' : '표준단가 · 금액'),
+              if (_seed.isEmpty)
+                _emptyProductCard(scheme)
+              else
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_seed.categoryName} / ${_seed.modelName}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_seed.widthMm}×${_seed.heightMm}',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 6),
+                        _qtyStepper(),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SegmentedButton<bool>(
+                            showSelectedIcon: false,
+                            segments: const [
+                              ButtonSegment(value: false, label: Text('기본 견적')),
+                              ButtonSegment(value: true, label: Text('세부 견적')),
+                            ],
+                            selected: {_detail},
+                            onSelectionChanged: (next) {
+                              if (next.isEmpty) return;
+                              _setMode(next.first);
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _targetUnitCtrl,
+                                keyboardType: TextInputType.number,
+                                textInputAction: TextInputAction.done,
+                                decoration: const InputDecoration(
+                                  labelText: '목표 단가',
+                                  suffixText: '원',
+                                  filled: true,
+                                ),
+                                onChanged: _onTargetUnitChanged,
+                                onSubmitted: (_) {
+                                  if (!_detail) _applyBasicTarget();
+                                },
+                              ),
+                            ),
+                            if (!_detail) ...[
+                              const SizedBox(width: 8),
+                              FilledButton.tonal(
+                                onPressed: _basicTargetPending
+                                    ? _applyBasicTarget
+                                    : null,
+                                child: const Text('맞추기'),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _detail
+                              ? '본체·센서·시공비·운반장비대 합계가 이 금액이 됩니다.'
+                              : '맞추기를 누르면 판매단가가 이 금액이 됩니다.',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        if (_basicTargetPending)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '입력한 목표 ${_won.format(_parsedMoney(_targetUnitCtrl))}원 · 맞추기 전',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFFB45309),
+                              ),
+                            ),
+                          ),
+                        if (!_detail) ...[
+                          const SizedBox(height: 8),
+                          _markupLine(
+                            label: '가산율',
+                            value: _markupPercent == 0
+                                ? '0%'
+                                : '${_signedPercentText(_markupPercent)}%',
+                            minusLabel: '−5%',
+                            plusLabel: '+5%',
+                            onMinus: () => _stepMarkupPercent(-5),
+                            onPlus: () => _stepMarkupPercent(5),
+                          ),
+                          const SizedBox(height: 8),
+                          _markupLine(
+                            label: '가산 금액',
+                            value: _markupAmount == 0
+                                ? '0원'
+                                : '${_won.format(_markupAmount)}원',
+                            minusLabel: '−20만',
+                            plusLabel: '+20만',
+                            onMinus: () => _stepMarkupAmount(-200000),
+                            onPlus: () => _stepMarkupAmount(200000),
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed:
+                                  _markupPercent == 0 && _markupAmount == 0
+                                  ? null
+                                  : _resetMarkup,
+                              icon: const Icon(
+                                Icons.restart_alt_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('가산 초기화'),
+                            ),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            '세부 항목',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '기본값 센서 20만 · 시공비 80만 · 운반 30만. 바꾸면 본체는 나머지로 맞춰집니다.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '세트 수량과 같습니다. 2세트면 센서·시공비·운반장비대도 2이고 금액은 두 배입니다.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _detailRemainderRow(bodyUnit: _bodyUnit, qty: qty),
+                          _detailMoneyField(
+                            label: '센서',
+                            controller: _sensorCtrl,
+                            qty: qty,
+                            onChanged: (_) => _onDetailPartChanged(_sensorCtrl),
+                          ),
+                          _detailMoneyField(
+                            label: '시공비',
+                            controller: _installCtrl,
+                            qty: qty,
+                            onChanged: (_) =>
+                                _onDetailPartChanged(_installCtrl),
+                          ),
+                          _detailMoneyField(
+                            label: '운반장비대',
+                            controller: _transportCtrl,
+                            qty: qty,
+                            onChanged: (_) =>
+                                _onDetailPartChanged(_transportCtrl),
+                          ),
+                          if (_parsedMoney(_targetUnitCtrl) < _detailExtras)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                '세부 항목이 입력한 목표보다 ${_won.format(_detailExtras - _parsedMoney(_targetUnitCtrl))}원 많습니다. 견적은 세부 합계 ${_won.format(_resolvedDetailTarget)}원으로 나갑니다.',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFDC2626),
+                                ),
+                              ),
+                            ),
+                        ],
+                        const SizedBox(height: 10),
+                        _priceGapBox(
+                          quotedUnit: quotedUnit,
+                          unchanged: priceUnchanged,
+                          qty: qty,
+                          markupSummary: _detail ? '' : doc.markupSummary,
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                icon: const Icon(Icons.history_rounded, size: 18),
-                label: Text('비슷한 견적 ${_similar.length}건'),
-              ),
-            ],
-            const SizedBox(height: 16),
-            for (final kind in lineKinds) ...[
-              Row(
-                children: [
-                  Expanded(child: _sectionTitle(sizeQuoteKindLabel(kind))),
-                  TextButton.icon(
-                    onPressed: () => unawaited(_addLine(kind)),
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('추가'),
-                  ),
+              const SizedBox(height: 10),
+              if (!_seed.isEmpty && !_seed.isShutter) ...[
+                for (var i = 0; i < _extraSizes.length; i++) ...[
+                  _extraSizeCard(i),
+                  const SizedBox(height: 10),
                 ],
-              ),
-              if (!doc.lines.any((line) => _showsInLineSection(line, kind)))
+                OutlinedButton.icon(
+                  onPressed: _addingSize
+                      ? null
+                      : () => unawaited(_addExtraSize()),
+                  icon: _addingSize
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('다른 사이즈 추가'),
+                ),
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    kind == kSizeQuoteKindMain
-                        ? (_seed.isEmpty
-                              ? '제품을 고르거나 「추가」로 직접 적으세요.'
-                              : '본체는 표준단가에서 자동으로 들어갑니다.')
-                        : '${sizeQuoteKindLabel(kind)} 항목을 추가하세요.',
+                    '폭과 높이를 넣으면 이 모델의 표준단가를 찾아 견적 줄로 붙입니다. 사이즈마다 수량이 따로이고, 세부 항목도 그 수량만큼 늘어납니다.',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 12.5,
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-                )
-              else
-                for (final line in doc.lines.asMap().entries)
-                  if (_showsInLineSection(line.value, kind))
-                    _quoteLineRow(index: line.key, line: line.value),
-            ],
-            if (!_detail) ...[
-              const SizedBox(height: 8),
-              _sectionTitle('전체금액 맞추기'),
-              TextField(
-                controller: _targetCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '목표 총액',
-                  hintText: '정해진 전체금액',
-                  suffixText: '원',
-                  filled: true,
                 ),
-                onChanged: (v) {
-                  final digits = v.replaceAll(RegExp(r'[^0-9]'), '');
-                  final n = int.tryParse(digits);
-                  if (n != null && n > 0) {
-                    final formatted = _won.format(n);
-                    if (formatted != v) {
-                      _targetCtrl.value = TextEditingValue(
-                        text: formatted,
-                        selection: TextSelection.collapsed(
-                          offset: formatted.length,
-                        ),
-                      );
-                    }
-                  }
-                  setState(() {});
-                },
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      remaining == null
-                          ? '현재 ${_won.format(doc.total)}원'
-                          : remaining == 0
-                          ? '목표와 같습니다'
-                          : remaining > 0
-                          ? '남은 ${_won.format(remaining)}원'
-                          : '초과 ${_won.format(-remaining)}원',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: remaining == null || remaining == 0
-                            ? scheme.onSurface
-                            : remaining > 0
-                            ? scheme.primary
-                            : const Color(0xFFDC2626),
+                const SizedBox(height: 10),
+              ],
+              if (!_seed.isEmpty) ...[
+                OutlinedButton.icon(
+                  onPressed: () => unawaited(_pickProduct()),
+                  icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+                  label: Text(_seed.isShutter ? '다른 규격·제품 추가' : '다른 제품 추가'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    _seed.isShutter
+                        ? '셔터를 다시 산출하거나 표준단가 모델을 골라 본체 줄로 붙입니다.'
+                        : '셔터 산출이나 다른 표준단가 모델을 본체 줄로 붙입니다.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+              if (_similar.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => unawaited(
+                    showSizeQuoteSimilarSheet(
+                      context,
+                      items: _similar,
+                      modelName: _seed.modelName,
+                      widthMm: _seed.widthMm,
+                      heightMm: _seed.heightMm,
+                      onOpen: (other) => unawaited(
+                        showSizeQuoteExportSheet(context, doc: other),
                       ),
                     ),
                   ),
-                  FilledButton.tonal(
-                    onPressed: _fitTarget,
-                    child: const Text('나머지 맞추기'),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
+                  icon: const Icon(Icons.history_rounded, size: 18),
+                  label: Text('비슷한 견적 ${_similar.length}건'),
                 ),
-                child: Row(
+              ],
+              const SizedBox(height: 16),
+              for (final kind in lineKinds) ...[
+                Row(
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '최종 금액',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          Text(
-                            doc.finalChangeLabel,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: doc.finalUnchanged
-                                  ? const Color(0xFFDC2626)
-                                  : const Color(0xFF047857),
-                            ),
-                          ),
-                        ],
+                    Expanded(child: _sectionTitle(sizeQuoteKindLabel(kind))),
+                    FilledButton.tonalIcon(
+                      onPressed: () => unawaited(_addLine(kind)),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                       ),
-                    ),
-                    Text(
-                      doc.total <= 0 ? '-' : '${_won.format(doc.total)}원',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: Text('${sizeQuoteKindLabel(kind)} 추가'),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: _sectionTitle('홍보 이미지 (다음장)')),
-                TextButton.icon(
-                  onPressed: _seed.modelId.isEmpty
-                      ? null
-                      : () async {
-                          await pushSizeQuotePromoScreen(
-                            context,
-                            modelId: _seed.modelId,
-                            modelName: _seed.modelName,
-                          );
-                          if (mounted) unawaited(_loadPromo());
-                        },
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('추가·수정·삭제'),
-                ),
-              ],
-            ),
-            if (_promoCatalog.isEmpty)
-              Text(
-                '이 모델 홍보 이미지가 없습니다. 「추가·수정·삭제」에서 따로 관리하세요.',
-                style: TextStyle(color: scheme.onSurfaceVariant),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final image in _promoCatalog)
-                    FilterChip(
-                      selected: _promoIds.contains(image.id),
-                      onSelected: (on) {
-                        setState(() {
-                          if (on) {
-                            _promoIds = [..._promoIds, image.id];
-                          } else {
-                            _promoIds = _promoIds
-                                .where((e) => e != image.id)
-                                .toList();
-                          }
-                        });
-                      },
-                      avatar: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CachedAppImage(
-                            url: _repo.publicPromoUrl(image.storagePath),
-                            memCacheWidth: 80,
-                          ),
-                        ),
-                      ),
-                      label: Text(
-                        image.title.trim().isEmpty ? '이미지' : image.title.trim(),
+                if (!doc.lines.any((line) => _showsInLineSection(line, kind)))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      kind == kSizeQuoteKindMain
+                          ? (_seed.isEmpty
+                                ? '제품을 고르거나 「추가」로 직접 적으세요.'
+                                : '본체는 표준단가에서 자동으로 들어갑니다.')
+                          : '${sizeQuoteKindLabel(kind)} 항목을 추가하세요.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
+                  )
+                else
+                  for (final line in doc.lines.asMap().entries)
+                    if (_showsInLineSection(line.value, kind))
+                      _quoteLineRow(index: line.key, line: line.value),
+              ],
+              if (!_detail) ...[
+                const SizedBox(height: 8),
+                _sectionTitle('전체금액 맞추기'),
+                TextField(
+                  controller: _targetCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '목표 총액',
+                    hintText: '정해진 전체금액',
+                    suffixText: '원',
+                    filled: true,
+                  ),
+                  onChanged: (v) {
+                    final digits = v.replaceAll(RegExp(r'[^0-9]'), '');
+                    final n = int.tryParse(digits);
+                    if (n != null && n > 0) {
+                      final formatted = _won.format(n);
+                      if (formatted != v) {
+                        _targetCtrl.value = TextEditingValue(
+                          text: formatted,
+                          selection: TextSelection.collapsed(
+                            offset: formatted.length,
+                          ),
+                        );
+                      }
+                    }
+                    setState(() {});
+                  },
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        remaining == null
+                            ? '현재 ${_won.format(doc.total)}원'
+                            : remaining == 0
+                            ? '목표와 같습니다'
+                            : remaining > 0
+                            ? '남은 ${_won.format(remaining)}원'
+                            : '초과 ${_won.format(-remaining)}원',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: remaining == null || remaining == 0
+                              ? scheme.onSurface
+                              : remaining > 0
+                              ? scheme.primary
+                              : const Color(0xFFDC2626),
+                        ),
+                      ),
+                    ),
+                    FilledButton.tonal(
+                      onPressed: _fitTarget,
+                      child: const Text('나머지 맞추기'),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '최종 금액',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            Text(
+                              doc.finalChangeLabel,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: doc.finalUnchanged
+                                    ? scheme.onSurfaceVariant
+                                    : const Color(0xFF047857),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        doc.total <= 0 ? '-' : '${_won.format(doc.total)}원',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: _sectionTitle('홍보 이미지 (다음장)')),
+                  TextButton.icon(
+                    onPressed: _seed.modelId.isEmpty
+                        ? null
+                        : () async {
+                            await pushSizeQuotePromoScreen(
+                              context,
+                              modelId: _seed.modelId,
+                              modelName: _seed.modelName,
+                            );
+                            if (mounted) unawaited(_loadPromo());
+                          },
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('추가·수정·삭제'),
+                  ),
                 ],
               ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _noteCtrl,
-              minLines: 2,
-              maxLines: 4,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                labelText: '비고',
-                helperText: '견적서에 더할 메모입니다. 공통 노트는 자동으로 붙습니다.',
-                helperMaxLines: 2,
-                filled: true,
+              if (_promoCatalog.isEmpty)
+                Text(
+                  '이 모델 홍보 이미지가 없습니다. 「추가·수정·삭제」에서 따로 관리하세요.',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final image in _promoCatalog)
+                      FilterChip(
+                        selected: _promoIds.contains(image.id),
+                        onSelected: (on) {
+                          setState(() {
+                            if (on) {
+                              _promoIds = [..._promoIds, image.id];
+                            } else {
+                              _promoIds = _promoIds
+                                  .where((e) => e != image.id)
+                                  .toList();
+                            }
+                          });
+                        },
+                        avatar: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CachedAppImage(
+                              url: _repo.publicPromoUrl(image.storagePath),
+                              memCacheWidth: 80,
+                            ),
+                          ),
+                        ),
+                        label: Text(
+                          image.title.trim().isEmpty
+                              ? '이미지'
+                              : image.title.trim(),
+                        ),
+                      ),
+                  ],
+                ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _noteCtrl,
+                minLines: 2,
+                maxLines: 4,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  labelText: '비고',
+                  helperText: '견적서에 더할 메모입니다. 공통 노트는 자동으로 붙습니다.',
+                  helperMaxLines: 2,
+                  filled: true,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget? _writerFooter(BuildContext context) {
+  Widget? _writerFooter(BuildContext context, SizeQuoteDocument doc) {
     if (MediaQuery.viewInsetsOf(context).bottom > 0) return null;
     final scheme = Theme.of(context).colorScheme;
     return Material(
@@ -2454,9 +2502,40 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                '저장은 목록만 남기고, 보내기는 이미지·PDF·메일로 이어집니다.',
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              // 어디를 고치든 합계가 늘 보이게 한다.
+              Row(
+                children: [
+                  Text(
+                    '합계',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      doc.finalChangeLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: doc.finalUnchanged
+                            ? scheme.onSurfaceVariant
+                            : const Color(0xFF047857),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    doc.total <= 0 ? '-' : '${_won.format(doc.total)}원',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Row(
@@ -2464,7 +2543,7 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
                   FilledButton.tonalIcon(
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      minimumSize: const Size(96, 52),
+                      minimumSize: const Size(96, 56),
                     ),
                     onPressed: () => unawaited(_save()),
                     icon: const Icon(Icons.save_outlined),
@@ -2473,6 +2552,9 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                      ),
                       onPressed: () => unawaited(_save(send: true)),
                       icon: const Icon(Icons.ios_share_rounded),
                       label: const FittedBox(
@@ -2503,37 +2585,49 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       children: [
         const Text('수량', style: TextStyle(fontWeight: FontWeight.w800)),
         const Spacer(),
-        IconButton(
+        _stepButton(
+          icon: Icons.remove_rounded,
           tooltip: '수량 줄이기',
-          visualDensity: VisualDensity.compact,
           onPressed: qty > 1 ? () => _bumpQty(-1) : null,
-          icon: const Icon(Icons.remove_rounded),
         ),
+        const SizedBox(width: 8),
         SizedBox(
-          width: 48,
+          width: 64,
           child: TextField(
             controller: _qtyCtrl,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             decoration: const InputDecoration(
               isDense: true,
-              filled: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 12),
             ),
             onChanged: (_) => _syncProduct(),
           ),
         ),
         const Padding(
-          padding: EdgeInsets.only(left: 6),
+          padding: EdgeInsets.only(left: 6, right: 8),
           child: Text('SET', style: TextStyle(fontWeight: FontWeight.w800)),
         ),
-        IconButton(
+        _stepButton(
+          icon: Icons.add_rounded,
           tooltip: '수량 늘리기',
-          visualDensity: VisualDensity.compact,
           onPressed: () => _bumpQty(1),
-          icon: const Icon(Icons.add_rounded),
         ),
       ],
+    );
+  }
+
+  Widget _stepButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton.filledTonal(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+      icon: Icon(icon, size: 26),
     );
   }
 
@@ -2544,49 +2638,98 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       if (line.unit.trim().isNotEmpty) line.unit.trim(),
       '수량 ${line.qty}',
     ].join(' · ');
-    return InkWell(
-      onTap: line.isProduct ? null : () => unawaited(_editLine(index)),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final editable = !line.isProduct;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: scheme.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: editable ? () => unawaited(_editLine(index)) : null,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(14, 10, editable ? 4 : 14, 10),
+              child: Row(
                 children: [
-                  Text(
-                    line.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          line.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (meta.isNotEmpty)
+                          Text(
+                            meta,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                  if (meta.isNotEmpty)
-                    Text(
-                      meta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: scheme.onSurfaceVariant,
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        line.amount <= 0 ? '-' : '${_won.format(line.amount)}원',
+                        style: const TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (editable)
+                        Text(
+                          '눌러서 수정',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (editable) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 1,
+                      height: 36,
+                      color: scheme.outlineVariant,
+                    ),
+                    IconButton(
+                      tooltip: '빼기',
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      onPressed: () => _removeLine(index),
+                      icon: Icon(
+                        Icons.delete_outline_rounded,
+                        color: scheme.error,
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              line.amount <= 0 ? '-' : '${_won.format(line.amount)}원',
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-            if (!line.isProduct)
-              IconButton(
-                tooltip: '빼기',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _removeLine(index),
-                icon: const Icon(Icons.close_rounded, size: 20),
-              ),
-          ],
+          ),
         ),
       ),
     );
@@ -2786,7 +2929,8 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
   }) {
     final standard = _seed.standardPrice;
     final delta = quotedUnit - standard;
-    final tone = unchanged ? const Color(0xFFDC2626) : const Color(0xFF047857);
+    final scheme = Theme.of(context).colorScheme;
+    final tone = unchanged ? scheme.onSurfaceVariant : const Color(0xFF047857);
     final quoteLabel = _detail ? '목표단가' : '판매단가';
     final percent = !unchanged && standard > 0
         ? sizeQuoteSignedPercent(delta / standard * 100)
@@ -2795,7 +2939,9 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
-        color: unchanged ? const Color(0xFFFEF2F2) : const Color(0xFFECFDF5),
+        color: unchanged
+            ? scheme.surfaceContainerHigh
+            : const Color(0xFFECFDF5),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: tone.withValues(alpha: 0.35)),
       ),
@@ -3112,7 +3258,7 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
         : extra.money(extra.targetCtrl);
     final delta = selling - extra.standardPrice;
     final unchanged = extra.standardPrice > 0 && delta == 0;
-    final tone = unchanged ? const Color(0xFFDC2626) : const Color(0xFF047857);
+    final tone = unchanged ? scheme.onSurfaceVariant : const Color(0xFF047857);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -3221,35 +3367,34 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
       children: [
         const Text('수량', style: TextStyle(fontWeight: FontWeight.w800)),
         const Spacer(),
-        IconButton(
+        _stepButton(
+          icon: Icons.remove_rounded,
           tooltip: '수량 줄이기',
-          visualDensity: VisualDensity.compact,
           onPressed: quantity > 1 ? () => onQuantity(quantity - 1) : null,
-          icon: const Icon(Icons.remove_rounded),
         ),
+        const SizedBox(width: 8),
         SizedBox(
-          width: 48,
+          width: 64,
           child: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             decoration: const InputDecoration(
               isDense: true,
-              filled: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 12),
             ),
             onChanged: (_) => setState(() {}),
           ),
         ),
         const Padding(
-          padding: EdgeInsets.only(left: 6),
+          padding: EdgeInsets.only(left: 6, right: 8),
           child: Text('SET', style: TextStyle(fontWeight: FontWeight.w800)),
         ),
-        IconButton(
+        _stepButton(
+          icon: Icons.add_rounded,
           tooltip: '수량 늘리기',
-          visualDensity: VisualDensity.compact,
           onPressed: () => onQuantity(quantity + 1),
-          icon: const Icon(Icons.add_rounded),
         ),
       ],
     );
@@ -3933,4 +4078,31 @@ class _ExtraSizeForm {
     installCtrl.dispose();
     transportCtrl.dispose();
   }
+}
+
+/// 견적서 입력칸: 테두리와 바탕을 보여 어디를 눌러 적는지 바로 보이게 한다.
+InputDecorationThemeData sizeQuoteInputTheme(BuildContext context) {
+  final scheme = Theme.of(context).colorScheme;
+  OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
+    borderRadius: BorderRadius.circular(12),
+    borderSide: BorderSide(color: color, width: width),
+  );
+  return Theme.of(context).inputDecorationTheme.copyWith(
+    filled: true,
+    fillColor: scheme.surfaceContainerLowest,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    border: border(scheme.outlineVariant, 1.2),
+    enabledBorder: border(scheme.outlineVariant, 1.2),
+    focusedBorder: border(scheme.primary, 2),
+    errorBorder: border(scheme.error, 1.4),
+    focusedErrorBorder: border(scheme.error, 2),
+    labelStyle: TextStyle(
+      color: scheme.onSurfaceVariant,
+      fontWeight: FontWeight.w600,
+    ),
+    floatingLabelStyle: TextStyle(
+      color: scheme.primary,
+      fontWeight: FontWeight.w700,
+    ),
+  );
 }
