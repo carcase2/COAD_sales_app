@@ -119,3 +119,19 @@ export function workTaskMessage(event: WorkTaskEvent): { title: string; body: st
   const detail = bits.filter(Boolean).join(' · ')
   return { title, body: [`${urgent}${name}`, detail].filter(Boolean).join('\n') }
 }
+
+/** 댓글 알림 — 제목에 업무, 본문에 누가 무엇을 썼는지. 긴 댓글은 줄인다. */
+export function workCommentMessage(input: {
+  taskTitle: string
+  author: string
+  content: string
+}): { title: string; body: string } {
+  const task = input.taskTitle.trim() || '제목 없음'
+  const text = input.content.replace(/\s+/g, ' ').trim()
+  const short = text.length > 120 ? `${text.slice(0, 119)}…` : text
+  const author = input.author.trim()
+  return {
+    title: `댓글 · ${task}`,
+    body: author ? `${author}: ${short}` : short,
+  }
+}

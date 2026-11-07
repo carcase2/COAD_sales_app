@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleAuth } from 'https://esm.sh/google-auth-library@9'
-import { workTaskMessage } from './message.ts'
+import { workCommentMessage, workTaskMessage } from './message.ts'
 
 const LAB_GROUPS = new Set(['연구소', '관리자'])
 const OPEN_NAMES = new Set(['접수', '진행중'])
@@ -301,6 +301,44 @@ serve(async (req) => {
 
     const kind = (body.kind ?? '').toString()
     const record = (body.record ?? {}) as Record<string, unknown>
+
+    if (kind === 'comment') {
+      // task_comments 트리거 — 연구소 업무 댓글만, 쓴 사람은 빼고 알린다.
+      const commentId = (record.id ?? '').toString()
+      const commentTaskId = (record.task_id ?? '').toString()
+      if (!commentId || !commentTaskId) return json({ success: true, skipped: 'ignored' })
+      if (!(await claimDedupe(admin, `comment:${commentId}`))) {
+        return json({ success: true, skipped: 'duplicate' })
+      }
+      const { data: deptRows } = await admin.from('departments').select('id').eq('name', '연구소').limit(1)
+      const labDept = (deptRows?.[0] as { id?: string } | undefined)?.id
+      const { data: taskRow } = await admin
+        .from('tasks')
+        .select('id, title, department_id')
+        .eq('id', commentTaskId)
+        .maybeSingle()
+      const commented = taskRow as { title?: string; department_id?: string } | null
+      if (!commented || !labDept || commented.department_id !== labDept) {
+        return json({ success: true, skipped: 'not-lab-task' })
+      }
+      const authorEmail = (record.author_email ?? '').toString().trim()
+      const names = await nameMap(admin)
+      const author = names.get(authorEmail) ?? authorEmail.split('@')[0]
+      const others = users.filter((user) => user.name.trim() !== author.trim())
+      const message = workCommentMessage({
+        taskTitle: (commented.title ?? '').toString(),
+        author,
+        content: (record.content ?? '').toString(),
+      })
+      const sent = await sendPush(admin, await tokens(admin, others), {
+        ...message,
+        kind: 'comment',
+        notificationId: noteId(`comment:${commentTaskId}`),
+        collapseId: `comment-${commentTaskId}`,
+        taskId: commentTaskId,
+      })
+      return json({ success: true, sent, title: message.title })
+    }
     const oldRecord = (body.old_record ?? {}) as Record<string, unknown>
     const taskId = (record.id ?? '').toString()
     if (!taskId || (kind !== 'added' && kind !== 'status')) {

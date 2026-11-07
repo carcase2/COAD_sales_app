@@ -14,9 +14,11 @@ import 'package:coad_customer_calls/features/customer_support/customer_support_r
 import 'package:coad_customer_calls/features/customer_support/customer_support_schedule_calendar_screen.dart';
 import 'package:coad_customer_calls/features/home/home_providers.dart';
 import 'package:coad_customer_calls/core/utils/work_permissions.dart';
+import 'package:coad_customer_calls/data/work_request_repository.dart';
 import 'package:coad_customer_calls/data/work_task_repository.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/work/work_requests_screen.dart';
 import 'package:coad_customer_calls/features/work/work_tasks_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -122,11 +124,9 @@ class NotificationService {
       '매일 오전 9시·오후 1시·오후 6시 오늘·지난 방문/발송 예정';
   static const String _androidChannelAsFeedbackDesc =
       '피드백 대기 2시간 뒤 재알림. 19시 이후는 다음날 오전 9시';
-  static const String _androidChannelAsVisitSoonDesc =
-      '방문 예정 시각 2시간 전 알림';
+  static const String _androidChannelAsVisitSoonDesc = '방문 예정 시각 2시간 전 알림';
   static const String _androidChannelGeneralDesc = '앱 업데이트 등 일반 알림';
-  static const String _androidChannelWorkDesc =
-      '남은 업무, 오늘 마감, 업무 추가·시작·완료·보류';
+  static const String _androidChannelWorkDesc = '남은 업무, 오늘 마감, 업무 추가·시작·완료·보류';
 
   static const int _asDueNotifIdMorning = 91009;
   static const int _asDueNotifIdAfternoon = 91013;
@@ -229,7 +229,7 @@ class NotificationService {
         _isDaeguScheduleNotification(data)) {
       return _androidChannelScheduleId;
     }
-    if (_isWorkTaskNotification(data)) {
+    if (_isWorkTaskNotification(data) || _isWorkRequestNotification(data)) {
       return _androidChannelWorkId;
     }
     if (_extractCallIdFromData(data) != null) {
@@ -611,7 +611,8 @@ class NotificationService {
     var body = titleBody.$2;
     if (_isGeneralScheduleNotification(data) ||
         _isDaeguScheduleNotification(data) ||
-        _isWorkTaskNotification(data)) {
+        _isWorkTaskNotification(data) ||
+        _isWorkRequestNotification(data)) {
       body = body.replaceAll(r'\n', '\n');
     }
     if (title.isEmpty && body.isEmpty) {
@@ -633,6 +634,9 @@ class NotificationService {
       } else if (_isWorkTaskNotification(data)) {
         title = '업무 알림';
         body = '알림을 누르면 남은 업무를 볼 수 있습니다.';
+      } else if (_isWorkRequestNotification(data)) {
+        title = '부서 요청';
+        body = '알림을 누르면 부서 요청을 볼 수 있습니다.';
       } else {
         final callId = _extractCallIdFromData(data);
         if (callId != null) {
@@ -686,6 +690,8 @@ class NotificationService {
     );
     final notificationId = _isWorkTaskNotification(data)
         ? (workNoteId ?? ('work_tasks'.hashCode & 0x7fffffff))
+        : _isWorkRequestNotification(data)
+        ? (workNoteId ?? ('work_requests'.hashCode & 0x7fffffff))
         : _isAsDueScheduleNotification(data)
         ? _asDueNotificationIdFromData(data)
         : _isDaeguScheduleNotification(data)
@@ -699,6 +705,8 @@ class NotificationService {
         : _notificationIdFor(callId, message);
     final tag = _isWorkTaskNotification(data)
         ? 'work_tasks:${data['task_id'] ?? data['kind'] ?? 'board'}'
+        : _isWorkRequestNotification(data)
+        ? 'work_requests:${data['request_id'] ?? 'board'}'
         : _isAsDueScheduleNotification(data)
         ? 'as_due_schedule'
         : _isDaeguScheduleNotification(data)
@@ -789,6 +797,16 @@ class NotificationService {
       return jsonEncode({
         'type': 'work_tasks',
         'action': 'open_work_tasks',
+        if ((data['task_id'] ?? '').toString().isNotEmpty)
+          'task_id': data['task_id'].toString(),
+      });
+    }
+    if (_isWorkRequestNotification(data)) {
+      return jsonEncode({
+        'type': 'work_requests',
+        'action': 'open_work_requests',
+        if ((data['request_id'] ?? '').toString().isNotEmpty)
+          'request_id': data['request_id'].toString(),
       });
     }
     final callId = _extractCallIdFromData(data);
@@ -938,7 +956,11 @@ class NotificationService {
       return;
     }
     if (_isWorkTaskNotification(data)) {
-      _openWorkTasks();
+      _openWorkTasks((data['task_id'] ?? '').toString().trim());
+      return;
+    }
+    if (_isWorkRequestNotification(data)) {
+      _openWorkRequests((data['request_id'] ?? '').toString().trim());
       return;
     }
     final id = _extractCallIdFromData(data);
@@ -1056,10 +1078,69 @@ class NotificationService {
         action == 'open_work_tasks';
   }
 
-  static void _openWorkTasks() {
-    const payload = {
+  static bool _isWorkRequestNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = (data['action'] ?? '').toString().trim().toLowerCase();
+    return type == 'work_requests' || action == 'open_work_requests';
+  }
+
+  static DateTime? _lastWorkRequestsOpenAt;
+
+  /// 부서 요청 알림 — 모든 부서 계정. 열린 화면이면 다시 읽고 그 요청을 연다.
+  static void _openWorkRequests(String requestId) {
+    final payload = {
+      'type': 'work_requests',
+      'action': 'open_work_requests',
+      if (requestId.isNotEmpty) 'request_id': requestId,
+    };
+    final openedAt = _lastWorkRequestsOpenAt;
+    if (openedAt != null &&
+        DateTime.now().difference(openedAt) < const Duration(seconds: 2)) {
+      return;
+    }
+    final nav = navigatorKey.currentState;
+    final ctx = navigatorKey.currentContext;
+    if (nav == null || ctx == null) {
+      _queuePendingData(payload);
+      return;
+    }
+    try {
+      final container = ProviderScope.containerOf(ctx);
+      if (container.read(authControllerProvider) == null) {
+        _queuePendingData(payload);
+        return;
+      }
+      _pendingMessageData = null;
+      _lastWorkRequestsOpenAt = DateTime.now();
+      container.read(workRequestsRefreshProvider.notifier).state++;
+      if (_topRouteName(nav) == WorkRequestsScreen.routeName) {
+        if (requestId.isNotEmpty) {
+          container.read(workRequestOpenProvider.notifier).state = requestId;
+        }
+        return;
+      }
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (_) => WorkRequestsScreen(
+            initialRequestId: requestId.isEmpty ? null : requestId,
+          ),
+          settings: const RouteSettings(name: WorkRequestsScreen.routeName),
+        ),
+      );
+      _log('open work requests');
+    } catch (_) {
+      _queuePendingData(payload);
+    }
+  }
+
+  static void _openWorkTasks([String taskId = '']) {
+    final payload = {
       'type': 'work_tasks',
       'action': 'open_work_tasks',
+      if (taskId.isNotEmpty) 'task_id': taskId,
     };
     final openedAt = _lastWorkTasksOpenAt;
     if (openedAt != null &&
@@ -1087,10 +1168,16 @@ class NotificationService {
       _pendingMessageData = null;
       _lastWorkTasksOpenAt = DateTime.now();
       container.read(workTasksRefreshProvider.notifier).state++;
-      if (_topRouteName(nav) == WorkTasksScreen.routeName) return;
+      if (_topRouteName(nav) == WorkTasksScreen.routeName) {
+        if (taskId.isNotEmpty) {
+          container.read(workTaskOpenProvider.notifier).state = taskId;
+        }
+        return;
+      }
       nav.push(
         MaterialPageRoute<void>(
-          builder: (_) => const WorkTasksScreen(),
+          builder: (_) =>
+              WorkTasksScreen(initialTaskId: taskId.isEmpty ? null : taskId),
           settings: const RouteSettings(name: WorkTasksScreen.routeName),
         ),
       );
@@ -1853,10 +1940,7 @@ class NotificationService {
       );
       if (!when.isAfter(now)) continue;
       final id = _visitSoonNotifId(item.id);
-      final payload = jsonEncode({
-        'type': 'as_visit_soon',
-        'as_id': item.id,
-      });
+      final payload = jsonEncode({'type': 'as_visit_soon', 'as_id': item.id});
       try {
         await _localNotifications.zonedSchedule(
           id: id,

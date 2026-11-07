@@ -29,10 +29,27 @@ function todayKst(): string {
   }).format(new Date())
 }
 
+function daysAgoKst(days: number): string {
+  const [year, month, day] = todayKst().split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  date.setUTCDate(date.getUTCDate() - days)
+  return date.toISOString().slice(0, 10)
+}
+
 function groupName(groups: UserRow['groups']): string {
   if (!groups) return ''
   if (Array.isArray(groups)) return (groups[0]?.name ?? '').toString().trim()
   return (groups.name ?? '').toString().trim()
+}
+
+/** 앱은 담당 여러 명을 `assigneeEmails` 로 보낸다. 예전 앱은 `assigneeEmail` 하나. */
+function wantedAssignees(body: Record<string, unknown>): string[] | null {
+  if (Array.isArray(body.assigneeEmails)) return [...new Set(asEmails(body.assigneeEmails))]
+  if (typeof body.assigneeEmail === 'string') {
+    const one = body.assigneeEmail.trim()
+    return one ? [one] : []
+  }
+  return null
 }
 
 function asEmails(raw: unknown): string[] {
@@ -217,13 +234,29 @@ async function loadBoard(admin: SupabaseClient, user: UserRow) {
   if (openIds.length > 0) {
     const { data, error } = await admin
       .from('tasks')
-      .select('id, title, detail, status_id, priority_id, due_date, assignees, requester, created_at')
+      .select('id, title, detail, status_id, priority_id, due_date, assignees, requester, created_at, completed_date')
       .eq('department_id', deptId)
       .in('status_id', openIds)
       .order('due_date', { ascending: true, nullsFirst: false })
       .limit(300)
     if (error) throw error
     tasks = (data ?? []) as Array<Record<string, unknown>>
+  }
+
+  // 최근 2주 완료 — 「최근 완료」에서 확인하고 잘못 끝낸 업무는 접수로 되돌린다.
+  const doneId = statuses.get('완료')
+  let done: Array<Record<string, unknown>> = []
+  if (doneId) {
+    const { data, error } = await admin
+      .from('tasks')
+      .select('id, title, detail, status_id, priority_id, due_date, assignees, requester, created_at, completed_date')
+      .eq('department_id', deptId)
+      .eq('status_id', doneId)
+      .gte('completed_date', daysAgoKst(14))
+      .order('completed_date', { ascending: false })
+      .limit(150)
+    if (error) throw error
+    done = (data ?? []) as Array<Record<string, unknown>>
   }
 
   const idToName = new Map<string, string>()
@@ -233,9 +266,11 @@ async function loadBoard(admin: SupabaseClient, user: UserRow) {
     ok: true,
     today: todayKst(),
     myEmail: myEmail(user, people),
+    // 업무 requester 와 같은 표기 — 앱 「내가 요청」이 이 이름으로 고른다.
+    myName: personLabel((user.name ?? '').trim(), names),
     assignees: people,
     priorities,
-    tasks: tasks.map((task) => {
+    tasks: [...tasks, ...done].map((task) => {
       const emails = asEmails(task.assignees)
       const priorityId = idKey(task.priority_id)
       return {
@@ -246,6 +281,7 @@ async function loadBoard(admin: SupabaseClient, user: UserRow) {
         dueDate: (task.due_date ?? '').toString(),
         requester: personLabel((task.requester ?? '').toString(), names),
         createdAt: (task.created_at ?? '').toString(),
+        completedDate: (task.completed_date ?? '').toString(),
         priorityId,
         priority: priorityName.get(priorityId) ?? '',
         assigneeEmails: emails,
@@ -280,13 +316,13 @@ serve(async (req) => {
 
     if (action === 'create') {
       const title = (body.title ?? '').toString().trim()
-      const assigneeEmail = (body.assigneeEmail ?? '').toString().trim()
+      const assigneeEmails = wantedAssignees(body) ?? []
       const detail = (body.detail ?? '').toString().trim()
       const dueRaw = (body.dueDate ?? '').toString().trim()
       if (!title) return json({ ok: false, error: '제목을 입력해 주세요.' }, 400)
-      if (!assigneeEmail) return json({ ok: false, error: '담당자를 선택해 주세요.' }, 400)
+      if (assigneeEmails.length === 0) return json({ ok: false, error: '담당자를 선택해 주세요.' }, 400)
       const people = await assigneeChoices(admin)
-      if (!people.some((person) => person.email === assigneeEmail)) {
+      if (!assigneeEmails.every((email) => people.some((person) => person.email === email))) {
         return json({ ok: false, error: '담당자를 다시 선택해 주세요.' }, 400)
       }
       const received = statuses.get('접수')
@@ -304,7 +340,7 @@ serve(async (req) => {
         project_id: await dailyProjectId(admin),
         title,
         detail,
-        assignees: [assigneeEmail],
+        assignees: assigneeEmails,
         requester: personLabel((user.name ?? '').trim(), await emailNames(admin)),
         status_id: received,
         priority_id: chosen ? priorityValue(chosen.id) : 2,
@@ -382,13 +418,16 @@ serve(async (req) => {
         if (!chosen) return json({ ok: false, error: '중요도를 다시 골라 주세요.' }, 400)
         patch.priority_id = priorityValue(chosen.id)
       }
-      if (typeof body.assigneeEmail === 'string') {
-        const email = body.assigneeEmail.trim()
+      const nextAssignees = wantedAssignees(body)
+      if (nextAssignees !== null) {
         const people = await assigneeChoices(admin)
-        if (!people.some((person) => person.email === email)) {
+        if (
+          nextAssignees.length === 0 ||
+          !nextAssignees.every((email) => people.some((person) => person.email === email))
+        ) {
           return json({ ok: false, error: '담당자를 다시 선택해 주세요.' }, 400)
         }
-        patch.assignees = [email]
+        patch.assignees = nextAssignees
       }
       // requester: NOT NULL — 빈 값은 '' (웹 「요청자 없음」).
       if (typeof body.requester === 'string') patch.requester = body.requester.trim()

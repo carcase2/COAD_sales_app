@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/work_permissions.dart';
 import 'package:coad_customer_calls/data/work_task_repository.dart';
 import 'package:coad_customer_calls/features/work/work_assignee_style.dart';
 import 'package:coad_customer_calls/features/work/work_calendar.dart';
+import 'package:coad_customer_calls/features/work/work_requests_screen.dart';
 import 'package:coad_customer_calls/models/work_task.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
@@ -15,12 +16,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 남은 업무 목록. 알림을 눌러도 이 화면이 열린다.
 class WorkTasksScreen extends ConsumerStatefulWidget {
-  const WorkTasksScreen({super.key, this.embedded = false});
+  const WorkTasksScreen({super.key, this.embedded = false, this.initialTaskId});
 
   static const routeName = 'WorkTasks';
 
   /// 홈 업무 탭에서는 상단 제목 줄을 생략한다.
   final bool embedded;
+
+  /// 알림으로 열면 불러온 뒤 이 업무 상세를 바로 연다.
+  final String? initialTaskId;
 
   @override
   ConsumerState<WorkTasksScreen> createState() => _WorkTasksScreenState();
@@ -31,7 +35,12 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
   Object? _error;
   bool _loading = true;
   bool _busy = false;
-  bool _showHeld = false;
+  _WorkView _view = _WorkView.open;
+  WorkTaskScope _scope = WorkTaskScope.all;
+  String _query = '';
+  bool _searching = false;
+  String? _pendingOpenId;
+  final TextEditingController _search = TextEditingController();
   bool _calendarWeek = false;
   String? _assigneeEmail;
   String? _monthAnchor;
@@ -40,11 +49,23 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
   @override
   void initState() {
     super.initState();
+    _pendingOpenId = widget.initialTaskId;
     Future<void>.microtask(_load);
   }
 
   @override
+  void didUpdateWidget(covariant WorkTasksScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTaskId != null &&
+        widget.initialTaskId != oldWidget.initialTaskId) {
+      _pendingOpenId = widget.initialTaskId;
+      _openPending();
+    }
+  }
+
+  @override
   void dispose() {
+    _search.dispose();
     _detailTick.dispose();
     super.dispose();
   }
@@ -77,6 +98,7 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
         _loading = false;
       });
       _touchDetail();
+      _openPending();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -85,6 +107,25 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
       });
       _touchDetail();
     }
+  }
+
+  /// 알림에서 넘어온 업무 — 목록에 있으면 상세를 연다 (완료된 지 2주 넘으면 없음).
+  void _openPending() {
+    final id = (_pendingOpenId ?? '').trim();
+    if (id.isEmpty || _board == null) return;
+    _pendingOpenId = null;
+    final task = _taskById(id);
+    if (task == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('알림의 업무를 목록에서 찾지 못했습니다.')));
+      return;
+    }
+    if (task.isHeld) setState(() => _view = _WorkView.held);
+    if (task.isDone) setState(() => _view = _WorkView.done);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openDetail(task);
+    });
   }
 
   Future<void> _run(
@@ -134,7 +175,7 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
         assignees: visibleWorkAssignees(board.assignees),
         priorities: board.priorities,
         today: board.today,
-        initialEmail: assigneeEmail ?? board.myEmail,
+        initialEmails: [?(assigneeEmail ?? board.myEmail)],
         initialDue: dueDate ?? _addDue(board),
         initialPriorityId: _priorityIdFor(board),
       ),
@@ -145,10 +186,11 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
         userId: user.id,
         title: draft.title,
         detail: draft.detail,
-        assigneeEmail: draft.assigneeEmail,
+        assigneeEmails: draft.assigneeEmails,
         dueDate: draft.dueDate,
         priorityId: draft.priorityId,
       ),
+      doneMessage: '「${draft.title}」 추가했습니다.',
     );
   }
 
@@ -183,28 +225,64 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
     return null;
   }
 
-  List<WorkTask> _scoped(WorkTaskBoard board) {
-    final source = _showHeld ? board.held : board.remaining;
-    return filterWorkTasks(source, assigneeEmail: _selectedEmail(board));
+  List<WorkTask> _source(WorkTaskBoard board, _WorkView view) => switch (view) {
+    _WorkView.open => board.remaining,
+    _WorkView.held => board.held,
+    _WorkView.done => board.recentDone,
+  };
+
+  /// 보기(남은·보류·완료) → 담당 칩 → 전체/내 업무/내가 요청 → 검색 순으로 거른다.
+  List<WorkTask> _filtered(WorkTaskBoard board, _WorkView view) {
+    final byPerson = filterWorkTasks(
+      _source(board, view),
+      assigneeEmail: _selectedEmail(board),
+    );
+    final byScope = scopeWorkTasks(
+      byPerson,
+      _scope,
+      myEmail: board.myEmail,
+      myName: board.myName,
+    );
+    return searchWorkTasks(byScope, _query);
   }
+
+  List<WorkTask> _scoped(WorkTaskBoard board) => _filtered(board, _view);
 
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(workTasksRefreshProvider, (previous, next) {
       if (previous != next) _load();
     });
+    ref.listen<String?>(workTaskOpenProvider, (previous, next) {
+      final id = (next ?? '').trim();
+      if (id.isEmpty) return;
+      _pendingOpenId = id;
+      Future<void>.microtask(() {
+        ref.read(workTaskOpenProvider.notifier).state = null;
+      });
+      // 새로 읽은 뒤 연다 (_load 끝에서 _openPending).
+    });
     final board = _board;
     final rows = board == null ? const <WorkTask>[] : _scoped(board);
-    final heldCount = board == null
-        ? 0
-        : filterWorkTasks(
-            board.held,
-            assigneeEmail: _selectedEmail(board),
-          ).length;
+    final counts = <_WorkView, int>{
+      for (final view in _WorkView.values)
+        view: board == null ? 0 : _filtered(board, view).length,
+    };
 
     return Scaffold(
       backgroundColor: widget.embedded ? Colors.transparent : null,
-      appBar: widget.embedded ? null : AppBar(title: const Text('업무')),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('업무'),
+              actions: [
+                TextButton.icon(
+                  onPressed: _openRequests,
+                  icon: const Icon(Icons.forward_to_inbox_outlined),
+                  label: const Text('부서 요청'),
+                ),
+              ],
+            ),
       body: Column(
         children: [
           if (board != null)
@@ -238,7 +316,7 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
                         ),
                       ],
                     )
-                  : _workList(board, rows, heldCount),
+                  : _workList(board, rows, counts),
             ),
           ),
         ],
@@ -246,18 +324,26 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
     );
   }
 
-  Widget _workList(WorkTaskBoard? board, List<WorkTask> rows, int heldCount) {
+  Widget _workList(
+    WorkTaskBoard? board,
+    List<WorkTask> rows,
+    Map<_WorkView, int> counts,
+  ) {
     final month = _monthAnchor ?? board?.today ?? '';
+    final today = board?.today ?? '';
+    final sections = _view == _WorkView.open
+        ? workTaskSections(rows, today)
+        : const <WorkTaskSection>[];
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(
         AppTokens.spaceLg,
         0,
         AppTokens.spaceLg,
-        AppTokens.spaceLg,
+        AppTokens.spaceXl,
       ),
       children: [
-        if (board != null && month.isNotEmpty)
+        if (board != null && month.isNotEmpty && _view == _WorkView.open)
           WorkMonthMarks(
             week: _calendarWeek,
             today: board.today,
@@ -268,18 +354,167 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
             onToday: () => setState(() => _monthAnchor = board.today),
             onDay: _openDay,
           ),
-        if (board != null && (heldCount > 0 || _showHeld))
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
+        if (board != null) ...[
+          const SizedBox(height: AppTokens.spaceSm),
+          _listControls(board, counts),
+          const SizedBox(height: AppTokens.spaceSm),
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppTokens.spaceXl),
+              child: Text(
+                _emptyLabel(),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else if (_view == _WorkView.open)
+            for (final section in sections) ...[
+              _SectionHeader(
+                label: section.label,
+                count: section.tasks.length,
+                alert: section.kind == WorkDueKind.overdue,
+              ),
+              for (final task in section.tasks) ...[
+                _taskCard(task),
+                const SizedBox(height: 8),
+              ],
+            ]
+          else
+            for (final task in rows) ...[
+              _taskCard(task),
+              const SizedBox(height: 8),
+            ],
+        ],
+      ],
+    );
+  }
+
+  String _emptyLabel() {
+    if (_query.trim().isNotEmpty) return '「${_query.trim()}」 업무가 없습니다.';
+    return switch (_view) {
+      _WorkView.open => switch (_scope) {
+        WorkTaskScope.mine => '내가 맡은 남은 업무가 없습니다.',
+        WorkTaskScope.requested => '내가 요청한 남은 업무가 없습니다.',
+        WorkTaskScope.all => '남은 업무가 없습니다.',
+      },
+      _WorkView.held => '보류한 업무가 없습니다.',
+      _WorkView.done => '최근 2주 완료한 업무가 없습니다.',
+    };
+  }
+
+  Widget _listControls(WorkTaskBoard board, Map<_WorkView, int> counts) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: SegmentedButton<_WorkView>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                segments: [
+                  ButtonSegment(
+                    value: _WorkView.open,
+                    label: Text('남은 ${counts[_WorkView.open] ?? 0}'),
+                  ),
+                  ButtonSegment(
+                    value: _WorkView.held,
+                    label: Text('보류 ${counts[_WorkView.held] ?? 0}'),
+                  ),
+                  ButtonSegment(
+                    value: _WorkView.done,
+                    label: Text('완료 ${counts[_WorkView.done] ?? 0}'),
+                  ),
+                ],
+                selected: {_view},
+                onSelectionChanged: (picked) {
+                  setState(() => _view = picked.first);
+                  _touchDetail();
+                },
+              ),
+            ),
+            IconButton(
+              tooltip: _searching ? '검색 닫기' : '검색',
               onPressed: () {
-                setState(() => _showHeld = !_showHeld);
+                setState(() {
+                  _searching = !_searching;
+                  if (!_searching) {
+                    _search.clear();
+                    _query = '';
+                  }
+                });
                 _touchDetail();
               },
-              child: Text(_showHeld ? '남은 업무 보기' : '보류 $heldCount건'),
+              icon: Icon(
+                _searching ? Icons.search_off_rounded : Icons.search_rounded,
+              ),
+            ),
+            if (widget.embedded)
+              IconButton(
+                tooltip: '부서 요청',
+                onPressed: _openRequests,
+                icon: const Icon(Icons.forward_to_inbox_outlined),
+              ),
+          ],
+        ),
+        if (_searching) ...[
+          const SizedBox(height: AppTokens.spaceSm),
+          TextField(
+            controller: _search,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            onChanged: (value) {
+              setState(() => _query = value);
+              _touchDetail();
+            },
+            decoration: InputDecoration(
+              hintText: '제목·내용·요청인·담당 검색',
+              prefixIcon: const Icon(Icons.search_rounded),
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+              ),
             ),
           ),
+        ],
+        const SizedBox(height: AppTokens.spaceSm),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final scope in WorkTaskScope.values)
+              ChoiceChip(
+                label: Text(switch (scope) {
+                  WorkTaskScope.all => '전체',
+                  WorkTaskScope.mine => '내 업무',
+                  WorkTaskScope.requested => '내가 요청',
+                }),
+                selected: _scope == scope,
+                visualDensity: VisualDensity.compact,
+                selectedColor: scheme.primaryContainer,
+                onSelected: (_) {
+                  setState(() => _scope = scope);
+                  _touchDetail();
+                },
+              ),
+          ],
+        ),
       ],
+    );
+  }
+
+  void _openRequests() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const WorkRequestsScreen(),
+        settings: const RouteSettings(name: WorkRequestsScreen.routeName),
+      ),
     );
   }
 
@@ -379,7 +614,8 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
       WorkTaskRepository(
         Supabase.instance.client,
       ).setStatus(userId: user.id, taskId: task.id, action: action),
-      undoLabel: '「${task.title}」 ${_actionLabel(action)}',
+      undoLabel:
+          '「${task.title}」 ${task.isDone && action == 'receive' ? '다시 열기' : _actionLabel(action)}',
     );
   }
 
@@ -433,9 +669,7 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
         assignees: visibleWorkAssignees(board.assignees),
         priorities: board.priorities,
         today: board.today,
-        initialEmail: task.assigneeEmails.isEmpty
-            ? null
-            : task.assigneeEmails.first,
+        initialEmails: task.assigneeEmails,
         initialDue: task.dueDate,
         initialPriorityId: task.priorityId,
       ),
@@ -451,7 +685,7 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
         detail: edited.detail,
         dueDate: edited.dueDate,
         priorityId: edited.priorityId,
-        assigneeEmail: edited.assigneeEmail,
+        assigneeEmails: edited.assigneeEmails,
         requester: edited.requester,
       ),
       doneMessage: '수정했습니다.',
@@ -531,6 +765,36 @@ class _WorkTasksScreenState extends ConsumerState<WorkTasksScreen> {
       onStart: task.canStart ? () => _change(task, 'start') : null,
       onComplete: task.canComplete ? () => _change(task, 'complete') : null,
       onHold: task.canHold ? () => _change(task, 'hold') : null,
+      onReopen: task.isDone ? () => _change(task, 'receive') : null,
+    );
+  }
+}
+
+enum _WorkView { open, held, done }
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.label,
+    required this.count,
+    this.alert = false,
+  });
+
+  final String label;
+  final int count;
+  final bool alert;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 10, 2, 6),
+      child: Text(
+        '$label $count',
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w900,
+          color: alert ? scheme.error : scheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }
@@ -553,6 +817,7 @@ class _WorkLine extends StatelessWidget {
     this.onStart,
     this.onComplete,
     this.onHold,
+    this.onReopen,
   });
 
   final WorkTask task;
@@ -563,18 +828,21 @@ class _WorkLine extends StatelessWidget {
   final VoidCallback? onStart;
   final VoidCallback? onComplete;
   final VoidCallback? onHold;
+  final VoidCallback? onReopen;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final due = workDueKind(task.dueDate, today);
-    final dueLabel = switch (due) {
-      WorkDueKind.overdue => '기한 지남',
-      WorkDueKind.today => '오늘',
-      WorkDueKind.upcoming => _monthDay(task.dueDate),
-      WorkDueKind.undated => '기한 없음',
-    };
-    final urgent = task.priorityName == '특급';
+    final dueLabel = task.isDone
+        ? '완료 ${_monthDay(task.completedDate)}'
+        : switch (due) {
+            WorkDueKind.overdue => '기한 지남',
+            WorkDueKind.today => '오늘',
+            WorkDueKind.upcoming => _monthDay(task.dueDate),
+            WorkDueKind.undated => '기한 없음',
+          };
+    final urgent = task.priorityName == '특급' && !task.isDone;
     final stripe = workTaskAssigneeColors(task, assigneeColors);
     final people = visibleTaskAssignees(
       task,
@@ -582,11 +850,13 @@ class _WorkLine extends StatelessWidget {
     final meta = [
       if (people.isNotEmpty) people,
       dueLabel,
-      if (task.status.isNotEmpty) task.status,
+      if (task.status.isNotEmpty && !task.isDone) task.status,
       if (!urgent && task.priorityName.isNotEmpty) task.priorityName,
     ].join(' · ');
     return Material(
-      color: urgent
+      color: task.isDone
+          ? scheme.surfaceContainerHighest.withValues(alpha: 0.6)
+          : urgent
           ? scheme.errorContainer
           : due == WorkDueKind.overdue
           ? scheme.errorContainer.withValues(alpha: 0.55)
@@ -661,6 +931,11 @@ class _WorkLine extends StatelessWidget {
                             _MiniButton(
                               label: '보류',
                               onPressed: busy ? null : onHold,
+                            ),
+                          if (onReopen != null)
+                            _MiniButton(
+                              label: '다시 열기',
+                              onPressed: busy ? null : onReopen,
                             ),
                           const Spacer(),
                           if (onComplete != null)
@@ -944,7 +1219,20 @@ class _WorkDetailBody extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppTokens.spaceLg),
-                _DetailFact(label: '기한', value: dueText, valueColor: dueColor),
+                if (task.isDone && task.completedDate.isNotEmpty)
+                  _DetailFact(
+                    label: '완료',
+                    value: formatYmdFlowLabelKo(task.completedDate),
+                  ),
+                InkWell(
+                  onTap: busy ? null : onEdit,
+                  borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                  child: _DetailFact(
+                    label: '기한',
+                    value: dueText,
+                    valueColor: dueColor,
+                  ),
+                ),
                 if (people.isNotEmpty)
                   _DetailFact(
                     label: '담당',
@@ -981,11 +1269,18 @@ class _WorkDetailBody extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  detail.isEmpty ? '내용이 없습니다.' : detail,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    height: 1.4,
-                    color: detail.isEmpty ? scheme.onSurfaceVariant : null,
+                InkWell(
+                  onTap: busy || onEdit == null ? null : onEdit,
+                  borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      detail.isEmpty ? '내용이 없습니다. 눌러서 쓰기' : detail,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        height: 1.4,
+                        color: detail.isEmpty ? scheme.onSurfaceVariant : null,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppTokens.spaceLg),
@@ -1059,6 +1354,28 @@ class _WorkDetailBody extends StatelessWidget {
               ],
             ),
           ),
+          if (task.isDone && onReceive != null)
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTokens.spaceLg,
+                  AppTokens.spaceSm,
+                  AppTokens.spaceLg,
+                  AppTokens.spaceMd,
+                ),
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : onReceive,
+                  icon: const Icon(Icons.undo_rounded),
+                  label: const Text('다시 열기 (접수로)'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(
+                      AppTokens.minTouchTarget,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (onStart != null || onHold != null || onComplete != null)
             SafeArea(
               top: false,
@@ -1359,7 +1676,7 @@ class _NewWorkDraft {
   const _NewWorkDraft({
     required this.title,
     required this.detail,
-    required this.assigneeEmail,
+    required this.assigneeEmails,
     this.dueDate,
     this.priorityId,
     this.requester = '',
@@ -1367,7 +1684,7 @@ class _NewWorkDraft {
 
   final String title;
   final String detail;
-  final String assigneeEmail;
+  final List<String> assigneeEmails;
   final String? dueDate;
   final String? priorityId;
   final String requester;
@@ -1380,7 +1697,7 @@ class _WorkEditResult {
     this.detail,
     this.dueDate,
     this.priorityId,
-    this.assigneeEmail,
+    this.assigneeEmails,
     this.requester,
   });
 
@@ -1391,9 +1708,9 @@ class _WorkEditResult {
     final prevDue = (task.dueDate ?? '').trim();
     final prevDueYmd = prevDue.length >= 10 ? prevDue.substring(0, 10) : '';
     final nextDue = (draft.dueDate ?? '').trim();
-    final prevEmail = task.assigneeEmails.isEmpty
-        ? ''
-        : task.assigneeEmails.first;
+    final sameAssignees =
+        draft.assigneeEmails.toSet().containsAll(task.assigneeEmails) &&
+        task.assigneeEmails.toSet().containsAll(draft.assigneeEmails);
     return _WorkEditResult(
       title: changed(draft.title, task.title),
       detail: changed(draft.detail, task.detail),
@@ -1401,10 +1718,7 @@ class _WorkEditResult {
       priorityId: (draft.priorityId ?? '') == task.priorityId
           ? null
           : draft.priorityId,
-      // 담당이 여럿인 업무는 시트에서 한 명만 고르므로, 그대로면 건드리지 않는다.
-      assigneeEmail: task.assigneeEmails.contains(draft.assigneeEmail)
-          ? null
-          : (draft.assigneeEmail == prevEmail ? null : draft.assigneeEmail),
+      assigneeEmails: sameAssignees ? null : draft.assigneeEmails,
       requester: changed(draft.requester, task.requester),
     );
   }
@@ -1413,7 +1727,7 @@ class _WorkEditResult {
   final String? detail;
   final String? dueDate;
   final String? priorityId;
-  final String? assigneeEmail;
+  final List<String>? assigneeEmails;
   final String? requester;
 
   bool get hasChanges =>
@@ -1421,7 +1735,7 @@ class _WorkEditResult {
       detail != null ||
       dueDate != null ||
       priorityId != null ||
-      assigneeEmail != null ||
+      assigneeEmails != null ||
       requester != null;
 }
 
@@ -1430,7 +1744,7 @@ class _AddWorkSheet extends StatefulWidget {
     required this.assignees,
     required this.priorities,
     required this.today,
-    this.initialEmail,
+    this.initialEmails = const [],
     this.initialDue,
     this.initialPriorityId,
     this.existing,
@@ -1439,7 +1753,9 @@ class _AddWorkSheet extends StatefulWidget {
   final List<WorkAssignee> assignees;
   final List<WorkPriority> priorities;
   final String today;
-  final String? initialEmail;
+
+  /// 처음 골라 둘 담당. 여러 명이면 모두.
+  final List<String> initialEmails;
   final String? initialDue;
   final String? initialPriorityId;
 
@@ -1461,27 +1777,44 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
     text: widget.existing?.requester ?? '',
   );
   bool get _editing => widget.existing != null;
-  late String? _email = _initialEmail();
+  late final List<String> _emails = _initialEmails();
   late final String? _ownHiddenEmail = _hiddenSelf();
   late String? _priorityId = _initialPriority();
   late String? _dueYmd = _initialDue();
   String? _error;
 
   String? _hiddenSelf() {
-    final wanted = (widget.initialEmail ?? '').trim();
-    if (wanted.isNotEmpty && workAssigneeHidden(email: wanted)) return wanted;
+    for (final raw in widget.initialEmails) {
+      final wanted = raw.trim();
+      if (wanted.isNotEmpty && workAssigneeHidden(email: wanted)) return wanted;
+    }
     return null;
   }
 
-  String? _initialEmail() {
-    final wanted = (widget.initialEmail ?? '').trim();
-    if (wanted.isNotEmpty &&
-        widget.assignees.any((person) => person.email == wanted)) {
-      return wanted;
+  List<String> _initialEmails() {
+    final picked = <String>[
+      for (final raw in widget.initialEmails)
+        if (raw.trim().isNotEmpty &&
+            (widget.assignees.any((person) => person.email == raw.trim()) ||
+                workAssigneeHidden(email: raw.trim())))
+          raw.trim(),
+    ];
+    if (picked.isEmpty && widget.assignees.length == 1) {
+      picked.add(widget.assignees.first.email);
     }
-    if (wanted.isNotEmpty && workAssigneeHidden(email: wanted)) return wanted;
-    if (widget.assignees.length == 1) return widget.assignees.first.email;
-    return null;
+    return picked;
+  }
+
+  /// 담당은 여러 명 고를 수 있다. 마지막 한 명은 빼지 않는다.
+  void _toggleEmail(String email) {
+    setState(() {
+      if (_emails.contains(email)) {
+        if (_emails.length > 1) _emails.remove(email);
+      } else {
+        _emails.add(email);
+      }
+      _error = null;
+    });
   }
 
   String? _initialPriority() {
@@ -1545,12 +1878,11 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
 
   void _save() {
     final title = _title.text.trim();
-    final email = _email;
     if (title.isEmpty) {
       setState(() => _error = '제목을 입력해 주세요.');
       return;
     }
-    if (email == null || email.isEmpty) {
+    if (_emails.isEmpty) {
       setState(() => _error = '담당자를 선택해 주세요.');
       return;
     }
@@ -1559,7 +1891,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
       _NewWorkDraft(
         title: title,
         detail: _detail.text.trim(),
-        assigneeEmail: email,
+        assigneeEmails: List.of(_emails),
         dueDate: _dueYmd,
         priorityId: _priorityId,
         requester: _requester.text.trim(),
@@ -1689,7 +2021,7 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
               ),
             ],
             const SizedBox(height: AppTokens.spaceSm),
-            if (widget.assignees.isEmpty && (_email == null || _email!.isEmpty))
+            if (widget.assignees.isEmpty && _emails.isEmpty)
               const Text('담당자 목록을 불러오지 못했습니다.')
             else
               _ChoiceRow(
@@ -1698,20 +2030,20 @@ class _AddWorkSheetState extends State<_AddWorkSheet> {
                   if (_ownHiddenEmail != null)
                     _Pick(
                       label: '나',
-                      selected: _email == _ownHiddenEmail,
-                      onTap: () => setState(() => _email = _ownHiddenEmail),
+                      selected: _emails.contains(_ownHiddenEmail),
+                      onTap: () => _toggleEmail(_ownHiddenEmail),
                     ),
                   for (final person in widget.assignees)
                     _Pick(
                       label: person.name,
-                      selected: _email == person.email,
+                      selected: _emails.contains(person.email),
                       color: workAssigneeColor(
                         person.email,
                         workAssigneeColors(
                           widget.assignees.map((item) => item.email),
                         ),
                       ),
-                      onTap: () => setState(() => _email = person.email),
+                      onTap: () => _toggleEmail(person.email),
                     ),
                 ],
               ),

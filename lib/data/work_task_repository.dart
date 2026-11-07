@@ -8,6 +8,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// 알림 탭으로 이미 열린 업무 목록을 다시 읽게 한다.
 final workTasksRefreshProvider = StateProvider<int>((ref) => 0);
 
+/// 이미 열린 업무 화면에서 알림을 누르면 이 업무 상세를 연다. 열고 나면 null.
+final workTaskOpenProvider = StateProvider<String?>((ref) => null);
+
 class WorkTaskRepository {
   WorkTaskRepository(this._client);
 
@@ -20,7 +23,7 @@ class WorkTaskRepository {
   Future<WorkTaskBoard> create({
     required String userId,
     required String title,
-    required String assigneeEmail,
+    required List<String> assigneeEmails,
     String detail = '',
     String? dueDate,
     String? priorityId,
@@ -29,7 +32,9 @@ class WorkTaskRepository {
       'action': 'create',
       'title': title,
       'detail': detail,
-      'assigneeEmail': assigneeEmail,
+      'assigneeEmails': assigneeEmails,
+      // 서버를 새로 올리기 전에도 첫 담당은 들어가게.
+      'assigneeEmail': assigneeEmails.isEmpty ? '' : assigneeEmails.first,
       'dueDate': dueDate,
       'priorityId': priorityId,
     });
@@ -51,7 +56,7 @@ class WorkTaskRepository {
     String? detail,
     String? dueDate,
     String? priorityId,
-    String? assigneeEmail,
+    List<String>? assigneeEmails,
     String? requester,
   }) {
     return _call(userId, {
@@ -61,7 +66,8 @@ class WorkTaskRepository {
       'detail': ?detail,
       'dueDate': ?dueDate,
       'priorityId': ?priorityId,
-      'assigneeEmail': ?assigneeEmail,
+      'assigneeEmails': ?assigneeEmails,
+      'assigneeEmail': ?assigneeEmails?.firstOrNull,
       'requester': ?requester,
     });
   }

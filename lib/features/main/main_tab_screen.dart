@@ -6,6 +6,7 @@ import 'package:coad_customer_calls/core/utils/mail_permissions.dart';
 import 'package:coad_customer_calls/core/utils/support_permissions.dart';
 import 'package:coad_customer_calls/core/utils/gosu_permissions.dart';
 import 'package:coad_customer_calls/core/utils/work_permissions.dart';
+import 'package:coad_customer_calls/features/work/work_requests_screen.dart';
 import 'package:coad_customer_calls/features/work/work_tasks_screen.dart';
 import 'package:coad_customer_calls/core/utils/mes_permissions.dart';
 import 'package:coad_customer_calls/data/mes_repository.dart';
@@ -1126,7 +1127,29 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
               Navigator.of(hostContext).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const WorkTasksScreen(),
-                  settings: const RouteSettings(name: WorkTasksScreen.routeName),
+                  settings: const RouteSettings(
+                    name: WorkTasksScreen.routeName,
+                  ),
+                ),
+              );
+            }),
+          ),
+        if (user != null)
+          AppMenuEntry(
+            id: 'work_requests',
+            sectionId: 'tools',
+            icon: Icons.forward_to_inbox_outlined,
+            title: '부서 요청',
+            subtitle: '다른 부서에 일 맡기기 · 받은 요청 처리',
+            keywords: const ['요청', '부서요청', '업무요청', '협조', '타부서', '부탁'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'work_requests');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const WorkRequestsScreen(),
+                  settings: const RouteSettings(
+                    name: WorkRequestsScreen.routeName,
+                  ),
                 ),
               );
             }),
@@ -1299,55 +1322,55 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
           ),
         if (isAppAdmin(user) ||
             (user?.permissions.contains('mes_images_checksheet') ?? false))
-        AppMenuEntry(
-          id: 'checksheet_search',
-          sectionId: 'tools',
-          icon: Icons.fact_check_outlined,
-          title: '체크시트 검색',
-          subtitle: 'MES 아카이브 체크시트(TP1) 조회',
-          quickAccess: true,
-          quickLabel: '체크시트',
-          keywords: const ['체크시트', '체크', 'TP1', '아카이브', '현장', '사진', 'MES'],
-          onTap: () => closeDrawerThen(() {
-            _trackTab(user, 'checksheet');
-            Navigator.of(hostContext).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const ChecksheetSearchScreen(),
-              ),
-            );
-          }),
-        ),
+          AppMenuEntry(
+            id: 'checksheet_search',
+            sectionId: 'tools',
+            icon: Icons.fact_check_outlined,
+            title: '체크시트 검색',
+            subtitle: 'MES 아카이브 체크시트(TP1) 조회',
+            quickAccess: true,
+            quickLabel: '체크시트',
+            keywords: const ['체크시트', '체크', 'TP1', '아카이브', '현장', '사진', 'MES'],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'checksheet');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ChecksheetSearchScreen(),
+                ),
+              );
+            }),
+          ),
         if (isAppAdmin(user) ||
             (user?.permissions.contains('mes_images_site') ?? false))
-        AppMenuEntry(
-          id: 'install_after_photos',
-          sectionId: 'tools',
-          icon: Icons.photo_library_outlined,
-          title: '시공 사진',
-          subtitle: '모델명·현장명으로 시공후 사진 조회',
-          quickAccess: true,
-          quickLabel: '시공사진',
-          keywords: const [
-            '시공후',
-            '시공',
-            '사진',
-            'TP3',
-            '아카이브',
-            '현장',
-            '모델',
-            'MES',
-          ],
-          onTap: () => closeDrawerThen(() {
-            _trackTab(user, 'install_after_photos');
-            Navigator.of(hostContext).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const ChecksheetSearchScreen(
-                  kind: MesArchiveKind.installAfter,
+          AppMenuEntry(
+            id: 'install_after_photos',
+            sectionId: 'tools',
+            icon: Icons.photo_library_outlined,
+            title: '시공 사진',
+            subtitle: '모델명·현장명으로 시공후 사진 조회',
+            quickAccess: true,
+            quickLabel: '시공사진',
+            keywords: const [
+              '시공후',
+              '시공',
+              '사진',
+              'TP3',
+              '아카이브',
+              '현장',
+              '모델',
+              'MES',
+            ],
+            onTap: () => closeDrawerThen(() {
+              _trackTab(user, 'install_after_photos');
+              Navigator.of(hostContext).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ChecksheetSearchScreen(
+                    kind: MesArchiveKind.installAfter,
+                  ),
                 ),
-              ),
-            );
-          }),
-        ),
+              );
+            }),
+          ),
         AppMenuEntry(
           id: 'home_pending_uncalled',
           sectionId: 'shortcuts',

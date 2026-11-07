@@ -51,6 +51,7 @@ class WorkTask {
     this.priorityName = '',
     this.requester = '',
     this.createdAt = '',
+    this.completedDate = '',
   });
 
   final String id;
@@ -65,7 +66,12 @@ class WorkTask {
   final String requester;
   final String createdAt;
 
+  /// 완료한 날 (YYYY-MM-DD). 완료가 아니면 ''.
+  final String completedDate;
+
   bool get isHeld => status == '보류';
+
+  bool get isDone => status == '완료';
 
   bool get isOpen => status == '접수' || status == '진행중';
 
@@ -75,8 +81,23 @@ class WorkTask {
 
   bool get canComplete => status == '접수' || status == '진행중' || status == '보류';
 
-  /// 연구소 웹 「접수로」 — 시작했거나 보류한 업무를 다시 접수로.
-  bool get canReceive => status == '진행중' || status == '보류';
+  /// 연구소 웹 「접수로」 — 시작했거나 보류·완료한 업무를 다시 접수로.
+  bool get canReceive => status == '진행중' || status == '보류' || status == '완료';
+
+  WorkTask withRequester(String value) => WorkTask(
+    id: id,
+    title: title,
+    detail: detail,
+    status: status,
+    dueDate: dueDate,
+    assigneeNames: assigneeNames,
+    assigneeEmails: assigneeEmails,
+    priorityId: priorityId,
+    priorityName: priorityName,
+    requester: value,
+    createdAt: createdAt,
+    completedDate: completedDate,
+  );
 
   factory WorkTask.fromJson(Map<String, dynamic> json) {
     final names = <String>[];
@@ -100,8 +121,109 @@ class WorkTask {
       priorityName: (json['priority'] ?? '').toString().trim(),
       requester: (json['requester'] ?? '').toString(),
       createdAt: (json['createdAt'] ?? '').toString().trim(),
+      completedDate: _ymd(json['completedDate']),
     );
   }
+}
+
+String _ymd(dynamic raw) {
+  final text = (raw ?? '').toString().trim();
+  return text.length >= 10 ? text.substring(0, 10) : '';
+}
+
+/// 목록 범위 — 전체, 내가 담당, 내가 요청.
+enum WorkTaskScope { all, mine, requested }
+
+/// 제목·내용·요청인·담당 이름에 [query] 가 들어간 업무. 띄어쓰기·대소문자 무시.
+List<WorkTask> searchWorkTasks(List<WorkTask> tasks, String query) {
+  final needle = _searchKey(query);
+  if (needle.isEmpty) return tasks;
+  return [
+    for (final task in tasks)
+      if (_searchKey(
+        [
+          task.title,
+          task.detail,
+          task.requester,
+          ...task.assigneeNames,
+        ].join(' '),
+      ).contains(needle))
+        task,
+  ];
+}
+
+String _searchKey(String text) =>
+    text.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+
+/// 범위에 맞는 업무. 「내 업무」는 담당에 내 메일, 「내가 요청」은 요청인이 내 이름.
+List<WorkTask> scopeWorkTasks(
+  List<WorkTask> tasks,
+  WorkTaskScope scope, {
+  String? myEmail,
+  String? myName,
+}) {
+  switch (scope) {
+    case WorkTaskScope.all:
+      return tasks;
+    case WorkTaskScope.mine:
+      final email = (myEmail ?? '').trim();
+      if (email.isEmpty) return const [];
+      return [
+        for (final task in tasks)
+          if (task.assigneeEmails.contains(email)) task,
+      ];
+    case WorkTaskScope.requested:
+      final name = (myName ?? '').trim();
+      final email = (myEmail ?? '').trim().toLowerCase();
+      if (name.isEmpty && email.isEmpty) return const [];
+      return [
+        for (final task in tasks)
+          if ((name.isNotEmpty && task.requester.trim() == name) ||
+              (email.isNotEmpty &&
+                  task.requester.trim().toLowerCase() == email))
+            task,
+      ];
+  }
+}
+
+class WorkTaskSection {
+  const WorkTaskSection({required this.kind, required this.tasks});
+
+  final WorkDueKind kind;
+  final List<WorkTask> tasks;
+
+  String get label => switch (kind) {
+    WorkDueKind.overdue => '기한 지남',
+    WorkDueKind.today => '오늘 마감',
+    WorkDueKind.upcoming => '다가오는 업무',
+    WorkDueKind.undated => '기한 없음',
+  };
+}
+
+/// 남은 업무를 기한 지남·오늘·이후·기한 없음 묶음으로. 빈 묶음은 뺀다.
+/// 묶음 안에서는 중요도 → 기한 → 제목 순.
+List<WorkTaskSection> workTaskSections(List<WorkTask> tasks, String today) {
+  final buckets = <WorkDueKind, List<WorkTask>>{};
+  for (final task in tasks) {
+    (buckets[workDueKind(task.dueDate, today)] ??= []).add(task);
+  }
+  return [
+    for (final kind in WorkDueKind.values)
+      if ((buckets[kind] ?? const []).isNotEmpty)
+        WorkTaskSection(
+          kind: kind,
+          tasks: buckets[kind]!
+            ..sort((a, b) {
+              final byPriority = workPriorityRank(
+                a.priorityName,
+              ).compareTo(workPriorityRank(b.priorityName));
+              if (byPriority != 0) return byPriority;
+              final byDue = (a.dueDate ?? '').compareTo(b.dueDate ?? '');
+              if (byDue != 0) return byDue;
+              return a.title.compareTo(b.title);
+            }),
+        ),
+  ];
 }
 
 /// 영업 앱의 담당 선택에서 빼는 시험 계정. 계정과 웹 보드는 바꾸지 않는다.
@@ -400,6 +522,7 @@ class WorkTaskBoard {
     required this.assignees,
     this.priorities = const [],
     this.myEmail,
+    this.myName,
     this.undo,
   });
 
@@ -408,6 +531,9 @@ class WorkTaskBoard {
   final List<WorkAssignee> assignees;
   final List<WorkPriority> priorities;
   final String? myEmail;
+
+  /// 업무 요청인과 같은 표기의 내 이름.
+  final String? myName;
 
   /// 방금 바꾼 상태를 되돌릴 값 — 시작·완료·보류·접수로 응답에만 있다.
   final WorkTaskUndo? undo;
@@ -421,6 +547,17 @@ class WorkTaskBoard {
   List<WorkTask> get held {
     final rows = tasks.where((task) => task.isHeld).toList();
     rows.sort((a, b) => compareWorkTasks(a, b, today));
+    return rows;
+  }
+
+  /// 최근 2주 완료 — 늦게 끝낸 것부터.
+  List<WorkTask> get recentDone {
+    final rows = tasks.where((task) => task.isDone).toList();
+    rows.sort((a, b) {
+      final byDay = b.completedDate.compareTo(a.completedDate);
+      if (byDay != 0) return byDay;
+      return a.title.compareTo(b.title);
+    });
     return rows;
   }
 
@@ -475,26 +612,16 @@ class WorkTaskBoard {
         if (workDisplayName(task.requester, assignees) == task.requester)
           task
         else
-          WorkTask(
-            id: task.id,
-            title: task.title,
-            detail: task.detail,
-            status: task.status,
-            dueDate: task.dueDate,
-            assigneeNames: task.assigneeNames,
-            assigneeEmails: task.assigneeEmails,
-            priorityId: task.priorityId,
-            priorityName: task.priorityName,
-            requester: workDisplayName(task.requester, assignees),
-            createdAt: task.createdAt,
-          ),
+          task.withRequester(workDisplayName(task.requester, assignees)),
     ];
+    final name = (json['myName'] ?? '').toString().trim();
     return WorkTaskBoard(
       today: (json['today'] ?? '').toString(),
       tasks: namedTasks,
       assignees: assignees,
       priorities: priorities,
       myEmail: email.isEmpty ? null : email,
+      myName: name.isEmpty ? null : name,
       undo: json['undo'] is Map
           ? WorkTaskUndo.fromJson(
               Map<String, dynamic>.from(json['undo'] as Map),

@@ -336,6 +336,12 @@ verify_jwt = false
 [functions.work-tasks]
 verify_jwt = false
 
+[functions.work-requests]
+verify_jwt = false
+
+[functions.notify-work-request]
+verify_jwt = false
+
 [functions.archive-checksheets]
 verify_jwt = false
 
