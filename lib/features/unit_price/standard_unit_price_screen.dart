@@ -1707,20 +1707,17 @@ class _LookupTab extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(12, 4, 12, 4 + bottomInset),
             child: Column(
               children: [
-                if (similarCount > 0 && onOpenSimilar != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: ActionChip(
-                        visualDensity: VisualDensity.compact,
-                        avatar: const Icon(Icons.history_rounded, size: 16),
-                        label: Text('비슷한 사이즈 견적 $similarCount건'),
-                        onPressed: onOpenSimilar,
-                      ),
-                    ),
-                  ),
                 _LabeledChipRow(
+                  // 따로 한 줄을 쓰면 모델·분류마다 키패드가 밀리므로 같은 줄 끝에 둔다.
+                  trailing: similarCount > 0 && onOpenSimilar != null
+                      ? _ChoicePill(
+                          label: '비슷한 견적 $similarCount',
+                          icon: Icons.history_rounded,
+                          selected: false,
+                          color: scheme.primary,
+                          onTap: onOpenSimilar!,
+                        )
+                      : null,
                   label: editingWidth ? '폭' : '높이',
                   color: editingWidth
                       ? const Color(0xFF1D4ED8)
@@ -1800,9 +1797,8 @@ class _PriceHeader extends StatefulWidget {
   State<_PriceHeader> createState() => _PriceHeaderState();
 }
 
-class _PriceHeaderState extends State<_PriceHeader> {
-  bool _open = false;
-
+class _PriceHeaderState extends State<_PriceHeader>
+    with _DetailSheetHost<_PriceHeader> {
   String get _amountText {
     if (!widget.hasSize) return '모델 고르고 폭·높이를 넣으세요';
     if (widget.unavailable) return '해당 사이즈 불가';
@@ -1820,132 +1816,129 @@ class _PriceHeaderState extends State<_PriceHeader> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                if (widget.hasSize && widget.inference.isEstimated)
-                  const _HeaderTag(
-                    label: '추정',
-                    bg: Color(0xFFFDE68A),
-                    fg: Color(0xFF78350F),
-                  ),
-                if (widget.hasSize && widget.inference.outOfRange)
-                  const _HeaderTag(
-                    label: '초과',
-                    bg: Color(0xFFFECACA),
-                    fg: Color(0xFF7F1D1D),
-                  ),
-                if (widget.hasSize &&
-                    (widget.inference.isEstimated ||
-                        widget.inference.outOfRange))
-                  const SizedBox(width: 8),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: canCopy ? widget.onCopyPrice : null,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _amountText,
-                        maxLines: 1,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          height: 1.1,
+            SizedBox(
+              height: _kHeaderRowHeight,
+              child: Row(
+                children: [
+                  if (widget.hasSize && widget.inference.isEstimated)
+                    const _HeaderTag(
+                      label: '추정',
+                      bg: Color(0xFFFDE68A),
+                      fg: Color(0xFF78350F),
+                    ),
+                  if (widget.hasSize && widget.inference.outOfRange)
+                    const _HeaderTag(
+                      label: '초과',
+                      bg: Color(0xFFFECACA),
+                      fg: Color(0xFF7F1D1D),
+                    ),
+                  if (widget.hasSize &&
+                      (widget.inference.isEstimated ||
+                          widget.inference.outOfRange))
+                    const SizedBox(width: 8),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: canCopy ? widget.onCopyPrice : null,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _amountText,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: '견적 기록',
-                  onPressed: widget.onOpenQuotes,
-                  color: Colors.white,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.folder_open_rounded),
-                ),
-                if (canCopy)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: FilledButton(
-                      onPressed: widget.onWriteQuote,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: widget.color,
-                        minimumSize: const Size(56, 36),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        visualDensity: VisualDensity.compact,
-                        textStyle: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      child: Text(widget.writeLabel),
-                    ),
-                  ),
-                TextButton(
-                  onPressed: () => setState(() => _open = !_open),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white,
+                  IconButton(
+                    tooltip: '견적 기록',
+                    onPressed: widget.onOpenQuotes,
+                    color: Colors.white,
                     visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    icon: const Icon(Icons.folder_open_rounded),
                   ),
-                  child: Text(_open ? '접기' : '펴기'),
-                ),
-                IconButton(
-                  tooltip: '단가표',
-                  onPressed: widget.onShowGrid,
-                  color: Colors.white,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.grid_on_rounded),
-                ),
-              ],
-            ),
-            if (_open) ...[
-              if (canCopy)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    koreanWonInWords(widget.price),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      height: 1.25,
+                  if (canCopy)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: FilledButton(
+                        onPressed: widget.onWriteQuote,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: widget.color,
+                          minimumSize: const Size(56, 36),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          visualDensity: VisualDensity.compact,
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        child: Text(widget.writeLabel),
+                      ),
                     ),
-                  ),
-                ),
-              if (widget.hasSize)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2, bottom: 4),
-                  child: Text(
-                    describeSizeLookup(widget.inference),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white.withValues(alpha: 0.9),
-                      height: 1.25,
-                    ),
-                  ),
-                ),
-              if (canCopy)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: widget.onSharePrice,
+                  TextButton(
+                    onPressed: () => openDetailSheet(widget.color, _details),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.white,
                       visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                     ),
-                    icon: const Icon(Icons.ios_share_rounded, size: 18),
-                    label: const Text('공유'),
+                    child: const Text('펴기'),
                   ),
-                ),
-            ],
+                  IconButton(
+                    tooltip: '단가표',
+                    onPressed: widget.onShowGrid,
+                    color: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.grid_on_rounded),
+                  ),
+                ],
+              ),
+            ),
+            // 셔터 머리와 같은 높이의 부제 줄 — 분류를 바꿔도 아래 키패드가 움직이지 않게.
+            _HeaderSubtitle(
+              widget.hasSize ? describeSizeLookup(widget.inference) : '표준단가 기준',
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// 「펴기」 시트 내용: 한글 금액, 조회 설명, 공유·단가표·견적서.
+  List<Widget> _details(BuildContext sheetContext) {
+    final canCopy = widget.hasSize && !widget.unavailable && widget.price > 0;
+    return [
+      _SheetAmount(_amountText),
+      if (canCopy) _SheetWords(koreanWonInWords(widget.price)),
+      if (widget.hasSize) _SheetNote(describeSizeLookup(widget.inference)),
+      _SheetActions(
+        children: [
+          if (canCopy)
+            _SheetAction(
+              icon: Icons.ios_share_rounded,
+              label: '공유',
+              onPressed: closeSheetThen(sheetContext, widget.onSharePrice),
+            ),
+          _SheetAction(
+            icon: Icons.grid_on_rounded,
+            label: '단가표',
+            onPressed: closeSheetThen(sheetContext, widget.onShowGrid),
+          ),
+          if (canCopy)
+            _SheetAction(
+              icon: Icons.edit_note_rounded,
+              label: widget.writeLabel,
+              onPressed: closeSheetThen(sheetContext, widget.onWriteQuote),
+            ),
+        ],
+      ),
+    ];
   }
 }
 
@@ -2064,11 +2057,15 @@ class _LabeledChipRow extends StatelessWidget {
     required this.label,
     required this.color,
     required this.children,
+    this.trailing,
   });
 
   final String label;
   final Color color;
   final List<Widget> children;
+
+  /// 줄 오른쪽 끝에 붙는 칸 (예: 비슷한 견적). 줄 높이는 그대로다.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -2086,6 +2083,7 @@ class _LabeledChipRow extends StatelessWidget {
           ),
         ),
         Expanded(child: _ChoiceChipRow(children: children)),
+        if (trailing != null) ...[const SizedBox(width: 6), trailing!],
       ],
     );
   }
@@ -2452,12 +2450,14 @@ class _ChoicePill extends StatelessWidget {
     required this.selected,
     required this.color,
     required this.onTap,
+    this.icon,
   });
 
   final String label;
   final bool selected;
   final Color color;
   final VoidCallback onTap;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -2477,15 +2477,26 @@ class _ChoicePill extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: selected
-                      ? Colors.white
-                      : Theme.of(context).colorScheme.onSurface,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 14, color: color),
+                    const SizedBox(width: 3),
+                  ],
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: selected
+                          ? Colors.white
+                          : icon != null
+                          ? color
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -3352,32 +3363,32 @@ class _ShutterHeader extends StatefulWidget {
   State<_ShutterHeader> createState() => _ShutterHeaderState();
 }
 
-class _ShutterHeaderState extends State<_ShutterHeader> {
-  bool _open = false;
+class _ShutterHeaderState extends State<_ShutterHeader>
+    with _DetailSheetHost<_ShutterHeader> {
+  String get _amountText {
+    final estimate = widget.hasSize ? widget.estimate : null;
+    final total = estimate?.total ?? 0;
+    if (!widget.hasSize) return '셔터 종류 고르고 폭·높이를 넣으세요';
+    if (widget.error != null) return '셔터 단가를 불러오지 못했습니다';
+    if (widget.loading && estimate == null) return '계산 중…';
+    if (total > 0) return '${widget.won.format(total)}원';
+    return '금액 없음';
+  }
+
+  String get _subtitle {
+    final company = (widget.estimate?.companyName ?? '').trim();
+    return [
+      '셔터 ${widget.typeLabel}',
+      if (widget.hasSize && company.isNotEmpty) '$company 기준',
+      if (!widget.costs.isDefault) '비용 조정됨',
+    ].join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
     final estimate = widget.hasSize ? widget.estimate : null;
-    final total = estimate?.total ?? 0;
-    final ready = total > 0;
-    final amountText = !widget.hasSize
-        ? '셔터 종류 고르고 폭·높이를 넣으세요'
-        : widget.error != null
-        ? '셔터 단가를 불러오지 못했습니다'
-        : widget.loading && estimate == null
-        ? '계산 중…'
-        : ready
-        ? '${widget.won.format(total)}원'
-        : '금액 없음';
-    final company = (estimate?.companyName ?? '').trim();
-    final subtitle = [
-      '셔터 ${widget.typeLabel}',
-      if (company.isNotEmpty) '$company 기준',
-      if (!widget.costs.isDefault) '비용 조정됨',
-    ].join(' · ');
-    final comparisons = estimate?.comparisons ?? const <CompanyComparisonRow>[];
+    final ready = (estimate?.total ?? 0) > 0;
     const white = Colors.white;
-    final dim = white.withValues(alpha: 0.9);
 
     return Material(
       color: widget.color,
@@ -3386,189 +3397,398 @@ class _ShutterHeaderState extends State<_ShutterHeader> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: ready ? widget.onCopy : null,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        amountText,
-                        maxLines: 1,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: white,
-                          height: 1.1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                if (widget.error != null)
-                  TextButton(
-                    onPressed: widget.onRetry,
-                    style: TextButton.styleFrom(foregroundColor: white),
-                    child: const Text('다시'),
-                  ),
-                if (ready)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: FilledButton(
-                      onPressed: widget.onWriteQuote,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: white,
-                        foregroundColor: widget.color,
-                        minimumSize: const Size(56, 36),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        visualDensity: VisualDensity.compact,
-                        textStyle: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      child: Text(widget.writeLabel),
-                    ),
-                  ),
-                TextButton(
-                  onPressed: () => setState(() => _open = !_open),
-                  style: TextButton.styleFrom(
-                    foregroundColor: white,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  child: Text(_open ? '접기' : '펴기'),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                widget.clampNote == null ? subtitle : '※ ${widget.clampNote}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: widget.clampNote == null
-                      ? FontWeight.w700
-                      : FontWeight.w800,
-                  color: widget.clampNote == null
-                      ? dim
-                      : const Color(0xFFFDE68A),
-                ),
-              ),
-            ),
-            if (_open) ...[
-              if (comparisons.length > 1)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, right: 8),
-                  child: SizedBox(
-                    height: 30,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: comparisons.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 6),
-                      itemBuilder: (context, i) {
-                        final row = comparisons[i];
-                        final selected = row.company.id == estimate?.companyId;
-                        return Material(
-                          color: selected
-                              ? white
-                              : white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(15),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(15),
-                            onTap: () => widget.onSelectCompany(row.company.id),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              child: Text(
-                                '${row.company.companyName} '
-                                '${widget.won.format(row.totalAmount)}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: selected ? widget.color : white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              if (ready)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, right: 8),
-                  child: Text(
-                    koreanWonInWords(total),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: white,
-                      height: 1.25,
-                    ),
-                  ),
-                ),
-              if (estimate != null)
-                for (final item in estimate.result.breakdown)
-                  if (item.amount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2, right: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              item.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, color: dim),
-                            ),
-                          ),
-                          Text(
-                            '${widget.won.format(item.amount)}원',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: dim,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+            SizedBox(
+              height: _kHeaderRowHeight,
+              child: Row(
                 children: [
-                  TextButton.icon(
-                    onPressed: widget.onEditCosts,
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: ready ? widget.onCopy : null,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _amountText,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: white,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (widget.error != null)
+                    TextButton(
+                      onPressed: widget.onRetry,
+                      style: TextButton.styleFrom(foregroundColor: white),
+                      child: const Text('다시'),
+                    ),
+                  if (ready)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: FilledButton(
+                        onPressed: widget.onWriteQuote,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: white,
+                          foregroundColor: widget.color,
+                          minimumSize: const Size(56, 36),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          visualDensity: VisualDensity.compact,
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        child: Text(widget.writeLabel),
+                      ),
+                    ),
+                  TextButton(
+                    onPressed: () => openDetailSheet(widget.color, _details),
                     style: TextButton.styleFrom(
                       foregroundColor: white,
                       visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                     ),
-                    icon: const Icon(Icons.tune_rounded, size: 18),
-                    label: const Text('비용 조정'),
+                    child: const Text('펴기'),
                   ),
-                  if (widget.hasSize)
-                    TextButton.icon(
-                      onPressed: widget.onOpenDetail,
-                      style: TextButton.styleFrom(
-                        foregroundColor: white,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: const Icon(Icons.open_in_full_rounded, size: 18),
-                      label: const Text('자세히'),
-                    ),
                 ],
               ),
-            ],
+            ),
+            _HeaderSubtitle(
+              widget.clampNote == null ? _subtitle : '※ ${widget.clampNote}',
+              warn: widget.clampNote != null,
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  /// 「펴기」 시트 내용: 업체 비교, 한글 금액, 항목별 금액, 비용 조정·자세히.
+  /// 업체를 고르면 시트가 열린 채로 금액이 바뀐다.
+  List<Widget> _details(BuildContext sheetContext) {
+    const white = Colors.white;
+    final dim = white.withValues(alpha: 0.9);
+    final estimate = widget.hasSize ? widget.estimate : null;
+    final total = estimate?.total ?? 0;
+    final comparisons = estimate?.comparisons ?? const <CompanyComparisonRow>[];
+    return [
+      _SheetAmount(_amountText),
+      _SheetNote(
+        widget.clampNote == null ? _subtitle : '※ ${widget.clampNote}',
+      ),
+      if (comparisons.length > 1)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final row in comparisons)
+                _SheetCompanyPill(
+                  label:
+                      '${row.company.companyName} '
+                      '${widget.won.format(row.totalAmount)}',
+                  selected: row.company.id == estimate?.companyId,
+                  color: widget.color,
+                  onTap: () => widget.onSelectCompany(row.company.id),
+                ),
+            ],
+          ),
+        ),
+      if (total > 0) _SheetWords(koreanWonInWords(total)),
+      if (estimate != null)
+        for (final item in estimate.result.breakdown)
+          if (item.amount > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, color: dim),
+                    ),
+                  ),
+                  Text(
+                    '${widget.won.format(item.amount)}원',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: dim,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      _SheetActions(
+        children: [
+          _SheetAction(
+            icon: Icons.tune_rounded,
+            label: '비용 조정',
+            onPressed: closeSheetThen(sheetContext, widget.onEditCosts),
+          ),
+          if (widget.hasSize)
+            _SheetAction(
+              icon: Icons.open_in_full_rounded,
+              label: '자세히',
+              onPressed: closeSheetThen(sheetContext, widget.onOpenDetail),
+            ),
+        ],
+      ),
+    ];
+  }
+}
+
+/// 금액 칸 첫 줄 높이. 버튼 유무와 상관없이 셔터·표준단가 머리를 같은 높이로 둔다.
+const double _kHeaderRowHeight = 40;
+
+/// 금액 칸 둘째 줄(한 줄 고정). 셔터·표준단가 머리가 같은 높이가 되게 함께 쓴다.
+class _HeaderSubtitle extends StatelessWidget {
+  const _HeaderSubtitle(this.text, {this.warn = false});
+
+  final String text;
+  final bool warn;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, right: 8),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.25,
+          fontWeight: warn ? FontWeight.w800 : FontWeight.w700,
+          color: warn
+              ? const Color(0xFFFDE68A)
+              : Colors.white.withValues(alpha: 0.9),
+        ),
+      ),
+    );
+  }
+}
+
+/// 금액 칸 「펴기」: 금액 칸을 늘리지 않고 아래에서 시트로 올린다.
+/// 시트가 열린 동안 금액 칸이 새 값으로 바뀌면 시트도 다시 그린다.
+mixin _DetailSheetHost<T extends StatefulWidget> on State<T> {
+  final ValueNotifier<int> _sheetRev = ValueNotifier<int>(0);
+  bool _sheetOpen = false;
+
+  @override
+  void didUpdateWidget(covariant T oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_sheetOpen) return;
+    // 빌드 중에 다른 화면(시트)을 다시 그리게 하면 안 되므로 다음 프레임에.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _sheetRev.value++;
+    });
+  }
+
+  @override
+  void dispose() {
+    _sheetRev.dispose();
+    super.dispose();
+  }
+
+  VoidCallback closeSheetThen(BuildContext sheetContext, VoidCallback action) {
+    return () {
+      Navigator.of(sheetContext).pop();
+      action();
+    };
+  }
+
+  Future<void> openDetailSheet(
+    Color color,
+    List<Widget> Function(BuildContext sheetContext) builder,
+  ) async {
+    HapticFeedback.selectionClick();
+    _sheetOpen = true;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: color,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (sheetContext) => ValueListenableBuilder<int>(
+          valueListenable: _sheetRev,
+          builder: (context, _, _) => SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              10,
+              16,
+              12 + MediaQuery.paddingOf(context).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white54,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                ...builder(sheetContext),
+              ],
+            ),
+          ),
+        ),
+      );
+    } finally {
+      _sheetOpen = false;
+    }
+  }
+}
+
+class _SheetAmount extends StatelessWidget {
+  const _SheetAmount(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        maxLines: 1,
+        style: const TextStyle(
+          fontSize: 26,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+          height: 1.15,
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetWords extends StatelessWidget {
+  const _SheetWords(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          height: 1.3,
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetNote extends StatelessWidget {
+  const _SheetNote(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: Colors.white.withValues(alpha: 0.9),
+          height: 1.3,
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetCompanyPill extends StatelessWidget {
+  const _SheetCompanyPill({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Colors.white : Colors.white.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: selected ? color : Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetActions extends StatelessWidget {
+  const _SheetActions({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Wrap(alignment: WrapAlignment.end, spacing: 4, children: children),
+    );
+  }
+}
+
+class _SheetAction extends StatelessWidget {
+  const _SheetAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(foregroundColor: Colors.white),
+      icon: Icon(icon, size: 18),
+      label: Text(label),
     );
   }
 }
