@@ -78,7 +78,7 @@ void main() {
       expect(searchWorkTasks(tasks, '  ').length, 3);
     });
 
-    test('기한 지남·오늘·이후·없음으로 묶고 묶음 안은 특급부터', () {
+    test('기한 지남·오늘·이번 주·그 뒤·없음으로 묶고 묶음 안은 특급·진행중부터', () {
       const today = '2026-11-07';
       final sections = workTaskSections([
         _task('a', due: '2026-11-10'),
@@ -86,15 +86,33 @@ void main() {
         _task('c', due: '2026-11-07', priority: '특급'),
         _task('d'),
         _task('e', due: '2026-11-01'),
+        _task('f', due: '2026-11-20'),
+        _task('g', due: '2026-11-07', priority: '보통', status: '진행중'),
       ], today);
-      expect(sections.map((s) => s.kind), [
-        WorkDueKind.overdue,
-        WorkDueKind.today,
-        WorkDueKind.upcoming,
-        WorkDueKind.undated,
+      expect(sections.map((s) => s.group), [
+        WorkTaskGroup.overdue,
+        WorkTaskGroup.today,
+        WorkTaskGroup.week,
+        WorkTaskGroup.later,
+        WorkTaskGroup.undated,
       ]);
-      expect(sections[1].tasks.map((t) => t.id), ['c', 'b']);
+      expect(sections[1].tasks.map((t) => t.id), ['c', 'g', 'b']);
       expect(sections.first.label, '기한 지남');
+    });
+
+    test('묶음 개수와 기한까지 남은 날', () {
+      const today = '2026-11-07';
+      final counts = workTaskGroupCounts([
+        _task('a', due: '2026-11-06'),
+        _task('b', due: '2026-11-13'),
+        _task('c', due: '2026-11-14'),
+      ], today);
+      expect(counts[WorkTaskGroup.overdue], 1);
+      expect(counts[WorkTaskGroup.week], 1);
+      expect(counts[WorkTaskGroup.later], 1);
+      expect(counts[WorkTaskGroup.today], 0);
+      expect(workDueOffset('2026-12-01', '2026-11-30'), 1);
+      expect(workDueOffset(null, today), isNull);
     });
 
     test('최근 완료는 늦게 끝낸 것부터이고 다시 열 수 있다', () {

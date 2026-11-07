@@ -341,7 +341,10 @@ serve(async (req) => {
         title,
         detail,
         assignees: assigneeEmails,
-        requester: personLabel((user.name ?? '').trim(), await emailNames(admin)),
+        // 고른 요청자가 있으면 그 이름, 없으면 만든 사람.
+        requester:
+          (typeof body.requester === 'string' ? body.requester.trim().slice(0, 40) : '') ||
+          personLabel((user.name ?? '').trim(), await emailNames(admin)),
         status_id: received,
         priority_id: chosen ? priorityValue(chosen.id) : 2,
         type_id: typeId,

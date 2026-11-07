@@ -27,6 +27,9 @@ class WorkTaskRepository {
     String detail = '',
     String? dueDate,
     String? priorityId,
+
+    /// 비우면 서버가 만든 사람으로 넣는다.
+    String? requester,
   }) {
     return _call(userId, {
       'action': 'create',
@@ -37,6 +40,8 @@ class WorkTaskRepository {
       'assigneeEmail': assigneeEmails.isEmpty ? '' : assigneeEmails.first,
       'dueDate': dueDate,
       'priorityId': priorityId,
+      if (requester != null && requester.trim().isNotEmpty)
+        'requester': requester.trim(),
     });
   }
 

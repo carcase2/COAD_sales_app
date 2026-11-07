@@ -186,42 +186,92 @@ List<WorkTask> scopeWorkTasks(
   }
 }
 
-class WorkTaskSection {
-  const WorkTaskSection({required this.kind, required this.tasks});
+/// 남은 업무 묶음 — 달력 위 요약과 목록 화면이 같이 쓴다.
+enum WorkTaskGroup { overdue, today, week, later, undated }
 
-  final WorkDueKind kind;
-  final List<WorkTask> tasks;
-
-  String get label => switch (kind) {
-    WorkDueKind.overdue => '기한 지남',
-    WorkDueKind.today => '오늘 마감',
-    WorkDueKind.upcoming => '다가오는 업무',
-    WorkDueKind.undated => '기한 없음',
-  };
+int? _ymdDayNumber(String ymd) {
+  if (ymd.length < 10) return null;
+  final year = int.tryParse(ymd.substring(0, 4));
+  final month = int.tryParse(ymd.substring(5, 7));
+  final day = int.tryParse(ymd.substring(8, 10));
+  if (year == null || month == null || day == null) return null;
+  return DateTime.utc(year, month, day).millisecondsSinceEpoch ~/ 86400000;
 }
 
-/// 남은 업무를 기한 지남·오늘·이후·기한 없음 묶음으로. 빈 묶음은 뺀다.
-/// 묶음 안에서는 중요도 → 기한 → 제목 순.
-List<WorkTaskSection> workTaskSections(List<WorkTask> tasks, String today) {
-  final buckets = <WorkDueKind, List<WorkTask>>{};
+/// [dueDate] − [today] 일수. 기한이 없거나 읽지 못하면 null.
+int? workDueOffset(String? dueDate, String today) {
+  final due = _ymdDayNumber((dueDate ?? '').trim());
+  final now = _ymdDayNumber(today.trim());
+  if (due == null || now == null) return null;
+  return due - now;
+}
+
+/// 기한 지남 · 오늘 · 이번 주(6일 안) · 그 뒤 · 기한 없음.
+WorkTaskGroup workTaskGroup(String? dueDate, String today) {
+  final offset = workDueOffset(dueDate, today);
+  if (offset == null) return WorkTaskGroup.undated;
+  if (offset < 0) return WorkTaskGroup.overdue;
+  if (offset == 0) return WorkTaskGroup.today;
+  if (offset <= 6) return WorkTaskGroup.week;
+  return WorkTaskGroup.later;
+}
+
+String workTaskGroupLabel(WorkTaskGroup group) => switch (group) {
+  WorkTaskGroup.overdue => '기한 지남',
+  WorkTaskGroup.today => '오늘 마감',
+  WorkTaskGroup.week => '이번 주',
+  WorkTaskGroup.later => '그 뒤',
+  WorkTaskGroup.undated => '기한 없음',
+};
+
+/// 묶음마다 몇 건인지 — 빈 묶음도 0으로 넣는다.
+Map<WorkTaskGroup, int> workTaskGroupCounts(
+  Iterable<WorkTask> tasks,
+  String today,
+) {
+  final counts = {for (final group in WorkTaskGroup.values) group: 0};
   for (final task in tasks) {
-    (buckets[workDueKind(task.dueDate, today)] ??= []).add(task);
+    final group = workTaskGroup(task.dueDate, today);
+    counts[group] = counts[group]! + 1;
+  }
+  return counts;
+}
+
+class WorkTaskSection {
+  const WorkTaskSection({required this.group, required this.tasks});
+
+  final WorkTaskGroup group;
+  final List<WorkTask> tasks;
+
+  String get label => workTaskGroupLabel(group);
+}
+
+/// 같은 묶음 안 순서: 중요도 → 진행중 먼저 → 기한 → 제목.
+int compareWorkTasksInGroup(WorkTask a, WorkTask b) {
+  final byPriority = workPriorityRank(
+    a.priorityName,
+  ).compareTo(workPriorityRank(b.priorityName));
+  if (byPriority != 0) return byPriority;
+  final aActive = a.status == '진행중' ? 0 : 1;
+  final bActive = b.status == '진행중' ? 0 : 1;
+  if (aActive != bActive) return aActive.compareTo(bActive);
+  final byDue = (a.dueDate ?? '').compareTo(b.dueDate ?? '');
+  if (byDue != 0) return byDue;
+  return a.title.compareTo(b.title);
+}
+
+/// 남은 업무를 [WorkTaskGroup] 묶음으로. 빈 묶음은 뺀다.
+List<WorkTaskSection> workTaskSections(List<WorkTask> tasks, String today) {
+  final buckets = <WorkTaskGroup, List<WorkTask>>{};
+  for (final task in tasks) {
+    (buckets[workTaskGroup(task.dueDate, today)] ??= []).add(task);
   }
   return [
-    for (final kind in WorkDueKind.values)
-      if ((buckets[kind] ?? const []).isNotEmpty)
+    for (final group in WorkTaskGroup.values)
+      if ((buckets[group] ?? const []).isNotEmpty)
         WorkTaskSection(
-          kind: kind,
-          tasks: buckets[kind]!
-            ..sort((a, b) {
-              final byPriority = workPriorityRank(
-                a.priorityName,
-              ).compareTo(workPriorityRank(b.priorityName));
-              if (byPriority != 0) return byPriority;
-              final byDue = (a.dueDate ?? '').compareTo(b.dueDate ?? '');
-              if (byDue != 0) return byDue;
-              return a.title.compareTo(b.title);
-            }),
+          group: group,
+          tasks: buckets[group]!..sort(compareWorkTasksInGroup),
         ),
   ];
 }

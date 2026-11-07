@@ -12,7 +12,7 @@ Color workPriorityColor(ColorScheme scheme, String name) {
   };
 }
 
-/// 월간 또는 주간. 업무가 있는 날만 점을 찍고, 누르면 그 날 목록을 연다.
+/// 월간 또는 주간. 남은 업무 건수를 날마다 적고, 누르면 그 날 창을 연다.
 class WorkMonthMarks extends StatelessWidget {
   const WorkMonthMarks({
     super.key,
@@ -40,12 +40,12 @@ class WorkMonthMarks extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final focus = monthDay.length >= 10 ? monthDay : today;
     final urgentDays = <String>{};
-    final busyDays = <String>{};
+    final dayCounts = <String, int>{};
     for (final task in tasks) {
       final due = task.dueDate;
       if (due == null || due.length < 10) continue;
       final ymd = due.substring(0, 10);
-      busyDays.add(ymd);
+      dayCounts[ymd] = (dayCounts[ymd] ?? 0) + 1;
       if (task.priorityName == '특급') urgentDays.add(ymd);
     }
     final weekDays = week ? seoulSundayWeekDays(focus) : const <String>[];
@@ -138,8 +138,9 @@ class WorkMonthMarks extends StatelessWidget {
                       day: cell.substring(8),
                       today: cell == today,
                       weekend: _weekend(cell),
-                      busy: busyDays.contains(cell),
+                      count: dayCounts[cell] ?? 0,
                       urgent: urgentDays.contains(cell),
+                      past: cell.compareTo(today) < 0,
                       large: true,
                       onTap: () => onDay(cell),
                     ),
@@ -154,7 +155,7 @@ class WorkMonthMarks extends StatelessWidget {
             itemCount: cells.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisExtent: 40,
+              mainAxisExtent: 48,
             ),
             itemBuilder: (context, index) {
               final cell = cells[index];
@@ -163,8 +164,9 @@ class WorkMonthMarks extends StatelessWidget {
                 day: cell.substring(8),
                 today: cell == today,
                 weekend: _weekend(cell),
-                busy: busyDays.contains(cell),
+                count: dayCounts[cell] ?? 0,
                 urgent: urgentDays.contains(cell),
+                past: cell.compareTo(today) < 0,
                 onTap: () => onDay(cell),
               );
             },
@@ -229,13 +231,15 @@ class _SpanChoice extends StatelessWidget {
   }
 }
 
+/// 달력 한 칸 — 날짜와 남은 업무 건수. 지난 날에 남은 일은 빨강.
 class _MarkDay extends StatelessWidget {
   const _MarkDay({
     required this.day,
     required this.today,
     required this.weekend,
-    required this.busy,
+    required this.count,
     required this.urgent,
+    required this.past,
     required this.onTap,
     this.large = false,
   });
@@ -243,8 +247,9 @@ class _MarkDay extends StatelessWidget {
   final String day;
   final bool today;
   final bool weekend;
-  final bool busy;
+  final int count;
   final bool urgent;
+  final bool past;
   final VoidCallback onTap;
   final bool large;
 
@@ -252,37 +257,61 @@ class _MarkDay extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final number = int.tryParse(day)?.toString() ?? day;
+    final alert = count > 0 && (past || urgent);
+    final badge = alert ? scheme.error : scheme.primary;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            number,
-            style: TextStyle(
-              fontSize: large ? 18 : null,
-              fontWeight: today ? FontWeight.w900 : FontWeight.w700,
-              color: today
-                  ? scheme.primary
-                  : weekend
-                  ? scheme.error
-                  : scheme.onSurface,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: today ? scheme.primary.withValues(alpha: 0.10) : null,
+          border: today ? Border.all(color: scheme.primary, width: 1.5) : null,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              number,
+              style: TextStyle(
+                fontSize: large ? 18 : 14,
+                fontWeight: today ? FontWeight.w900 : FontWeight.w700,
+                color: today
+                    ? scheme.primary
+                    : past
+                    ? scheme.onSurfaceVariant.withValues(alpha: 0.7)
+                    : weekend
+                    ? scheme.error
+                    : scheme.onSurface,
+              ),
             ),
-          ),
-          Container(
-            width: large ? 8 : 6,
-            height: large ? 8 : 6,
-            decoration: BoxDecoration(
-              color: !busy
-                  ? Colors.transparent
-                  : urgent
-                  ? scheme.error
-                  : scheme.primary,
-              shape: BoxShape.circle,
+            const SizedBox(height: 2),
+            SizedBox(
+              height: large ? 18 : 16,
+              child: count == 0
+                  ? null
+                  : Container(
+                      constraints: BoxConstraints(minWidth: large ? 20 : 18),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: badge,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$count',
+                        style: TextStyle(
+                          fontSize: large ? 12 : 11,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                          color: alert ? scheme.onError : scheme.onPrimary,
+                        ),
+                      ),
+                    ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
