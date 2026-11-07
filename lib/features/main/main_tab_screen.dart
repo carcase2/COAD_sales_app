@@ -1327,7 +1327,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             sectionId: 'tools',
             icon: Icons.fact_check_outlined,
             title: '체크시트 검색',
-            subtitle: 'MES 아카이브 체크시트(TP1) 조회',
+            subtitle: '현장명·연월로 체크시트 조회 · 시공사진 탭 함께',
             quickAccess: true,
             quickLabel: '체크시트',
             keywords: const ['체크시트', '체크', 'TP1', '아카이브', '현장', '사진', 'MES'],
@@ -1347,7 +1347,7 @@ class _MainTabScreenState extends ConsumerState<MainTabScreen>
             sectionId: 'tools',
             icon: Icons.photo_library_outlined,
             title: '시공 사진',
-            subtitle: '모델명·현장명으로 시공후 사진 조회',
+            subtitle: '모델·현장명으로 시공후 사진 조회 · 체크시트 탭 함께',
             quickAccess: true,
             quickLabel: '시공사진',
             keywords: const [

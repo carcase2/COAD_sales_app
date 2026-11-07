@@ -229,7 +229,7 @@ class _GeneralScheduleMonthCalendarState
         ),
         const SizedBox(height: 8),
         Text(
-          '날짜 탭 → 해당일 주간 보기 · 만석은 빨간 테두리',
+          '날짜 탭 → 그날 칸 보기·바로 등록 · 만석은 빨간 테두리',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),

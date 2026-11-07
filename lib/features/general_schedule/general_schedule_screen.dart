@@ -127,8 +127,40 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
     });
   }
 
-  void _onMonthDayPicked(DateTime day) {
-    _selectDayAndScroll(_ymd(day), fromMonthPick: true);
+  /// 월달력에서 날짜를 누르면 주간으로 바로 넘기지 않고, 그날 칸을 시트로 보여 준다.
+  /// 빈 칸을 누르면 그 날짜·칸으로 바로 등록하고, 「주간 보기」를 눌러야 주간으로 바뀐다.
+  Future<void> _onMonthDayPicked(DateTime day) async {
+    HapticFeedback.selectionClick();
+    final ymd = _ymd(day);
+    _ensureHistoryWindowCovers(ymd);
+    setState(() => _selectedDay = DateTime.parse(ymd));
+
+    final grid = ref.read(scheduleGridProvider(_branch));
+    final result = await showModalBottomSheet<_MonthDayAction>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) => _MonthDaySlotsSheet(
+        ymd: ymd,
+        slots: normalizeGeneralScheduleDaySlots(grid[ymd]),
+      ),
+    );
+    if (!mounted || result == null) return;
+    switch (result.kind) {
+      case _MonthDayActionKind.add:
+        await _openAddForm(result.slotIndex, ymd);
+      case _MonthDayActionKind.detail:
+        final cell = normalizeGeneralScheduleDaySlots(
+          ref.read(scheduleGridProvider(_branch))[ymd],
+        )[result.slotIndex];
+        if (cell != null) await _openDetail(cell, result.slotIndex, ymd);
+      case _MonthDayActionKind.week:
+        _selectDayAndScroll(ymd, fromMonthPick: true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _weekGridKey.currentState?.jumpToSelectedWeek();
+        });
+    }
   }
 
   /// [current] 이전 **날짜**의 빈 칸 (당일 다른 칸은 건너뜀).
@@ -879,8 +911,8 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                   HapticFeedback.selectionClick();
                   setState(() => _colorMode = mode);
                 },
+                trailing: GeneralScheduleStatsDropdown(stats: monthStats),
               ),
-              GeneralScheduleStatsDropdown(stats: monthStats),
               if (!isWeekView)
                 GeneralScheduleAssigneeFilterBar(
                   assignees: monthAssignees,
@@ -900,8 +932,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                         grid: grid,
                         colorMode: _colorMode,
                         assigneeFilter: _selectedAssigneeFilter,
-                        orderedAssignees:
-                            monthStats.byUser.map((u) => u.name).toList(),
+                        orderedAssignees: monthStats.byUser
+                            .map((u) => u.name)
+                            .toList(),
                         searchQuery: _searchQuery,
                         onDaySelected: _selectDayAndScroll,
                         onSlotTap: _onSlotTap,
@@ -911,8 +944,9 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                         grid: grid,
                         focusedMonth: _monthFocusedDay,
                         assigneeFilter: _selectedAssigneeFilter,
-                        orderedAssignees:
-                            monthStats.byUser.map((u) => u.name).toList(),
+                        orderedAssignees: monthStats.byUser
+                            .map((u) => u.name)
+                            .toList(),
                         colorForAssignee: colorForAssignee,
                         loginUserName: user.name,
                         showTableHeader: false,
@@ -924,7 +958,7 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
                             1,
                           );
                         }),
-                        onPickDay: _onMonthDayPicked,
+                        onPickDay: (day) => unawaited(_onMonthDayPicked(day)),
                       ),
               ),
             ],
@@ -948,6 +982,225 @@ class _GeneralScheduleScreenState extends ConsumerState<GeneralScheduleScreen> {
         });
       },
       child: scaffold,
+    );
+  }
+}
+
+enum _MonthDayActionKind { add, detail, week }
+
+class _MonthDayAction {
+  const _MonthDayAction(this.kind, [this.slotIndex = 0]);
+
+  final _MonthDayActionKind kind;
+  final int slotIndex;
+}
+
+/// 월달력 날짜 탭 시트 — 그날 칸 목록. 빈 칸 → 등록, 찬 칸 → 상세.
+class _MonthDaySlotsSheet extends StatelessWidget {
+  const _MonthDaySlotsSheet({required this.ymd, required this.slots});
+
+  final String ymd;
+  final List<GeneralScheduleCell?> slots;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final used = slots.where((c) => c != null).length;
+    final firstEmpty = slots.indexWhere((c) => c == null);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.62,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (context, scrollController) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          formatYmdFlowLabelKo(ymd),
+                          style: textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$used/${slots.length}칸 사용 · 빈 칸을 누르면 바로 등록',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => Navigator.pop(
+                      context,
+                      const _MonthDayAction(_MonthDayActionKind.week),
+                    ),
+                    icon: const Icon(Icons.view_week_rounded, size: 18),
+                    label: const Text('주간 보기'),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                itemCount: slots.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 6),
+                itemBuilder: (context, i) {
+                  final cell = slots[i];
+                  return _MonthDaySlotTile(
+                    index: i,
+                    cell: cell,
+                    onTap: () => Navigator.pop(
+                      context,
+                      _MonthDayAction(
+                        cell == null
+                            ? _MonthDayActionKind.add
+                            : _MonthDayActionKind.detail,
+                        i,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: FilledButton.icon(
+                  onPressed: firstEmpty < 0
+                      ? null
+                      : () => Navigator.pop(
+                          context,
+                          _MonthDayAction(_MonthDayActionKind.add, firstEmpty),
+                        ),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  icon: const Icon(Icons.add_rounded),
+                  label: Text(
+                    firstEmpty < 0
+                        ? '빈 칸이 없습니다'
+                        : '이 날짜에 일정 추가 (${firstEmpty + 1}칸)',
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MonthDaySlotTile extends StatelessWidget {
+  const _MonthDaySlotTile({
+    required this.index,
+    required this.cell,
+    required this.onTap,
+  });
+
+  final int index;
+  final GeneralScheduleCell? cell;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final c = cell;
+    final accent = c == null
+        ? scheme.primary
+        : generalScheduleAssigneeAccent(
+            name: generalScheduleAssigneeLabel(c),
+            userColor: c.userColor,
+            fallback: scheme.primary,
+          );
+
+    return Material(
+      color: c == null
+          ? scheme.primary.withValues(alpha: 0.05)
+          : accent.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: c == null
+                  ? scheme.primary.withValues(alpha: 0.25)
+                  : accent.withValues(alpha: 0.45),
+            ),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 34,
+                child: Text(
+                  '${index + 1}칸',
+                  style: textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: c == null
+                    ? Text(
+                        '비어 있음',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            c.site,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            generalScheduleAssigneeLabel(c),
+                            style: textTheme.labelSmall?.copyWith(
+                              color: accent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+              Icon(
+                c == null
+                    ? Icons.add_circle_outline_rounded
+                    : Icons.chevron_right_rounded,
+                color: c == null ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

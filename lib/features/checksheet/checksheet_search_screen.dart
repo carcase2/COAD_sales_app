@@ -7,6 +7,7 @@ import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
 import 'package:coad_customer_calls/core/widgets/search_highlight_text.dart';
 import 'package:coad_customer_calls/data/checksheet_archive_repository.dart';
 import 'package:coad_customer_calls/features/settings/app_usage_hub_screen.dart';
+import 'package:coad_customer_calls/models/app_user.dart';
 import 'package:coad_customer_calls/models/checksheet_archive.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/services/usage_service.dart';
@@ -89,14 +90,41 @@ Future<Uint8List> _fetchArchivePhotoBytes({
   return Uint8List.fromList(res.bodyBytes);
 }
 
-/// MES 아카이브 체크시트(TP1) · 시공후 사진(TP3) 검색 · 조회 (읽기 전용).
+/// 사용자가 볼 수 있는 아카이브 종류. 권한이 하나도 없으면 [fallback]만.
+List<MesArchiveKind> allowedArchiveKinds(
+  AppUser? user, {
+  MesArchiveKind fallback = MesArchiveKind.checksheet,
+}) {
+  final admin = isAppAdmin(user);
+  final perms = user?.permissions ?? const <String>[];
+  final kinds = <MesArchiveKind>[
+    if (admin || perms.contains('mes_images_checksheet'))
+      MesArchiveKind.checksheet,
+    if (admin || perms.contains('mes_images_site')) MesArchiveKind.installAfter,
+  ];
+  if (!kinds.contains(fallback)) kinds.add(fallback);
+  kinds.sort((a, b) => a.index.compareTo(b.index));
+  return kinds;
+}
+
+String _kindTabLabel(MesArchiveKind k) =>
+    k == MesArchiveKind.installAfter ? '시공사진' : '체크시트';
+
+/// MES 아카이브 체크시트(TP1) · 시공후 사진(TP3) 통합 조회 (읽기 전용).
+///
+/// 권한 있는 종류만 탭으로 보인다. 열자마자 최근 등록 현장이 뜬다.
 class ChecksheetSearchScreen extends ConsumerStatefulWidget {
   const ChecksheetSearchScreen({
     super.key,
     this.kind = MesArchiveKind.checksheet,
+    this.initialQuery,
   });
 
+  /// 처음 열 탭.
   final MesArchiveKind kind;
+
+  /// 처음 탭에 미리 넣을 현장명.
+  final String? initialQuery;
 
   @override
   ConsumerState<ChecksheetSearchScreen> createState() =>
@@ -104,35 +132,153 @@ class ChecksheetSearchScreen extends ConsumerStatefulWidget {
 }
 
 class _ChecksheetSearchScreenState
-    extends ConsumerState<ChecksheetSearchScreen> {
+    extends ConsumerState<ChecksheetSearchScreen>
+    with SingleTickerProviderStateMixin {
+  late final List<MesArchiveKind> _kinds;
+  TabController? _tabs;
+
+  @override
+  void initState() {
+    super.initState();
+    _kinds = allowedArchiveKinds(
+      ref.read(authControllerProvider),
+      fallback: widget.kind,
+    );
+    if (_kinds.length > 1) {
+      _tabs = TabController(
+        length: _kinds.length,
+        vsync: this,
+        initialIndex: _kinds.indexOf(widget.kind).clamp(0, _kinds.length - 1),
+      )..addListener(() {
+          if (mounted) setState(() {});
+        });
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabs?.dispose();
+    super.dispose();
+  }
+
+  MesArchiveKind get _currentKind =>
+      _tabs == null ? _kinds.first : _kinds[_tabs!.index];
+
+  void _openOther(MesArchiveKind kind, String siteName) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChecksheetSearchScreen(
+          kind: kind,
+          initialQuery: siteName,
+        ),
+      ),
+    );
+  }
+
+  Widget _pane(MesArchiveKind k) {
+    final others = _kinds.where((e) => e != k).toList();
+    return _ArchiveSearchPane(
+      key: PageStorageKey<String>('archive_${k.name}'),
+      kind: k,
+      initialQuery: k == widget.kind ? widget.initialQuery : null,
+      otherKind: others.isEmpty ? null : others.first,
+      onOpenOther: _openOther,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final single = _tabs == null;
+    final title = single
+        ? (_currentKind == MesArchiveKind.installAfter ? '시공 사진' : '체크시트')
+        : '체크시트 · 시공사진';
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          if (isAdminGroup(ref.watch(authControllerProvider)))
+            IconButton(
+              tooltip: '사용 내역',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AppUsageScreen(
+                      initialTab: _currentKind == MesArchiveKind.installAfter
+                          ? AppUsageScreen.tabPhotos
+                          : AppUsageScreen.tabChecksheet,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.bar_chart_rounded),
+            ),
+        ],
+        bottom: single
+            ? null
+            : TabBar(
+                controller: _tabs,
+                tabs: [for (final k in _kinds) Tab(text: _kindTabLabel(k))],
+              ),
+      ),
+      body: SafeArea(
+        child: single
+            ? _pane(_kinds.first)
+            : TabBarView(
+                controller: _tabs,
+                children: [for (final k in _kinds) _pane(k)],
+              ),
+      ),
+    );
+  }
+}
+
+class _ArchiveSearchPane extends ConsumerStatefulWidget {
+  const _ArchiveSearchPane({
+    super.key,
+    required this.kind,
+    this.initialQuery,
+    this.otherKind,
+    required this.onOpenOther,
+  });
+
+  final MesArchiveKind kind;
+  final String? initialQuery;
+  final MesArchiveKind? otherKind;
+  final void Function(MesArchiveKind kind, String siteName) onOpenOther;
+
+  @override
+  ConsumerState<_ArchiveSearchPane> createState() => _ArchiveSearchPaneState();
+}
+
+class _ArchiveSearchPaneState extends ConsumerState<_ArchiveSearchPane>
+    with AutomaticKeepAliveClientMixin {
   final _queryCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
 
-  AsyncValue<ChecksheetSearchResult> _data = const AsyncData(
-    ChecksheetSearchResult.empty,
-  );
+  AsyncValue<ChecksheetSearchResult> _data = const AsyncLoading();
   bool _loadingMore = false;
-  bool _searched = false;
   String _activeQuery = '';
+
+  /// 늦게 온 이전 응답이 최신 결과를 덮지 않게.
+  int _reqSeq = 0;
 
   int? _year;
   int? _month;
+
+  /// null = 전체 모델
   String? _selectedModelCode;
   List<InstallAfterModelOption> _models = const [];
   bool _modelsLoading = false;
 
   static const _pageSize = 30;
 
+  @override
+  bool get wantKeepAlive => true;
+
   bool get _isAfter => widget.kind == MesArchiveKind.installAfter;
-  String get _title => _isAfter ? '시공 사진' : '체크시트 검색';
   String get _photoLabel => _isAfter ? '시공후 사진' : '체크시트';
-  String get _hint =>
-      _isAfter ? '현장명 (선택 · 예: 화성)' : '현장명 (예: 화성)';
-  String get _subtitle =>
-      _isAfter ? '모델 선택 후 검색 · 시공후 사진만' : '체크시트(TP1) · MES 아카이브';
-  String get _emptyHint => _isAfter
-      ? '모델을 고른 뒤 검색하세요.\n현장명을 같이 넣으면 더 정확합니다.'
-      : '현장명을 입력하고 검색하세요.\n예: 화성, 삼성전자';
+  String get _hint => '현장명 (비우면 최근 올린 순)';
 
   String? get _selectedModelLabel {
     final code = _selectedModelCode;
@@ -146,24 +292,14 @@ class _ChecksheetSearchScreenState
   @override
   void initState() {
     super.initState();
+    _queryCtrl.text = (widget.initialQuery ?? '').trim();
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final user = ref.read(authControllerProvider);
-      if (user == null) return;
-      unawaited(
-        _isAfter
-            ? UsageService.recordInstallAfter(
-                userId: user.id,
-                userName: user.name,
-                action: 'open',
-              )
-            : UsageService.recordChecksheet(
-                userId: user.id,
-                userName: user.name,
-                action: 'open',
-              ),
-      );
+      if (!mounted) return;
+      _track('open');
       if (_isAfter) unawaited(_loadModels());
+      // 입력 없이도 바로 최근 현장을 보여준다.
+      unawaited(_search(haptic: false, trackSearch: false));
     });
   }
 
@@ -177,9 +313,6 @@ class _ChecksheetSearchScreenState
       setState(() {
         _models = models;
         _modelsLoading = false;
-        if (_selectedModelCode == null && models.isNotEmpty) {
-          _selectedModelCode = models.first.code;
-        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -205,7 +338,7 @@ class _ChecksheetSearchScreenState
           action: action,
           modelCode: _selectedModelCode,
           modelLabel: _selectedModelLabel,
-          query: action == 'search' ? _queryCtrl.text.trim() : _activeQuery,
+          query: _activeQuery,
           resultCount: resultCount,
           siteName: siteName,
         ),
@@ -237,49 +370,38 @@ class _ChecksheetSearchScreenState
     }
   }
 
-  Future<void> _search({bool reset = true}) async {
-    FocusScope.of(context).unfocus();
+  Future<ChecksheetSearchResult> _fetch(int offset) {
     final user = ref.read(authControllerProvider);
-    final q = _queryCtrl.text.trim();
-    HapticFeedback.selectionClick();
+    return ref.read(checksheetArchiveRepositoryProvider).search(
+          query: _activeQuery,
+          year: _isAfter ? null : _year,
+          month: _isAfter ? null : _month,
+          modelName: _isAfter ? _selectedModelCode : null,
+          limit: _pageSize,
+          offset: offset,
+          userId: user?.id,
+          kind: widget.kind,
+        );
+  }
 
-    if (reset) {
-      setState(() {
-        _searched = true;
-        _activeQuery = q;
-        _data = const AsyncLoading();
-      });
-    }
+  Future<void> _search({bool haptic = true, bool trackSearch = true}) async {
+    FocusScope.of(context).unfocus();
+    if (haptic) HapticFeedback.selectionClick();
+    final seq = ++_reqSeq;
+    setState(() {
+      _activeQuery = _queryCtrl.text.trim();
+      _data = const AsyncLoading();
+      _loadingMore = false;
+    });
 
     try {
-      if (_isAfter && (_selectedModelCode ?? '').trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('모델을 선택해 주세요.')),
-        );
-        setState(() {
-          _searched = false;
-          _data = const AsyncData(ChecksheetSearchResult.empty);
-        });
-        return;
-      }
-      final result = await ref.read(checksheetArchiveRepositoryProvider).search(
-            query: q,
-            year: _isAfter ? null : _year,
-            month: _isAfter ? null : _month,
-            modelName: _isAfter ? _selectedModelCode : null,
-            limit: _pageSize,
-            offset: 0,
-            userId: user?.id,
-            kind: widget.kind,
-          );
-      _track('search', resultCount: result.totalSites);
-      if (!mounted) return;
-      setState(() {
-        _activeQuery = q;
-        _data = AsyncData(result);
-      });
+      final result = await _fetch(0);
+      if (!mounted || seq != _reqSeq) return;
+      if (trackSearch) _track('search', resultCount: result.totalSites);
+      setState(() => _data = AsyncData(result));
+      if (_scrollCtrl.hasClients) _scrollCtrl.jumpTo(0);
     } catch (e, st) {
-      if (!mounted) return;
+      if (!mounted || seq != _reqSeq) return;
       setState(() => _data = AsyncError(e, st));
     }
   }
@@ -289,20 +411,11 @@ class _ChecksheetSearchScreenState
     if (current == null || !current.hasMore || _loadingMore) return;
     if (_data.isLoading) return;
 
+    final seq = _reqSeq;
     setState(() => _loadingMore = true);
-    final user = ref.read(authControllerProvider);
     try {
-      final next = await ref.read(checksheetArchiveRepositoryProvider).search(
-            query: _queryCtrl.text.trim(),
-            year: _isAfter ? null : _year,
-            month: _isAfter ? null : _month,
-            modelName: _isAfter ? _selectedModelCode : null,
-            limit: _pageSize,
-            offset: current.nextOffset ?? current.sites.length,
-            userId: user?.id,
-            kind: widget.kind,
-          );
-      if (!mounted) return;
+      final next = await _fetch(current.nextOffset ?? current.sites.length);
+      if (!mounted || seq != _reqSeq) return;
       setState(() {
         _data = AsyncData(
           ChecksheetSearchResult(
@@ -319,7 +432,7 @@ class _ChecksheetSearchScreenState
         _loadingMore = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || seq != _reqSeq) return;
       setState(() => _loadingMore = false);
     }
   }
@@ -328,6 +441,7 @@ class _ChecksheetSearchScreenState
     final user = ref.read(authControllerProvider);
     final repo = ref.read(checksheetArchiveRepositoryProvider);
     _track('view', siteName: site.siteName);
+    final other = widget.otherKind;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => _ChecksheetGalleryScreen(
@@ -338,6 +452,10 @@ class _ChecksheetSearchScreenState
               repo.absoluteMediaUrl(path, userId: user?.id),
           headersForUrl: repo.mediaHttpHeadersForUrl,
           onDownload: () => _track('download', siteName: site.siteName),
+          otherLabel: other == null ? null : _kindTabLabel(other),
+          onOpenOther: other == null
+              ? null
+              : () => widget.onOpenOther(other, site.siteName),
         ),
       ),
     );
@@ -368,245 +486,198 @@ class _ChecksheetSearchScreenState
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final years = List<int>.generate(
-      8,
-      (i) => DateTime.now().year - i,
-    );
-
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        title: Text(_title),
-        actions: [
-          if (isAdminGroup(ref.watch(authControllerProvider)))
-            IconButton(
-              tooltip: _isAfter ? '검색 기록' : '사용 내역',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => AppUsageScreen(
-                      initialTab: _isAfter
-                          ? AppUsageScreen.tabPhotos
-                          : AppUsageScreen.tabChecksheet,
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.bar_chart_rounded),
-            ),
-          TextButton(
-            onPressed: () => unawaited(_search()),
-            child: const Text('검색'),
-          ),
-        ],
+  Widget _searchButton() {
+    return FilledButton(
+      onPressed: () => unawaited(_search()),
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        minimumSize: const Size(64, 44),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _queryCtrl,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => unawaited(_search()),
-                    decoration: InputDecoration(
-                      hintText: _hint,
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.search_rounded, size: 22),
-                      suffixIcon: _queryCtrl.text.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: '지우기',
-                              icon: const Icon(Icons.clear_rounded, size: 20),
-                              onPressed: () {
-                                _queryCtrl.clear();
-                                setState(() {});
-                              },
-                            ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_isAfter) ...[
-                    if (_modelsLoading)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: LinearProgressIndicator(minHeight: 2),
-                      )
-                    else
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        isDense: true,
-                        // ignore: deprecated_member_use
-                        value: _selectedModelCode != null &&
-                                _models.any((m) => m.code == _selectedModelCode)
-                            ? _selectedModelCode
-                            : null,
-                        decoration: _dropdownDeco('모델'),
-                        items: [
-                          for (final m in _models)
-                            DropdownMenuItem<String>(
-                              value: m.code,
-                              child: Text(
-                                m.label,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                        onChanged: (v) {
-                          HapticFeedback.selectionClick();
-                          setState(() => _selectedModelCode = v);
-                        },
-                      ),
-                    const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: () => unawaited(_search()),
-                      icon: const Icon(Icons.search_rounded),
-                      label: Text(
-                        (_selectedModelLabel ?? '').isEmpty
-                            ? '모델 선택 후 검색'
-                            : '${_selectedModelLabel!} 검색',
-                      ),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(44),
-                      ),
-                    ),
-                  ] else
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int?>(
-                            isExpanded: true,
-                            isDense: true,
-                            // ignore: deprecated_member_use
-                            value: _year,
-                            decoration: _dropdownDeco('연도'),
-                            items: [
-                              const DropdownMenuItem<int?>(
-                                value: null,
-                                child: Text(
-                                  '전체',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              ...years.map(
-                                (y) => DropdownMenuItem<int?>(
-                                  value: y,
-                                  child: Text(
-                                    '$y',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                            onChanged: (v) => setState(() {
-                              _year = v;
-                              if (v == null) _month = null;
-                            }),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: DropdownButtonFormField<int?>(
-                            isExpanded: true,
-                            isDense: true,
-                            // ignore: deprecated_member_use
-                            value: _month,
-                            decoration: _dropdownDeco('월'),
-                            items: [
-                              const DropdownMenuItem<int?>(
-                                value: null,
-                                child: Text(
-                                  '전체',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              ...List.generate(
-                                12,
-                                (i) => DropdownMenuItem<int?>(
-                                  value: i + 1,
-                                  child: Text(
-                                    '${i + 1}월',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                            onChanged: _year == null
-                                ? null
-                                : (v) => setState(() => _month = v),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () => unawaited(_search()),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 14,
-                            ),
-                            minimumSize: const Size(64, 44),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text(
-                            '검색',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            Divider(
-              height: 1,
-              color: scheme.outlineVariant.withValues(alpha: 0.5),
-            ),
-            Expanded(child: _buildBody(scheme)),
-          ],
-        ),
+      child: const Text(
+        '검색',
+        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
       ),
     );
   }
 
-  Widget _buildBody(ColorScheme scheme) {
-    if (!_searched) {
-      return _ScrollableMessage(
-        child: AppEmpty(
-          message: _emptyHint,
-          icon: Icons.image_search_rounded,
-        ),
+  Widget _filters() {
+    if (_isAfter) {
+      return Row(
+        children: [
+          Expanded(
+            child: _modelsLoading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  )
+                : DropdownButtonFormField<String?>(
+                    isExpanded: true,
+                    isDense: true,
+                    // ignore: deprecated_member_use
+                    value: _selectedModelCode != null &&
+                            _models.any((m) => m.code == _selectedModelCode)
+                        ? _selectedModelCode
+                        : null,
+                    decoration: _dropdownDeco('모델'),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('전체 모델'),
+                      ),
+                      for (final m in _models)
+                        DropdownMenuItem<String?>(
+                          value: m.code,
+                          child: Text(m.label, overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (v) {
+                      if (v == _selectedModelCode) return;
+                      HapticFeedback.selectionClick();
+                      setState(() => _selectedModelCode = v);
+                      unawaited(_search(haptic: false));
+                    },
+                  ),
+          ),
+          const SizedBox(width: 8),
+          _searchButton(),
+        ],
       );
     }
 
+    final years = List<int>.generate(8, (i) => DateTime.now().year - i);
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<int?>(
+            isExpanded: true,
+            isDense: true,
+            // ignore: deprecated_member_use
+            value: _year,
+            decoration: _dropdownDeco('연도'),
+            items: [
+              const DropdownMenuItem<int?>(value: null, child: Text('전체')),
+              for (final y in years)
+                DropdownMenuItem<int?>(value: y, child: Text('$y')),
+            ],
+            onChanged: (v) {
+              if (v == _year) return;
+              setState(() {
+                _year = v;
+                if (v == null) _month = null;
+              });
+              unawaited(_search(haptic: false));
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButtonFormField<int?>(
+            isExpanded: true,
+            isDense: true,
+            // ignore: deprecated_member_use
+            value: _month,
+            decoration: _dropdownDeco('월'),
+            items: [
+              const DropdownMenuItem<int?>(value: null, child: Text('전체')),
+              for (var m = 1; m <= 12; m++)
+                DropdownMenuItem<int?>(value: m, child: Text('$m월')),
+            ],
+            onChanged: _year == null
+                ? null
+                : (v) {
+                    if (v == _month) return;
+                    setState(() => _month = v);
+                    unawaited(_search(haptic: false));
+                  },
+          ),
+        ),
+        const SizedBox(width: 8),
+        _searchButton(),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _queryCtrl,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => unawaited(_search()),
+                decoration: InputDecoration(
+                  hintText: _hint,
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search_rounded, size: 22),
+                  suffixIcon: _queryCtrl.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '지우기',
+                          icon: const Icon(Icons.clear_rounded, size: 20),
+                          onPressed: () {
+                            _queryCtrl.clear();
+                            setState(() {});
+                            // 지우면 바로 최근 목록으로.
+                            if (_activeQuery.isNotEmpty) {
+                              unawaited(_search(haptic: false));
+                            }
+                          },
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              _filters(),
+            ],
+          ),
+        ),
+        Divider(
+          height: 1,
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+        Expanded(child: _buildBody(scheme)),
+      ],
+    );
+  }
+
+  String _resultHeader(ChecksheetSearchResult result) {
+    final parts = <String>[
+      if (_isAfter && (_selectedModelLabel ?? '').isNotEmpty)
+        _selectedModelLabel!,
+      if (!_isAfter && _year != null)
+        _month == null ? '$_year년' : '$_year년 $_month월',
+      if (_activeQuery.isNotEmpty) '‘$_activeQuery’',
+    ];
+    final count = '현장 ${result.totalSites}곳';
+    if (parts.isEmpty) return '최근 올린 순 · $count';
+    return '${parts.join(' · ')} · $count';
+  }
+
+  Widget _buildBody(ColorScheme scheme) {
     return _data.when(
-      loading: () => const AppLoading(message: '검색 중…'),
+      skipLoadingOnRefresh: false,
+      loading: () => AppLoading(
+        message: _isAfter && _selectedModelCode != null
+            ? '모델별 현장을 찾는 중… (조금 걸릴 수 있어요)'
+            : '불러오는 중…',
+      ),
       error: (e, _) => _ScrollableMessage(
         child: AppErrorState(
           message: koreanErrorMessage(e),
@@ -615,20 +686,24 @@ class _ChecksheetSearchScreenState
       ),
       data: (result) {
         if (result.sites.isEmpty) {
-          return _ScrollableMessage(
-            child: AppEmpty(
-              message: result.query != null && result.query!.isNotEmpty
-                  ? '‘${result.query}’ 결과가 없습니다.'
-                  : '검색 결과가 없습니다.',
-              icon: Icons.folder_off_outlined,
+          return RefreshIndicator(
+            onRefresh: () => _search(haptic: false),
+            child: _ScrollableMessage(
+              child: AppEmpty(
+                message: _activeQuery.isNotEmpty
+                    ? '‘$_activeQuery’ 결과가 없습니다.\n현장명 일부만 넣어 보세요.'
+                    : '조건에 맞는 $_photoLabel이(가) 없습니다.',
+                icon: Icons.folder_off_outlined,
+              ),
             ),
           );
         }
 
         return RefreshIndicator(
-          onRefresh: () => _search(),
+          onRefresh: () => _search(haptic: false),
           child: ListView.builder(
             controller: _scrollCtrl,
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             itemCount: result.sites.length + (_loadingMore ? 1 : 0) + 1,
             itemBuilder: (context, index) {
@@ -636,13 +711,7 @@ class _ChecksheetSearchScreenState
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
                   child: Text(
-                    _isAfter && (_selectedModelLabel ?? '').isNotEmpty
-                        ? '${_selectedModelLabel!}'
-                              '${_activeQuery.isEmpty ? '' : ' · ‘$_activeQuery’'}'
-                              ' · 현장 ${result.totalSites}곳'
-                        : _activeQuery.isEmpty
-                        ? '현장 ${result.totalSites}곳'
-                        : '‘$_activeQuery’ · 현장 ${result.totalSites}곳',
+                    _resultHeader(result),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -682,6 +751,7 @@ class _ChecksheetSearchScreenState
     );
   }
 }
+
 
 class _ScrollableMessage extends StatelessWidget {
   const _ScrollableMessage({required this.child});
@@ -731,7 +801,7 @@ class _SiteCard extends StatelessWidget {
         (site.installCompletedDate != null &&
             site.installCompletedDate!.trim().isNotEmpty)
         ? site.installCompletedDate!.trim()
-        : '없다';
+        : '없음';
     final lineStyle = TextStyle(
       color: scheme.onSurfaceVariant,
       fontSize: 12,
@@ -815,7 +885,7 @@ class _SiteCard extends StatelessWidget {
                     Text(
                       '시공완료일 $install',
                       style: lineStyle.copyWith(
-                        color: install == '없다'
+                        color: install == '없음'
                             ? scheme.error.withValues(alpha: 0.85)
                             : scheme.onSurfaceVariant,
                       ),
@@ -844,6 +914,8 @@ class _ChecksheetGalleryScreen extends StatefulWidget {
     required this.resolveUrl,
     required this.headersForUrl,
     this.onDownload,
+    this.otherLabel,
+    this.onOpenOther,
   });
 
   final ChecksheetSite site;
@@ -852,6 +924,10 @@ class _ChecksheetGalleryScreen extends StatefulWidget {
   final String Function(String mediaPath) resolveUrl;
   final Map<String, String>? Function(String absoluteUrl) headersForUrl;
   final VoidCallback? onDownload;
+
+  /// 같은 현장의 다른 종류(체크시트↔시공사진) 보기.
+  final String? otherLabel;
+  final VoidCallback? onOpenOther;
 
   @override
   State<_ChecksheetGalleryScreen> createState() =>
@@ -989,6 +1065,12 @@ class _ChecksheetGalleryScreenState extends State<_ChecksheetGalleryScreen> {
           ),
         ),
         actions: [
+          if (widget.onOpenOther != null && widget.otherLabel != null)
+            IconButton(
+              tooltip: '이 현장 ${widget.otherLabel} 보기',
+              onPressed: busy ? null : widget.onOpenOther,
+              icon: const Icon(Icons.swap_horiz_rounded),
+            ),
           if (atts.isNotEmpty)
             TextButton.icon(
               onPressed: busy ? null : () => unawaited(_downloadAll()),

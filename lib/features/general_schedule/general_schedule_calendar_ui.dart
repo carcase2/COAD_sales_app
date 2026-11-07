@@ -181,10 +181,14 @@ class GeneralScheduleColorModeToggle extends StatelessWidget {
     super.key,
     required this.mode,
     required this.onChanged,
+    this.trailing,
   });
 
   final GeneralScheduleColorMode mode;
   final ValueChanged<GeneralScheduleColorMode> onChanged;
+
+  /// 같은 줄 오른쪽에 붙일 위젯 (예: 통계 버튼) — 따로 한 줄을 쓰지 않게.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -211,33 +215,42 @@ class GeneralScheduleColorModeToggle extends StatelessWidget {
       );
     }
 
+    final toggle = DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            tab('담당자별', GeneralScheduleColorMode.assignee),
+            tab('도어타입별', GeneralScheduleColorMode.doorType),
+          ],
+        ),
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-      child: Center(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 6,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(3),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                tab('담당자별', GeneralScheduleColorMode.assignee),
-                tab('도어타입별', GeneralScheduleColorMode.doorType),
-              ],
-            ),
-          ),
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          toggle,
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            Flexible(child: trailing!),
+          ],
+        ],
       ),
     );
   }
@@ -973,88 +986,73 @@ class GeneralScheduleHorizontalSlotRow extends StatelessWidget {
   }
 }
 
-/// 인트라넷 달력의 「통계」 드롭다운.
-class GeneralScheduleStatsDropdown extends StatefulWidget {
+/// 인트라넷 달력의 「통계」 버튼 — 담당자별/도어타입별 줄 오른쪽에 작게 붙고,
+/// 누르면 아래에서 올라오는 시트로 연다. (따로 한 줄을 차지하지 않음)
+class GeneralScheduleStatsDropdown extends StatelessWidget {
   const GeneralScheduleStatsDropdown({
     super.key,
     required this.stats,
-    this.margin = const EdgeInsets.fromLTRB(12, 0, 12, 8),
+    this.margin = EdgeInsets.zero,
   });
 
   final GeneralScheduleMonthStats stats;
   final EdgeInsets margin;
 
   @override
-  State<GeneralScheduleStatsDropdown> createState() =>
-      _GeneralScheduleStatsDropdownState();
-}
-
-class _GeneralScheduleStatsDropdownState
-    extends State<GeneralScheduleStatsDropdown> {
-  bool _expanded = false;
-
-  @override
   Widget build(BuildContext context) {
+    final monthPct = (stats.occupancyRate * 100).round();
     return Padding(
-      padding: widget.margin,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() => _expanded = !_expanded);
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFD1D5DB)),
+      padding: margin,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            showGeneralScheduleMonthStatsSheet(context, stats);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.bar_chart_rounded,
+                  size: 16,
+                  color: Color(0xFF4B5563),
                 ),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        '통계',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF374151),
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      size: 22,
-                      color: const Color(0xFF6B7280),
-                    ),
-                  ],
+                const SizedBox(width: 4),
+                const Text(
+                  '통계',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF374151),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    '${stats.usedSlots}/${stats.totalSlots} · $monthPct%',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.fade,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1D4ED8),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          if (_expanded) ...[
-            const SizedBox(height: 8),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                child: GeneralScheduleMonthStatsDetail(stats: widget.stats),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -1173,7 +1171,7 @@ Future<void> showGeneralScheduleMonthStatsSheet(
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Text(
-                    '월간 통계',
+                    '${formatGeneralScheduleMonthTitle(stats.year, stats.month)} 통계',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),

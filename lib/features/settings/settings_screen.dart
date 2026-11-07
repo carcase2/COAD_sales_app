@@ -218,7 +218,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.fact_check_outlined, color: scheme.primary),
             title: const Text('체크시트 검색'),
-            subtitle: const Text('MES 아카이브 · 체크시트(TP1)만'),
+            subtitle: const Text('MES 아카이브 · 최근 현장 바로 · 시공사진 탭 함께'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () {
               Navigator.of(context).push(
@@ -232,7 +232,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.photo_library_outlined, color: scheme.primary),
             title: const Text('시공 사진'),
-            subtitle: const Text('MES 아카이브 · 시공후 사진 · 모델명·현장명'),
+            subtitle: const Text('MES 아카이브 · 시공후 사진 · 체크시트 탭 함께'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () {
               Navigator.of(context).push(
