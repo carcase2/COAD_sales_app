@@ -69,22 +69,13 @@ Future<String> lookupSizeQuoteStaffPhone(String userId) async {
   try {
     final row = await Supabase.instance.client
         .from('users')
-        .select()
+        .select('phone')
         .eq('id', id)
         .maybeSingle();
     if (row == null) return '';
-    for (final key in const [
-      'phone',
-      'mobile_phone',
-      'cell_phone',
-      'tel',
-      'telephone',
-      'contact_phone',
-    ]) {
-      final raw = row[key];
-      if (raw != null && raw.toString().trim().isNotEmpty) {
-        return raw.toString().trim();
-      }
+    final raw = row['phone'];
+    if (raw != null && raw.toString().trim().isNotEmpty) {
+      return raw.toString().trim();
     }
   } catch (_) {}
   return '';
