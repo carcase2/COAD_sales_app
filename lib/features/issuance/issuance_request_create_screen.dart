@@ -2685,6 +2685,8 @@ class _IssuanceRequestReviewScreen extends StatelessWidget {
                                   child: Image.file(
                                     File(path),
                                     fit: BoxFit.cover,
+                                    // 미리보기 칸 크기로만 풀어 메모리를 아낀다.
+                                    cacheWidth: 600,
                                     errorBuilder: (_, _, _) => const Center(
                                       child: Icon(Icons.broken_image_outlined),
                                     ),
@@ -2976,6 +2978,8 @@ class _LocalImagePreviewScreenState extends State<_LocalImagePreviewScreen> {
               child: Image.file(
                 File(widget.imagePaths[i]),
                 fit: BoxFit.contain,
+                // 확대해 볼 만큼만 — 원본(12MP) 통째 디코드는 장당 약 48MB.
+                cacheWidth: 2000,
                 errorBuilder: (_, _, _) => const Text(
                   '이미지를 불러올 수 없습니다.',
                   style: TextStyle(color: Colors.white70),

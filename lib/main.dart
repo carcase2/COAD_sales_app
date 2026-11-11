@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/app.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/core/network/sales_api_transport.dart';
+import 'package:coad_customer_calls/core/network/timeout_http_client.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,6 +61,8 @@ Future<void> main() async {
             await Supabase.initialize(
               url: supabaseUrl,
               anonKey: supabaseKey,
+              // 응답 없는 요청이 끝없이 로딩되지 않게 시간 제한을 건다.
+              httpClient: TimeoutHttpClient(),
             );
           } catch (e) {
             debugPrint("Supabase 초기화 실패: $e");

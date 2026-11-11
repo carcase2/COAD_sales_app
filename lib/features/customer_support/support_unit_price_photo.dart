@@ -24,6 +24,11 @@ class SupportUnitPricePhoto extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final trimmed = url.trim();
+    // 표시 크기(화면 배율 3배까지)만큼만 디코드 — 작은 칸에 원본을 통째로 풀지 않는다.
+    final w = width;
+    final cacheWidth = (w != null && w.isFinite && w > 0)
+        ? (w * 3).round()
+        : 1600;
     Widget child;
     if (trimmed.isEmpty) {
       child = ColoredBox(
@@ -39,9 +44,16 @@ class SupportUnitPricePhoto extends StatelessWidget {
         fit: fit,
         width: width,
         height: height,
+        memCacheWidth: cacheWidth,
       );
     } else {
-      child = Image.file(File(trimmed), fit: fit, width: width, height: height);
+      child = Image.file(
+        File(trimmed),
+        fit: fit,
+        width: width,
+        height: height,
+        cacheWidth: cacheWidth,
+      );
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),

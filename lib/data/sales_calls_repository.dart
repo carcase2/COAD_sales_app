@@ -191,9 +191,13 @@ class SalesCallsRepository {
   }
 
   Future<Map<String, dynamic>> _fetchMasterDataFromRemote() async {
-    final pc = await _client.from('product_categories').select();
-    final im = await _client.from('inquiry_methods').select();
-    final regionsRaw = await fetchRegions();
+    // 서로 독립인 세 조회 — 차례로 기다리지 않고 동시에 보낸다.
+    final pcFuture = _client.from('product_categories').select();
+    final imFuture = _client.from('inquiry_methods').select();
+    final regionsFuture = fetchRegions();
+    final pc = await pcFuture;
+    final im = await imFuture;
+    final regionsRaw = await regionsFuture;
     final regions = regionsRaw.map((e) => e.toMasterRowJson()).toList();
 
     return {
@@ -736,12 +740,19 @@ class SalesCallsRepository {
 
   Future<SalesCall> createCall(Map<String, dynamic> body) async {
     try {
+      // 저장하면서 상세 항목까지 한 번에 받는다 — 저장 뒤 다시 조회하지 않는다.
       final res = await _client
           .from('sales_calls')
           .insert(body)
-          .select()
+          .select('''
+        $_detailSelect,
+        call_history($_callHistorySelect)
+      ''')
           .single();
-      return fetchCallById(res['id']);
+      await _db.saveSalesCalls([res]);
+      final overrides = await _prepareListFetchContext();
+      final call = SalesCall.fromJson(res);
+      return applyCallDisplayOverrides([call], overrides, DateTime.now()).first;
     } catch (e) {
       if (e is SocketException ||
           e.toString().contains('SocketException') ||
@@ -895,23 +906,6 @@ class SalesCallsRepository {
     return successCount;
   }
 
-  TodayStats _todayStatsFromRows(List<Map<String, dynamic>> res) {
-    final total = res.length;
-    final incomplete = res.where((row) {
-      final stage = row['call_stage']?.toString().trim();
-      final isInitial =
-          stage == null || stage == '' || stage == '0' || stage == '접수';
-      final isNotSimple = row['status_id'] != 4;
-      return isInitial && isNotSimple;
-    }).length;
-    final completed = total - incomplete;
-    return TodayStats.fromJson({
-      'today_count': total,
-      'incomplete_count': incomplete,
-      'completed_today': completed,
-    });
-  }
-
   /// 해당 일자(`next_scheduled_date`)에 이미 잡혀 있는 미종료 팔로우 건수.
   /// 홈 달력·날짜 팔로우와 동일하게 수주·미수주·단순문의·설계문의·기타는 제외한다.
   Future<int> countFollowUpsOnDate({
@@ -951,12 +945,26 @@ class SalesCallsRepository {
     String toYmdInclusive,
   ) async {
     try {
-      final res = await _client
+      // 행을 내려받아 세지 않고 서버에서 개수만 받는다 —
+      // 한 번에 받는 행 수 제한(1,000행)에 걸려 숫자가 잘리지 않는다.
+      PostgrestFilterBuilder<PostgrestList> inRange() => _client
           .from('sales_calls')
-          .select('id, status_id, call_stage')
+          .select('id')
           .gte('call_date', '$fromYmd 00:00:00')
           .lte('call_date', '$toYmdInclusive 23:59:59');
-      return _todayStatsFromRows(res);
+      final totalFuture = inRange().count(CountOption.exact);
+      // 미완료 = 초기 단계(null·0)이면서 단순문의(4)가 아닌 건.
+      final incompleteFuture = inRange()
+          .or('call_stage.is.null,call_stage.eq.0')
+          .or('status_id.is.null,status_id.neq.4')
+          .count(CountOption.exact);
+      final total = (await totalFuture).count;
+      final incomplete = (await incompleteFuture).count;
+      return TodayStats.fromJson({
+        'today_count': total,
+        'incomplete_count': incomplete,
+        'completed_today': total - incomplete,
+      });
     } catch (e) {
       if (e is ApiException) rethrow;
       if (isNetworkConnectivityError(e)) {

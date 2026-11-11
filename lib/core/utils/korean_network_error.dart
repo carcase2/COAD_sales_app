@@ -4,7 +4,8 @@ import 'package:coad_customer_calls/data/sales_call_consultation.dart';
 /// DNS·소켓 등 연결 실패 여부 (Supabase `ClientException` 포함).
 bool isNetworkConnectivityError(Object error) {
   final text = switch (error) {
-    ApiException(:final message) => message,
+    // 화면용 문구는 원문을 잘라내므로, 판별은 원문으로 한다.
+    ApiException(:final rawMessage) => rawMessage,
     _ => error.toString(),
   };
   return text.contains('SocketException') ||

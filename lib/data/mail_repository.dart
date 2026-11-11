@@ -157,11 +157,16 @@ class MailRepository {
         .toList();
   }
 
+  /// 발송 이력 화면에 불러오는 최대 건수 (최신순).
+  static const int mailSendsHistoryLimit = 500;
+
   Future<List<MailSendRecord>> fetchSends() async {
     final res = await _client
         .from('mail_sends')
         .select()
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        // 이력이 쌓일수록 느려지지 않게 최근 건만 받는다.
+        .limit(mailSendsHistoryLimit);
     return (res as List)
         .whereType<Map>()
         .map((e) => MailSendRecord.fromJson(Map<String, dynamic>.from(e)))

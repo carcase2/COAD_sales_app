@@ -25,6 +25,7 @@ import 'package:coad_customer_calls/models/master_data.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/theme/app_tokens.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:coad_customer_calls/core/widgets/unsaved_changes_guard.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -850,30 +851,33 @@ class _CustomerSupportIntakeScreenState
       ],
     );
     if (widget.embedded) return body;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEdit ? 'AS 접수 수정' : 'AS 접수 (테스트중)'),
-        actions: [
-          IconButton(
-            tooltip: 'A/S 단가표',
-            onPressed: () => openSupportUnitPriceLookup(
-              context,
-              insertLabel: '문의 내용에 넣기',
-              onInsert: (item) {
-                final line = supportUnitPriceInsertLine(item);
-                final cur = _issueCtrl.text.trim();
-                _issueCtrl.text = cur.isEmpty ? line : '$cur\n$line';
-                _issueCtrl.selection = TextSelection.collapsed(
-                  offset: _issueCtrl.text.length,
-                );
-                setState(() {});
-              },
+    return UnsavedChangesGuard(
+      hasChanges: () => _hasUnsavedInput && !_submitting,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_isEdit ? 'AS 접수 수정' : 'AS 접수 (테스트중)'),
+          actions: [
+            IconButton(
+              tooltip: 'A/S 단가표',
+              onPressed: () => openSupportUnitPriceLookup(
+                context,
+                insertLabel: '문의 내용에 넣기',
+                onInsert: (item) {
+                  final line = supportUnitPriceInsertLine(item);
+                  final cur = _issueCtrl.text.trim();
+                  _issueCtrl.text = cur.isEmpty ? line : '$cur\n$line';
+                  _issueCtrl.selection = TextSelection.collapsed(
+                    offset: _issueCtrl.text.length,
+                  );
+                  setState(() {});
+                },
+              ),
+              icon: const Icon(Icons.grid_on_rounded),
             ),
-            icon: const Icon(Icons.grid_on_rounded),
-          ),
-        ],
+          ],
+        ),
+        body: body,
       ),
-      body: body,
     );
   }
 }
