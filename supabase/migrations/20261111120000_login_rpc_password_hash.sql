@@ -1,4 +1,4 @@
--- 1단계: 서버에서 비밀번호 해시를 비교하는 로그인 RPC (아직 적용 안 함, 승인 후 supabase/migrations 로 옮겨 적용)
+-- 1단계: 서버에서 비밀번호 해시를 비교하는 로그인 RPC (2026-11-11 운영 적용)
 --
 -- 바뀌는 것
 --   * public.user_credentials: bcrypt 해시만 보관. RLS 켜고 정책 없음, anon/authenticated 권한 없음.

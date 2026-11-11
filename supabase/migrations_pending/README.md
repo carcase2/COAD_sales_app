@@ -1,6 +1,9 @@
-# 로그인 비밀번호 서버 검증 (적용 대기)
+# 로그인 비밀번호 서버 검증
 
-이 폴더의 SQL은 **아직 운영 DB에 적용하지 않았다.** `supabase db push`에 실수로 섞이지 않도록 `migrations/` 밖에 둔다.
+1단계는 2026-11-11 운영 DB에 적용했고 `supabase/migrations/20261111120000_login_rpc_password_hash.sql`로 옮겼다.
+적용 후 확인: 81명 해시 생성, 맞는 비밀번호 81/81 통과, 틀린 비밀번호 81/81 거절, anon 키로 `app_login` 호출 가능, `user_credentials` 조회는 permission denied.
+
+이 폴더에 남은 2단계 SQL은 **아직 운영 DB에 적용하지 않았다.** `supabase db push`에 실수로 섞이지 않도록 `migrations/` 밖에 둔다.
 승인을 받으면 순서대로 `supabase/migrations/`로 옮겨 적용한다.
 
 ## 확인 결과 (2026-11-11, 프로젝트 qemerxtickpvjcgowyrd)
@@ -18,7 +21,7 @@
 
 | 단계 | 내용 | 노출 감소 | 깨질 수 있는 것 |
 |---|---|---|---|
-| 1 `20261111120000_login_rpc_password_hash.sql` | `user_credentials`(anon 접근 불가)에 bcrypt 해시, 비밀번호 변경 시 트리거로 동기화, `app_login` RPC, 10회 실패 시 15분 잠금 | 없음 (준비 단계) | 없음. 기존 평문 로그인은 그대로 동작 |
+| 1 `20261111120000_login_rpc_password_hash.sql` (적용됨) | `user_credentials`(anon 접근 불가)에 bcrypt 해시, 비밀번호 변경 시 트리거로 동기화, `app_login` RPC, 10회 실패 시 15분 잠금 | 없음 (준비 단계) | 없음. 기존 평문 로그인은 그대로 동작 |
 | 앱 배포 | 영업 앱 이 브랜치 → 강제 업데이트 기준 올리기. COAD_home·New_MES도 `app_login`으로 변경 | 없음 | 없음 |
 | 2 `20261111120100_users_hide_plaintext_password.sql` | anon/authenticated의 `password` 컬럼 읽기 권한 제거, 평문 지우기, 이후 쓰는 평문은 해시만 남김 | 비밀번호 유출 차단 | 구버전 앱 로그인, `users`를 `select('*')`로 읽는 코드, `1234` 초기 비밀번호 판정 |
 | 3 (별도 작업) | `Allow all`·anon 쓰기 정책/권한 제거, 관리자 쓰기는 서버(API/RPC)로 | 계정 탈취·삭제 차단 | 관리자 화면 쓰기 |
