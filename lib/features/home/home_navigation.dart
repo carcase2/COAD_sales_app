@@ -20,6 +20,7 @@ void invalidateHomeSalesCaches(HomeSalesCacheInvalidator invalidate) {
   invalidate(hubPeriodFollowSnapshotProvider);
   invalidate(hubPeriodUpdatedCallsProvider);
   invalidate(hubPeriodQualityOverviewProvider);
+  invalidate(hubPeriodLightStatsProvider);
   invalidate(hubPendingUncalledCallsProvider);
   invalidate(tempManagerOverridesProvider);
   invalidate(hubPendingUncalledSummaryProvider);

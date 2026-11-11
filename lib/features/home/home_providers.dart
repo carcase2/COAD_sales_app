@@ -278,6 +278,22 @@ CallQualityOverview _buildCallQualityOverview(List<SalesCall> rows) {
   );
 }
 
+/// 흐름 탭 기간 데이터 보존 시간 — 날짜·기간을 오가도 다시 조회하지 않음.
+/// 저장·수정 후에는 [invalidateHomeSalesCaches]가 즉시 무효화한다.
+const hubPeriodCacheDuration = Duration(minutes: 3);
+
+/// autoDispose provider를 구독이 끊긴 뒤에도 [duration] 동안 유지.
+void cacheProviderFor(Ref ref, Duration duration) {
+  final link = ref.keepAlive();
+  Timer? timer;
+  ref.onCancel(() {
+    timer?.cancel();
+    timer = Timer(duration, link.close);
+  });
+  ref.onResume(() => timer?.cancel());
+  ref.onDispose(() => timer?.cancel());
+}
+
 /// 홈 허브 흐름 카드 구간 — 하루 / 금주 / 금월.
 enum HubPeriod { day, week, month }
 
@@ -285,6 +301,7 @@ typedef HubPeriodKey = ({HubPeriod period, String anchorYmd});
 
 final supportHomeStatsProvider = FutureProvider.autoDispose
     .family<SupportHomePeriodStats, HubPeriodKey>((ref, key) async {
+      cacheProviderFor(ref, hubPeriodCacheDuration);
       final range = switch (key.period) {
         HubPeriod.day => (key.anchorYmd, key.anchorYmd),
         HubPeriod.week => seoulWeekRangeContaining(key.anchorYmd),
@@ -297,6 +314,7 @@ final supportHomeStatsProvider = FutureProvider.autoDispose
 
 final gosuHomeCountsProvider = FutureProvider.autoDispose
     .family<GosuHomeCounts, HubPeriodKey>((ref, key) async {
+      cacheProviderFor(ref, hubPeriodCacheDuration);
       final range = switch (key.period) {
         HubPeriod.day => (key.anchorYmd, key.anchorYmd),
         HubPeriod.week => seoulWeekRangeContaining(key.anchorYmd),
@@ -383,6 +401,7 @@ Future<List<SalesCall>> _fetchHubPeriodReceptionCalls(
 /// 금일(단일 일자) 접수 목록 1회 — 흐름 bundle·미통화 breakdown이 공유.
 final hubDayReceptionCallsProvider = FutureProvider.autoDispose
     .family<List<SalesCall>, String>((ref, anchorYmd) async {
+      cacheProviderFor(ref, hubPeriodCacheDuration);
       final repo = ref.watch(salesCallsRepositoryProvider);
       return repo.fetchCallsAllPages(
         date: anchorYmd,
@@ -418,6 +437,7 @@ class HubPeriodReceptionBundle {
 
 final hubPeriodReceptionBundleProvider = FutureProvider.autoDispose
     .family<HubPeriodReceptionBundle, HubPeriodKey>((ref, key) async {
+      cacheProviderFor(ref, hubPeriodCacheDuration);
       final repo = ref.watch(salesCallsRepositoryProvider);
       final calls = key.period == HubPeriod.day
           ? await ref.watch(hubDayReceptionCallsProvider(key.anchorYmd).future)
@@ -457,6 +477,7 @@ final hubPeriodStatsProvider = Provider.autoDispose
 /// `id·status_id·call_stage` 컬럼만 내려받음. 상세 목록이 필요하면 탭 시점에 조회.
 final hubPeriodLightStatsProvider = FutureProvider.autoDispose
     .family<TodayStats, HubPeriodKey>((ref, key) async {
+      cacheProviderFor(ref, hubPeriodCacheDuration);
       final repo = ref.watch(salesCallsRepositoryProvider);
       final (String start, String end) = switch (key.period) {
         HubPeriod.day => (key.anchorYmd, key.anchorYmd),
@@ -555,6 +576,7 @@ List<SalesCall> _followRemainingCalls(List<SalesCall> calls) =>
 
 final hubPeriodFollowSnapshotProvider = FutureProvider.autoDispose
     .family<HubPeriodFollowSnapshot, HubPeriodKey>((ref, key) async {
+      cacheProviderFor(ref, hubPeriodCacheDuration);
       final repo = ref.watch(salesCallsRepositoryProvider);
       final calls = await _fetchHubPeriodFollowCalls(repo, key);
       final remainingCalls = _followRemainingCalls(calls);
@@ -621,6 +643,7 @@ Future<List<SalesCall>> _fetchHubPeriodUpdatedCalls(
 /// 기간 내 `updated_at` 건 — coad_home 「금일 업데이트」와 동일 기준.
 final hubPeriodUpdatedCallsProvider = FutureProvider.autoDispose
     .family<List<SalesCall>, HubPeriodKey>((ref, key) async {
+      cacheProviderFor(ref, hubPeriodCacheDuration);
       final repo = ref.watch(salesCallsRepositoryProvider);
       return _fetchHubPeriodUpdatedCalls(repo, key);
     });

@@ -1087,7 +1087,6 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
 
   void _onCustomerNameChanged(String value) {
     if (_applyingCard) return;
-    setState(() {});
     _scheduleCardLookup(_CardLookup.name, value);
   }
 
@@ -1095,13 +1094,11 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
     if (_applyingCard) return;
     final formatted = formatKoreanPhoneHyphenated(value);
     if (formatted != value) _setField(_phoneCtrl, formatted);
-    setState(() {});
     _scheduleCardLookup(_CardLookup.phone, formatted);
   }
 
   void _onCustomerEmailChanged(String value) {
     if (_applyingCard) return;
-    setState(() {});
     _scheduleCardLookup(_CardLookup.email, value);
   }
 
@@ -1941,7 +1938,6 @@ class _SizeQuoteEditorPageState extends ConsumerState<SizeQuoteEditorPage> {
                           labelText: '현장명',
                           filled: true,
                         ),
-                        onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: 8),
                       TextField(

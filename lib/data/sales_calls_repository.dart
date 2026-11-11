@@ -138,6 +138,9 @@ class SalesCallsRepository {
   /// PostgREST/Supabase `api.max_rows` (see `supabase/config.toml`).
   static const int postgrestMaxPageSize = 1000;
 
+  /// [fetchCallsAllPages]가 두 번째 페이지부터 한 번에 요청하는 페이지 수.
+  static const int _parallelPageFetches = 3;
+
   /// 목록·홈 집계 기본 페이지 크기 — UI 「더 보기」와 동일.
   static const int listPageSize = 50;
 
@@ -520,10 +523,9 @@ class SalesCallsRepository {
     bool fullDetail = false,
   }) async {
     final overrides = await _prepareListFetchContext();
-    final merged = <SalesCall>[];
-    var offset = 0;
-    while (true) {
-      final batch = await _fetchCallsBatch(
+    Future<({List<SalesCall> items, int rawRowCount})> fetchPage(
+      int pageOffset,
+    ) => _fetchCallsBatch(
         date: date,
         followDate: followDate,
         followRangeStart: followRangeStart,
@@ -534,7 +536,7 @@ class SalesCallsRepository {
         updatedAtRangeEndInclusiveYmd: updatedAtRangeEndInclusiveYmd,
         fromDate: fromDate,
         limit: pageSize,
-        offset: offset,
+        offset: pageOffset,
         includeCallHistory: includeCallHistory,
         callHistoryQualityOnly: callHistoryQualityOnly,
         incompleteOnly: incompleteOnly,
@@ -546,11 +548,26 @@ class SalesCallsRepository {
         overrides: overrides,
         fullDetail: fullDetail,
       );
-      merged.addAll(batch.items);
-      if (batch.rawRowCount < pageSize) break;
-      offset += pageSize;
+
+    // 첫 페이지가 가득 찼을 때만 다음 페이지들을 동시에 요청 — 월 단위 등
+    // 대량 구간에서 왕복을 줄인다. 요청 순서대로 합쳐 정렬을 유지한다.
+    final merged = <SalesCall>[];
+    final first = await fetchPage(0);
+    merged.addAll(first.items);
+    if (first.rawRowCount < pageSize) return merged;
+
+    var offset = pageSize;
+    while (true) {
+      final batches = await Future.wait([
+        for (var i = 0; i < _parallelPageFetches; i++)
+          fetchPage(offset + i * pageSize),
+      ]);
+      for (final batch in batches) {
+        merged.addAll(batch.items);
+        if (batch.rawRowCount < pageSize) return merged;
+      }
+      offset += _parallelPageFetches * pageSize;
     }
-    return merged;
   }
 
   Future<({List<SalesCall> items, int rawRowCount})> _fetchCallsBatch({
@@ -640,7 +657,9 @@ class SalesCallsRepository {
           queryBuilder.order(
             updatedStartYmd != null ? 'updated_at' : 'created_at',
             ascending: false,
-          );
+          )
+          // 같은 시각 행이 페이지 경계에서 빠지거나 겹치지 않도록 보조 정렬.
+          .order('id', ascending: false);
 
       if (limit != null) {
         int rTop = (offset ?? 0) + limit - 1;
