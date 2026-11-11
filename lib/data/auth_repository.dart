@@ -40,13 +40,35 @@ class AuthRepository {
     }
   }
 
-  Future<AppUser> login({required String id, required String password}) async {
-    final res = await Supabase.instance.client
+  /// 비밀번호 비교는 서버 RPC `app_login`(bcrypt)에서 한다.
+  /// 서버에 아직 함수가 없을 때(마이그레이션 적용 전)만 예전 방식으로 조회한다.
+  Future<Map<String, dynamic>?> _fetchLoginRow(
+    String id,
+    String password,
+  ) async {
+    final client = Supabase.instance.client;
+    try {
+      final data = await client.rpc(
+        'app_login',
+        params: {'p_id': id, 'p_password': password},
+      );
+      return loginRowFromRpc(data);
+    } on PostgrestException catch (e) {
+      if (!isMissingRpcError(e)) rethrow;
+    }
+    // TODO(login-rpc): 2단계 마이그레이션(평문 컬럼 숨김) 적용 전에 이 경로를 지운다.
+    final legacy = await client
         .from('users')
         .select('*, groups(name, permissions), coad_branch(name)')
         .eq('id', id)
         .eq('password', password)
         .maybeSingle();
+    if (legacy == null) return null;
+    return Map<String, dynamic>.from(legacy)..remove('password');
+  }
+
+  Future<AppUser> login({required String id, required String password}) async {
+    final res = await _fetchLoginRow(id, password);
 
     if (res == null) {
       throw ApiException('아이디 또는 비밀번호가 올바르지 않습니다.', statusCode: 401);
@@ -214,4 +236,21 @@ List<String> _pickAccessPermissions(
     }
   }
   return out;
+}
+
+/// `app_login` 응답(jsonb 또는 null)을 사용자 행으로 바꾼다. 비밀번호 키는 남기지 않는다.
+Map<String, dynamic>? loginRowFromRpc(dynamic data) {
+  dynamic row = data;
+  if (row is List) row = row.isEmpty ? null : row.first;
+  if (row is! Map) return null;
+  final map = Map<String, dynamic>.from(row)..remove('password');
+  if ((map['id']?.toString() ?? '').isEmpty) return null;
+  return map;
+}
+
+/// 서버에 RPC 가 아직 없을 때 PostgREST 가 내는 오류인지.
+bool isMissingRpcError(PostgrestException e) {
+  if (e.code == 'PGRST202' || e.code == '42883') return true;
+  return e.message.contains('app_login') &&
+      e.message.toLowerCase().contains('could not find');
 }
