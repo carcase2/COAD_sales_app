@@ -42,7 +42,13 @@ class CoadCustomerCallsApp extends ConsumerWidget {
         // 전역 스크롤·텍스트 스케일 + 부드러운 터치 피드백
         return MediaQuery(
           data: media.copyWith(textScaler: clampedScale),
-          child: child ?? const SizedBox.shrink(),
+          // 입력 칸 밖 빈 곳을 누르면 키보드를 내린다. 버튼·목록 등 다른 터치 대상이
+          // 탭을 가져가면 여기까지 오지 않으므로 기존 동작은 그대로다.
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       home: const _AuthGate(),

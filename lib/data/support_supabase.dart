@@ -1,3 +1,4 @@
+import 'package:coad_customer_calls/core/network/timeout_http_client.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -13,7 +14,7 @@ SupabaseClient supportSupabaseClient() {
   if (url.isEmpty || key.isEmpty) {
     return Supabase.instance.client;
   }
-  final client = SupabaseClient(url, key);
+  final client = SupabaseClient(url, key, httpClient: TimeoutHttpClient());
   _supportClient = client;
   return client;
 }

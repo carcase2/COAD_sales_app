@@ -451,63 +451,57 @@ class SupportCallLogRepository {
       final fromIso = seoulDayStartUtcIso(fromYmd);
       final toIso = seoulDayEndExclusiveUtcIso(toYmdInclusive);
       final client = supportSupabaseClient();
-      // `updated_at` 컬럼이 없는 Support DB가 있어 기본 select에 넣지 않는다.
-      final createdRows = await client
+      // 세 집계는 서로 독립 — 동시에 보내고, 행 대신 개수만 받는다
+      // (한 번에 받는 행 수 제한에 걸려 숫자가 잘리지 않는다).
+      PostgrestFilterBuilder<PostgrestList> createdInRange() => client
           .from('call_logs')
-          .select('id, created_at, visit_date, service_status_id')
+          .select('id')
           .gte('created_at', fromIso)
           .lt('created_at', toIso);
-      final created = List<Map<String, dynamic>>.from(createdRows);
-      var pending = 0;
-      for (final row in created) {
-        final status = int.tryParse('${row['service_status_id'] ?? ''}');
-        if (isSupportServiceStatusPending(status)) pending++;
-      }
-      var updated = created.length;
-      try {
-        final updatedRows = await client
+      PostgrestFilterBuilder<PostgrestList> visitsInRange() => client
+          .from('call_logs')
+          .select('id')
+          .gte('visit_date', fromYmd)
+          .lte('visit_date', toYmdInclusive);
+      Future<int?> countOrNull(Future<PostgrestResponse<PostgrestList>> q) =>
+          q.then<int?>((r) => r.count).catchError((Object _) => null);
+
+      final receptionFuture = createdInRange().count(CountOption.exact);
+      final pendingFuture = createdInRange()
+          .or(
+            'service_status_id.is.null,service_status_id.eq.$kSupportStatusReceived',
+          )
+          .count(CountOption.exact);
+      // `updated_at` 컬럼이 없는 Support DB가 있다 — 실패하면 접수 건수로 대신한다.
+      final updatedFuture = countOrNull(
+        client
             .from('call_logs')
             .select('id')
             .gte('updated_at', fromIso)
-            .lt('updated_at', toIso);
-        updated = List<dynamic>.from(updatedRows).length;
-      } catch (_) {}
+            .lt('updated_at', toIso)
+            .count(CountOption.exact),
+      );
+      final visitsAllFuture = countOrNull(
+        visitsInRange().count(CountOption.exact),
+      );
+      final visitsCompletedFuture = countOrNull(
+        visitsInRange()
+            .eq('service_status_id', kSupportStatusCompleted)
+            .count(CountOption.exact),
+      );
 
-      var visits = 0;
-      var visitsCompleted = 0;
-      try {
-        final visitRows = await client
-            .from('call_logs')
-            .select('id, service_status_id')
-            .gte('visit_date', fromYmd)
-            .lte('visit_date', toYmdInclusive);
-        for (final row in List<Map<String, dynamic>>.from(visitRows)) {
-          final status = int.tryParse('${row['service_status_id'] ?? ''}');
-          if (status == kSupportStatusCompleted) {
-            visitsCompleted++;
-          } else {
-            visits++;
-          }
-        }
-      } catch (_) {
-        for (final row in created) {
-          final ymd = _rowYmd(row['visit_date']);
-          if (ymd == null ||
-              ymd.compareTo(fromYmd) < 0 ||
-              ymd.compareTo(toYmdInclusive) > 0) {
-            continue;
-          }
-          final status = int.tryParse('${row['service_status_id'] ?? ''}');
-          if (status == kSupportStatusCompleted) {
-            visitsCompleted++;
-          } else {
-            visits++;
-          }
-        }
-      }
+      final reception = (await receptionFuture).count;
+      final pending = (await pendingFuture).count;
+      final updated = await updatedFuture ?? reception;
+      final visitsAll = await visitsAllFuture ?? 0;
+      final visitsCompleted = (await visitsCompletedFuture ?? 0).clamp(
+        0,
+        visitsAll,
+      );
+      final visits = visitsAll - visitsCompleted;
 
       return SupportHomePeriodStats(
-        reception: created.length,
+        reception: reception,
         pending: pending,
         visits: visits,
         visitsCompleted: visitsCompleted,
