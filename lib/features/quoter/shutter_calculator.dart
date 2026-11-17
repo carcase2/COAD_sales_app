@@ -25,30 +25,101 @@ class ShutterCalculator {
     return ((widthMm + 100) / 1000.0) * ((heightMm + 500) / 1000.0);
   }
 
+  /// 일반 스라트 ㎡당 무게(kg).
+  static const double slatWeightGeneralKgPerM2 = 10;
+
+  /// 단열 스라트 ㎡당 무게(kg) — 비와이메탈 등 기본(22mm).
+  static const double slatWeightInsulatedKgPerM2 = 15;
+
+  /// 단열 스라트 ㎡당 무게(kg) — 명진(20mm).
+  static const double slatWeightInsulatedMyungjinKgPerM2 = 17;
+
+  /// 단열 여부·스라트 두께(명진 20mm)에 따른 ㎡당 무게 — coad_home `slatWeightKgPerM2`.
+  static double slatWeightKgPerM2({
+    required bool isInsulated,
+    int insulatedSlatMm = insulatedSlat22Mm,
+  }) {
+    if (!isInsulated) return slatWeightGeneralKgPerM2;
+    return insulatedSlatMm == insulatedSlat20Mm
+        ? slatWeightInsulatedMyungjinKgPerM2
+        : slatWeightInsulatedKgPerM2;
+  }
+
   /// 무게(kg). 철제방화/스크린방화는 0. 소수 1자리.
+  /// [insulatedSlatMm] 20(명진)이면 단열 17kg/㎡.
   static double calculateWeight(
     double widthMm,
     double heightMm,
-    ShutterType type,
-  ) {
+    ShutterType type, {
+    int insulatedSlatMm = insulatedSlat22Mm,
+  }) {
     if (type == ShutterType.fireSteel || type == ShutterType.fireScreen) {
       return 0;
     }
     final isInsulated =
         type == ShutterType.doubleExtrusionInsulated ||
         type == ShutterType.windproofInsulated;
-    final weightPerM2 = isInsulated ? 15.0 : 10.0;
+    final weightPerM2 = slatWeightKgPerM2(
+      isInsulated: isInsulated,
+      insulatedSlatMm: insulatedSlatMm,
+    );
     final calcWidth = widthMm + 100;
     final calcHeight = heightMm + 500;
     final weight = (calcWidth * calcHeight * weightPerM2) / 1000000.0;
     return (weight * 10).roundToDouble() / 10.0;
   }
 
-  /// 폭 7500mm 이상 = 8인치 롤파이프.
-  static bool isWide8InchRollPipe(double widthMm) => widthMm >= 7500;
+  /// 롤파이프 선정표(제조사 카탈로그) — 폭(mm) 상한 → 인치.
+  static const List<(double, int)> rollPipeInchByWidth = [
+    (3900, 4),
+    (5900, 5),
+    (7900, 6),
+    (9900, 8),
+    (11900, 10),
+    (12900, 12),
+  ];
 
-  static String getRollPipeType(double widthMm) =>
-      isWide8InchRollPipe(widthMm) ? '8인치 롤파이프' : '5인치 롤파이프';
+  /// 롤파이프 선정표 — 중량(kg) 상한 → 인치.
+  static const List<(double, int)> rollPipeInchByWeight = [
+    (300, 4),
+    (500, 5),
+    (800, 6),
+    (1000, 8),
+    (1200, 10),
+    (1300, 12),
+  ];
+
+  static int? _inchFromSteps(double value, List<(double, int)> steps) {
+    for (final (max, inch) in steps) {
+      if (value <= max) return inch;
+    }
+    return null;
+  }
+
+  /// 롤파이프 인치 = 폭 기준·중량 기준 중 큰 값. 표 범위를 넘으면 null(문의).
+  static int? getRollPipeInch(double widthMm, double weightKg) {
+    if (widthMm <= 0) return null;
+    final byWidth = _inchFromSteps(widthMm, rollPipeInchByWidth);
+    final byWeight =
+        _inchFromSteps(weightKg < 0 ? 0 : weightKg, rollPipeInchByWeight);
+    if (byWidth == null || byWeight == null) return null;
+    return byWidth > byWeight ? byWidth : byWeight;
+  }
+
+  /// 롤파이프가 8인치 이상인가 (선정표 기준, 범위 초과=문의도 포함).
+  /// 8인치 이상이면 모터 1단계 상향, 초고형 박스 높이 구간 500mm 낮춤.
+  static bool isWide8InchRollPipe(double widthMm, [double weightKg = 0]) {
+    if (widthMm <= 0) return false;
+    final inch = getRollPipeInch(widthMm, weightKg);
+    return inch == null || inch >= 8;
+  }
+
+  /// 화면 표시용: "6인치 롤파이프" / "별도 문의" / ''.
+  static String getRollPipeType(double widthMm, [double weightKg = 0]) {
+    if (widthMm <= 0) return '';
+    final inch = getRollPipeInch(widthMm, weightKg);
+    return inch == null ? '별도 문의' : '$inch인치 롤파이프';
+  }
 
   /// 무게 → 모터 (안전 마진 10%, coad_home 동일).
   static String selectMotorModel(double weightKg) {
@@ -69,7 +140,7 @@ class ShutterCalculator {
   /// 8인치 롤파이프면 모터 1단계 상향.
   static String selectEffectiveMotorModel(double weightKg, double widthMm) {
     final base = selectMotorModel(weightKg);
-    if (base.isEmpty || base == '문의' || !isWide8InchRollPipe(widthMm)) {
+    if (base.isEmpty || base == '문의' || !isWide8InchRollPipe(widthMm, weightKg)) {
       return base;
     }
     final idx = _motorModelOrder.indexOf(base);
@@ -102,12 +173,22 @@ class ShutterCalculator {
     }
   }
 
-  static bool _isMotorAtLeastKem800(double weightKg, double widthMm) {
+  static bool _isMotorAtLeast(
+    double weightKg,
+    double widthMm,
+    String minModel,
+  ) {
     final model = selectEffectiveMotorModel(weightKg, widthMm);
+    if (model == '문의') return true;
     final modelIdx = _motorModelOrder.indexOf(model);
-    final kem800Idx = _motorModelOrder.indexOf('KEM-800');
-    return modelIdx >= kem800Idx && modelIdx >= 0;
+    return modelIdx >= 0 && modelIdx >= _motorModelOrder.indexOf(minModel);
   }
+
+  static bool _isMotorAtLeastKem800(double weightKg, double widthMm) =>
+      _isMotorAtLeast(weightKg, widthMm, 'KEM-800');
+
+  /// 모터(8인치 상향 포함)가 KEM-1000 이상이면 셔터박스는 별도 문의.
+  static const String shutterBoxInquiry = '별도 문의';
 
   static String _resolve500B800(
     String bracket,
@@ -218,6 +299,9 @@ class ShutterCalculator {
     double widthMm = 0,
     int insulatedSlatMm = insulatedSlat22Mm,
   }) {
+    if (weightKg > 0 && _isMotorAtLeast(weightKg, widthMm, 'KEM-1000')) {
+      return shutterBoxInquiry;
+    }
     final bracketStr = getBracketType(
       isInsulated: isInsulated,
       heightMm: heightMm,
@@ -235,7 +319,7 @@ class ShutterCalculator {
       isInsulated: isInsulated,
       insulatedSlatMm: insulatedSlatMm,
     );
-    final wide = isWide8InchRollPipe(widthMm);
+    final wide = isWide8InchRollPipe(widthMm, weightKg);
     if (isInsulated && heightMm > (wide ? 8500 : 9000) + bump) return '905*750';
     if (isInsulated && heightMm > (wide ? 6500 : 7000) + bump) return '855*700';
     if (!isInsulated && heightMm > (wide ? 7999 : 8999)) return '855*700';
@@ -256,7 +340,15 @@ class ShutterCalculator {
     int insulatedSlatMm = insulatedSlat22Mm,
   }) {
     final area = calculateArea(input.widthMm, input.heightMm);
-    final weightKg = calculateWeight(input.widthMm, input.heightMm, input.type);
+    final isInsulatedInput = isInsulatedType(input.type);
+    final weightKg = calculateWeight(
+      input.widthMm,
+      input.heightMm,
+      input.type,
+      insulatedSlatMm: isInsulatedInput && insulatedSlatMm == insulatedSlat20Mm
+          ? insulatedSlat20Mm
+          : insulatedSlat22Mm,
+    );
     final motorModel = selectEffectiveMotorModel(weightKg, input.widthMm);
     final powerSpec = motorPowerByModel(motorModel);
 

@@ -2995,6 +2995,7 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                                 '롤파이프',
                                 ShutterCalculator.getRollPipeType(
                                   result.input.widthMm,
+                                  result.weightKg,
                                 ),
                                 scheme,
                                 expanded: false,
@@ -3014,10 +3015,12 @@ class _QuoterScreenState extends ConsumerState<QuoterScreen> {
                           insulated
                               ? '단열(22mm)는 비와이메탈, 단열(20mm)는 명진입니다. '
                                     '20mm는 같은 브라켓·박스를 300mm 더 높은 개구까지 씁니다. '
-                                    '폭 7,500mm 이상이면 8인치 롤파이프 및 모터 1단계 상향이 적용됩니다.'
+                                    '롤파이프 인치는 폭·무게 선정표로 정하고, 8인치 이상이면 모터 1단계 상향이 적용됩니다. '
+                                    '추정 무게: 일반 10kg/㎡, 단열 15kg/㎡ (명진 단열 17kg/㎡).'
                               : '브라켓·박스 규칙은 COAD_home 견적기와 동일합니다. '
                                     '일반 스라트는 제조사가 달라도 셔터박스·브라켓이 같습니다. '
-                                    '폭 7,500mm 이상이면 8인치 롤파이프 및 모터 1단계 상향이 적용됩니다.',
+                                    '롤파이프 인치는 폭·무게 선정표로 정하고, 8인치 이상이면 모터 1단계 상향이 적용됩니다. '
+                                    '추정 무게: 일반 10kg/㎡, 단열 15kg/㎡ (명진 단열 17kg/㎡).',
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.35,

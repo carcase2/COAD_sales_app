@@ -36,10 +36,11 @@ void main() {
       expect(ShutterCalculator.selectMotorModel(2000), '문의');
     });
 
-    test('폭 7500↑ 시 모터 1단계 상향', () {
-      // 270kg → KEM-300, 8인치면 KEM-400
-      expect(ShutterCalculator.selectEffectiveMotorModel(270, 7500), 'KEM-400');
-      expect(ShutterCalculator.selectEffectiveMotorModel(270, 7400), 'KEM-300');
+    test('롤파이프 8인치 이상이면 모터 1단계 상향', () {
+      // 270kg → KEM-300, 폭 8000(8인치)이면 KEM-400
+      expect(ShutterCalculator.selectEffectiveMotorModel(270, 8000), 'KEM-400');
+      // 폭 7500은 6인치 → 상향 없음
+      expect(ShutterCalculator.selectEffectiveMotorModel(270, 7500), 'KEM-300');
     });
   });
 
@@ -471,6 +472,99 @@ void main() {
         unitPrices: const [],
       );
       expect(steel.totalAmount, 2100000);
+    });
+  });
+
+  group('모터 KEM-1000 이상 → 셔터박스 별도 문의 (coad_home)', () {
+    String box(bool ins, double h, double w, double width) =>
+        ShutterCalculator.getShutterBoxSize(
+          isInsulated: ins,
+          heightMm: h,
+          weightKg: w,
+          widthMm: width,
+        );
+    const inquiry = ShutterCalculator.shutterBoxInquiry;
+
+    test('720kg(KEM-800)까지 박스 규칙, 721kg(KEM-1000)부터 별도 문의', () {
+      expect(box(false, 6000, 720, 3000), '800*655');
+      expect(box(false, 6000, 721, 3000), inquiry);
+    });
+    test('KEM-1200(1000kg)도 별도 문의 — 단열·높이 무관', () {
+      expect(box(true, 6000, 1000, 3000), inquiry);
+      expect(box(true, 9100, 1000, 3000), inquiry);
+    });
+    test('8인치 상향으로 KEM-1000이 되면 별도 문의', () {
+      expect(box(false, 6000, 720, 8000), inquiry);
+      expect(box(false, 6000, 720, 7500), '800*655');
+    });
+    test('1800kg 초과(모터 문의)도 별도 문의', () {
+      expect(box(false, 6000, 2000, 3000), inquiry);
+    });
+  });
+
+  group('㎡당 무게 (coad_home shutterSpecSettings)', () {
+    test('일반 10, 단열 15, 명진(20mm) 단열 17', () {
+      expect(ShutterCalculator.slatWeightKgPerM2(isInsulated: false), 10);
+      expect(ShutterCalculator.slatWeightKgPerM2(isInsulated: true), 15);
+      expect(
+        ShutterCalculator.slatWeightKgPerM2(
+          isInsulated: true,
+          insulatedSlatMm: ShutterCalculator.insulatedSlat20Mm,
+        ),
+        17,
+      );
+    });
+    test('명진 단열은 17kg/㎡로 무게 계산', () {
+      // (3000+100)*(3000+500)=10.85㎡
+      expect(
+        ShutterCalculator.calculateWeight(
+          3000,
+          3000,
+          ShutterType.doubleExtrusionInsulated,
+        ),
+        162.8,
+      );
+      expect(
+        ShutterCalculator.calculateWeight(
+          3000,
+          3000,
+          ShutterType.doubleExtrusionInsulated,
+          insulatedSlatMm: ShutterCalculator.insulatedSlat20Mm,
+        ),
+        184.5,
+      );
+    });
+  });
+
+  group('롤파이프 선정표 (coad_home)', () {
+    const weights = <double>[150, 250, 300, 400, 500, 600, 800, 1000, 1200, 1300];
+    const table = <(double, List<int>)>[
+      (2900, [4, 4, 4, 5, 5, 6, 6, 8, 10, 12]),
+      (3900, [4, 4, 4, 5, 5, 6, 6, 8, 10, 12]),
+      (4900, [5, 5, 5, 5, 5, 6, 6, 8, 10, 12]),
+      (5900, [5, 5, 5, 5, 5, 6, 6, 8, 10, 12]),
+      (6900, [6, 6, 6, 6, 6, 6, 6, 8, 10, 12]),
+      (7900, [6, 6, 6, 6, 6, 6, 6, 8, 10, 12]),
+      (8900, [8, 8, 8, 8, 8, 8, 8, 8, 10, 12]),
+      (9900, [8, 8, 8, 8, 8, 8, 8, 8, 10, 12]),
+      (10900, [10, 10, 10, 10, 10, 10, 10, 10, 10, 12]),
+      (11900, [10, 10, 10, 10, 10, 10, 10, 10, 10, 12]),
+      (12900, [12, 12, 12, 12, 12, 12, 12, 12, 12, 12]),
+    ];
+    for (final (width, row) in table) {
+      test('폭 ${width.toInt()}mm', () {
+        expect(
+          weights.map((w) => ShutterCalculator.getRollPipeInch(width, w)),
+          row,
+        );
+      });
+    }
+    test('표 범위를 넘으면 문의', () {
+      expect(ShutterCalculator.getRollPipeInch(13000, 100), isNull);
+      expect(ShutterCalculator.getRollPipeInch(3000, 1301), isNull);
+      expect(ShutterCalculator.getRollPipeType(3000, 1301), '별도 문의');
+      expect(ShutterCalculator.getRollPipeType(3000, 200), '4인치 롤파이프');
+      expect(ShutterCalculator.getRollPipeType(0, 200), '');
     });
   });
 }
