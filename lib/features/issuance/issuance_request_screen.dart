@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:coad_customer_calls/core/widgets/ux_action_dock.dart';
 import 'package:coad_customer_calls/data/auth_controller.dart';
+import 'package:coad_customer_calls/features/contract/contract_request_page.dart';
+import 'package:coad_customer_calls/features/contract/contract_request_repository.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_completed_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_filtered_list_page.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
@@ -482,6 +484,31 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                     onTap: () {
                       HapticFeedback.mediumImpact();
                       unawaited(_openOverdueInstallPage());
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _HubMenuTile(
+                    icon: Icons.description_outlined,
+                    title: '계약서 작성 요청',
+                    count: ref.watch(contractOpenCountProvider).when(
+                      data: (n) => n,
+                      error: (_, _) => 0,
+                      loading: () => null,
+                    ),
+                    subtitle: '총무에게 계약서 작성·발송 요청',
+                    accent: IssuanceVisual.todayTileAccent(scheme),
+                    large: true,
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      unawaited(
+                        Navigator.of(context)
+                            .push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const ContractRequestPage(),
+                              ),
+                            )
+                            .then((_) => ref.invalidate(contractOpenCountProvider)),
+                      );
                     },
                   ),
                   const SizedBox(height: 12),
