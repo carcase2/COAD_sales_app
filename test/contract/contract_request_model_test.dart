@@ -40,6 +40,8 @@ void main() {
     expect(f.mailTo, 'a@b.com');
     expect(f.withBankbook, true);
     expect(f.note, '');
+    expect(validateContractFields(f), '발주자 상호를 입력해 주세요.');
+    f.clientName = '비렉스테크';
     expect(validateContractFields(f), isNull);
     expect(contractRequestText(f), raw);
   });
@@ -48,5 +50,44 @@ void main() {
     expect(validateContractFields(ContractFields()), '현장명을 입력해 주세요.');
     final f = ContractFields(siteName: 'a', advanceRate: 60, progressRate: 50);
     expect(validateContractFields(f), contains('100%'));
+  });
+
+  test('사업자번호·날짜 따라오기·품목 더하기', () {
+    expect(formatBizNo('1234567890'), '123-45-67890');
+    final f = ContractFields(
+      siteName: 'a',
+      clientName: 'b',
+      clientBizNo: '123',
+    );
+    expect(validateContractFields(f), contains('10자리'));
+    expect(followStart(null, null, '2026-12-01'), '2026-12-01');
+    expect(followStart('2026-12-01', '2026-12-01', '2026-12-05'), '2026-12-05');
+    expect(followStart('2026-12-01', '2026-12-20', '2026-12-05'), '2026-12-20');
+    expect(addContractItem('', 'A', 1), 'A 1대');
+    expect(addContractItem('A 1대, B 2대', 'B', 1), 'A 1대, B 3대');
+  });
+
+  test('인식 결과 제안', () {
+    final doc = RecognizedDocument({
+      'doc_type': 'business_license',
+      'company_name': '㈜비렉스',
+      'biz_no': '123-45-67890',
+      'representative': '홍길동',
+      'address': '',
+    });
+    final cur = ContractFields(clientName: '비렉스');
+    final s = contractSuggestions(doc, 'business_license', cur);
+    expect(s.map((e) => e.key), ['client_biz_no', 'client_rep']);
+    final card = RecognizedDocument({
+      'doc_type': 'business_card',
+      'person_name': '김',
+      'mobile': '010',
+      'email': 'a@b.com',
+    });
+    expect(card.contactLine, '담당자: 김 / 010 / a@b.com');
+    expect(
+      contractSuggestions(card, 'business_card', cur).single.key,
+      'mail_to',
+    );
   });
 }

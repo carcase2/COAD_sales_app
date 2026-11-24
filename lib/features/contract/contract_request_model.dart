@@ -3,9 +3,71 @@ library;
 
 const contractSendMethods = ['메일', '직접발송'];
 const contractListFilters = ['요청', '완료', '취소', '전체'];
+const contractClientTypes = ['기업', '개인'];
+
+/// 계약서 '수급인' 상호. 양식이 이 글자 그대로 찾으므로 value 는 바꾸지 않는다.
+const contractContractors = [
+  (value: '㈜ 코 아 드', label: '㈜코아드 (본사)'),
+  (value: '㈜ 코아드 대전', label: '㈜코아드 대전'),
+  (value: '㈜ 코아드 대구', label: '㈜코아드 대구'),
+  (value: '㈜ 코아드 전남', label: '㈜코아드 전남'),
+];
+
+/// 요청할 때 함께 붙이는 서류 (새 요청은 둘 다 있어야 한다)
+const contractAttachmentKinds = [
+  (kind: 'business_license', label: '발주처 사업자등록증'),
+  (kind: 'business_card', label: '담당자 명함'),
+];
+const contractMaxFileBytes = 20 * 1024 * 1024;
+const contractMaxFilesPerKind = 5;
+
+String contractAttachmentLabel(String kind) =>
+    contractAttachmentKinds.where((k) => k.kind == kind).firstOrNull?.label ??
+    kind;
+
+/// 첨부가 빠진 서류 이름들
+List<String> missingContractAttachments(Map<String, int> counts) => [
+  for (final k in contractAttachmentKinds)
+    if ((counts[k.kind] ?? 0) <= 0) k.label,
+];
+
+class ContractFile {
+  const ContractFile({
+    required this.id,
+    required this.kind,
+    required this.name,
+    required this.size,
+    required this.contentType,
+  });
+
+  final String id;
+  final String kind;
+  final String name;
+  final int size;
+  final String contentType;
+
+  bool get isImage => contentType.startsWith('image/');
+
+  factory ContractFile.fromJson(Map<String, dynamic> j) => ContractFile(
+    id: '${j['id'] ?? ''}',
+    kind: '${j['kind'] ?? ''}',
+    name: '${j['name'] ?? ''}',
+    size: ContractFields._int(j['size']) ?? 0,
+    contentType: '${j['content_type'] ?? ''}',
+  );
+}
 
 class ContractFields {
   ContractFields({
+    this.clientType = '기업',
+    this.clientName = '',
+    this.clientBizNo = '',
+    this.clientAddress = '',
+    this.clientRep = '',
+    this.clientPhone = '',
+    this.contractor = '㈜ 코 아 드',
+    this.performanceBondRate,
+    this.defectBondRate,
     this.siteName = '',
     this.siteAddress = '',
     this.items = '',
@@ -26,6 +88,27 @@ class ContractFields {
     this.note = '',
   });
 
+  /// 발주자 구분: 기업 / 개인
+  String clientType;
+
+  /// 기업은 상호, 개인은 성명
+  String clientName;
+  String clientBizNo;
+  String clientAddress;
+
+  /// 기업 대표자
+  String clientRep;
+
+  /// 개인 전화번호
+  String clientPhone;
+
+  /// 수급인 (코아드 본사·지사)
+  String contractor;
+
+  /// 계약이행·하자 보증금 비율(%) — 필요할 때만
+  int? performanceBondRate;
+  int? defectBondRate;
+
   String siteName;
   String siteAddress;
   String items;
@@ -38,6 +121,8 @@ class ContractFields {
   int? supplyAmount;
   int? advanceRate;
   int? progressRate;
+
+  /// yyyy-MM-dd (날짜로 고른다)
   String advancePayWhen;
   String progressPayWhen;
   bool advanceBond;
@@ -49,47 +134,45 @@ class ContractFields {
   bool withBankbook;
   String note;
 
-  ContractFields copy() => ContractFields(
-    siteName: siteName,
-    siteAddress: siteAddress,
-    items: items,
-    periodStart: periodStart,
-    periodEnd: periodEnd,
-    supplyAmount: supplyAmount,
-    advanceRate: advanceRate,
-    progressRate: progressRate,
-    advancePayWhen: advancePayWhen,
-    progressPayWhen: progressPayWhen,
-    advanceBond: advanceBond,
-    performanceBond: performanceBond,
-    defectBond: defectBond,
-    warranty: warranty,
-    sendMethod: sendMethod,
-    mailTo: mailTo,
-    withBankbook: withBankbook,
-    note: note,
-  );
+  ContractFields copy() {
+    final f = ContractFields();
+    fillFromJson(f, toJson(trimmed: false));
+    return f;
+  }
 
-  Map<String, dynamic> toJson() => {
-    'site_name': siteName.trim(),
-    'site_address': siteAddress.trim(),
-    'items': items.trim(),
-    'period_start': periodStart,
-    'period_end': periodEnd,
-    'supply_amount': supplyAmount,
-    'advance_rate': advanceRate,
-    'progress_rate': progressRate,
-    'advance_pay_when': advancePayWhen.trim(),
-    'progress_pay_when': progressPayWhen.trim(),
-    'advance_bond': advanceBond,
-    'performance_bond': performanceBond,
-    'defect_bond': defectBond,
-    'warranty': warranty.trim(),
-    'send_method': sendMethod,
-    'mail_to': sendMethod == '메일' ? mailTo.trim() : '',
-    'with_bankbook': withBankbook,
-    'note': note.trim(),
-  };
+  Map<String, dynamic> toJson({bool trimmed = true}) {
+    String t(String s) => trimmed ? s.trim() : s;
+    final company = clientType != '개인';
+    return {
+      'client_type': clientType,
+      'client_name': t(clientName),
+      'client_biz_no': company ? t(clientBizNo) : '',
+      'client_address': t(clientAddress),
+      'client_rep': company ? t(clientRep) : '',
+      'client_phone': company ? '' : t(clientPhone),
+      'contractor': contractor,
+      'performance_bond_rate': performanceBond ? performanceBondRate : null,
+      'defect_bond_rate': defectBond ? defectBondRate : null,
+      'site_name': t(siteName),
+      'site_address': t(siteAddress),
+      'items': t(items),
+      'period_start': periodStart,
+      'period_end': periodEnd,
+      'supply_amount': supplyAmount,
+      'advance_rate': advanceRate,
+      'progress_rate': progressRate,
+      'advance_pay_when': t(advancePayWhen),
+      'progress_pay_when': t(progressPayWhen),
+      'advance_bond': advanceBond,
+      'performance_bond': performanceBond,
+      'defect_bond': defectBond,
+      'warranty': t(warranty),
+      'send_method': sendMethod,
+      'mail_to': sendMethod == '메일' ? t(mailTo) : '',
+      'with_bankbook': withBankbook,
+      'note': t(note),
+    };
+  }
 
   static int? _int(dynamic v) {
     if (v == null || v == '') return null;
@@ -104,6 +187,17 @@ class ContractFields {
 
   static void fillFromJson(ContractFields f, Map<String, dynamic> j) {
     f
+      ..clientType = j['client_type'] == '개인' ? '개인' : '기업'
+      ..clientName = '${j['client_name'] ?? ''}'
+      ..clientBizNo = '${j['client_biz_no'] ?? ''}'
+      ..clientAddress = '${j['client_address'] ?? ''}'
+      ..clientRep = '${j['client_rep'] ?? ''}'
+      ..clientPhone = '${j['client_phone'] ?? ''}'
+      ..contractor = contractContractors.any((c) => c.value == j['contractor'])
+          ? '${j['contractor']}'
+          : '㈜ 코 아 드'
+      ..performanceBondRate = _int(j['performance_bond_rate'])
+      ..defectBondRate = _int(j['defect_bond_rate'])
       ..siteName = '${j['site_name'] ?? ''}'
       ..siteAddress = '${j['site_address'] ?? ''}'
       ..items = '${j['items'] ?? ''}'
@@ -131,6 +225,7 @@ class ContractRequest extends ContractFields {
   ContractRequest({
     required this.id,
     required this.seq,
+    required this.files,
     required this.requesterUserId,
     required this.requesterName,
     required this.status,
@@ -142,6 +237,7 @@ class ContractRequest extends ContractFields {
 
   final String id;
   final int seq;
+  final List<ContractFile> files;
   final String requesterUserId;
   final String requesterName;
 
@@ -158,6 +254,10 @@ class ContractRequest extends ContractFields {
     final r = ContractRequest(
       id: '${j['id'] ?? ''}',
       seq: ContractFields._int(j['seq']) ?? 0,
+      files: [
+        for (final f in (j['files'] as List? ?? const []))
+          if (f is Map) ContractFile.fromJson(Map<String, dynamic>.from(f)),
+      ],
       requesterUserId: '${j['requester_user_id'] ?? ''}',
       requesterName: '${j['requester_name'] ?? ''}',
       status: '${j['status'] ?? '요청'}',
@@ -174,10 +274,14 @@ class ContractRequest extends ContractFields {
     if (filter != '전체' && status != filter) return false;
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return true;
-    return [siteName, siteAddress, items, requesterName, requestNo, note]
-        .join(' ')
-        .toLowerCase()
-        .contains(q);
+    return [
+      siteName,
+      siteAddress,
+      items,
+      requesterName,
+      requestNo,
+      note,
+    ].join(' ').toLowerCase().contains(q);
   }
 }
 
@@ -197,6 +301,10 @@ String? validateContractFields(ContractFields f) {
   }
   if (s.isNotEmpty && e.isNotEmpty && s.compareTo(e) > 0) {
     return '공사기간 시작일이 종료일보다 늦습니다.';
+  }
+  final advWhen = f.advancePayWhen.trim();
+  if (advWhen.isNotEmpty && !_dateRe.hasMatch(advWhen)) {
+    return '선급금 지급시기 날짜를 확인해 주세요.';
   }
   if ((f.supplyAmount ?? 0) < 0) return '계약금액(공급가)을 숫자로 입력해 주세요.';
   bool badRate(int? r) => r != null && (r < 0 || r > 100);
@@ -218,7 +326,43 @@ String? validateContractFields(ContractFields f) {
         .toList();
     if (bad.isNotEmpty) return '받는 사람 이메일 주소를 확인해 주세요: ${bad.join(', ')}';
   }
+  final company = f.clientType != '개인';
+  if (f.clientName.trim().isEmpty) {
+    return company ? '발주자 상호를 입력해 주세요.' : '발주자 성명을 입력해 주세요.';
+  }
+  if (company) {
+    final raw = f.clientBizNo.trim();
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (raw.isNotEmpty && digits.length != 10) return '사업자등록번호는 숫자 10자리입니다.';
+  }
+  if (badRate(f.performanceBondRate) || badRate(f.defectBondRate)) {
+    return '보증금 비율은 0~100 사이 정수로 입력해 주세요.';
+  }
   return null;
+}
+
+/// '1234567890' → '123-45-67890' (10자리가 아니면 그대로)
+String formatBizNo(String s) {
+  final d = s.replaceAll(RegExp(r'\D'), '');
+  return d.length == 10
+      ? '${d.substring(0, 3)}-${d.substring(3, 5)}-${d.substring(5)}'
+      : s.trim();
+}
+
+/// '2026-11-26' → '26.11.26' (단톡방 양식과 같게)
+String dotDate(String d) => _dateRe.hasMatch(d)
+    ? '${d.substring(2, 4)}.${d.substring(5, 7)}.${d.substring(8, 10)}'
+    : d;
+
+/// 시작일을 고르면 종료일이 따라온다. 사람이 따로 고른(새 시작일 이후) 종료일은 둔다.
+String? followStart(String? prevStart, String? prevEnd, String? nextStart) {
+  if (nextStart == null) return prevEnd;
+  if (prevEnd == null ||
+      prevEnd == prevStart ||
+      prevEnd.compareTo(nextStart) < 0) {
+    return nextStart;
+  }
+  return prevEnd;
 }
 
 String _comma(int n) => n.toString().replaceAllMapped(
@@ -256,7 +400,7 @@ String contractRequestText(ContractFields r) {
     '*계약금액: 공급가 ${formatWon(r.supplyAmount)}',
     '*선급금 ${r.advanceRate ?? ''}%',
     '*기성금 ${r.progressRate ?? ''}%',
-    '선급금지급시기: ${r.advancePayWhen}',
+    '선급금지급시기: ${dotDate(r.advancePayWhen)}',
     '기성금지급시기: ${r.progressPayWhen}',
     '*선급금 증권 여부${_ox(r.advanceBond)}',
     '*계약이행보증금 여부${_ox(r.performanceBond)}',
@@ -352,7 +496,8 @@ int applyContractRequestText(ContractFields out, String raw) {
     final key = (kv != null ? kv[1]! : line).replaceAll(RegExp(r'\s'), '');
     final value = kv != null ? kv[2]!.trim() : '';
     final compact = line.replaceAll(RegExp(r'\s'), '');
-    String ynSource() => kv != null ? value : key.replaceFirst(RegExp(r'^.*여부'), '');
+    String ynSource() =>
+        kv != null ? value : key.replaceFirst(RegExp(r'^.*여부'), '');
 
     hits++;
     if (kv != null && RegExp(r'^현장명?$').hasMatch(key)) {
@@ -364,7 +509,9 @@ int applyContractRequestText(ContractFields out, String raw) {
       out.items = value;
     } else if (kv != null && key.contains('공사기간')) {
       final p = value.split(RegExp(r'\s*[-~]\s*(?=\d{2,4}\s*[./-])'));
-      out.periodStart = p.isNotEmpty && p[0].isNotEmpty ? parseLooseDate(p[0]) : null;
+      out.periodStart = p.isNotEmpty && p[0].isNotEmpty
+          ? parseLooseDate(p[0])
+          : null;
       out.periodEnd = p.length > 1 ? parseLooseDate(p[1]) : null;
     } else if (kv != null && key.contains('계약금액')) {
       out.supplyAmount = parseWon(
@@ -373,7 +520,7 @@ int applyContractRequestText(ContractFields out, String raw) {
             .replaceFirst(RegExp(r'\(.*\)$'), ''),
       );
     } else if (key == '선급금지급시기') {
-      out.advancePayWhen = value;
+      out.advancePayWhen = parseLooseDate(value) ?? '';
     } else if (key == '기성금지급시기') {
       out.progressPayWhen = value;
     } else if (RegExp(r'^선급금\d+%$').hasMatch(key)) {
@@ -390,20 +537,20 @@ int applyContractRequestText(ContractFields out, String raw) {
       final yn = _parseYesNo(ynSource());
       if (yn != null) out.defectBond = yn;
     } else if (RegExp(r'^무상(보증|보수)기간').hasMatch(compact)) {
-      out.warranty = (kv != null
-              ? value
-              : line.replaceFirst(RegExp(r'^무상\s*(보증|보수)\s*기간\s*'), ''))
-          .trim();
+      out.warranty =
+          (kv != null
+                  ? value
+                  : line.replaceFirst(RegExp(r'^무상\s*(보증|보수)\s*기간\s*'), ''))
+              .trim();
     } else if (RegExp(r'통장\s*사본').hasMatch(line)) {
       out.withBankbook = true;
     } else if (RegExp(r'직접\s*발송|직접\s*전달|인편|등기').hasMatch(line)) {
       out.sendMethod = '직접발송';
     } else if (RegExp(r'메일|이메일').hasMatch(line) && line.contains('@')) {
       out.sendMethod = '메일';
-      out.mailTo = RegExp(r'[^\s@,;:()]+@[^\s@,;:()]+\.[^\s@,;:()]+')
-          .allMatches(line)
-          .map((m) => m[0]!)
-          .join(', ');
+      out.mailTo = RegExp(
+        r'[^\s@,;:()]+@[^\s@,;:()]+\.[^\s@,;:()]+',
+      ).allMatches(line).map((m) => m[0]!).join(', ');
     } else {
       hits--;
       leftovers.add(original.trim());
@@ -411,4 +558,149 @@ int applyContractRequestText(ContractFields out, String raw) {
   }
   if (leftovers.isNotEmpty) out.note = leftovers.join('\n');
   return hits;
+}
+
+/* ---------- 품목: NEW MES 제품 목록(대분류 → 제품) ---------- */
+
+class CatalogCategory {
+  const CatalogCategory({
+    required this.code,
+    required this.name,
+    required this.products,
+  });
+  final String code;
+  final String name;
+  final List<({String code, String name})> products;
+
+  factory CatalogCategory.fromJson(Map<String, dynamic> j) => CatalogCategory(
+    code: '${j['code'] ?? ''}',
+    name: '${j['name'] ?? ''}',
+    products: [
+      for (final p in (j['products'] as List? ?? const []))
+        if (p is Map) (code: '${p['code'] ?? ''}', name: '${p['name'] ?? ''}'),
+    ],
+  );
+}
+
+/// 품목 글('A 1대, B 2대')에 한 줄을 더한다. 같은 이름이 있으면 수량만 더한다.
+String addContractItem(String text, String name, int qty) {
+  final parts = text
+      .split(RegExp(r'\s*,\s*'))
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty)
+      .toList();
+  for (var i = 0; i < parts.length; i++) {
+    final m = RegExp(r'^(.*?)\s*(\d+)\s*대$').firstMatch(parts[i]);
+    if ((m?[1] ?? parts[i]).trim() == name) {
+      parts[i] = '$name ${(int.tryParse(m?[2] ?? '') ?? 1) + qty}대';
+      return parts.join(', ');
+    }
+  }
+  return [...parts, '$name $qty대'].join(', ');
+}
+
+/* ---------- 사업자등록증·명함 자동 인식 ---------- */
+
+class RecognizedDocument {
+  const RecognizedDocument(this.j);
+  final Map<String, dynamic> j;
+  String _s(String k) => '${j[k] ?? ''}'.trim();
+  String get docType => _s('doc_type');
+  String get companyName => _s('company_name');
+  String get bizNo => _s('biz_no');
+  String get representative => _s('representative');
+  String get address => _s('address');
+  String get personName => _s('person_name');
+  String get personTitle => _s('person_title');
+  String get phone => _s('phone');
+  String get mobile => _s('mobile');
+  String get email => _s('email');
+
+  /// 명함 담당자를 요청 메모에 남길 한 줄
+  String get contactLine {
+    if (personName.isEmpty && mobile.isEmpty && email.isEmpty) return '';
+    final who = [personName, personTitle].where((s) => s.isNotEmpty).join(' ');
+    return '담당자: ${[who, mobile.isNotEmpty ? mobile : phone, email].where((s) => s.isNotEmpty).join(' / ')}';
+  }
+}
+
+/// 인식 결과로 칸 하나를 채울 제안. status: fill(빈 칸) / differs(다른 값 있음)
+typedef ContractSuggestion = ({
+  String key,
+  String label,
+  String value,
+  String status,
+});
+
+String _comparable(String s) =>
+    s.replaceAll(RegExp(r'[\s()㈜주식회사\-.,]'), '').toLowerCase();
+
+/// COAD_home `suggestionsFor` 와 같은 규칙.
+/// 사업자등록증은 상호·번호·대표자·주소, 명함은 (값이 없을 때) 상호·주소와 메일 주소.
+List<ContractSuggestion> contractSuggestions(
+  RecognizedDocument doc,
+  String uploadedAs,
+  ContractFields cur,
+) {
+  final isLicense =
+      doc.docType == 'business_license' ||
+      (doc.docType == 'other' && uploadedAs == 'business_license');
+  const labels = {
+    'client_name': '상호',
+    'client_biz_no': '사업자등록번호',
+    'client_rep': '대표자',
+    'client_address': '주소',
+    'mail_to': '받는 사람 이메일',
+  };
+  final picks = isLicense
+      ? [
+          ('client_name', doc.companyName),
+          ('client_biz_no', doc.bizNo),
+          ('client_rep', doc.representative),
+          ('client_address', doc.address),
+        ]
+      : [
+          ('client_name', doc.companyName),
+          ('client_address', doc.address),
+          ('mail_to', cur.sendMethod == '메일' ? doc.email : ''),
+        ];
+  final out = <ContractSuggestion>[];
+  for (final (key, value) in picks) {
+    if (value.isEmpty) continue;
+    final now = contractFieldValue(cur, key).trim();
+    if (!isLicense && now.isNotEmpty && key != 'mail_to') continue;
+    if (key == 'mail_to' && now.toLowerCase().contains(value.toLowerCase())) {
+      continue;
+    }
+    final status = now.isEmpty
+        ? 'fill'
+        : (_comparable(now) == _comparable(value) ? 'same' : 'differs');
+    if (status == 'same') continue;
+    out.add((key: key, label: labels[key]!, value: value, status: status));
+  }
+  return out;
+}
+
+String contractFieldValue(ContractFields f, String key) => switch (key) {
+  'client_name' => f.clientName,
+  'client_biz_no' => f.clientBizNo,
+  'client_rep' => f.clientRep,
+  'client_address' => f.clientAddress,
+  'mail_to' => f.mailTo,
+  _ => '',
+};
+
+void setContractField(ContractFields f, String key, String v) {
+  switch (key) {
+    case 'client_name':
+      f.clientName = v;
+    case 'client_biz_no':
+      f.clientBizNo = v;
+    case 'client_rep':
+      f.clientRep = v;
+    case 'client_address':
+      f.clientAddress = v;
+    case 'mail_to':
+      f.mailTo = v;
+  }
 }
