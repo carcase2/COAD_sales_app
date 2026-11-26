@@ -36,6 +36,8 @@ die() { echo "$*" >&2; exit 1; }
 for tool in curl openssl jq; do
   command -v "$tool" >/dev/null || die "$tool 이 필요합니다."
 done
+# Windows용 jq.exe는 줄 끝에 \r을 붙인다 (편집 ID가 "xxx\r"이 되어 API 주소가 깨짐). 어디서나 \r 제거.
+jq() { command jq "$@" | tr -d '\r'; }
 [[ -f "$KEY_JSON" ]] || die "Play 서비스 계정 키가 없습니다: $KEY_JSON
 Google Cloud 서비스 계정 키(JSON)를 받아 이 위치에 두고,
 Play Console > 사용자 및 권한에서 그 계정 이메일을 초대해 출시 권한을 주세요."
@@ -62,9 +64,9 @@ KEYTOOL=keytool
 [[ -x "$JAVA21/bin/keytool" ]] && KEYTOOL="$JAVA21/bin/keytool"
 PROPS=android/key.properties
 if [[ -f "$PROPS" ]]; then
-  STORE_FILE=$(grep '^storeFile=' "$PROPS" | cut -d= -f2-)
-  KEY_ALIAS=$(grep '^keyAlias=' "$PROPS" | cut -d= -f2-)
-  STORE_PASS=$(grep '^storePassword=' "$PROPS" | cut -d= -f2-)
+  STORE_FILE=$(grep '^storeFile=' "$PROPS" | cut -d= -f2- | tr -d '\r')
+  KEY_ALIAS=$(grep '^keyAlias=' "$PROPS" | cut -d= -f2- | tr -d '\r')
+  STORE_PASS=$(grep '^storePassword=' "$PROPS" | cut -d= -f2- | tr -d '\r')
   want=$("$KEYTOOL" -list -v -keystore "android/$STORE_FILE" -alias "$KEY_ALIAS" \
     -storepass "$STORE_PASS" 2>/dev/null | awk '/SHA256:/{print $2; exit}')
   got=$("$KEYTOOL" -printcert -jarfile "$AAB" 2>/dev/null | awk '/SHA256:/{print $2; exit}')
@@ -94,10 +96,15 @@ UPLOAD=https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applic
 auth=(-H "Authorization: Bearer $TOKEN")
 
 call() { # call METHOD URL [curl args...] → 응답 JSON, 오류면 중단
-  local out
-  out=$(curl -sS -X "$1" "${auth[@]}" "$2" "${@:3}")
-  if [[ "$(jq -r '.error.message // empty' <<<"$out")" != "" ]]; then
-    echo "Play API 오류: $(jq -r .error.message <<<"$out")" >&2
+  # HTTP 코드로 판정한다. 오류가 JSON이 아닌 HTML(예: 411)로 오면 jq 검사만으로는 성공처럼 지나간다.
+  local out code
+  out=$(curl -sS -X "$1" "${auth[@]}" "$2" "${@:3}" -w $'\n%{http_code}') || out=$'\n000'
+  code=${out##*$'\n'}
+  out=${out%$'\n'*}
+  if [[ "$code" != 2* ]]; then
+    local msg
+    msg=$(jq -r '.error.message // empty' <<<"$out" 2>/dev/null || true)
+    echo "Play API 오류 (HTTP $code): ${msg:-$(head -c 300 <<<"$out")}" >&2
     [[ -n "${EDIT:-}" ]] && curl -sS -X DELETE "${auth[@]}" "$API/edits/$EDIT" >/dev/null || true
     exit 1
   fi
@@ -115,5 +122,6 @@ release=$(jq -nc --arg name "v$VER" --arg vc "$VC" --arg notes "$NOTES" '
   + (if $notes == "" then {} else {releaseNotes:[{language:"ko-KR", text:$notes}]} end)')
 call PUT "$API/edits/$EDIT/tracks/$TRACK" -H 'Content-Type: application/json' \
   -d "$(jq -nc --arg t "$TRACK" --argjson r "$release" '{track:$t, releases:[$r]}')" >/dev/null
-call POST "$API/edits/$EDIT:commit" >/dev/null
+# 본문 없는 POST는 curl에 따라 Content-Length를 안 보내 411로 거절된다. 빈 본문을 명시.
+call POST "$API/edits/$EDIT:commit" --data '' >/dev/null
 echo "업로드 완료: v$VER ($VC) → Play $TRACK 트랙"
