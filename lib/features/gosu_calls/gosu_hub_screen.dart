@@ -2,6 +2,9 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/gosu_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
+import 'package:coad_customer_calls/data/gosu_sites_repository.dart';
+import 'package:coad_customer_calls/features/gosu_sites/gosu_site_list_screen.dart';
+import 'package:coad_customer_calls/features/gosu_sites/gosu_site_visit_calendar_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_calendar_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_list_screen.dart';
@@ -157,6 +160,8 @@ class GosuHomePanel extends ConsumerWidget {
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        const GosuSiteHomeSection(),
         if (_key.period == HubPeriod.day) ...[
           const SizedBox(height: 12),
           const GosuTodayDeskHost(),
@@ -197,6 +202,89 @@ class GosuHomePanel extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [body],
+    );
+  }
+}
+
+/// 고수 사이트 홈페이지 문의 (coad-gosu-followup 동기화) — 오늘 접수 · 접수중 · 취소 사유 · 방문 달력.
+class GosuSiteHomeSection extends ConsumerWidget {
+  const GosuSiteHomeSection({super.key});
+
+  void _push(BuildContext context, WidgetRef ref, Widget screen) {
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => screen))
+        .then((_) => ref.invalidate(gosuSiteCountsProvider));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final counts =
+        ref.watch(gosuSiteCountsProvider).valueOrNull ?? GosuSiteCounts.empty;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(2, 0, 2, 8),
+          child: Text(
+            '홈페이지 문의 (고수 사이트)',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+          ),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: SupportHubTile(
+                title: '오늘 접수',
+                subtitle: '홈페이지',
+                icon: Icons.language_rounded,
+                count: counts.today,
+                onTap: () => _push(
+                  context,
+                  ref,
+                  const GosuSiteListScreen(initialTab: GosuSiteTab.today),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: SupportHubTile(
+                title: '접수중',
+                subtitle: counts.stale > 0 ? '지연 ${counts.stale}건' : '통화 기록',
+                icon: Icons.phone_in_talk_rounded,
+                count: counts.receiving,
+                alert: counts.stale > 0,
+                onTap: () => _push(
+                  context,
+                  ref,
+                  const GosuSiteListScreen(initialTab: GosuSiteTab.receiving),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SupportSectionCard(
+          title: '접수취소 사유',
+          subtitle: counts.cancelNoReason > 0
+              ? '최근 30일 · 사유 미기록 ${counts.cancelNoReason}건'
+              : '최근 30일 접수취소',
+          icon: Icons.cancel_outlined,
+          badge: counts.cancelNoReason > 0 ? '${counts.cancelNoReason}' : null,
+          onTap: () => _push(
+            context,
+            ref,
+            const GosuSiteListScreen(initialTab: GosuSiteTab.cancel),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SupportSectionCard(
+          title: '방문 달력',
+          subtitle: '고수에 입력된 방문예정일',
+          icon: Icons.event_note_rounded,
+          onTap: () => _push(context, ref, const GosuSiteVisitCalendarScreen()),
+        ),
+      ],
     );
   }
 }

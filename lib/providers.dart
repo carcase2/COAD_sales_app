@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/data/b2_upload_repository.dart';
 import 'package:coad_customer_calls/data/general_schedule_repository.dart';
 import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
+import 'package:coad_customer_calls/data/gosu_sites_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/usage_repository.dart';
 import 'package:coad_customer_calls/data/ai_extractor_service.dart';
@@ -35,6 +36,18 @@ final gosuSalesCallsRepositoryProvider = Provider<GosuSalesCallsRepository>((
   ref,
 ) {
   return GosuSalesCallsRepository();
+});
+
+/// 고수 사이트 홈페이지 문의 (coad-gosu-followup 동기화 결과).
+final gosuSitesRepositoryProvider = Provider<GosuSitesRepository>((ref) {
+  return GosuSitesRepository();
+});
+
+/// 홈페이지 문의 건수 (오늘 접수 · 접수중 · 지연 · 취소 사유 미기록).
+final gosuSiteCountsProvider = FutureProvider.autoDispose<GosuSiteCounts>((
+  ref,
+) {
+  return ref.read(gosuSitesRepositoryProvider).fetchCounts();
 });
 
 final usageRepositoryProvider = Provider<UsageRepository>((ref) {

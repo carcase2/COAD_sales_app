@@ -31,6 +31,7 @@ const List<GosuNamedOption> kGosuInquiryMethods = [
   GosuNamedOption(id: 9201, name: '블로그카페', colorHex: '#c026d3'),
   GosuNamedOption(id: 9202, name: '지도', colorHex: '#16a34a'),
   GosuNamedOption(id: 9203, name: '재문의', colorHex: '#57534e'),
+  GosuNamedOption(id: 9204, name: '홈페이지', colorHex: '#4f46e5'),
 ];
 
 /// 고수 전용 문의종류. 미선택·알 수 없는 값은 단순문의.
