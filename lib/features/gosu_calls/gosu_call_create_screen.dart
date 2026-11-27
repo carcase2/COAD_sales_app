@@ -12,7 +12,7 @@ import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/core/widgets/form_section.dart';
 import 'package:coad_customer_calls/core/widgets/searchable_region_picker.dart';
 import 'package:coad_customer_calls/features/customer_support/reception_kind_sheet.dart';
-import 'package:coad_customer_calls/features/business_cards/business_card_crop_screen.dart';
+import 'package:coad_customer_calls/features/business_cards/business_card_capture.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_choice_chip.dart';
 import 'package:coad_customer_calls/features/home/home_navigation.dart';
@@ -256,12 +256,13 @@ class _GosuCallCreateScreenState extends ConsumerState<GosuCallCreateScreen> {
 
   Future<void> _scanBusinessCard() async {
     final source = await showSalesCallImageSourceSheet(context, title: '명함 인식');
-    if (source == null) return;
-    var path = await _pickCardImage(source);
+    if (source == null || !mounted) return;
+    var path = await captureBusinessCardImage(
+      context,
+      source: source,
+      pickRaw: () => _pickCardImage(source),
+    );
     if (path == null || !mounted) return;
-    final cropped = await cropBusinessCardImage(context, imagePath: path);
-    if (cropped == null || !mounted) return;
-    path = cropped;
 
     setState(() => _aiBusy = true);
     try {
