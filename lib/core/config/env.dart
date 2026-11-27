@@ -17,3 +17,12 @@ String get kakaoRestApiKey =>
     dotenv.env['KAKAO_REST_API_KEY'] ??
     dotenv.env['NEXT_PUBLIC_KAKAO_API_KEY'] ??
     '';
+
+/// 고수 동기화 서버(coad-gosu-followup). 앱의 '고수에서 새로고침'이 `POST /api/sync` 를 부른다.
+String get gosuFollowupUrl {
+  final v = (dotenv.env['GOSU_FOLLOWUP_URL'] ?? '').trim();
+  return v.isEmpty ? 'https://coad-gosu-followup.vercel.app' : v;
+}
+
+/// `POST /api/sync` 의 `x-sync-token`. 비어 있으면 앱에서 동기화를 부르지 않는다.
+String get gosuSyncToken => (dotenv.env['GOSU_SYNC_TOKEN'] ?? '').trim();

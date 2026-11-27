@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/core/utils/gosu_permissions.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
 import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/gosu_sites_repository.dart';
+import 'package:coad_customer_calls/features/gosu_sites/gosu_combined_reception_screen.dart';
 import 'package:coad_customer_calls/features/gosu_sites/gosu_site_list_screen.dart';
 import 'package:coad_customer_calls/features/gosu_sites/gosu_site_visit_calendar_screen.dart';
 import 'package:coad_customer_calls/features/customer_support/customer_support_widgets.dart';
@@ -84,6 +85,9 @@ class GosuHomePanel extends ConsumerWidget {
       HubPeriod.week => seoulWeekRangeContaining(_key.anchorYmd),
       HubPeriod.month => seoulMonthRangeContaining(_key.anchorYmd),
     };
+    // 금일 접수 = 전화 접수(gosu_sales_calls) + 홈페이지 문의(gosu_sites)
+    final siteCount =
+        ref.watch(gosuSiteReceivedCountProvider(range)).valueOrNull ?? 0;
 
     final body = Column(
       mainAxisSize: MainAxisSize.min,
@@ -94,16 +98,20 @@ class GosuHomePanel extends ConsumerWidget {
             Expanded(
               child: SupportHubTile(
                 title: receptionLabel,
-                subtitle: '해당 기간 접수',
+                subtitle: '전화 ${counts.periodReception} · 홈페이지 $siteCount',
                 icon: Icons.today_rounded,
-                count: counts.periodReception,
-                onTap: () => _openList(
-                  context,
-                  mode: GosuListMode.dateRange,
-                  title: receptionLabel,
-                  fromYmd: range.$1,
-                  toYmdInclusive: range.$2,
-                ),
+                count: counts.periodReception + siteCount,
+                onTap: () => Navigator.of(context)
+                    .push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => GosuCombinedReceptionScreen(
+                          title: receptionLabel,
+                          fromYmd: range.$1,
+                          toYmdInclusive: range.$2,
+                        ),
+                      ),
+                    )
+                    .then((_) => ref.invalidate(gosuSiteReceivedCountProvider)),
               ),
             ),
             const SizedBox(width: 10),
@@ -236,7 +244,10 @@ class GosuSiteHomeSection extends ConsumerWidget {
             Expanded(
               child: SupportHubTile(
                 title: '오늘 접수',
-                subtitle: '홈페이지',
+                subtitle: counts.today == 0
+                    ? '홈페이지'
+                    : '접수중 ${counts.todayReceiving} · 완료 ${counts.todayAccepted}',
+                alert: counts.todayReceiving > 0,
                 icon: Icons.language_rounded,
                 count: counts.today,
                 onTap: () => _push(

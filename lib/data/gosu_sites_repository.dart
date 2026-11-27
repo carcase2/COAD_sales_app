@@ -1,18 +1,29 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:coad_customer_calls/core/config/env.dart';
 import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/gosu_site_rules.dart';
 import 'package:coad_customer_calls/models/gosu_site.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 홈 · 허브에 보여 줄 홈페이지 문의 건수.
 class GosuSiteCounts {
   const GosuSiteCounts({
     required this.today,
+    this.todayReceiving = 0,
+    this.todayAccepted = 0,
     required this.receiving,
     required this.stale,
     required this.cancelNoReason,
   });
 
   final int today;
+
+  /// 오늘 접수 중 아직 접수중(통화 필요) / 접수완료 이후.
+  final int todayReceiving;
+  final int todayAccepted;
   final int receiving;
   final int stale;
   final int cancelNoReason;
@@ -23,6 +34,14 @@ class GosuSiteCounts {
     stale: 0,
     cancelNoReason: 0,
   );
+}
+
+class GosuSyncResult {
+  const GosuSyncResult({required this.ok, this.statusChanges = 0, this.error});
+
+  final bool ok;
+  final int statusChanges;
+  final String? error;
 }
 
 /// 고수 사이트 홈페이지 문의(coad-gosu-followup 동기화 결과).
@@ -60,14 +79,97 @@ class GosuSitesRepository {
   }
 
   /// 하루(한국 날짜)에 들어온 건 — 상태 무관.
-  Future<List<GosuSite>> fetchReceivedOn(String ymd) async {
+  Future<List<GosuSite>> fetchReceivedOn(String ymd) =>
+      fetchReceivedBetween(ymd, ymd);
+
+  /// [fromYmd, toYmdInclusive] (한국 날짜)에 들어온 건 — 상태 무관.
+  Future<List<GosuSite>> fetchReceivedBetween(
+    String fromYmd,
+    String toYmdInclusive,
+  ) async {
     final res = await _client
         .from(_board)
         .select()
-        .gte('received_at', seoulDayStartUtcIso(ymd))
-        .lt('received_at', seoulDayEndExclusiveUtcIso(ymd))
-        .order('received_at', ascending: false);
+        .gte('received_at', seoulDayStartUtcIso(fromYmd))
+        .lt('received_at', seoulDayEndExclusiveUtcIso(toYmdInclusive))
+        .order('received_at', ascending: false)
+        .limit(2000);
     return _sites(res);
+  }
+
+  /// 기간 접수 건수 (금일 접수 타일의 홈페이지 몫).
+  Future<int> countReceivedBetween(String fromYmd, String toYmdInclusive) {
+    return _client
+        .from('gosu_sites')
+        .count(CountOption.exact)
+        .gte('received_at', seoulDayStartUtcIso(fromYmd))
+        .lt('received_at', seoulDayEndExclusiveUtcIso(toYmdInclusive));
+  }
+
+  // ---- 고수 사이트 동기화 (coad-gosu-followup POST /api/sync) ----
+
+  /// 마지막 동기화가 이보다 오래되면 화면을 열 때 자동으로 동기화한다 (웹과 같은 15분).
+  static const Duration autoSyncAfter = Duration(minutes: 15);
+  static Future<GosuSyncResult>? _inFlight;
+
+  bool get canSync => gosuSyncToken.isNotEmpty;
+
+  /// 고수 사이트에서 지금 가져온다 (보통 20~30초). 이미 돌고 있으면 그 결과를 같이 기다린다.
+  Future<GosuSyncResult> syncNow() {
+    return _inFlight ??= _postSync().whenComplete(() => _inFlight = null);
+  }
+
+  /// 마지막 성공 동기화가 [autoSyncAfter] 보다 오래됐으면 동기화. 동기화했으면 true.
+  Future<bool> syncIfStale() async {
+    if (!canSync) return false;
+    final last = await fetchLastSyncAt();
+    if (last != null &&
+        DateTime.now().toUtc().difference(last) < autoSyncAfter) {
+      return false;
+    }
+    final r = await syncNow();
+    return r.ok;
+  }
+
+  Future<GosuSyncResult> _postSync() async {
+    if (!canSync) {
+      return const GosuSyncResult(
+        ok: false,
+        error: 'GOSU_SYNC_TOKEN 이 설정되지 않았습니다.',
+      );
+    }
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$gosuFollowupUrl/api/sync'),
+            headers: {'x-sync-token': gosuSyncToken},
+          )
+          .timeout(const Duration(seconds: 75));
+      Map<String, dynamic> body = const {};
+      try {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+      if (res.statusCode == 200 && body['ok'] == true) {
+        return GosuSyncResult(
+          ok: true,
+          statusChanges: (body['statusChanges'] as num?)?.toInt() ?? 0,
+        );
+      }
+      return GosuSyncResult(
+        ok: false,
+        error: res.statusCode == 401
+            ? '동기화 권한이 없습니다 (GOSU_SYNC_TOKEN 확인).'
+            : '고수 동기화 실패 (${res.statusCode}) ${body['error'] ?? ''}'.trim(),
+      );
+    } on TimeoutException {
+      return const GosuSyncResult(
+        ok: false,
+        error: '고수 동기화가 오래 걸려 중단했습니다. 잠시 후 다시 시도해 주세요.',
+      );
+    } catch (e) {
+      return GosuSyncResult(ok: false, error: '고수 동기화에 실패했습니다: $e');
+    }
   }
 
   /// 최근 [days]일 안에 접수취소된 건. 취소일이 비면 고수 마지막 수정일로 판단.
@@ -166,6 +268,12 @@ class GosuSitesRepository {
     final now = DateTime.now();
     return GosuSiteCounts(
       today: results[0].length,
+      todayReceiving: results[0]
+          .where((s) => gosuSiteBucket(s) == GosuSiteBucket.receiving)
+          .length,
+      todayAccepted: results[0]
+          .where((s) => gosuSiteBucket(s) == GosuSiteBucket.accepted)
+          .length,
       receiving: results[1].length,
       stale: results[1]
           .where((s) => gosuSiteStaleReason(s, now: now) != null)

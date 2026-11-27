@@ -40,6 +40,8 @@ class GosuSite {
   final String? productName;
   final String? productSize;
   final String? requestText;
+
+  /// 담당 (고수 사이트에 지정된 담당자 — 웹 '담당' 칸과 같음)
   final String? workerName;
 
   /// 고수 진행상황 그대로 (접수중 / 접수완료 / 취소 / …)

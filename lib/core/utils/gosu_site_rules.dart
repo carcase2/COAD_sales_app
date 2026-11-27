@@ -161,3 +161,29 @@ String gosuSiteRegion(GosuSite s) {
     if (parts.length > 1) parts[1],
   ].join(' ');
 }
+
+/// 대응 기준 묶음. 접수중 = 아직 통화로 방문일을 못 잡음(대응 필요),
+/// 접수완료 = 고수에 방문일 입력 이후 단계 전부(체크시트·견적·계약 포함), 취소 = 접수취소.
+enum GosuSiteBucket { receiving, accepted, canceled }
+
+GosuSiteBucket gosuSiteBucket(GosuSite s) => switch (s.workerStatus) {
+  kGosuSiteReceiving => GosuSiteBucket.receiving,
+  kGosuSiteCanceled => GosuSiteBucket.canceled,
+  _ => GosuSiteBucket.accepted,
+};
+
+String gosuSiteBucketLabel(GosuSiteBucket b) => switch (b) {
+  GosuSiteBucket.receiving => '접수중',
+  GosuSiteBucket.accepted => '접수완료',
+  GosuSiteBucket.canceled => '접수취소',
+};
+
+/// 접수중 → 접수완료 → 취소 순, 같은 묶음은 최근 접수가 위.
+List<GosuSite> sortGosuSitesForResponse(Iterable<GosuSite> sites) {
+  final list = sites.toList();
+  list.sort((a, b) {
+    final c = gosuSiteBucket(a).index.compareTo(gosuSiteBucket(b).index);
+    return c != 0 ? c : b.receivedAt.compareTo(a.receivedAt);
+  });
+  return list;
+}

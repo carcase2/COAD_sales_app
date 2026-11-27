@@ -17,6 +17,7 @@ import 'package:coad_customer_calls/core/utils/work_permissions.dart';
 import 'package:coad_customer_calls/data/work_request_repository.dart';
 import 'package:coad_customer_calls/data/work_task_repository.dart';
 import 'package:coad_customer_calls/features/gosu_calls/gosu_call_detail_screen.dart';
+import 'package:coad_customer_calls/features/gosu_sites/gosu_site_detail_screen.dart';
 import 'package:coad_customer_calls/features/sales_calls/sales_call_detail_screen.dart';
 import 'package:coad_customer_calls/features/work/work_requests_screen.dart';
 import 'package:coad_customer_calls/features/work/work_tasks_screen.dart';
@@ -764,6 +765,13 @@ class NotificationService {
       if (asId == null) return null;
       return jsonEncode({'type': 'as_reception', 'as_id': asId});
     }
+    final gosuSiteId = _extractGosuSiteId(data);
+    if (gosuSiteId != null) {
+      return jsonEncode({
+        'type': 'gosu_site_reception',
+        'gosu_site_id': gosuSiteId,
+      });
+    }
     if (_isGosuReceptionNotification(data)) {
       final gosuId = _extractGosuReceptionId(data);
       if (gosuId == null) return null;
@@ -926,6 +934,11 @@ class NotificationService {
       _navigateToAsReceptionDetail(asId);
       return;
     }
+    final gosuSiteId = _extractGosuSiteId(data);
+    if (gosuSiteId != null) {
+      _navigateToGosuSiteDetail(gosuSiteId);
+      return;
+    }
     if (_isGosuReceptionNotification(data)) {
       final gosuId = _extractGosuReceptionId(data);
       if (gosuId == null) {
@@ -1034,9 +1047,52 @@ class NotificationService {
         .toLowerCase();
     final action = (data['action'] ?? '').toString().trim().toLowerCase();
     return type == 'gosu_reception' ||
+        type == 'gosu_site_reception' ||
         type == 'gosu-reception' ||
         type == 'gosu_call' ||
         action == 'open_gosu_reception';
+  }
+
+  /// 홈페이지 문의(고수 사이트) 푸시 — `gosu_site_id` 는 gosu_sites.gosu_id (문자열).
+  static String? _extractGosuSiteId(Map<String, dynamic> data) {
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (type != 'gosu_site_reception') return null;
+    final id = (data['gosu_site_id'] ?? '').toString().trim();
+    return id.isEmpty ? null : id;
+  }
+
+  static void _navigateToGosuSiteDetail(String id, {int attempt = 0}) {
+    final nav = navigatorKey.currentState;
+    final ctx = navigatorKey.currentContext;
+    var loggedIn = false;
+    if (ctx != null) {
+      try {
+        loggedIn =
+            ProviderScope.containerOf(ctx).read(authControllerProvider) != null;
+      } catch (_) {}
+    }
+    if (nav == null || !loggedIn) {
+      _queuePendingData({'type': 'gosu_site_reception', 'gosu_site_id': id});
+      if (attempt < 40) {
+        Future<void>.delayed(
+          Duration(milliseconds: 150 + attempt * 60),
+          () => _navigateToGosuSiteDetail(id, attempt: attempt + 1),
+        );
+      }
+      return;
+    }
+    _pendingMessageData = null;
+    final routeName = 'GosuSiteDetail/$id';
+    if (_topRouteName(nav) == routeName) return;
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => GosuSiteDetailLoader(gosuId: id),
+        settings: RouteSettings(name: routeName),
+      ),
+    );
   }
 
   static String? _extractGosuReceptionId(Map<String, dynamic> data) {

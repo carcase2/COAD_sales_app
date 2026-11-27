@@ -2,6 +2,7 @@ import 'package:coad_customer_calls/core/utils/date_seoul.dart';
 import 'package:coad_customer_calls/core/utils/gosu_site_rules.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
+import 'package:coad_customer_calls/features/gosu_sites/gosu_site_bucket_chips.dart';
 import 'package:coad_customer_calls/features/gosu_sites/gosu_site_detail_screen.dart';
 import 'package:coad_customer_calls/features/gosu_sites/gosu_site_visit_calendar_screen.dart';
 import 'package:coad_customer_calls/models/gosu_site.dart';
@@ -39,12 +40,15 @@ class _GosuSiteListScreenState extends ConsumerState<GosuSiteListScreen>
   bool _loading = true;
   Object? _error;
   bool _staleOnly = false;
+  GosuSiteBucket? _todayBucket;
+  bool _syncing = false;
   String _query = '';
 
   @override
   void initState() {
     super.initState();
     _load();
+    _sync(onlyIfStale: true);
   }
 
   @override
@@ -87,6 +91,36 @@ class _GosuSiteListScreenState extends ConsumerState<GosuSiteListScreen>
     }
   }
 
+  /// 고수 사이트에서 새로 가져온다. [onlyIfStale] 이면 마지막 동기화가 15분 넘었을 때만.
+  Future<void> _sync({bool onlyIfStale = false}) async {
+    final repo = ref.read(gosuSitesRepositoryProvider);
+    if (!repo.canSync || _syncing) {
+      if (!onlyIfStale) await _load();
+      return;
+    }
+    setState(() => _syncing = true);
+    String? error;
+    var synced = false;
+    if (onlyIfStale) {
+      synced = await repo.syncIfStale();
+    } else {
+      final r = await repo.syncNow();
+      synced = r.ok;
+      error = r.error;
+    }
+    if (!mounted) return;
+    setState(() => _syncing = false);
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+    }
+    if (synced || !onlyIfStale) {
+      ref.invalidate(gosuSiteCountsProvider);
+      await _load();
+    }
+  }
+
   bool _needsCancelReason(GosuSite s) =>
       !_cancelWithReason.contains(s.gosuId) && s.gosuMemo == null;
 
@@ -94,6 +128,14 @@ class _GosuSiteListScreenState extends ConsumerState<GosuSiteListScreen>
     var list = _rows[tab] ?? const <GosuSite>[];
     if (tab == GosuSiteTab.receiving && _staleOnly) {
       list = list.where((s) => gosuSiteStaleReason(s) != null).toList();
+    }
+    if (tab == GosuSiteTab.today) {
+      // 대응 순서: 접수중(통화 필요) → 접수완료 → 취소
+      list = sortGosuSitesForResponse(
+        _todayBucket == null
+            ? list
+            : list.where((s) => gosuSiteBucket(s) == _todayBucket),
+      );
     }
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return list;
@@ -155,9 +197,18 @@ class _GosuSiteListScreenState extends ConsumerState<GosuSiteListScreen>
             ),
           ),
           IconButton(
-            tooltip: '새로고침',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _loading ? null : _load,
+            tooltip: '고수에서 새로고침',
+            icon: _syncing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.sync_rounded),
+            onPressed: _loading || _syncing ? null : () => _sync(),
           ),
         ],
         bottom: TabBar(
@@ -197,8 +248,10 @@ class _GosuSiteListScreenState extends ConsumerState<GosuSiteListScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Text(
                     _lastSync == null
-                        ? '고수 사이트에서 20분마다 가져옵니다.'
-                        : '고수에서 가져온 시각 ${formatSeoulMonthDayTime(_lastSync)} · 20분마다 자동',
+                        ? '고수 사이트에서 가져옵니다.'
+                        : _syncing
+                        ? '고수 사이트에서 가져오는 중… (20초 정도)'
+                        : '고수에서 가져온 시각 ${formatSeoulMonthDayTime(_lastSync)} · 위 ⟳ 로 지금 가져오기',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,
@@ -209,7 +262,32 @@ class _GosuSiteListScreenState extends ConsumerState<GosuSiteListScreen>
                   child: TabBarView(
                     controller: _tabs,
                     children: [
-                      _list(GosuSiteTab.today, '오늘 들어온 홈페이지 문의가 없습니다.'),
+                      Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: GosuSiteBucketChips(
+                                counts: gosuSiteBucketCounts(
+                                  _rows[GosuSiteTab.today] ?? const [],
+                                ),
+                                selected: _todayBucket,
+                                onSelected: (b) =>
+                                    setState(() => _todayBucket = b),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: _list(
+                              GosuSiteTab.today,
+                              _todayBucket == null
+                                  ? '오늘 들어온 홈페이지 문의가 없습니다.'
+                                  : '오늘 ${gosuSiteBucketLabel(_todayBucket!)} 건이 없습니다.',
+                            ),
+                          ),
+                        ],
+                      ),
                       Column(
                         children: [
                           if (staleCount > 0 || _staleOnly)
@@ -254,6 +332,25 @@ class _GosuSiteListScreenState extends ConsumerState<GosuSiteListScreen>
                 AppEmpty(message: empty),
               ],
             )
+          : tab == GosuSiteTab.today
+          ? ListView(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 28),
+              children: [
+                // 오늘 접수는 접수중 / 접수완료 / 접수취소 로 나눠 보여 준다 (rows 는 이미 그 순서)
+                for (final b in GosuSiteBucket.values)
+                  if (rows.any((s) => gosuSiteBucket(s) == b)) ...[
+                    GosuBucketHeader(
+                      bucket: b,
+                      count: rows.where((s) => gosuSiteBucket(s) == b).length,
+                    ),
+                    for (final s in rows.where((x) => gosuSiteBucket(x) == b))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: GosuSiteCard(site: s, onTap: () => _open(s)),
+                      ),
+                  ],
+              ],
+            )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 28),
               itemCount: rows.length,
@@ -275,11 +372,15 @@ class GosuSiteCard extends StatelessWidget {
     required this.site,
     required this.onTap,
     this.needsCancelReason = false,
+    this.showSource = false,
   });
 
   final GosuSite site;
   final VoidCallback onTap;
   final bool needsCancelReason;
+
+  /// 전화 접수와 섞인 목록에서 '홈페이지' 표시.
+  final bool showSource;
 
   @override
   Widget build(BuildContext context) {
@@ -340,15 +441,27 @@ class GosuSiteCard extends StatelessWidget {
                     ),
                   ),
                   _Chip(
-                    text: gosuSiteStatusLabel(site.workerStatus),
+                    text:
+                        '${showSource ? '홈페이지 · ' : ''}${gosuSiteStatusLabel(site.workerStatus)}',
                     color: statusColor,
                   ),
                 ],
               ),
               const SizedBox(height: 2),
               Text(
-                '접수 ${formatSeoulMonthDayTime(site.receivedAt)} · 담당 ${site.workerName ?? '미배정'}',
+                '접수 ${formatSeoulMonthDayTime(site.receivedAt)}',
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                site.workerName == null ? '담당 미배정' : '담당 ${site.workerName}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: site.workerName == null
+                      ? scheme.error
+                      : AppTokens.gosuAccent(scheme),
+                ),
               ),
               const SizedBox(height: 6),
               for (final l in lines)

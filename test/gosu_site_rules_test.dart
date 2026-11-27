@@ -118,4 +118,21 @@ void main() {
     );
     expect(gosuSiteRegion(site(received: now)), '-');
   });
+
+  test('response order: 접수중 → 접수완료(이후 단계 포함) → 취소, 최신 먼저', () {
+    GosuSite at(String id, String status, int hour) => GosuSite(
+      gosuId: id,
+      receivedAt: DateTime.utc(2026, 11, 26, hour),
+      workerStatus: status,
+    );
+    final sorted = sortGosuSitesForResponse([
+      at('a', '접수완료', 5),
+      at('b', kGosuSiteCanceled, 6),
+      at('c', kGosuSiteReceiving, 1),
+      at('d', '체크시트 미제출', 4),
+      at('e', kGosuSiteReceiving, 3),
+    ]);
+    expect(sorted.map((s) => s.gosuId), ['e', 'c', 'a', 'd', 'b']);
+    expect(gosuSiteBucket(at('x', '계약대기', 1)), GosuSiteBucket.accepted);
+  });
 }

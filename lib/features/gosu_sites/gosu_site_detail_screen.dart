@@ -351,7 +351,7 @@ class _GosuSiteDetailScreenState extends ConsumerState<GosuSiteDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '${gosuSiteStatusLabel(_site.workerStatus)} · 접수 ${formatSeoulMonthDayTime(_site.receivedAt)} · 담당 ${_site.workerName ?? '미배정'}',
+          '${gosuSiteStatusLabel(_site.workerStatus)} · 접수 ${formatSeoulMonthDayTime(_site.receivedAt)}',
           style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
         ),
         const SizedBox(height: 6),
@@ -376,6 +376,18 @@ class _GosuSiteDetailScreenState extends ConsumerState<GosuSiteDetailScreen> {
                 ),
               ],
             ],
+          ),
+        ),
+        row(
+          '담당',
+          Text(
+            _site.workerName ?? '미배정',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: _site.workerName == null
+                  ? scheme.error
+                  : AppTokens.gosuAccent(scheme),
+            ),
           ),
         ),
         row('지역', t(gosuSiteRegion(_site))),
@@ -648,4 +660,39 @@ class _GosuSiteDetailScreenState extends ConsumerState<GosuSiteDetailScreen> {
 
 extension on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;
+}
+
+/// 푸시처럼 id 만 있을 때: 불러온 뒤 상세를 보여 준다.
+class GosuSiteDetailLoader extends ConsumerWidget {
+  const GosuSiteDetailLoader({super.key, required this.gosuId});
+
+  final String gosuId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return FutureBuilder<GosuSite?>(
+      future: ref.read(gosuSitesRepositoryProvider).fetchSite(gosuId),
+      builder: (context, snap) {
+        final site = snap.data;
+        if (site != null) return GosuSiteDetailScreen(initial: site);
+        final scheme = Theme.of(context).colorScheme;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('홈페이지 문의'),
+            backgroundColor: AppTokens.gosuAccent(scheme),
+            foregroundColor: Colors.white,
+          ),
+          body: Center(
+            child: snap.connectionState != ConnectionState.done
+                ? const CircularProgressIndicator()
+                : Text(
+                    snap.hasError
+                        ? koreanErrorMessage(snap.error!)
+                        : '문의를 찾을 수 없습니다.',
+                  ),
+          ),
+        );
+      },
+    );
+  }
 }

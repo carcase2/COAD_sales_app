@@ -50,6 +50,14 @@ final gosuSiteCountsProvider = FutureProvider.autoDispose<GosuSiteCounts>((
   return ref.read(gosuSitesRepositoryProvider).fetchCounts();
 });
 
+/// 기간 홈페이지 문의 접수 건수 (금일 접수 타일에 전화 접수와 합산). (fromYmd, toYmdInclusive)
+final gosuSiteReceivedCountProvider = FutureProvider.autoDispose
+    .family<int, (String, String)>((ref, range) {
+      return ref
+          .read(gosuSitesRepositoryProvider)
+          .countReceivedBetween(range.$1, range.$2);
+    });
+
 final usageRepositoryProvider = Provider<UsageRepository>((ref) {
   return UsageRepository();
 });
