@@ -120,7 +120,9 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
       setState(() {
         if (result.name.isNotEmpty) _nameCtrl.text = result.name;
         if (result.company.isNotEmpty) _companyCtrl.text = result.company;
-        if (result.title.isNotEmpty) _titleCtrl.text = result.title;
+        if (result.departmentAndTitle.isNotEmpty) {
+          _titleCtrl.text = result.departmentAndTitle;
+        }
         if (result.phone.isNotEmpty) {
           _mobileCtrl.text = formatKoreanPhoneHyphenated(
             normalizePhoneDigits(result.phone),
@@ -138,6 +140,10 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
         }
         if (result.email.isNotEmpty) _emailCtrl.text = result.email;
         if (result.address.isNotEmpty) _addressCtrl.text = result.address;
+        final memo = result.memoWithWebsite;
+        if (memo.isNotEmpty && _memoCtrl.text.trim().isEmpty) {
+          _memoCtrl.text = memo;
+        }
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

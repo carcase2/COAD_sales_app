@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -60,4 +61,20 @@ Future<PreparedCardImage> prepareBusinessCardImage(String sourcePath) async {
   }
 
   return PreparedCardImage(path: file.path, bytes: bytes);
+}
+
+/// 명함 인식 서버로 올리기 전, 긴 변을 [maxLongEdge]px 이하로 줄인 JPEG.
+/// 이미 작으면 다시 인코딩만 한다(PNG·WebP도 JPEG로 통일). 디코드 실패 시 원본 그대로.
+/// `compute(resizeCardImageForOcr, bytes)` 로 백그라운드 isolate 에서 호출한다.
+Uint8List resizeCardImageForOcr(Uint8List bytes, {int maxLongEdge = 1500}) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return bytes;
+  final oriented = img.bakeOrientation(decoded);
+  final longEdge = oriented.width > oriented.height ? oriented.width : oriented.height;
+  final resized = longEdge <= maxLongEdge
+      ? oriented
+      : oriented.width >= oriented.height
+          ? img.copyResize(oriented, width: maxLongEdge, interpolation: img.Interpolation.average)
+          : img.copyResize(oriented, height: maxLongEdge, interpolation: img.Interpolation.average);
+  return Uint8List.fromList(img.encodeJpg(resized, quality: 85));
 }
