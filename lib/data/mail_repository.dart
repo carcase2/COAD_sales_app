@@ -1,12 +1,10 @@
 import 'dart:convert';
 
-import 'package:coad_customer_calls/core/config/env.dart';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/utils/mail_permissions.dart';
 import 'package:coad_customer_calls/data/app_dependencies.dart';
 import 'package:coad_customer_calls/features/mail/mail_compose.dart';
 import 'package:coad_customer_calls/features/mail/mail_models.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// SMTP는 끝났는데 게이트웨이 타임아웃으로 앱만 실패로 보이는 경우.
@@ -47,17 +45,7 @@ class MailRepository {
 
   /// 메일·텔레그램 API는 COAD_home Next 서버가 필요.
   /// BASE_URL이 비어 있으면 운영 홈 주소를 쓴다.
-  String get _mailApiBase {
-    final configured = _deps.effectiveBaseUrl.trim();
-    if (configured.isNotEmpty) return configured;
-    for (final key in const ['MAIL_API_URL', 'COAD_HOME_URL']) {
-      final v = dotenv.env[key]?.trim() ?? '';
-      if (v.isNotEmpty) {
-        return v.endsWith('/') ? v.substring(0, v.length - 1) : v;
-      }
-    }
-    return kDefaultCoadHomeUrl;
-  }
+  String get _mailApiBase => _deps.coadHomeBaseUrl;
 
   Future<MailCatalog> fetchCatalog() async {
     final assignees = await fetchAssignees();

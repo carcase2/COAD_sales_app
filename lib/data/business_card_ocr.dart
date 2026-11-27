@@ -9,6 +9,9 @@ class BusinessCardResult {
   final String faxPhone;
   final String email;
   final String address;
+  final String department;
+  final String website;
+  final String memo;
 
   BusinessCardResult({
     required this.name,
@@ -19,7 +22,39 @@ class BusinessCardResult {
     this.faxPhone = '',
     this.email = '',
     this.address = '',
+    this.department = '',
+    this.website = '',
+    this.memo = '',
   });
+
+  /// 부서와 직책을 한 칸(직함)에 넣을 때 쓴다. 예: "영업팀 팀장".
+  String get departmentAndTitle =>
+      [department, title].where((e) => e.isNotEmpty).join(' ');
+
+  /// 홈페이지와 기타 메모를 메모 칸에 넣을 때 쓴다.
+  String get memoWithWebsite => [
+        if (website.isNotEmpty) '홈페이지: $website',
+        if (memo.isNotEmpty) memo,
+      ].join('\n');
+
+  /// COAD_home `/api/business-card-ocr`(Claude) 응답의 `card`.
+  /// 키: name, company, department, title, mobile, phone(사무실), fax, email, address, website, memo
+  factory BusinessCardResult.fromClaudeCard(Map<String, dynamic> card) {
+    String f(String key) => card[key]?.toString().trim() ?? '';
+    return BusinessCardResult(
+      name: f('name'),
+      company: f('company'),
+      title: f('title'),
+      phone: f('mobile'),
+      officePhone: f('phone'),
+      faxPhone: f('fax'),
+      email: f('email'),
+      address: f('address'),
+      department: f('department'),
+      website: f('website'),
+      memo: f('memo'),
+    );
+  }
 
   bool get hasAnyField =>
       name.isNotEmpty ||

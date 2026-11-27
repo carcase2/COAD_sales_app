@@ -34,6 +34,18 @@ class AppDependencies {
     return '';
   }
 
+  /// COAD_home Next 서버 주소(메일·텔레그램·명함 인식 API).
+  /// [effectiveBaseUrl] → `.env`의 `MAIL_API_URL`/`COAD_HOME_URL` → 운영 홈 주소.
+  String get coadHomeBaseUrl {
+    final configured = effectiveBaseUrl.trim();
+    if (configured.isNotEmpty) return configured;
+    for (final key in const ['MAIL_API_URL', 'COAD_HOME_URL']) {
+      final v = dotenv.env[key]?.trim() ?? '';
+      if (v.isNotEmpty) return _stripTrailingSlash(v);
+    }
+    return kDefaultCoadHomeUrl;
+  }
+
   Future<void> setDebugBaseUrl(String url) async {
     final t = url.trim();
     if (t.isEmpty) {
