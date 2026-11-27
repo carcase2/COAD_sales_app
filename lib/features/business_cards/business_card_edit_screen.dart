@@ -4,6 +4,7 @@ import 'package:coad_customer_calls/core/utils/business_card_image.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
+import 'package:coad_customer_calls/data/business_card_ocr.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_capture.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_widgets.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
@@ -16,16 +17,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 class BusinessCardEditScreen extends ConsumerStatefulWidget {
-  const BusinessCardEditScreen({super.key, this.existing});
+  const BusinessCardEditScreen({
+    super.key,
+    this.existing,
+    this.initialResult,
+    this.initialImagePath,
+    this.initialMemo,
+  });
 
   final BusinessCard? existing;
+
+  /// 다른 화면(계약서 작성 요청 등)에서 이미 읽은 명함 — 새 명함 칸을 채워 연다.
+  final BusinessCardResult? initialResult;
+
+  /// [initialResult] 를 읽은 명함 사진. 저장할 때 명함 사진으로 올린다.
+  final String? initialImagePath;
+
+  /// 새 명함의 첫 메모 (예: 어느 계약서요청에서 왔는지).
+  final String? initialMemo;
 
   @override
   ConsumerState<BusinessCardEditScreen> createState() =>
       _BusinessCardEditScreenState();
 }
 
-class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen> {
+class _BusinessCardEditScreenState
+    extends ConsumerState<BusinessCardEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _companyCtrl = TextEditingController();
@@ -63,6 +80,47 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
       _visibility = e.visibility;
       _isBlacklisted = e.isBlacklisted;
       _imageUrl = e.imageUrl;
+    } else {
+      final r = widget.initialResult;
+      if (r != null) _applyResult(r);
+      _localImagePath = widget.initialImagePath;
+      final memo = widget.initialMemo?.trim() ?? '';
+      if (memo.isNotEmpty) {
+        _memoCtrl.text = [
+          _memoCtrl.text.trim(),
+          memo,
+        ].where((e) => e.isNotEmpty).join('\n');
+      }
+    }
+  }
+
+  /// 인식 결과를 칸에 넣는다. 메모는 비어 있을 때만.
+  void _applyResult(BusinessCardResult result) {
+    if (result.name.isNotEmpty) _nameCtrl.text = result.name;
+    if (result.company.isNotEmpty) _companyCtrl.text = result.company;
+    if (result.departmentAndTitle.isNotEmpty) {
+      _titleCtrl.text = result.departmentAndTitle;
+    }
+    if (result.phone.isNotEmpty) {
+      _mobileCtrl.text = formatKoreanPhoneHyphenated(
+        normalizePhoneDigits(result.phone),
+      );
+    }
+    if (result.officePhone.isNotEmpty) {
+      _officeCtrl.text = formatKoreanPhoneHyphenated(
+        normalizePhoneDigits(result.officePhone),
+      );
+    }
+    if (result.faxPhone.isNotEmpty) {
+      _faxCtrl.text = formatKoreanPhoneHyphenated(
+        normalizePhoneDigits(result.faxPhone),
+      );
+    }
+    if (result.email.isNotEmpty) _emailCtrl.text = result.email;
+    if (result.address.isNotEmpty) _addressCtrl.text = result.address;
+    final memo = result.memoWithWebsite;
+    if (memo.isNotEmpty && _memoCtrl.text.trim().isEmpty) {
+      _memoCtrl.text = memo;
     }
   }
 
@@ -98,10 +156,7 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
   }
 
   Future<void> _scan() async {
-    final source = await showSalesCallImageSourceSheet(
-      context,
-      title: '명함 사진',
-    );
+    final source = await showSalesCallImageSourceSheet(context, title: '명함 사진');
     if (source == null || !mounted) return;
     final path = await captureBusinessCardImage(
       context,
@@ -118,38 +173,11 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
           .read(aiExtractorServiceProvider)
           .extractBusinessCard(prepared.bytes, filePath: prepared.path);
       if (!mounted) return;
-      setState(() {
-        if (result.name.isNotEmpty) _nameCtrl.text = result.name;
-        if (result.company.isNotEmpty) _companyCtrl.text = result.company;
-        if (result.departmentAndTitle.isNotEmpty) {
-          _titleCtrl.text = result.departmentAndTitle;
-        }
-        if (result.phone.isNotEmpty) {
-          _mobileCtrl.text = formatKoreanPhoneHyphenated(
-            normalizePhoneDigits(result.phone),
-          );
-        }
-        if (result.officePhone.isNotEmpty) {
-          _officeCtrl.text = formatKoreanPhoneHyphenated(
-            normalizePhoneDigits(result.officePhone),
-          );
-        }
-        if (result.faxPhone.isNotEmpty) {
-          _faxCtrl.text = formatKoreanPhoneHyphenated(
-            normalizePhoneDigits(result.faxPhone),
-          );
-        }
-        if (result.email.isNotEmpty) _emailCtrl.text = result.email;
-        if (result.address.isNotEmpty) _addressCtrl.text = result.address;
-        final memo = result.memoWithWebsite;
-        if (memo.isNotEmpty && _memoCtrl.text.trim().isEmpty) {
-          _memoCtrl.text = memo;
-        }
-      });
+      setState(() => _applyResult(result));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('인식 결과를 확인한 뒤 저장하세요.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('인식 결과를 확인한 뒤 저장하세요.')));
       }
     } catch (e) {
       if (!mounted) return;
@@ -195,9 +223,9 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
     if (_saving) return;
     FocusScope.of(context).unfocus();
     if (_nameCtrl.text.trim().isEmpty && _companyCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이름 또는 회사명을 입력해 주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('이름 또는 회사명을 입력해 주세요.')));
       return;
     }
 
@@ -248,7 +276,9 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
     try {
       var imageUrl = _imageUrl;
       if (_localImagePath != null) {
-        imageUrl = await ref.read(b2UploadRepositoryProvider).uploadBusinessCardFile(
+        imageUrl = await ref
+            .read(b2UploadRepositoryProvider)
+            .uploadBusinessCardFile(
               filePath: _localImagePath!,
               userId: user.id,
             );
@@ -274,9 +304,9 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(koreanErrorMessage(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(koreanErrorMessage(e))));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -459,10 +489,7 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
         children: [
           Icon(Icons.badge_outlined, size: 36, color: scheme.outline),
           const SizedBox(height: 8),
-          Text(
-            '명함 사진',
-            style: TextStyle(color: scheme.onSurfaceVariant),
-          ),
+          Text('명함 사진', style: TextStyle(color: scheme.onSurfaceVariant)),
         ],
       );
     }

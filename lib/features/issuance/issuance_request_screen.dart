@@ -35,6 +35,10 @@ class IssuanceRequestScreen extends ConsumerStatefulWidget {
 
 class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   IssuanceDomain _domain = IssuanceDomain.taxInvoice;
+
+  /// 세 번째 탭(계약서)을 보고 있는지. 계약서는 발급 테이블과 따로라 [_domain] 과 별개로 둔다.
+  bool _contract = false;
+  final _contractKey = GlobalKey<ContractRequestPageState>();
   bool _isListeningLaunch = false;
   bool _consumingLaunch = false;
   bool _refreshing = false;
@@ -63,6 +67,8 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
   }
 
   Future<void> _reloadIssuanceData() async {
+    ref.invalidate(contractOpenCountProvider);
+    if (_contract) await _contractKey.currentState?.reload();
     invalidateIssuanceCore(ref);
     ref.invalidate(overduePendingRowsProvider);
     await refreshIssuanceHubSummary(ref);
@@ -89,7 +95,10 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
     if (next == null || !mounted) return;
     _consumingLaunch = true;
     try {
-      setState(() => _domain = next.domain);
+      setState(() {
+        _contract = false;
+        _domain = next.domain;
+      });
 
       final masterId = next.masterId?.trim() ?? '';
       if (masterId.isNotEmpty) {
@@ -207,12 +216,26 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
 
   Future<void> _openCreateForCurrentDomain() async {
     final selected = _domain;
-    final created = await Navigator.of(context).push<IssuanceCreateResult?>(
+    final result = await Navigator.of(context).push<Object?>(
       MaterialPageRoute(
-        builder: (_) => IssuanceRequestCreateScreen(initialDomain: selected),
+        builder: (_) => IssuanceRequestCreateScreen(
+          initialDomain: selected,
+          showContractTab: true,
+        ),
       ),
     );
-    if (!mounted || created == null) return;
+    if (!mounted) return;
+    if (result is IssuanceOpenContract) {
+      // 작성 화면에서 계약서를 골랐다 — 계약서 탭으로 옮기고 계약서 작성 화면을 연다.
+      setState(() => _contract = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_openContractCreate());
+      });
+      return;
+    }
+    if (result is! IssuanceCreateResult) return;
+    final created = result;
     setState(() => _domain = created.domain);
     await _refreshIssuanceData();
     if (!mounted) return;
@@ -222,6 +245,20 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
       openIssueId: created.issueId,
       openDomain: created.domain,
     );
+  }
+
+  Future<void> _openContractCreate() async {
+    final page = _contractKey.currentState;
+    if (page != null) {
+      await page.openCreate();
+    } else {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => const ContractRequestPage(openCreate: true),
+        ),
+      );
+    }
+    if (mounted) ref.invalidate(contractOpenCountProvider);
   }
 
   @override
@@ -340,7 +377,12 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
         ? null
         : todayTaxIssued + todayBondIssued;
     final isTax = _domain == IssuanceDomain.taxInvoice;
-    final accent = IssuanceVisual.domainAccent(_domain, scheme);
+    final accent = _contract
+        ? IssuanceVisual.contractAccent(scheme)
+        : IssuanceVisual.domainAccent(_domain, scheme);
+    final contractCount = ref
+        .watch(contractOpenCountProvider)
+        .when(data: (n) => n, error: (_, _) => 0, loading: () => null);
     final overdueAsync = ref.watch(overduePendingRowsProvider);
     final overdueMineCount = overdueAsync.valueOrNull
         ?.where((r) => overdueInstallIsMine(r.assigneeKey, user?.name))
@@ -360,7 +402,7 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-              decoration: IssuanceVisual.hubHeader(_domain, scheme),
+              decoration: IssuanceVisual.hubHeaderWithAccent(accent, scheme),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -418,11 +460,14 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                             IssuanceDomain.taxInvoice,
                           ),
                           count: taxPendingCount,
-                          selected: _domain == IssuanceDomain.taxInvoice,
+                          selected:
+                              !_contract &&
+                              _domain == IssuanceDomain.taxInvoice,
                           accent: accent,
-                          onTap: () => setState(
-                            () => _domain = IssuanceDomain.taxInvoice,
-                          ),
+                          onTap: () => setState(() {
+                            _contract = false;
+                            _domain = IssuanceDomain.taxInvoice;
+                          }),
                         ),
                         const SizedBox(width: 6),
                         _buildDomainTabButton(
@@ -430,11 +475,22 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                             IssuanceDomain.performanceBond,
                           ),
                           count: bondPendingCount,
-                          selected: _domain == IssuanceDomain.performanceBond,
+                          selected:
+                              !_contract &&
+                              _domain == IssuanceDomain.performanceBond,
                           accent: accent,
-                          onTap: () => setState(
-                            () => _domain = IssuanceDomain.performanceBond,
-                          ),
+                          onTap: () => setState(() {
+                            _contract = false;
+                            _domain = IssuanceDomain.performanceBond;
+                          }),
+                        ),
+                        const SizedBox(width: 6),
+                        _buildDomainTabButton(
+                          label: IssuanceVisual.contractLabel,
+                          count: contractCount,
+                          selected: _contract,
+                          accent: accent,
+                          onTap: () => setState(() => _contract = true),
                         ),
                       ],
                     ),
@@ -450,7 +506,11 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
               child: FilledButton.icon(
                 onPressed: () {
                   HapticFeedback.mediumImpact();
-                  unawaited(_openCreateForCurrentDomain());
+                  unawaited(
+                    _contract
+                        ? _openContractCreate()
+                        : _openCreateForCurrentDomain(),
+                  );
                 },
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
@@ -461,266 +521,270 @@ class _IssuanceRequestScreenState extends ConsumerState<IssuanceRequestScreen> {
                 ),
                 icon: const Icon(Icons.add_rounded),
                 label: Text(
-                  '${IssuanceVisual.domainLabel(_domain)} 요청하기',
+                  _contract
+                      ? '계약서 작성 요청하기'
+                      : '${IssuanceVisual.domainLabel(_domain)} 요청하기',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
             ),
           ),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refreshIssuanceData,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                children: [
-                  _HubMenuTile(
-                    icon: Icons.event_busy_rounded,
-                    title: '시공완료 안 된 건',
-                    count: overdueMineCount,
-                    subtitle: '오늘이 지났고 시공완료가 안 된 내 현장',
-                    accent: IssuanceVisual.partialTileAccent(scheme),
-                    large: true,
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      unawaited(_openOverdueInstallPage());
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _HubMenuTile(
-                    icon: Icons.description_outlined,
-                    title: '계약서 작성 요청',
-                    count: ref.watch(contractOpenCountProvider).when(
-                      data: (n) => n,
-                      error: (_, _) => 0,
-                      loading: () => null,
-                    ),
-                    subtitle: '총무에게 계약서 작성·발송 요청',
-                    accent: IssuanceVisual.todayTileAccent(scheme),
-                    large: true,
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      unawaited(
-                        Navigator.of(context)
-                            .push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const ContractRequestPage(),
-                              ),
-                            )
-                            .then((_) => ref.invalidate(contractOpenCountProvider)),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  if ((myPendingCount ?? 0) > 0) ...[
-                    UxStatusHeroBanner(
-                      icon: Icons.hourglass_top_rounded,
-                      title: '내 대기 $myPendingCount건',
-                      subtitle: '아직 발급 전',
-                      actionLabel: '확인',
-                      tone: UxStatusHeroTone.attention,
-                      onTap: () {
-                        HapticFeedback.mediumImpact();
-                        unawaited(
-                          _openMyListPage(IssuanceMyListKind.pending),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  Text(
-                    '내 요청',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _HubMenuTile(
-                    icon: Icons.hourglass_top_rounded,
-                    title: '내 대기',
-                    count: myPendingCount,
-                    subtitle: '내가 요청했고 아직 발급 전',
-                    accent: IssuanceVisual.pendingTileAccent(scheme),
-                    large: true,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      unawaited(_openMyListPage(IssuanceMyListKind.pending));
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _HubMenuTile(
-                    icon: Icons.task_alt_rounded,
-                    title: '내 발급됨',
-                    count: myIssuedCount,
-                    subtitle: '내가 요청했고 발급된 건',
-                    accent: IssuanceVisual.todayTileAccent(scheme),
-                    large: true,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      unawaited(_openMyListPage(IssuanceMyListKind.issued));
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  Material(
-                    color: scheme.surfaceContainerHighest.withValues(
-                      alpha: 0.35,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => setState(
-                        () => _moreListsExpanded = !_moreListsExpanded,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+            child: _contract
+                ? ContractRequestPage(
+                    key: _contractKey,
+                    embedded: true,
+                    onChanged: () => ref.invalidate(contractOpenCountProvider),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _refreshIssuanceData,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      children: [
+                        _HubMenuTile(
+                          icon: Icons.event_busy_rounded,
+                          title: '시공완료 안 된 건',
+                          count: overdueMineCount,
+                          subtitle: '오늘이 지났고 시공완료가 안 된 내 현장',
+                          accent: IssuanceVisual.partialTileAccent(scheme),
+                          large: true,
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            unawaited(_openOverdueInstallPage());
+                          },
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _moreListsExpanded ? '다른 목록 접기' : '다른 목록 펼치기',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              '부분·완료·취소·전체',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurfaceVariant.withValues(
-                                  alpha: 0.75,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              _moreListsExpanded
-                                  ? Icons.expand_less_rounded
-                                  : Icons.expand_more_rounded,
-                              size: 22,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ],
+                        const SizedBox(height: 12),
+                        if ((myPendingCount ?? 0) > 0) ...[
+                          UxStatusHeroBanner(
+                            icon: Icons.hourglass_top_rounded,
+                            title: '내 대기 $myPendingCount건',
+                            subtitle: '아직 발급 전',
+                            actionLabel: '확인',
+                            tone: UxStatusHeroTone.attention,
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              unawaited(
+                                _openMyListPage(IssuanceMyListKind.pending),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Text(
+                          '내 요청',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        _HubMenuTile(
+                          icon: Icons.hourglass_top_rounded,
+                          title: '내 대기',
+                          count: myPendingCount,
+                          subtitle: '내가 요청했고 아직 발급 전',
+                          accent: IssuanceVisual.pendingTileAccent(scheme),
+                          large: true,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            unawaited(
+                              _openMyListPage(IssuanceMyListKind.pending),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        _HubMenuTile(
+                          icon: Icons.task_alt_rounded,
+                          title: '내 발급됨',
+                          count: myIssuedCount,
+                          subtitle: '내가 요청했고 발급된 건',
+                          accent: IssuanceVisual.todayTileAccent(scheme),
+                          large: true,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            unawaited(
+                              _openMyListPage(IssuanceMyListKind.issued),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Material(
+                          color: scheme.surfaceContainerHighest.withValues(
+                            alpha: 0.35,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => setState(
+                              () => _moreListsExpanded = !_moreListsExpanded,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _moreListsExpanded
+                                          ? '다른 목록 접기'
+                                          : '다른 목록 펼치기',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '부분·완료·취소·전체',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.onSurfaceVariant.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    _moreListsExpanded
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded,
+                                    size: 22,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        AnimatedCrossFade(
+                          firstChild: const SizedBox(width: double.infinity),
+                          secondChild: Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Builder(
+                              builder: (context) {
+                                final textScale =
+                                    MediaQuery.textScalerOf(context)
+                                        .clamp(
+                                          minScaleFactor: 1.0,
+                                          maxScaleFactor: 1.4,
+                                        )
+                                        .scale(1.0);
+                                final tileExtent = (88.0 * textScale).clamp(
+                                  88.0,
+                                  122.0,
+                                );
+                                return GridView(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate:
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 2,
+                                        mainAxisSpacing: 8,
+                                        crossAxisSpacing: 8,
+                                        mainAxisExtent: tileExtent,
+                                      ),
+                                  children: [
+                                    _HubMenuTile(
+                                      icon: IssuanceListKind.request.icon,
+                                      title: '전체 대기',
+                                      count: combinedPendingDisplay,
+                                      accent: IssuanceVisual.pendingTileAccent(
+                                        scheme,
+                                      ),
+                                      onTap: () =>
+                                          unawaited(_openCombinedPendingPage()),
+                                    ),
+                                    _HubMenuTile(
+                                      icon: Icons.today_rounded,
+                                      title: '금일 완료',
+                                      count: todayIssuedCount,
+                                      accent: IssuanceVisual.todayTileAccent(
+                                        scheme,
+                                      ),
+                                      onTap: () => unawaited(
+                                        _openCombinedTodayIssuedPage(),
+                                      ),
+                                    ),
+                                    if (isTax)
+                                      _HubMenuTile(
+                                        icon: IssuanceListKind.partial.icon,
+                                        title: IssuanceListKind.partial.title,
+                                        count: countRows(partialAsync),
+                                        accent:
+                                            IssuanceVisual.partialTileAccent(
+                                              scheme,
+                                            ),
+                                        onTap: () => _openListPage(
+                                          IssuanceListKind.partial,
+                                        ),
+                                      ),
+                                    if (isTax)
+                                      _HubMenuTile(
+                                        icon: IssuanceListKind
+                                            .fullyCompleted
+                                            .icon,
+                                        title: IssuanceListKind
+                                            .fullyCompleted
+                                            .title,
+                                        count: countRows(fullyCompletedAsync),
+                                        accent:
+                                            IssuanceVisual.completedTileAccent(
+                                              scheme,
+                                            ),
+                                        onTap: () => _openListPage(
+                                          IssuanceListKind.fullyCompleted,
+                                        ),
+                                      ),
+                                    _HubMenuTile(
+                                      icon: Icons.check_circle_outline_rounded,
+                                      title: '발급완료',
+                                      count: countRows(completedAsync),
+                                      accent:
+                                          IssuanceVisual.completedTileAccent(
+                                            scheme,
+                                          ),
+                                      onTap: _openCompletedListPage,
+                                    ),
+                                    _HubMenuTile(
+                                      icon: IssuanceListKind.cancelled.icon,
+                                      title: IssuanceListKind.cancelled.title,
+                                      count: countRows(cancelledAsync),
+                                      accent:
+                                          IssuanceVisual.cancelledTileAccent(
+                                            scheme,
+                                          ),
+                                      onTap: () => _openListPage(
+                                        IssuanceListKind.cancelled,
+                                      ),
+                                    ),
+                                    _HubMenuTile(
+                                      icon: IssuanceListKind.all.icon,
+                                      title: IssuanceListKind.all.title,
+                                      count: countRows(allAsync),
+                                      accent: scheme.onSurfaceVariant,
+                                      onTap: () =>
+                                          _openListPage(IssuanceListKind.all),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          crossFadeState: _moreListsExpanded
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                          duration: const Duration(milliseconds: 200),
+                          sizeCurve: Curves.easeOutCubic,
+                        ),
+                      ],
                     ),
                   ),
-                  AnimatedCrossFade(
-                    firstChild: const SizedBox(width: double.infinity),
-                    secondChild: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Builder(
-                        builder: (context) {
-                          final textScale = MediaQuery.textScalerOf(context)
-                              .clamp(minScaleFactor: 1.0, maxScaleFactor: 1.4)
-                              .scale(1.0);
-                          final tileExtent = (88.0 * textScale).clamp(
-                            88.0,
-                            122.0,
-                          );
-                          return GridView(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  mainAxisSpacing: 8,
-                                  crossAxisSpacing: 8,
-                                  mainAxisExtent: tileExtent,
-                                ),
-                            children: [
-                              _HubMenuTile(
-                                icon: IssuanceListKind.request.icon,
-                                title: '전체 대기',
-                                count: combinedPendingDisplay,
-                                accent: IssuanceVisual.pendingTileAccent(
-                                  scheme,
-                                ),
-                                onTap: () => unawaited(
-                                  _openCombinedPendingPage(),
-                                ),
-                              ),
-                              _HubMenuTile(
-                                icon: Icons.today_rounded,
-                                title: '금일 완료',
-                                count: todayIssuedCount,
-                                accent: IssuanceVisual.todayTileAccent(scheme),
-                                onTap: () => unawaited(
-                                  _openCombinedTodayIssuedPage(),
-                                ),
-                              ),
-                              if (isTax)
-                                _HubMenuTile(
-                                  icon: IssuanceListKind.partial.icon,
-                                  title: IssuanceListKind.partial.title,
-                                  count: countRows(partialAsync),
-                                  accent: IssuanceVisual.partialTileAccent(
-                                    scheme,
-                                  ),
-                                  onTap: () =>
-                                      _openListPage(IssuanceListKind.partial),
-                                ),
-                              if (isTax)
-                                _HubMenuTile(
-                                  icon: IssuanceListKind.fullyCompleted.icon,
-                                  title: IssuanceListKind.fullyCompleted.title,
-                                  count: countRows(fullyCompletedAsync),
-                                  accent: IssuanceVisual.completedTileAccent(
-                                    scheme,
-                                  ),
-                                  onTap: () => _openListPage(
-                                    IssuanceListKind.fullyCompleted,
-                                  ),
-                                ),
-                              _HubMenuTile(
-                                icon: Icons.check_circle_outline_rounded,
-                                title: '발급완료',
-                                count: countRows(completedAsync),
-                                accent: IssuanceVisual.completedTileAccent(
-                                  scheme,
-                                ),
-                                onTap: _openCompletedListPage,
-                              ),
-                              _HubMenuTile(
-                                icon: IssuanceListKind.cancelled.icon,
-                                title: IssuanceListKind.cancelled.title,
-                                count: countRows(cancelledAsync),
-                                accent: IssuanceVisual.cancelledTileAccent(
-                                  scheme,
-                                ),
-                                onTap: () =>
-                                    _openListPage(IssuanceListKind.cancelled),
-                              ),
-                              _HubMenuTile(
-                                icon: IssuanceListKind.all.icon,
-                                title: IssuanceListKind.all.title,
-                                count: countRows(allAsync),
-                                accent: scheme.onSurfaceVariant,
-                                onTap: () =>
-                                    _openListPage(IssuanceListKind.all),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    crossFadeState: _moreListsExpanded
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    duration: const Duration(milliseconds: 200),
-                    sizeCurve: Curves.easeOutCubic,
-                  ),
-                ],
-              ),
-            ),
           ),
         ],
       ),
