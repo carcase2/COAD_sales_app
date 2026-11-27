@@ -28,6 +28,10 @@ String formatKoreanPhoneHyphenated(String digitsOnly) {
   if (d.length <= 7) {
     return '${d.substring(0, 3)}-${d.substring(3)}';
   }
+  // 055-343-7715, 031-123-4567, 011-123-4567 등 10자리는 3-3-4
+  if (d.length == 10) {
+    return '${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6)}';
+  }
   if (d.length <= 11) {
     return '${d.substring(0, 3)}-${d.substring(3, 7)}-${d.substring(7)}';
   }
