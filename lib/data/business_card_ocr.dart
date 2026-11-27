@@ -1,4 +1,15 @@
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
+import 'package:coad_customer_calls/models/business_card.dart';
+
+/// 명함 번호 한 칸에서 첫 번호만 남긴다.
+/// `(055)343-7715~6`(대표번호 범위)·`02-1234-5678, 5679`·`(代)` 같은 꼬리를 떼어
+/// 숫자만 남길 때 자리수가 틀어지지 않게 한다.
+String firstCardPhone(String raw) {
+  var s = raw.trim();
+  final cut = RegExp(r'[~～,/]|\(代\)|\(대\)').firstMatch(s);
+  if (cut != null) s = s.substring(0, cut.start);
+  return s.trim();
+}
 
 class BusinessCardResult {
   final String name;
@@ -33,9 +44,9 @@ class BusinessCardResult {
 
   /// 홈페이지와 기타 메모를 메모 칸에 넣을 때 쓴다.
   String get memoWithWebsite => [
-        if (website.isNotEmpty) '홈페이지: $website',
-        if (memo.isNotEmpty) memo,
-      ].join('\n');
+    if (website.isNotEmpty) '홈페이지: $website',
+    if (memo.isNotEmpty) memo,
+  ].join('\n');
 
   /// COAD_home `/api/business-card-ocr`(Claude) 응답의 `card`.
   /// 키: name, company, department, title, mobile, phone(사무실), fax, email, address, website, memo
@@ -45,9 +56,9 @@ class BusinessCardResult {
       name: f('name'),
       company: f('company'),
       title: f('title'),
-      phone: f('mobile'),
-      officePhone: f('phone'),
-      faxPhone: f('fax'),
+      phone: firstCardPhone(f('mobile')),
+      officePhone: firstCardPhone(f('phone')),
+      faxPhone: firstCardPhone(f('fax')),
       email: f('email'),
       address: f('address'),
       department: f('department'),
@@ -80,10 +91,7 @@ class BusinessCardResult {
         json['tel'],
         json['landline'],
       ]),
-      faxPhone: _firstNonEmpty([
-        json['fax'],
-        json['fax_phone'],
-      ]),
+      faxPhone: _firstNonEmpty([json['fax'], json['fax_phone']]),
       email: json['email']?.toString().trim() ?? '',
       address: json['address']?.toString().trim() ?? '',
     );
@@ -186,7 +194,9 @@ BusinessCardResult parseBusinessCardText(String raw) {
     if (!_hangulNameRe.hasMatch(hangul)) return false;
     if (_companyHintRe.hasMatch(line)) return false;
     if (companyHangul.isNotEmpty && hangul == companyHangul) return false;
-    if (_titleRe.hasMatch(line) && line.length > hangul.length + 1) return false;
+    if (_titleRe.hasMatch(line) && line.length > hangul.length + 1) {
+      return false;
+    }
     return true;
   }
 
@@ -245,4 +255,35 @@ String _normalizePhone(String raw) {
     d = '0${d.substring(2)}';
   }
   return d;
+}
+
+/// 인식한 명함으로 새 명함(명함첩) 초안을 만든다. 번호는 하이픈 형식으로 맞춘다.
+BusinessCard businessCardDraftFromResult(BusinessCardResult r) {
+  String fmt(String raw) {
+    final d = normalizePhoneDigits(raw);
+    if (d.length < 8) return raw.trim();
+    return formatKoreanPhoneHyphenated(d);
+  }
+
+  final now = DateTime.now();
+  return BusinessCard(
+    id: '',
+    name: r.name,
+    company: r.company,
+    title: r.departmentAndTitle,
+    mobilePhone: fmt(r.phone),
+    officePhone: fmt(r.officePhone),
+    faxPhone: fmt(r.faxPhone),
+    email: r.email,
+    address: r.address,
+    memo: '',
+    imageUrl: '',
+    visibility: BusinessCardVisibility.team,
+    createdBy: '',
+    createdByName: '',
+    updatedBy: '',
+    updatedByName: '',
+    createdAt: now,
+    updatedAt: now,
+  );
 }

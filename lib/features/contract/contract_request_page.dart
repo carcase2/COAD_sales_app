@@ -8,7 +8,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
 import 'package:coad_customer_calls/data/business_card_ocr.dart';
-import 'package:coad_customer_calls/features/business_cards/business_card_edit_screen.dart';
 import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/features/contract/contract_request_model.dart';
 import 'package:coad_customer_calls/features/contract/contract_request_repository.dart';
@@ -1053,51 +1052,45 @@ class _ContractRequestFormPageState
     } finally {
       if (mounted) setState(() => _recognizing--);
     }
-    if (card != null && mounted) await _offerSaveCard(card, p);
+    if (card != null && mounted) await _saveCardToBook(card, p);
   }
 
-  /// 읽은 명함을 명함 탭(명함첩)에도 저장할지 묻는다. 저장은 명함 등록 화면에서 확인 후 한다.
-  Future<void> _offerSaveCard(BusinessCardResult card, _PendingFile p) async {
-    if (!canAccessBusinessCards(ref.read(authControllerProvider))) return;
-    final who = [
-      card.name,
-      card.company,
-    ].where((e) => e.isNotEmpty).join(' · ');
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('명함첩에 저장'),
-        content: Text(
-          '${who.isEmpty ? '이 명함' : who}을(를) 명함 탭에도 저장할까요?\n'
-          '저장하면 명함 탭에서 검색할 수 있습니다.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('나중에'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('저장하기'),
-          ),
-        ],
-      ),
-    );
-    if (save != true || !mounted) return;
+  /// 읽은 명함을 명함 탭(명함첩)에 바로 등록한다. 같은 연락처가 이미 있으면 새로 만들지 않는다.
+  Future<void> _saveCardToBook(BusinessCardResult card, _PendingFile p) async {
+    final user = ref.read(authControllerProvider);
+    if (user == null || !canAccessBusinessCards(user)) return;
+    if (card.name.isEmpty && card.company.isEmpty) return;
     _readControllers();
     final site = _f.siteName.trim();
-    final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => BusinessCardEditScreen(
-          initialResult: card,
-          initialImagePath: p.file.path,
-          initialMemo: site.isEmpty
-              ? '계약서 작성 요청에서 등록'
-              : '계약서 작성 요청에서 등록 (현장: $site)',
-        ),
-      ),
-    );
-    if (saved == true) _snack('명함첩에 저장했습니다. 명함 탭에서 검색할 수 있습니다.');
+    final repo = ref.read(businessCardRepositoryProvider);
+    final draft = businessCardDraftFromResult(card);
+    try {
+      final dupes = await repo.findDuplicates(user: user, card: draft);
+      if (dupes.isNotEmpty) {
+        _snack('명함첩에 이미 있는 명함입니다: ${dupes.first.card.displayName}');
+        return;
+      }
+      var imageUrl = '';
+      try {
+        imageUrl = await ref
+            .read(b2UploadRepositoryProvider)
+            .uploadBusinessCardFile(filePath: p.file.path, userId: user.id);
+      } catch (_) {
+        // 사진을 못 올려도 명함 정보는 남긴다
+      }
+      final created = await repo.create(
+        user: user,
+        draft: draft.copyWith(imageUrl: imageUrl),
+      );
+      final memo = [
+        site.isEmpty ? '계약서 작성 요청에서 등록' : '계약서 작성 요청에서 등록 (현장: $site)',
+        card.memoWithWebsite,
+      ].where((e) => e.trim().isNotEmpty).join('\n');
+      await repo.addComment(user: user, cardId: created.id, body: memo);
+      _snack('명함첩에 등록했습니다: ${created.displayName}');
+    } catch (e) {
+      _snack('명함첩 등록 실패: ${e.toString().replaceFirst('Exception: ', '')}');
+    }
   }
 
   /// 이미 다른 값이 있는 칸은 사람이 고른다
