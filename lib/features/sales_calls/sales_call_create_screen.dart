@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:coad_customer_calls/core/utils/attachment_utils.dart';
 import 'package:coad_customer_calls/core/utils/business_card_image.dart';
-import 'package:coad_customer_calls/features/business_cards/business_card_crop_screen.dart';
+import 'package:coad_customer_calls/features/business_cards/business_card_capture.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/network/api_exception.dart';
 import 'package:coad_customer_calls/core/widgets/app_async_states.dart';
@@ -480,28 +480,23 @@ class _SalesCallCreateScreenState extends ConsumerState<SalesCallCreateScreen> {
   Future<void> _scanBusinessCard(MasterDataBundle master) async {
     final source = await showSalesCallImageSourceSheet(context, title: '명함 인식');
     if (source == null) return;
-    String? path;
-    if (source == SalesCallImageSource.camera) {
-      final shot = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-        imageQuality: 70,
-        maxWidth: 1600,
-        maxHeight: 1600,
-      );
-      path = shot?.path;
-    } else {
-      final shot = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 70,
-        maxWidth: 1600,
-        maxHeight: 1600,
-      );
-      path = shot?.path;
-    }
+    if (!mounted) return;
+    var path = await captureBusinessCardImage(
+      context,
+      source: source,
+      pickRaw: () async {
+        final shot = await ImagePicker().pickImage(
+          source: source == SalesCallImageSource.camera
+              ? ImageSource.camera
+              : ImageSource.gallery,
+          imageQuality: 70,
+          maxWidth: 1600,
+          maxHeight: 1600,
+        );
+        return shot?.path;
+      },
+    );
     if (path == null || !mounted) return;
-    final cropped = await cropBusinessCardImage(context, imagePath: path);
-    if (cropped == null || !mounted) return;
-    path = cropped;
 
     setState(() => _aiBusy = true);
 
