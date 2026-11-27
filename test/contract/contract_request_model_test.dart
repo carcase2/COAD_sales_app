@@ -1,7 +1,34 @@
+import 'package:coad_customer_calls/data/business_card_ocr.dart';
 import 'package:coad_customer_calls/features/contract/contract_request_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('명함 인식 결과 → 계약서 발주자 칸', () {
+    final doc = contractDocFromBusinessCard(
+      BusinessCardResult(
+        name: '김철수',
+        company: '(주)비렉스테크',
+        title: '과장',
+        department: '공무팀',
+        phone: '010-1234-5678',
+        officePhone: '031-123-4567',
+        email: 'kim@example.com',
+        address: '경기도 화성시',
+      ),
+    );
+    expect(doc.docType, 'business_card');
+    expect(
+      doc.contactLine,
+      '담당자: 김철수 공무팀 과장 / 010-1234-5678 / kim@example.com',
+    );
+    final s = contractSuggestions(
+      doc,
+      'business_card',
+      ContractFields(sendMethod: '메일'),
+    );
+    expect(s.map((e) => e.key), ['client_name', 'client_address', 'mail_to']);
+  });
+
   test('parseWon', () {
     expect(parseWon('550만원'), 5500000);
     expect(parseWon('5,500,000원'), 5500000);
