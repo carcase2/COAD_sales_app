@@ -1,11 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:coad_customer_calls/core/network/api_exception.dart';
-import 'package:coad_customer_calls/data/business_card_detect.dart';
+import 'package:coad_customer_calls/core/utils/business_card_image.dart';
 import 'package:coad_customer_calls/data/business_card_ocr.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:http/http.dart' as http;
 
 export 'business_card_ocr.dart' show BusinessCardResult, parseBusinessCardText;
 
@@ -30,9 +32,13 @@ class AiExtractResult {
 }
 
 class AiExtractorService {
+  /// Gemini 키 — 콜 메모 추출·요약에만 쓴다.
   final String apiKey;
 
-  AiExtractorService({required this.apiKey});
+  /// 명함 인식 API(COAD_home `/api/business-card-ocr`) 기본 주소.
+  final String Function() cardOcrBaseUrl;
+
+  AiExtractorService({required this.apiKey, required this.cardOcrBaseUrl});
 
   static const _systemPrompt = '''
 당신은 CRM 영업 콜 데이터를 분석하여 DB에 저장하기 좋도록 정형화(JSON)해 주는 'AI 데이터 추출기'입니다.
@@ -61,35 +67,6 @@ class AiExtractorService {
 }
 ''';
 
-  static const _businessCardPrompt = '''
-당신은 한국 명함 OCR 전문가입니다. 사진에서 보이는 글자만 읽고 JSON으로 반환하세요. 추측하지 마세요.
-
-# 추출 항목
-- name: 사람 이름만. 직함(대표, 이사, 팀장 등)은 넣지 마세요.
-- company: 회사명/상호. 로고만 있고 글자가 없으면 빈 문자열.
-- title: 직함/부서. 예: "대표이사", "영업팀장".
-- phone: 휴대폰 번호 1개. 010/011/016/017/018/019를 최우선. 하이픈 포함(010-1234-5678). 없으면 빈 문자열.
-- office_phone: 사무실/대표 전화. FAX가 아닌 번호만. 없으면 빈 문자열.
-- fax: 팩스 번호. 명함에 FAX/팩스로 적힌 번호만. 하이픈 포함. 없으면 빈 문자열.
-- email: 이메일. 없으면 빈 문자열.
-- address: 주소. 없으면 빈 문자열.
-
-# 규칙
-- 팩스는 office_phone에 넣지 말고 fax에만 넣으세요.
-- 글자가 흐리면 빈 문자열.
-- 오직 JSON만 반환. 마크다운 금지.
-{
-  "name": "",
-  "company": "",
-  "title": "",
-  "phone": "",
-  "office_phone": "",
-  "fax": "",
-  "email": "",
-  "address": ""
-}
-''';
-
   Future<AiExtractResult> extract(String memo) async {
     final model = GenerativeModel(
       model: 'gemini-3.6-flash',
@@ -111,151 +88,56 @@ class AiExtractorService {
     return AiExtractResult.fromJson(json);
   }
 
-  static const _businessCardModels = [
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-flash-latest',
-  ];
-
+  /// 명함 인식: COAD_home 서버(`/api/business-card-ocr`)가 Claude로 읽는다.
+  /// API 키는 서버(Netlify 환경 변수)에만 있고 앱에는 없다.
   Future<BusinessCardResult> extractBusinessCard(
     Uint8List imageBytes, {
     String? filePath,
   }) async {
-    if (apiKey.trim().isEmpty) {
-      throw ApiException('명함 인식 API 키가 없습니다. 앱을 다시 설치한 뒤 시도해 주세요.');
-    }
-    debugPrint('명함 인식: Gemini (${imageBytes.length} bytes)');
+    final upload = await compute(resizeCardImageForOcr, imageBytes);
+    debugPrint('명함 인식: Claude (${imageBytes.length} → ${upload.length} bytes)');
+
+    final base = cardOcrBaseUrl().trim().replaceAll(RegExp(r'/+$'), '');
+    final http.Response res;
     try {
-      final result = await _extractWithGemini(imageBytes);
-      if (result.hasAnyField) return result;
-      throw ApiException('명함에서 글자를 읽지 못했습니다. 밝은 곳에서 정면으로 다시 촬영해 주세요.');
+      res = await http
+          .post(
+            Uri.parse('$base/api/business-card-ocr'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'image': base64Encode(upload),
+              'mime': 'image/jpeg',
+            }),
+          )
+          .timeout(const Duration(seconds: 70));
+    } on TimeoutException {
+      throw ApiException('명함 인식 응답이 늦습니다. 잠시 후 다시 시도해 주세요.');
     } catch (e) {
-      if (e is ApiException) rethrow;
-      throw ApiException(_humanizeOcrError(e));
+      debugPrint('명함 인식 요청 실패: $e');
+      throw ApiException('네트워크 연결을 확인한 뒤 다시 시도해 주세요.');
     }
-  }
 
-  Future<BusinessCardResult> _extractWithGemini(Uint8List imageBytes) async {
-    final mime = _imageMime(imageBytes);
-    Object? lastError;
-    for (final modelName in _businessCardModels) {
-      try {
-        final model = GenerativeModel(
-          model: modelName,
-          apiKey: apiKey,
-          generationConfig: GenerationConfig(
-            responseMimeType: 'application/json',
-            temperature: 0.0,
-          ),
-        );
-        final response = await model.generateContent([
-          Content.multi([
-            TextPart(_businessCardPrompt),
-            DataPart(mime, imageBytes),
-          ]),
-        ]);
-        final text = response.text?.trim() ?? '';
-        if (text.isEmpty) {
-          lastError = ApiException('인식 결과가 비어 있습니다.');
-          continue;
-        }
-        final json = jsonDecode(_cleanJson(text)) as Map<String, dynamic>;
-        return BusinessCardResult.fromJson(json);
-      } catch (e) {
-        debugPrint('명함 인식 모델 실패 $modelName: $e');
-        lastError = e;
+    Map<String, dynamic> data = const {};
+    try {
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+      if (decoded is Map) data = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+
+    final card = data['card'];
+    if (res.statusCode < 200 || res.statusCode >= 300 || data['success'] != true || card is! Map) {
+      final msg = data['error']?.toString().trim() ?? '';
+      if (msg.isNotEmpty) throw ApiException(msg, statusCode: res.statusCode);
+      if (res.statusCode == 404) {
+        throw ApiException('명함 인식 서버가 아직 준비되지 않았습니다.', statusCode: 404);
       }
+      throw ApiException('명함 인식에 실패했습니다. 다시 촬영해 주세요.', statusCode: res.statusCode);
     }
-    throw lastError ?? ApiException('명함 인식에 실패했습니다.');
-  }
 
-  static const _cardBoxPrompt = '''
-사진에서 명함(종이 카드)의 테두리를 찾아 JSON만 반환하세요. 세로 명함·가로 명함 모두 해당합니다.
-좌표는 이미지 비율 0~1. 명함 바깥 배경은 제외한 꽉 맞는 사각형.
-{
-  "left": 0.0,
-  "top": 0.0,
-  "right": 1.0,
-  "bottom": 1.0
-}
-''';
-
-  Future<NormalizedCardBox?> detectBusinessCardBoxAi(Uint8List imageBytes) async {
-    if (apiKey.trim().isEmpty) return null;
-    final mime = _imageMime(imageBytes);
-    for (final modelName in _businessCardModels) {
-      try {
-        final model = GenerativeModel(
-          model: modelName,
-          apiKey: apiKey,
-          generationConfig: GenerationConfig(
-            responseMimeType: 'application/json',
-            temperature: 0.0,
-          ),
-        );
-        final response = await model.generateContent([
-          Content.multi([
-            TextPart(_cardBoxPrompt),
-            DataPart(mime, imageBytes),
-          ]),
-        ]);
-        final text = response.text?.trim() ?? '';
-        if (text.isEmpty) continue;
-        final json = jsonDecode(_cleanJson(text)) as Map<String, dynamic>;
-        double n(Object? v) {
-          if (v is num) return v.toDouble();
-          return double.tryParse(v?.toString() ?? '') ?? -1;
-        }
-        final box = NormalizedCardBox(
-          left: n(json['left']).clamp(0.0, 1.0),
-          top: n(json['top']).clamp(0.0, 1.0),
-          right: n(json['right']).clamp(0.0, 1.0),
-          bottom: n(json['bottom']).clamp(0.0, 1.0),
-        );
-        if (box.right - box.left < 0.12 || box.bottom - box.top < 0.12) {
-          continue;
-        }
-        return box;
-      } catch (e) {
-        debugPrint('명함 테두리 인식 실패 $modelName: $e');
-      }
+    final result = BusinessCardResult.fromClaudeCard(Map<String, dynamic>.from(card));
+    if (!result.hasAnyField) {
+      throw ApiException('명함에서 글자를 읽지 못했습니다. 밝은 곳에서 정면으로 다시 촬영해 주세요.');
     }
-    return null;
-  }
-
-  static String _humanizeOcrError(Object error) {
-    final t = error.toString().toLowerCase();
-    if (t.contains('api key') || t.contains('api_key') || t.contains('unauthorized') || t.contains('403')) {
-      return '명함 인식 API 키가 올바르지 않습니다.';
-    }
-    if (t.contains('404') || t.contains('not found') || t.contains('no longer available')) {
-      return '명함 인식 모델을 찾을 수 없습니다. 앱을 다시 설치해 주세요.';
-    }
-    if (t.contains('429') || t.contains('quota') || t.contains('resource exhausted')) {
-      return '명함 인식 사용량이 초과되었습니다. 잠시 후 다시 시도해 주세요.';
-    }
-    if (t.contains('socket') || t.contains('network') || t.contains('failed host')) {
-      return '네트워크 연결을 확인한 뒤 다시 시도해 주세요.';
-    }
-    return '명함 인식에 실패했습니다. 다시 촬영해 주세요.';
-  }
-
-  static String _imageMime(Uint8List bytes) {
-    if (bytes.length >= 8 &&
-        bytes[0] == 0x89 &&
-        bytes[1] == 0x50 &&
-        bytes[2] == 0x4E &&
-        bytes[3] == 0x47) {
-      return 'image/png';
-    }
-    if (bytes.length >= 12 &&
-        bytes[8] == 0x57 &&
-        bytes[9] == 0x45 &&
-        bytes[10] == 0x42 &&
-        bytes[11] == 0x50) {
-      return 'image/webp';
-    }
-    return 'image/jpeg';
+    return result;
   }
 
   static const _summaryPrompt = '''

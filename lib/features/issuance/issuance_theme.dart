@@ -14,8 +14,15 @@ class IssuanceVisual {
   static Color navAccent(ColorScheme scheme) =>
       Color.lerp(scheme.primary, scheme.secondary, 0.45)!;
 
-  static BoxDecoration hubHeader(IssuanceDomain domain, ColorScheme scheme) {
-    final accent = domainAccent(domain, scheme);
+  /// 발급요청의 세 번째 탭(계약서) 색.
+  static Color contractAccent(ColorScheme scheme) => scheme.secondary;
+
+  static const String contractLabel = '계약서';
+
+  static BoxDecoration hubHeader(IssuanceDomain domain, ColorScheme scheme) =>
+      hubHeaderWithAccent(domainAccent(domain, scheme), scheme);
+
+  static BoxDecoration hubHeaderWithAccent(Color accent, ColorScheme scheme) {
     return BoxDecoration(
       gradient: LinearGradient(
         colors: [

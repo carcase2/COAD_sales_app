@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:coad_customer_calls/core/utils/korean_amount_words.dart';
+import 'package:coad_customer_calls/features/contract/contract_request_repository.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_domain_tab.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_helpers.dart';
 import 'package:coad_customer_calls/features/issuance/issuance_request_provider.dart';
@@ -27,10 +28,14 @@ class IssuanceRequestCreateScreen extends ConsumerStatefulWidget {
     super.key,
     required this.initialDomain,
     this.taxPrefill,
+    this.showContractTab = false,
   });
 
   final IssuanceDomain initialDomain;
   final TaxInvoicePrefill? taxPrefill;
+
+  /// 세금계산서·이행증권 옆에 계약서 탭을 보인다. 누르면 [IssuanceOpenContract] 를 돌려주고 닫힌다.
+  final bool showContractTab;
 
   @override
   ConsumerState<IssuanceRequestCreateScreen> createState() =>
@@ -1378,6 +1383,18 @@ class _IssuanceRequestCreateScreenState
                                 },
                               ),
                             ),
+                            if (widget.showContractTab)
+                              Expanded(
+                                child: IssuanceDomainTab(
+                                  label: IssuanceVisual.contractLabel,
+                                  selected: false,
+                                  accent: accent,
+                                  count: ref
+                                      .watch(contractOpenCountProvider)
+                                      .valueOrNull,
+                                  onTap: () => unawaited(_switchToContract()),
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -1440,6 +1457,13 @@ class _IssuanceRequestCreateScreenState
       _bondContractAmount.text.trim().isNotEmpty ||
       _bondBizFiles.isNotEmpty ||
       _bondContractFiles.isNotEmpty;
+
+  /// 계약서는 입력 칸이 전혀 달라 계약서 작성 화면으로 넘긴다.
+  Future<void> _switchToContract() async {
+    HapticFeedback.selectionClick();
+    if (!await _confirmDiscard() || !mounted) return;
+    Navigator.of(context).pop(const IssuanceOpenContract());
+  }
 
   Future<bool> _confirmDiscard() async {
     if (!_hasUnsavedInput || _saving) return true;
@@ -2991,6 +3015,11 @@ class _LocalImagePreviewScreenState extends State<_LocalImagePreviewScreen> {
       ),
     );
   }
+}
+
+/// 발급요청 작성 화면에서 계약서 탭을 눌렀다는 신호 (계약서 작성 화면을 열어 달라).
+class IssuanceOpenContract {
+  const IssuanceOpenContract();
 }
 
 class IssuanceCreateResult {

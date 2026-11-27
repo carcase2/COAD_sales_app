@@ -6,7 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:coad_customer_calls/data/auth_controller.dart';
+import 'package:coad_customer_calls/core/utils/business_card_permissions.dart';
+import 'package:coad_customer_calls/data/business_card_ocr.dart';
+import 'package:coad_customer_calls/providers.dart';
 import 'package:coad_customer_calls/features/contract/contract_request_model.dart';
 import 'package:coad_customer_calls/features/contract/contract_request_repository.dart';
 import 'package:flutter/material.dart';
@@ -15,17 +17,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 계약서 작성 요청 목록 (영업 → 총무). 인트라넷 발급요청 '계약서' 탭과 같은 데이터.
 class ContractRequestPage extends ConsumerStatefulWidget {
-  const ContractRequestPage({super.key, this.openCreate = false});
+  const ContractRequestPage({
+    super.key,
+    this.openCreate = false,
+    this.embedded = false,
+    this.onChanged,
+  });
 
   /// 열자마자 새 요청 작성 화면을 띄운다.
   final bool openCreate;
 
+  /// 발급요청 화면의 계약서 탭 안에 넣을 때: 앱바·요청 버튼 없이 목록만 그린다.
+  final bool embedded;
+
+  /// 요청을 새로 만들거나 상태를 바꿨을 때 (발급요청 배지 갱신용).
+  final VoidCallback? onChanged;
+
   @override
   ConsumerState<ContractRequestPage> createState() =>
-      _ContractRequestPageState();
+      ContractRequestPageState();
 }
 
-class _ContractRequestPageState extends ConsumerState<ContractRequestPage> {
+class ContractRequestPageState extends ConsumerState<ContractRequestPage> {
   ContractViewer? _viewer;
   List<ContractRequest> _rows = const [];
   bool _loading = true;
@@ -77,7 +90,14 @@ class _ContractRequestPageState extends ConsumerState<ContractRequestPage> {
       ..showSnackBar(SnackBar(content: Text(m)));
   }
 
+  /// 새로고침 (발급요청 화면의 새로고침 버튼에서도 부른다).
+  Future<void> reload() => _load();
+
+  /// 새 계약서 작성 요청 화면을 연다.
+  Future<void> openCreate() => _openForm();
+
   void _replace(ContractRequest r) {
+    widget.onChanged?.call();
     setState(() {
       final i = _rows.indexWhere((x) => x.id == r.id);
       _rows = i < 0 ? [r, ..._rows] : ([..._rows]..[i] = r);
@@ -439,11 +459,8 @@ class _ContractRequestPageState extends ConsumerState<ContractRequestPage> {
 
   @override
   Widget build(BuildContext context) {
-    final shown = _rows.where((r) => r.matches(_filter, _query)).toList();
-    final counts = {
-      for (final f in contractListFilters)
-        f: _rows.where((r) => r.matches(f, '')).length,
-    };
+    final body = _buildBody();
+    if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(
         title: const Text('계약서 작성 요청'),
@@ -460,78 +477,87 @@ class _ContractRequestPageState extends ConsumerState<ContractRequestPage> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('요청하기'),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search_rounded),
-                hintText: '현장명·품목·요청자 검색',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (v) => setState(() => _query = v),
+      body: body,
+    );
+  }
+
+  Widget _buildBody() {
+    final shown = _rows.where((r) => r.matches(_filter, _query)).toList();
+    final counts = {
+      for (final f in contractListFilters)
+        f: _rows.where((r) => r.matches(f, '')).length,
+    };
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: TextField(
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search_rounded),
+              hintText: '현장명·품목·요청자 검색',
+              border: OutlineInputBorder(),
+              isDense: true,
             ),
+            onChanged: (v) => setState(() => _query = v),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                for (final f in contractListFilters)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: ChoiceChip(
-                      label: Text('$f ${counts[f]}'),
-                      selected: _filter == f,
-                      onSelected: (_) => setState(() => _filter = f),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              for (final f in contractListFilters)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: ChoiceChip(
+                    label: Text('$f ${counts[f]}'),
+                    selected: _filter == f,
+                    onSelected: (_) => setState(() => _filter = f),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: _loading && _rows.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null && _rows.isEmpty
+                ? ListView(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Text(_error!, textAlign: TextAlign.center),
+                      ),
+                    ],
+                  )
+                : shown.isEmpty
+                ? ListView(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Text(
+                          _rows.isEmpty
+                              ? '아직 계약서요청이 없습니다.\n${widget.embedded ? '위' : '아래'} "요청하기"로 요청하세요.'
+                              : '조건에 맞는 요청이 없습니다.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                    itemCount: shown.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) => _RequestCard(
+                      r: shown[i],
+                      onTap: () => _openDetail(shown[i]),
                     ),
                   ),
-              ],
-            ),
           ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              child: _loading && _rows.isEmpty
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null && _rows.isEmpty
-                  ? ListView(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(_error!, textAlign: TextAlign.center),
-                        ),
-                      ],
-                    )
-                  : shown.isEmpty
-                  ? ListView(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(
-                            _rows.isEmpty
-                                ? '아직 계약서요청이 없습니다.\n아래 "요청하기"로 요청하세요.'
-                                : '조건에 맞는 요청이 없습니다.',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                      itemCount: shown.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) => _RequestCard(
-                        r: shown[i],
-                        onTap: () => _openDetail(shown[i]),
-                      ),
-                    ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -962,10 +988,23 @@ class _ContractRequestFormPageState
     final label = contractAttachmentLabel(p.kind);
     if (p.contentType == 'image/heic') return; // 서버 인식은 JPG·PNG·WEBP·PDF 만
     setState(() => _recognizing++);
+    BusinessCardResult? card;
     try {
-      final doc = await ref
-          .read(contractRequestRepositoryProvider)
-          .recognize(_uid, p.kind, p.file, p.contentType);
+      final RecognizedDocument doc;
+      if (p.kind == 'business_card' && p.contentType.startsWith('image/')) {
+        // 명함 사진은 명함 탭과 같은 명함 인식(COAD_home /api/business-card-ocr)으로 읽는다
+        card = await ref
+            .read(aiExtractorServiceProvider)
+            .extractBusinessCard(
+              await p.file.readAsBytes(),
+              filePath: p.file.path,
+            );
+        doc = contractDocFromBusinessCard(card);
+      } else {
+        doc = await ref
+            .read(contractRequestRepositoryProvider)
+            .recognize(_uid, p.kind, p.file, p.contentType);
+      }
       if (!mounted) return;
       _readControllers();
       final suggestions = contractSuggestions(doc, p.kind, _f);
@@ -1006,11 +1045,51 @@ class _ContractRequestFormPageState
       }
       if (differs.isNotEmpty) await _reviewDiffers(label, differs);
     } catch (e) {
+      card = null;
       _snack(
         '$label 자동 인식 실패 — 직접 입력해 주세요. (${e.toString().replaceFirst('Exception: ', '')})',
       );
     } finally {
       if (mounted) setState(() => _recognizing--);
+    }
+    if (card != null && mounted) await _saveCardToBook(card, p);
+  }
+
+  /// 읽은 명함을 명함 탭(명함첩)에 바로 등록한다. 같은 연락처가 이미 있으면 새로 만들지 않는다.
+  Future<void> _saveCardToBook(BusinessCardResult card, _PendingFile p) async {
+    final user = ref.read(authControllerProvider);
+    if (user == null || !canAccessBusinessCards(user)) return;
+    if (card.name.isEmpty && card.company.isEmpty) return;
+    _readControllers();
+    final site = _f.siteName.trim();
+    final repo = ref.read(businessCardRepositoryProvider);
+    final draft = businessCardDraftFromResult(card);
+    try {
+      final dupes = await repo.findDuplicates(user: user, card: draft);
+      if (dupes.isNotEmpty) {
+        _snack('명함첩에 이미 있는 명함입니다: ${dupes.first.card.displayName}');
+        return;
+      }
+      var imageUrl = '';
+      try {
+        imageUrl = await ref
+            .read(b2UploadRepositoryProvider)
+            .uploadBusinessCardFile(filePath: p.file.path, userId: user.id);
+      } catch (_) {
+        // 사진을 못 올려도 명함 정보는 남긴다
+      }
+      final created = await repo.create(
+        user: user,
+        draft: draft.copyWith(imageUrl: imageUrl),
+      );
+      final memo = [
+        site.isEmpty ? '계약서 작성 요청에서 등록' : '계약서 작성 요청에서 등록 (현장: $site)',
+        card.memoWithWebsite,
+      ].where((e) => e.trim().isNotEmpty).join('\n');
+      await repo.addComment(user: user, cardId: created.id, body: memo);
+      _snack('명함첩에 등록했습니다: ${created.displayName}');
+    } catch (e) {
+      _snack('명함첩 등록 실패: ${e.toString().replaceFirst('Exception: ', '')}');
     }
   }
 

@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:coad_customer_calls/data/business_card_detect.dart';
-import 'package:coad_customer_calls/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,22 +12,52 @@ import 'package:path_provider/path_provider.dart';
 /// 한국 명함 표준 대략 90×50mm.
 const double kBusinessCardAspect = 90 / 50;
 
-/// 사진에서 명함 영역만 남기고 자른 파일 경로를 반환한다. 취소 시 null.
-Future<String?> cropBusinessCardImage(
+/// 자르기 화면 결과.
+sealed class CardCropResult {
+  const CardCropResult();
+}
+
+/// 명함 영역만 잘라 [path]에 저장했다.
+class CardCropSaved extends CardCropResult {
+  const CardCropSaved(this.path);
+  final String path;
+}
+
+/// 사진을 다시 찍거나 고르고 싶다.
+class CardCropRetake extends CardCropResult {
+  const CardCropRetake();
+}
+
+/// 명함 인식을 그만둔다.
+class CardCropCancelled extends CardCropResult {
+  const CardCropCancelled();
+}
+
+/// 사진에서 명함 영역만 남기는 화면. 뒤로 가기는 [CardCropCancelled]와 같다(null).
+Future<CardCropResult?> cropBusinessCardImage(
   BuildContext context, {
   required String imagePath,
+  String retakeLabel = '다시 찍기',
 }) {
-  return Navigator.of(context).push<String>(
-    MaterialPageRoute<String>(
-      builder: (_) => BusinessCardCropScreen(imagePath: imagePath),
+  return Navigator.of(context).push<CardCropResult>(
+    MaterialPageRoute<CardCropResult>(
+      builder: (_) => BusinessCardCropScreen(
+        imagePath: imagePath,
+        retakeLabel: retakeLabel,
+      ),
     ),
   );
 }
 
 class BusinessCardCropScreen extends ConsumerStatefulWidget {
-  const BusinessCardCropScreen({super.key, required this.imagePath});
+  const BusinessCardCropScreen({
+    super.key,
+    required this.imagePath,
+    this.retakeLabel = '다시 찍기',
+  });
 
   final String imagePath;
+  final String retakeLabel;
 
   @override
   ConsumerState<BusinessCardCropScreen> createState() =>
@@ -47,7 +76,8 @@ class _BusinessCardCropScreenState
   Offset _dragStart = Offset.zero;
   Rect _cropAtStart = Rect.zero;
   bool _saving = false;
-  bool _lockAspect = false;
+  // 세로·가로 명함을 모두 받기 위해 비율은 자유. (고정 모드 코드는 남겨 둠)
+  final bool _lockAspect = false;
   bool _detecting = true;
 
   @override
@@ -72,14 +102,7 @@ class _BusinessCardCropScreenState
     final bytes = _bytes;
     if (bytes == null) return;
     setState(() => _detecting = true);
-    NormalizedCardBox? box = await detectBusinessCardBox(bytes);
-    if (box == null && mounted) {
-      try {
-        box = await ref
-            .read(aiExtractorServiceProvider)
-            .detectBusinessCardBoxAi(bytes);
-      } catch (_) {}
-    }
+    final box = await detectBusinessCardBox(bytes);
     if (!mounted) return;
     setState(() => _detecting = false);
     if (box == null) {
@@ -89,14 +112,6 @@ class _BusinessCardCropScreenState
       return;
     }
     _applyNormalizedBox(box);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          box.isPortrait ? '세로 명함 테두리를 맞췄습니다.' : '가로 명함 테두리를 맞췄습니다.',
-        ),
-      ),
-    );
   }
 
   void _applyNormalizedBox(NormalizedCardBox box) {
@@ -114,10 +129,7 @@ class _BusinessCardCropScreenState
       disp.left + box.right * disp.width,
       disp.top + box.bottom * disp.height,
     );
-    setState(() {
-      _lockAspect = false;
-      _crop = _clampTo(next, disp);
-    });
+    setState(() => _crop = _clampTo(next, disp));
   }
 
   Rect _imageDisplayRect(Size view) {
@@ -298,7 +310,7 @@ class _BusinessCardCropScreenState
       );
       await File(outPath).writeAsBytes(png.buffer.asUint8List(), flush: true);
       if (!mounted) return;
-      Navigator.of(context).pop(outPath);
+      Navigator.of(context).pop(CardCropSaved(outPath));
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -316,25 +328,21 @@ class _BusinessCardCropScreenState
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          tooltip: '취소',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: _saving
+              ? null
+              : () => Navigator.of(context).pop(const CardCropCancelled()),
+        ),
         title: const Text(
-          '명함만 자르기',
+          '명함 영역 확인',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
         ),
         actions: [
-          if (!_detecting)
-            TextButton(
-              onPressed: _saving ? null : _detectAndApply,
-              child: const Text('다시 찾기', style: TextStyle(color: Colors.white)),
-            ),
           TextButton(
-            onPressed: _saving || _detecting ? null : _confirm,
-            child: Text(
-              _saving ? '저장 중…' : '이 영역만 저장',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+            onPressed: _saving || _detecting ? null : _detectAndApply,
+            child: const Text('자동 찾기', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -369,24 +377,61 @@ class _BusinessCardCropScreenState
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text(
-                            '명함 비율 고정 (90×50 가로)',
-                            style: TextStyle(color: Colors.white, fontSize: 14),
-                          ),
-                          value: _lockAspect,
-                          onChanged: (v) => setState(() => _lockAspect = v),
-                        ),
                         Text(
                           _detecting
-                              ? '세로·가로 명함 테두리를 찾는 중…'
-                              : '테두리를 맞췄습니다. 틀리면 네모를 조정한 뒤 저장하세요.',
+                              ? '명함 테두리를 찾는 중…'
+                              : '네모가 명함과 맞으면 바로 인식하세요. 모서리를 끌어 조정할 수 있습니다.',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.7),
                             fontSize: 12,
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white54),
+                                  minimumSize: const Size.fromHeight(48),
+                                ),
+                                onPressed: _saving
+                                    ? null
+                                    : () => Navigator.of(context)
+                                        .pop(const CardCropRetake()),
+                                icon: const Icon(Icons.replay_rounded),
+                                label: Text(widget.retakeLabel),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 2,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(48),
+                                ),
+                                onPressed:
+                                    _saving || _detecting ? null : _confirm,
+                                icon: _saving
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.check_rounded),
+                                label: const Text(
+                                  '이대로 인식',
+                                  style: TextStyle(fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

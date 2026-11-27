@@ -78,7 +78,11 @@ final b2UploadRepositoryProvider = Provider<B2UploadRepository>((ref) {
 
 final aiExtractorServiceProvider = Provider<AiExtractorService>((ref) {
   final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
-  return AiExtractorService(apiKey: apiKey);
+  final deps = ref.watch(appDependenciesProvider);
+  return AiExtractorService(
+    apiKey: apiKey,
+    cardOcrBaseUrl: () => deps.coadHomeBaseUrl,
+  );
 });
 
 final businessCardRepositoryProvider = Provider<BusinessCardRepository>((ref) {

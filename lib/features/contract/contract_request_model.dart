@@ -1,6 +1,8 @@
 /// 계약서 작성 요청 (영업 → 총무). COAD_home `contractRequestModel.ts` 와 같은 규칙.
 library;
 
+import 'package:coad_customer_calls/data/business_card_ocr.dart';
+
 const contractSendMethods = ['메일', '직접발송'];
 const contractListFilters = ['요청', '완료', '취소', '전체'];
 const contractClientTypes = ['기업', '개인'];
@@ -623,6 +625,19 @@ class RecognizedDocument {
     return '담당자: ${[who, mobile.isNotEmpty ? mobile : phone, email].where((s) => s.isNotEmpty).join(' / ')}';
   }
 }
+
+/// 명함 탭과 같은 명함 인식 결과를 계약서 인식 결과 모양으로 바꾼다.
+RecognizedDocument contractDocFromBusinessCard(BusinessCardResult c) =>
+    RecognizedDocument({
+      'doc_type': 'business_card',
+      'company_name': c.company,
+      'address': c.address,
+      'person_name': c.name,
+      'person_title': c.departmentAndTitle,
+      'phone': c.officePhone,
+      'mobile': c.phone,
+      'email': c.email,
+    });
 
 /// 인식 결과로 칸 하나를 채울 제안. status: fill(빈 칸) / differs(다른 값 있음)
 typedef ContractSuggestion = ({
