@@ -4,7 +4,7 @@ import 'package:coad_customer_calls/core/utils/business_card_image.dart';
 import 'package:coad_customer_calls/core/utils/korean_network_error.dart';
 import 'package:coad_customer_calls/core/utils/phone_validation.dart';
 import 'package:coad_customer_calls/core/widgets/cached_app_image.dart';
-import 'package:coad_customer_calls/features/business_cards/business_card_crop_screen.dart';
+import 'package:coad_customer_calls/features/business_cards/business_card_capture.dart';
 import 'package:coad_customer_calls/features/business_cards/business_card_widgets.dart';
 import 'package:coad_customer_calls/features/sales_calls/widgets/image_source_sheet.dart';
 import 'package:coad_customer_calls/models/business_card.dart';
@@ -80,12 +80,7 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
     super.dispose();
   }
 
-  Future<String?> _pickImagePath() async {
-    final source = await showSalesCallImageSourceSheet(
-      context,
-      title: '명함 사진',
-    );
-    if (source == null) return null;
+  Future<String?> _pickImagePath(SalesCallImageSource source) async {
     if (source == SalesCallImageSource.camera) {
       final shot = await ImagePicker().pickImage(
         source: ImageSource.camera,
@@ -103,11 +98,17 @@ class _BusinessCardEditScreenState extends ConsumerState<BusinessCardEditScreen>
   }
 
   Future<void> _scan() async {
-    var path = await _pickImagePath();
+    final source = await showSalesCallImageSourceSheet(
+      context,
+      title: '명함 사진',
+    );
+    if (source == null || !mounted) return;
+    final path = await captureBusinessCardImage(
+      context,
+      source: source,
+      pickRaw: () => _pickImagePath(source),
+    );
     if (path == null || !mounted) return;
-    final cropped = await cropBusinessCardImage(context, imagePath: path);
-    if (cropped == null || !mounted) return;
-    path = cropped;
     setState(() => _aiBusy = true);
     try {
       final prepared = await prepareBusinessCardImage(path);
