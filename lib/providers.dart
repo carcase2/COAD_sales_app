@@ -3,6 +3,7 @@ import 'package:coad_customer_calls/data/auth_repository.dart';
 import 'package:coad_customer_calls/data/b2_upload_repository.dart';
 import 'package:coad_customer_calls/data/general_schedule_repository.dart';
 import 'package:coad_customer_calls/data/gosu_sales_calls_repository.dart';
+import 'package:coad_customer_calls/data/gosu_sites_repository.dart';
 import 'package:coad_customer_calls/data/sales_calls_repository.dart';
 import 'package:coad_customer_calls/data/usage_repository.dart';
 import 'package:coad_customer_calls/data/ai_extractor_service.dart';
@@ -36,6 +37,26 @@ final gosuSalesCallsRepositoryProvider = Provider<GosuSalesCallsRepository>((
 ) {
   return GosuSalesCallsRepository();
 });
+
+/// 고수 사이트 홈페이지 문의 (coad-gosu-followup 동기화 결과).
+final gosuSitesRepositoryProvider = Provider<GosuSitesRepository>((ref) {
+  return GosuSitesRepository();
+});
+
+/// 홈페이지 문의 건수 (오늘 접수 · 접수중 · 지연 · 취소 사유 미기록).
+final gosuSiteCountsProvider = FutureProvider.autoDispose<GosuSiteCounts>((
+  ref,
+) {
+  return ref.read(gosuSitesRepositoryProvider).fetchCounts();
+});
+
+/// 기간 홈페이지 문의 접수 건수 (금일 접수 타일에 전화 접수와 합산). (fromYmd, toYmdInclusive)
+final gosuSiteReceivedCountProvider = FutureProvider.autoDispose
+    .family<int, (String, String)>((ref, range) {
+      return ref
+          .read(gosuSitesRepositoryProvider)
+          .countReceivedBetween(range.$1, range.$2);
+    });
 
 final usageRepositoryProvider = Provider<UsageRepository>((ref) {
   return UsageRepository();

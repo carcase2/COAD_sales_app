@@ -195,7 +195,19 @@ serve(async (req) => {
       })
     }
     const record = (payload?.record ?? payload ?? {}) as Record<string, unknown>
-    gosuId = (record.id ?? record.gosu_id ?? '').toString().trim()
+    // gosu_sites = 고수 사이트 홈페이지 문의 신규(coad-gosu-followup 동기화)
+    // gosu_status_history = 그 문의의 접수중 → 접수완료/취소 변화 (record 에 gosu_sites 행 + from/to)
+    // 그 외 = 전화 접수(gosu_sales_calls)
+    const table = (payload?.table ?? '').toString()
+    const isStatus = table === 'gosu_status_history'
+    const isSite = table === 'gosu_sites' || isStatus
+    const siteId = isSite ? (record.gosu_id ?? '').toString().trim() : ''
+    const historyId = (record.history_id ?? '').toString().trim()
+    gosuId = isStatus
+      ? (siteId && historyId ? `status:${historyId}` : '')
+      : isSite
+        ? (siteId ? `site:${siteId}` : '')
+        : (record.id ?? record.gosu_id ?? '').toString().trim()
     if (!gosuId) {
       return new Response(JSON.stringify({ error: 'Missing gosu call id' }), { status: 400 })
     }
@@ -254,8 +266,60 @@ serve(async (req) => {
     const regionText =
       sido && regionName ? `[${sido}]${regionName}` : sido || regionName
 
-    const title = `[자동문의고수] ${customerName}`
-    const body = [
+    const siteAddress = (record.address ?? record.area ?? '').toString().trim()
+    const siteRegion = siteAddress.split(/\s+/).slice(0, 2).join(' ')
+    const siteProduct = [record.product_name, record.product_size]
+      .map((v) => (v ?? '').toString().trim())
+      .filter((v) => v.length > 0)
+      .join(' ')
+    const siteRequest = (record.request_text ?? '').toString().replace(/\s+/g, ' ').trim()
+
+    const statusLabel = (v: unknown) => {
+      const t = (v ?? '').toString().trim()
+      return t === '취소' ? '접수취소' : t
+    }
+    const fromStatus = statusLabel(record.from_status)
+    const toStatus = statusLabel(record.to_status)
+    const onsiteRaw = (record.onsite_at ?? '').toString().trim()
+    const onsiteText = onsiteRaw
+      ? new Date(onsiteRaw).toLocaleString('ko-KR', {
+          timeZone: 'Asia/Seoul',
+          month: 'numeric',
+          day: 'numeric',
+          weekday: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        })
+      : ''
+    const workerName = (record.worker_name ?? '').toString().trim()
+    const memo = (record.gosu_memo ?? '').toString().replace(/\s+/g, ' ').trim()
+
+    const title = isStatus
+      ? `[홈페이지 문의] ${customerName} ${fromStatus} → ${toStatus}`
+      : isSite
+        ? `[홈페이지 문의] ${customerName}`
+        : `[자동문의고수] ${customerName}`
+    const body = isStatus
+      ? [
+          phone ? `📞 ${phone}` : '',
+          siteRegion ? `📍 ${siteRegion}` : '',
+          toStatus !== '접수취소' && onsiteText ? `📅 방문 ${onsiteText}` : '',
+          workerName ? `담당 ${workerName}` : '',
+          toStatus === '접수취소' && memo ? `📝 ${memo}` : '',
+        ]
+          .filter((s) => s.length > 0)
+          .join(' · ') || `고수에서 ${toStatus}(으)로 바뀌었습니다.`
+      : isSite
+      ? [
+          phone ? `📞 ${phone}` : '',
+          siteRegion ? `📍 ${siteRegion}` : '',
+          siteProduct ? `🚪 ${siteProduct}` : '',
+          siteRequest ? `📝 ${siteRequest}` : '고수 사이트에 무료견적상담이 접수되었습니다.',
+        ]
+          .filter((s) => s.length > 0)
+          .join(' · ')
+      : [
       phone ? `📞 ${phone}` : '',
       assignedTo ? `담당 ${assignedTo}` : '',
       createdBy && createdBy !== assignedTo ? `작성 ${createdBy}` : '',
@@ -283,7 +347,15 @@ serve(async (req) => {
               body: JSON.stringify({
                 message: {
                   token,
-                  data: {
+                  data: isSite
+                    ? {
+                        type: 'gosu_site_reception',
+                        gosu_site_id: siteId,
+                        title,
+                        body,
+                        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                      }
+                    : {
                     type: 'gosu_reception',
                     gosu_id: gosuId,
                     title,
